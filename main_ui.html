@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<style>
+    @layer base {
+      html, body { margin: 0; padding: 0; }
+      body { overscroll-behavior: none; }
+    }
+    ::-webkit-scrollbar { display: none; }
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    .material-symbols-outlined.fill-active {
+      font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+  </style>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "surface": "#f8f9ff",
+            "on-surface": "#0b1c30",
+            "on-surface-variant": "#434655",
+            "primary": "#004ac6",
+            "primary-container": "#2563eb",
+            "on-primary": "#ffffff",
+            "secondary": "#565e74",
+            "surface-container-lowest": "#ffffff",
+            "surface-container-low": "#eff4ff",
+            "surface-container": "#e5eeff",
+            "outline-variant": "#e2e8f0",
+            "outline": "#737686",
+            "brand-yellow": "#FBBF24",
+            "brand-yellow-hover": "#F59E0B"
+          },
+          borderRadius: {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          fontFamily: {
+            sans: ["Inter", "sans-serif"]
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-[#f4f6fb] font-sans text-on-surface antialiased">
+<!-- Top Blue Utility / Navigation Bar -->
+<header class="w-full bg-primary-container text-white shadow-sm sticky top-0 z-50">
+<!-- Main Header Bar -->
+<div class="max-w-[1360px] mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between gap-4">
+<!-- Logo -->
+<div class="flex items-center gap-3 shrink-0">
+<a class="flex items-center bg-white px-3 py-1.5 rounded-lg shadow-sm" href="#">
+<svg fill="none" height="32" viewbox="0 0 160 40" width="130" xmlns="http://www.w3.org/2000/svg">
+<rect fill="#2563EB" height="28" rx="8" width="28" x="2" y="6"></rect>
+<path d="M10 14h12l-1.5 11h-9L10 14z" stroke="#FFFFFF" stroke-linejoin="round" stroke-width="2"></path>
+<path d="M13 14v-2a3 3 0 0 1 6 0v2" stroke="#FFFFFF" stroke-linecap="round" stroke-width="2"></path>
+<text fill="#0F172A" font-family="Inter, -apple-system, sans-serif" font-size="18" font-weight="700" letter-spacing="-0.5px" x="38" y="26">MINISHOP</text>
+</svg>
+</a>
+</div>
+<!-- Quick Search Form -->
+<div class="hidden md:flex flex-1 max-w-xl mx-4">
+<div class="relative w-full flex items-center">
+<input class="w-full bg-white/95 text-slate-800 placeholder-slate-400 text-sm rounded-l-md py-2 pl-3.5 pr-10 border-0 focus:ring-2 focus:ring-amber-400 outline-none" placeholder="Search products, brands and categories..." type="text"/>
+<button class="bg-[#FBBF24] hover:bg-amber-400 text-slate-900 px-4 py-2 rounded-r-md font-medium text-sm flex items-center justify-center transition-colors">
+<span class="material-symbols-outlined text-[20px]">search</span>
+</button>
+</div>
+</div>
+<!-- Right Utility Actions -->
+<div class="flex items-center gap-4 text-white shrink-0">
+<a class="hidden sm:flex items-center gap-1 text-xs font-semibold tracking-wide uppercase bg-blue-700/60 hover:bg-blue-700 px-2.5 py-1.5 rounded text-amber-300" href="#">
+<span class="material-symbols-outlined text-[16px]">local_offer</span>
+<span>Today's Deal</span>
+</a>
+<!-- Cart Action -->
+<a class="relative flex items-center p-1.5 hover:bg-blue-700/60 rounded-full transition-colors" href="#" title="Shopping Cart">
+<span class="material-symbols-outlined text-[24px]">shopping_bag</span>
+<span class="absolute -top-1 -right-1 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-[#FBBF24] text-[10px] font-bold text-slate-900">3</span>
+</a>
+<!-- User Profile Avatar -->
+<div class="flex items-center gap-2 pl-2 border-l border-blue-400/40">
+<div class="w-8 h-8 rounded-full bg-white/20 border border-white/40 flex items-center justify-center hover:bg-white/30 cursor-pointer transition-colors">
+<span class="material-symbols-outlined text-[18px]">person</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Secondary Category / Page Nav Strip (Reference Style) -->
+<nav class="bg-[#1d4ed8] border-t border-blue-400/20 text-xs tracking-wider uppercase font-semibold text-white/90 overflow-x-auto">
+<div class="max-w-[1360px] mx-auto px-4 sm:px-6 flex items-center space-x-1 sm:space-x-4 py-2 whitespace-nowrap">
+<a class="px-2.5 py-1 bg-blue-800 rounded text-amber-300 font-bold" href="#">Home</a>
+<a class="px-2 py-1 hover:text-white hover:bg-blue-600/40 rounded transition-colors" href="#">Clothing</a>
+<a class="px-2 py-1 hover:text-white hover:bg-blue-600/40 rounded transition-colors" href="#">Electronics</a>
+<a class="px-2 py-1 hover:text-white hover:bg-blue-600/40 rounded transition-colors" href="#">Health &amp; Beauty</a>
+<a class="px-2 py-1 hover:text-white hover:bg-blue-600/40 rounded transition-colors" href="#">Watches</a>
+<a class="px-2 py-1 hover:text-white hover:bg-blue-600/40 rounded transition-colors" href="#">Jewellery</a>
+<a class="px-2 py-1 hover:text-white hover:bg-blue-600/40 rounded transition-colors" href="#">Shoes</a>
+<a class="px-2 py-1 hover:text-white hover:bg-blue-600/40 rounded transition-colors" href="#">Kids &amp; Girls</a>
+<a class="px-2 py-1 hover:text-white hover:bg-blue-600/40 rounded transition-colors" href="#">Pages</a>
+</div>
+</nav>
+</header>
+<!-- Main 2-Column Catalog & Dashboard Layout -->
+<main class="max-w-[1360px] mx-auto px-4 sm:px-6 py-6">
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+<!-- LEFT SIDEBAR: Categories & Hot Deals (260-280px / 3 columns on large screens) -->
+<aside class="lg:col-span-3 flex flex-col gap-6">
+<!-- Categories Widget with Accent Header -->
+<div class="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
+<!-- Distinct Yellow/Accent Header as in Reference Image -->
+<div class="bg-[#FBBF24] px-4 py-3 flex items-center gap-2.5 text-slate-900 font-bold uppercase tracking-wider text-sm">
+<span class="material-symbols-outlined text-[20px]">menu</span>
+<span>CATEGORIES</span>
+</div>
+<!-- Category List Items -->
+<ul class="divide-y divide-slate-100 text-sm text-slate-700">
+<li>
+<a class="group flex items-center justify-between px-4 py-2.5 hover:bg-blue-50/80 hover:text-primary-container transition-colors" href="#">
+<span class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[18px] text-slate-400 group-hover:text-primary-container transition-colors">checkroom</span>
+<span>Clothing</span>
+</span>
+<span class="material-symbols-outlined text-[16px] text-slate-400 group-hover:translate-x-0.5 transition-transform">chevron_right</span>
+</a>
+</li>
+<li>
+<a class="group flex items-center justify-between px-4 py-2.5 hover:bg-blue-50/80 hover:text-primary-container transition-colors" href="#">
+<span class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[18px] text-slate-400 group-hover:text-primary-container transition-colors">devices</span>
+<span>Electronics</span>
+</span>
+<span class="material-symbols-outlined text-[16px] text-slate-400 group-hover:translate-x-0.5 transition-transform">chevron_right</span>
+</a>
+</li>
+<li>
+<a class="group flex items-center justify-between px-4 py-2.5 hover:bg-blue-50/80 hover:text-primary-container transition-colors" href="#">
+<span class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[18px] text-slate-400 group-hover:text-primary-container transition-colors">roller_skating</span>
+<span>Shoes</span>
+</span>
+<span class="material-symbols-outlined text-[16px] text-slate-400 group-hover:translate-x-0.5 transition-transform">chevron_right</span>
+</a>
+</li>
+<li>
+<a class="group flex items-center justify-between px-4 py-2.5 hover:bg-blue-50/80 hover:text-primary-container transition-colors" href="#">
+<span class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[18px] text-slate-400 group-hover:text-primary-container transition-colors">watch</span>
+<span>Watches</span>
+</span>
+<span class="material-symbols-outlined text-[16px] text-slate-400 group-hover:translate-x-0.5 transition-transform">chevron_right</span>
+</a>
+</li>
+<li>
+<a class="group flex items-center justify-between px-4 py-2.5 hover:bg-blue-50/80 hover:text-primary-container transition-colors" href="#">
+<span class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[18px] text-slate-400 group-hover:text-primary-container transition-colors">diamond</span>
+<span>Jewellery</span>
+</span>
+<span class="material-symbols-outlined text-[16px] text-slate-400 group-hover:translate-x-0.5 transition-transform">chevron_right</span>
+</a>
+</li>
+<li>
+<a class="group flex items-center justify-between px-4 py-2.5 hover:bg-blue-50/80 hover:text-primary-container transition-colors" href="#">
+<span class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[18px] text-slate-400 group-hover:text-primary-container transition-colors">spa</span>
+<span>Health and Beauty</span>
+</span>
+<span class="material-symbols-outlined text-[16px] text-slate-400 group-hover:translate-x-0.5 transition-transform">chevron_right</span>
+</a>
+</li>
+<li>
+<a class="group flex items-center justify-between px-4 py-2.5 hover:bg-blue-50/80 hover:text-primary-container transition-colors" href="#">
+<span class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[18px] text-slate-400 group-hover:text-primary-container transition-colors">child_friendly</span>
+<span>Kids and Babies</span>
+</span>
+<span class="material-symbols-outlined text-[16px] text-slate-400 group-hover:translate-x-0.5 transition-transform">chevron_right</span>
+</a>
+</li>
+<li>
+<a class="group flex items-center justify-between px-4 py-2.5 hover:bg-blue-50/80 hover:text-primary-container transition-colors" href="#">
+<span class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[18px] text-slate-400 group-hover:text-primary-container transition-colors">sports_soccer</span>
+<span>Sports</span>
+</span>
+<span class="material-symbols-outlined text-[16px] text-slate-400 group-hover:translate-x-0.5 transition-transform">chevron_right</span>
+</a>
+</li>
+<li>
+<a class="group flex items-center justify-between px-4 py-2.5 hover:bg-blue-50/80 hover:text-primary-container transition-colors" href="#">
+<span class="flex items-center gap-3">
+<span class="material-symbols-outlined text-[18px] text-slate-400 group-hover:text-primary-container transition-colors">yard</span>
+<span>Home and Garden</span>
+</span>
+<span class="material-symbols-outlined text-[16px] text-slate-400 group-hover:translate-x-0.5 transition-transform">chevron_right</span>
+</a>
+</li>
+</ul>
+</div>
+<!-- HOT DEALS Widget with Countdown Timer (as in reference image) -->
+<div class="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+<!-- Widget Header -->
+<div class="flex items-center justify-between border-b border-slate-100 pb-2.5 mb-3">
+<h3 class="font-bold text-xs uppercase tracking-wider text-slate-800">HOT DEALS</h3>
+<div class="flex items-center gap-1">
+<button class="w-5 h-5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded flex items-center justify-center transition-colors">
+<span class="material-symbols-outlined text-[14px]">chevron_left</span>
+</button>
+<button class="w-5 h-5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded flex items-center justify-center transition-colors">
+<span class="material-symbols-outlined text-[14px]">chevron_right</span>
+</button>
+</div>
+</div>
+<!-- Deal Image Container with Discount Badge -->
+<div class="relative bg-slate-50 rounded-lg overflow-hidden mb-3 aspect-[4/3] flex items-center justify-center">
+<img alt="Heavyweight Organic Tee" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCuEZkhQLBvJUd2tKiM1YXdA3qHGqfoC1gOJ_5TqdJRzg7iRIg-0h3LZ4jopXxdRwV5H1_yryNObHo7djUIO6S0_42grlXucu8hJTcyp5f6kLXKCpKUjKQ6tOnNKNS5VwI5tTae84KBLGKSh7CqivtV3NBTcEuGPbaYT-2_QAScX9W6AxQ0O2MRjN8linJ33YO9g15jPy5se-Daf1ffgopzI-wyzmlJotp_Z75g1RUP_IeoZf0XJtiL6g"/>
+<span class="absolute top-2 right-2 w-9 h-9 rounded-full bg-rose-500 text-white font-bold text-[11px] leading-tight flex flex-col items-center justify-center shadow-md">
+<span>49%</span>
+<span class="text-[9px] font-medium leading-none">OFF</span>
+</span>
+</div>
+<!-- Countdown Timer Display -->
+<div class="grid grid-cols-4 gap-1.5 mb-3 text-center">
+<div class="bg-slate-100/90 rounded py-1 border border-slate-200/60">
+<div class="font-bold text-xs text-slate-800">120</div>
+<div class="text-[9px] uppercase tracking-wider text-slate-500 font-medium">Days</div>
+</div>
+<div class="bg-slate-100/90 rounded py-1 border border-slate-200/60">
+<div class="font-bold text-xs text-slate-800">20</div>
+<div class="text-[9px] uppercase tracking-wider text-slate-500 font-medium">Hrs</div>
+</div>
+<div class="bg-slate-100/90 rounded py-1 border border-slate-200/60">
+<div class="font-bold text-xs text-slate-800">36</div>
+<div class="text-[9px] uppercase tracking-wider text-slate-500 font-medium">Mins</div>
+</div>
+<div class="bg-slate-100/90 rounded py-1 border border-slate-200/60">
+<div class="font-bold text-xs text-slate-800">48</div>
+<div class="text-[9px] uppercase tracking-wider text-slate-500 font-medium">Secs</div>
+</div>
+</div>
+<!-- Deal Details -->
+<div class="text-center">
+<a class="font-semibold text-sm text-slate-800 hover:text-primary-container line-clamp-1" href="#">Organic Heavyweight Tee</a>
+<div class="flex items-center justify-center gap-0.5 text-amber-400 my-1">
+<span class="material-symbols-outlined fill-active text-[14px]">star</span>
+<span class="material-symbols-outlined fill-active text-[14px]">star</span>
+<span class="material-symbols-outlined fill-active text-[14px]">star</span>
+<span class="material-symbols-outlined fill-active text-[14px]">star</span>
+<span class="material-symbols-outlined text-[14px]">star</span>
+</div>
+<div class="flex items-center justify-center gap-2 mb-3">
+<span class="text-base font-bold text-primary-container">$42.00</span>
+<span class="text-xs text-slate-400 line-through">$82.00</span>
+</div>
+<!-- Action Button with Cart Icon -->
+<div class="flex rounded-md overflow-hidden shadow-sm">
+<div class="bg-[#FBBF24] px-2.5 py-1.5 flex items-center justify-center text-slate-900">
+<span class="material-symbols-outlined text-[16px]">shopping_cart</span>
+</div>
+<button class="flex-1 bg-primary-container hover:bg-primary text-white text-xs font-semibold py-1.5 px-3 transition-colors text-center uppercase tracking-wider">
+                Add to cart
+              </button>
+</div>
+</div>
+</div>
+</aside>
+<!-- RIGHT MAIN AREA: Banner, Service Perks, Product Grid & Pagination -->
+<section class="lg:col-span-9 flex flex-col gap-6">
+<!-- Top Hero Category Banner (Matching Reference Architecture) -->
+<div class="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
+<div class="relative bg-gradient-to-r from-slate-100 via-slate-50 to-white min-h-[260px] sm:min-h-[300px] flex items-center">
+<!-- Left Text Content -->
+<div class="w-full sm:w-3/5 p-6 sm:p-10 z-10">
+<span class="text-xs uppercase font-bold tracking-widest text-slate-500">SPRING 2025</span>
+<h2 class="text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight mt-1 mb-2">
+                WOMEN <span class="text-[#F59E0B]">FASHION</span>
+</h2>
+<p class="text-xs sm:text-sm text-slate-600 max-w-md line-clamp-2 mb-5">
+                Carefully curated essentials designed for everyday comfort, timeless modern silhouettes, and architectural elegance.
+              </p>
+<a class="inline-flex items-center gap-2 bg-primary-container hover:bg-primary text-white font-bold text-xs uppercase tracking-wider px-6 py-2.5 rounded shadow-sm transition-all hover:shadow" href="#">
+<span>SHOP NOW</span>
+<span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+</a>
+</div>
+<!-- Right Hero Imagery -->
+<div class="hidden sm:block absolute right-0 bottom-0 top-0 w-2/5 overflow-hidden">
+<img alt="Banner Feature" class="w-full h-full object-cover object-center mix-blend-multiply opacity-85" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCSVwxG52Hz7vhpEWeXPi5UJm20e7TlgZtWZbHszLI4cifI7F5uPYFbxEy59NIlYWIUigqpNJ2egy32cewdQGxDTxh8kV6bZ4Nf3w3s4jW6RW8lR0YCkvt9InRkL9IWpB-tIKgwd5-gZ27tVGExSWYVzPjmxSQkjJsfrPKBicGIs9IV5ytAnf5usn6PU6lCg0h8tocx1ADCxwNN9AUQJhhhCJ3zCib2ZZadlDXWecBkEWqBrt2ESFdvQQ"/>
+</div>
+</div>
+<!-- Under-Banner Perks Bar (Blue Strip with 3 Value Props as in Reference) -->
+<div class="bg-primary-container text-white grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-blue-400/30 text-center py-3 px-4">
+<div class="flex flex-col items-center justify-center p-2">
+<span class="text-xs font-bold uppercase tracking-wider">MONEY BACK</span>
+<span class="text-[11px] text-blue-100">30 Days Money Back Guarantee</span>
+</div>
+<div class="flex flex-col items-center justify-center p-2">
+<span class="text-xs font-bold uppercase tracking-wider">FREE SHIPPING</span>
+<span class="text-[11px] text-blue-100">Shipping on orders over $99</span>
+</div>
+<div class="flex flex-col items-center justify-center p-2">
+<span class="text-xs font-bold uppercase tracking-wider">SPECIAL SALE</span>
+<span class="text-[11px] text-blue-100">Extra $5 off on all items</span>
+</div>
+</div>
+</div>
+<!-- Section Header Bar with Category Filter Tabs (Reference Style) -->
+<div class="bg-white rounded-lg border border-slate-200 px-4 py-3 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+<div class="flex items-center gap-3">
+<h3 class="font-bold text-sm uppercase tracking-wider text-slate-900">NEW PRODUCTS</h3>
+</div>
+<!-- Category Filter Tabs and Grid Toggle Controls -->
+<div class="flex items-center justify-between sm:justify-end gap-4 text-xs font-medium text-slate-600">
+<div class="flex items-center gap-3">
+<button class="text-primary-container font-bold border-b-2 border-primary-container pb-0.5">All</button>
+<button class="hover:text-primary-container pb-0.5 transition-colors">Clothing</button>
+<button class="hover:text-primary-container pb-0.5 transition-colors">Electronics</button>
+<button class="hover:text-primary-container pb-0.5 transition-colors">Shoes</button>
+</div>
+<!-- Grid Controls -->
+<div class="flex items-center gap-1 pl-3 border-l border-slate-200 text-slate-400">
+<button class="p-1 rounded bg-slate-100 text-slate-700 hover:bg-slate-200 transition-colors" title="Grid View">
+<span class="material-symbols-outlined text-[16px] block">grid_view</span>
+</button>
+<button class="p-1 rounded hover:bg-slate-100 hover:text-slate-700 transition-colors" title="List View">
+<span class="material-symbols-outlined text-[16px] block">view_list</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Product Grid (4 Columns on Desktop as in Reference Layout) -->
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+<!-- Product Card 1: Custom Mechanical Keyboard -->
+<div class="group bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col">
+<div class="relative aspect-square w-full bg-slate-50 overflow-hidden">
+<img alt="Custom Mechanical Keyboard" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCS6sypzndN_SgiO4iIg0BMA6tbwvyxKryvnom3evr2SbTGUheIdO0LkdClavdRt4UC-5ts-io4yhKksBPexn3Sc479zwe8I8TKaacjyI-grGmeXlNUiHv0ABT92TR-pmTU6bza_cNXnuxNhveOkUiYwsH-ZjrnyExiL8_UcP8Bz8UioBysE6WU9Pz2EBRzKLpnGkc5A49mClPw0liVVRDYowaaLGyTZhn4fOqqhKyiJj8NWoca4cbauw"/>
+<span class="absolute top-2 right-2 bg-sky-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase shadow-sm">NEW</span>
+</div>
+<div class="p-3.5 flex flex-col flex-1">
+<span class="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Hardware</span>
+<a class="font-semibold text-xs text-slate-900 hover:text-primary-container line-clamp-1 mt-0.5" href="#">Custom Mechanical Keyboard</a>
+<!-- Stars Rating -->
+<div class="flex items-center gap-0.5 text-amber-400 my-1.5">
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+</div>
+<div class="mt-auto pt-2 flex items-center justify-between border-t border-slate-100">
+<div class="flex items-baseline gap-1.5">
+<span class="font-bold text-sm text-slate-900">$148.00</span>
+<span class="text-[11px] text-slate-400 line-through">$180.00</span>
+</div>
+<button class="bg-primary-container hover:bg-primary text-white p-1.5 rounded-md transition-colors shadow-sm" title="Add to Cart">
+<span class="material-symbols-outlined text-[16px] block">add_shopping_cart</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Product Card 2: Insulated Flask 750ml -->
+<div class="group bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col">
+<div class="relative aspect-square w-full bg-slate-50 overflow-hidden">
+<img alt="Insulated Flask 750ml" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBJCdTq3ylJtUfYWOdZhrcKHWkNJ8DvWrSLzy3V1QzhwMetiCcNN7UNOaRkotdhqHzYQImmYKAVzWLBY-4xWJkDGVhM89MjV1DXbCaEb-SOvTU69ByLVRKsrzLFy36YeLjg8ti7GdNZTspBXWzYFdm5Ai8VC78qMxSRKQ1BYZ_2u6aktHNFgMOuHsyWN3EdcyqGGOwWxid1jLjHaCp0nRf7i6nqe8d6gNocJarz-dwRERUys0qtKlnV7Q"/>
+<span class="absolute top-2 right-2 bg-rose-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase shadow-sm">HOT</span>
+</div>
+<div class="p-3.5 flex flex-col flex-1">
+<span class="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Hydration</span>
+<a class="font-semibold text-xs text-slate-900 hover:text-primary-container line-clamp-1 mt-0.5" href="#">Insulated Flask 750ml</a>
+<div class="flex items-center gap-0.5 text-amber-400 my-1.5">
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined text-[13px]">star</span>
+</div>
+<div class="mt-auto pt-2 flex items-center justify-between border-t border-slate-100">
+<div class="flex items-baseline gap-1.5">
+<span class="font-bold text-sm text-slate-900">$34.00</span>
+<span class="text-[11px] text-slate-400 line-through">$45.00</span>
+</div>
+<button class="bg-primary-container hover:bg-primary text-white p-1.5 rounded-md transition-colors shadow-sm" title="Add to Cart">
+<span class="material-symbols-outlined text-[16px] block">add_shopping_cart</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Product Card 3: Wireless Studio Headphones -->
+<div class="group bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col">
+<div class="relative aspect-square w-full bg-slate-50 overflow-hidden">
+<img alt="Wireless Studio Headphones" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD43564gcsa-DVPOlXi8rSh6pJZfr4jzVDyoymyBJGgrlHlh_yiGjJgNBfbb8wMoVwVCMqp13i8PnY_BqIlR9dhzMcYm2lijA4XDyNL_ymgTsIg1zMMTJrLhRb2p_-NDKNUfSUo8hllb_0QWdLYbFxuGTMMFRpgs85k2M1ZV-nB1HV0FdDcZHz3h4ahcsNAlWxr5pFqoDeNanPjqCZ8a8Y2-wdPG4NWnMQeAugN4KAqeMS9xWiM0qMIwQ"/>
+<span class="absolute top-2 right-2 bg-amber-400 text-slate-950 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase shadow-sm">SALE</span>
+</div>
+<div class="p-3.5 flex flex-col flex-1">
+<span class="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Audio</span>
+<a class="font-semibold text-xs text-slate-900 hover:text-primary-container line-clamp-1 mt-0.5" href="#">Wireless Studio Headphones</a>
+<div class="flex items-center gap-0.5 text-amber-400 my-1.5">
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+</div>
+<div class="mt-auto pt-2 flex items-center justify-between border-t border-slate-100">
+<div class="flex items-baseline gap-1.5">
+<span class="font-bold text-sm text-slate-900">$220.00</span>
+<span class="text-[11px] text-slate-400 line-through">$280.00</span>
+</div>
+<button class="bg-primary-container hover:bg-primary text-white p-1.5 rounded-md transition-colors shadow-sm" title="Add to Cart">
+<span class="material-symbols-outlined text-[16px] block">add_shopping_cart</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Product Card 4: Heavy Canvas Tote Bag -->
+<div class="group bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col">
+<div class="relative aspect-square w-full bg-slate-50 overflow-hidden">
+<img alt="Heavy Canvas Tote Bag" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBbX5hWfItjxF759_1cLGpsW2phqfec7mVCz3Ic7t5-eTRD3THah4uOx05-aDWthMwFROgfp9-1VqMHJv9tQpmPTqwdl7yF1x6nn6y4CLLfNAh8uZzNSntJuqG2RzddGP5uWLjvxtSwpWbP4d50lt2Ri8lRH1hudYmwK5M3uQsjE9lOlx_6-iBPI9mdO-3gNrlR4rWKd53bOnSaEVNPkpmd9pGC7aSVt9l0UvmY6zz4vEAmwgIUjBfRDA"/>
+<span class="absolute top-2 right-2 bg-amber-400 text-slate-950 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase shadow-sm">SALE</span>
+</div>
+<div class="p-3.5 flex flex-col flex-1">
+<span class="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Carry</span>
+<a class="font-semibold text-xs text-slate-900 hover:text-primary-container line-clamp-1 mt-0.5" href="#">Heavy Canvas Tote Bag</a>
+<div class="flex items-center gap-0.5 text-amber-400 my-1.5">
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined text-[13px]">star</span>
+</div>
+<div class="mt-auto pt-2 flex items-center justify-between border-t border-slate-100">
+<div class="flex items-baseline gap-1.5">
+<span class="font-bold text-sm text-slate-900">$38.00</span>
+<span class="text-[11px] text-slate-400 line-through">$50.00</span>
+</div>
+<button class="bg-primary-container hover:bg-primary text-white p-1.5 rounded-md transition-colors shadow-sm" title="Add to Cart">
+<span class="material-symbols-outlined text-[16px] block">add_shopping_cart</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Product Card 5: Artisan Ceramic Mug -->
+<div class="group bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col">
+<div class="relative aspect-square w-full bg-slate-50 overflow-hidden">
+<img alt="Artisan Ceramic Mug" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCNBZDu8naCghbQgJYWtLFYrFvsII4DO8kpQ6jxvnuIFjKl2ywCY7p5h9oLOCZSLKPpTYT3yYycRP84xvsk0CubP7JRBFDQWYCy_9WJSBcFCIgmn8rvAh_PUu_53nB_Hc1I0wtk_gvbz8pIGAEvGHe8_jbaaqC-FYJFwx3HIY7HsDPWwkDmRzcxzY9MjWOY6bVQE_CQKyWuwpmR-hCso9lLpVmihrZorj1rm0W5su-RU8AlVCc9CaPZTQ"/>
+</div>
+<div class="p-3.5 flex flex-col flex-1">
+<span class="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Tableware</span>
+<a class="font-semibold text-xs text-slate-900 hover:text-primary-container line-clamp-1 mt-0.5" href="#">Artisan Ceramic Mug</a>
+<div class="flex items-center gap-0.5 text-amber-400 my-1.5">
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined text-[13px]">star</span>
+</div>
+<div class="mt-auto pt-2 flex items-center justify-between border-t border-slate-100">
+<div class="flex items-baseline gap-1.5">
+<span class="font-bold text-sm text-slate-900">$26.00</span>
+<span class="text-[11px] text-slate-400 line-through">$32.00</span>
+</div>
+<button class="bg-primary-container hover:bg-primary text-white p-1.5 rounded-md transition-colors shadow-sm" title="Add to Cart">
+<span class="material-symbols-outlined text-[16px] block">add_shopping_cart</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Product Card 6: Task Desk Lamp -->
+<div class="group bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col">
+<div class="relative aspect-square w-full bg-slate-50 overflow-hidden">
+<img alt="Task Desk Lamp" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCSVwxG52Hz7vhpEWeXPi5UJm20e7TlgZtWZbHszLI4cifI7F5uPYFbxEy59NIlYWIUigqpNJ2egy32cewdQGxDTxh8kV6bZ4Nf3w3s4jW6RW8lR0YCkvt9InRkL9IWpB-tIKgwd5-gZ27tVGExSWYVzPjmxSQkjJsfrPKBicGIs9IV5ytAnf5usn6PU6lCg0h8tocx1ADCxwNN9AUQJhhhCJ3zCib2ZZadlDXWecBkEWqBrt2ESFdvQQ"/>
+<span class="absolute top-2 right-2 bg-sky-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase shadow-sm">NEW</span>
+</div>
+<div class="p-3.5 flex flex-col flex-1">
+<span class="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Lighting</span>
+<a class="font-semibold text-xs text-slate-900 hover:text-primary-container line-clamp-1 mt-0.5" href="#">Task Desk Lamp</a>
+<div class="flex items-center gap-0.5 text-amber-400 my-1.5">
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+</div>
+<div class="mt-auto pt-2 flex items-center justify-between border-t border-slate-100">
+<div class="flex items-baseline gap-1.5">
+<span class="font-bold text-sm text-slate-900">$89.00</span>
+<span class="text-[11px] text-slate-400 line-through">$110.00</span>
+</div>
+<button class="bg-primary-container hover:bg-primary text-white p-1.5 rounded-md transition-colors shadow-sm" title="Add to Cart">
+<span class="material-symbols-outlined text-[16px] block">add_shopping_cart</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Product Card 7: Minimalist Cardholder -->
+<div class="group bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col">
+<div class="relative aspect-square w-full bg-slate-50 overflow-hidden">
+<img alt="Minimalist Cardholder" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAEnFF8b8fZhwGjv9tsHeILb1K3cZr2rOm7PbLISfudcvD22tUhS35wxJEZvJldvsxrF--Nb_71ivUqag_7k2WSby8fUn3pVjJNG4MQL1d5hDM5KQFpt0IeKhMcM--YRcN0Ml95oqVpLBKziSceTMdpgNQhvJKMz0IoWP8exWUapdjFL2p2wBsLz5bqZQoVCFD2lyVE7CLQACvDa8MCjdPrY3mmZSwvJTz6cHVEkhwR7Vsq99P9hNNs-g"/>
+<span class="absolute top-2 right-2 bg-emerald-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase shadow-sm">TOP</span>
+</div>
+<div class="p-3.5 flex flex-col flex-1">
+<span class="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Accessories</span>
+<a class="font-semibold text-xs text-slate-900 hover:text-primary-container line-clamp-1 mt-0.5" href="#">Minimalist Cardholder</a>
+<div class="flex items-center gap-0.5 text-amber-400 my-1.5">
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined text-[13px]">star</span>
+</div>
+<div class="mt-auto pt-2 flex items-center justify-between border-t border-slate-100">
+<div class="flex items-baseline gap-1.5">
+<span class="font-bold text-sm text-slate-900">$48.00</span>
+<span class="text-[11px] text-slate-400 line-through">$60.00</span>
+</div>
+<button class="bg-primary-container hover:bg-primary text-white p-1.5 rounded-md transition-colors shadow-sm" title="Add to Cart">
+<span class="material-symbols-outlined text-[16px] block">add_shopping_cart</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Product Card 8: Organic Heavyweight Tee -->
+<div class="group bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col">
+<div class="relative aspect-square w-full bg-slate-50 overflow-hidden">
+<img alt="Organic Heavyweight Tee" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCuEZkhQLBvJUd2tKiM1YXdA3qHGqfoC1gOJ_5TqdJRzg7iRIg-0h3LZ4jopXxdRwV5H1_yryNObHo7djUIO6S0_42grlXucu8hJTcyp5f6kLXKCpKUjKQ6tOnNKNS5VwI5tTae84KBLGKSh7CqivtV3NBTcEuGPbaYT-2_QAScX9W6AxQ0O2MRjN8linJ33YO9g15jPy5se-Daf1ffgopzI-wyzmlJotp_Z75g1RUP_IeoZf0XJtiL6g"/>
+<span class="absolute top-2 right-2 bg-amber-400 text-slate-950 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase shadow-sm">SALE</span>
+</div>
+<div class="p-3.5 flex flex-col flex-1">
+<span class="text-[11px] text-slate-400 uppercase tracking-wider font-medium">Apparel</span>
+<a class="font-semibold text-xs text-slate-900 hover:text-primary-container line-clamp-1 mt-0.5" href="#">Organic Heavyweight Tee</a>
+<div class="flex items-center gap-0.5 text-amber-400 my-1.5">
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+<span class="material-symbols-outlined fill-active text-[13px]">star</span>
+</div>
+<div class="mt-auto pt-2 flex items-center justify-between border-t border-slate-100">
+<div class="flex items-baseline gap-1.5">
+<span class="font-bold text-sm text-slate-900">$42.00</span>
+<span class="text-[11px] text-slate-400 line-through">$55.00</span>
+</div>
+<button class="bg-primary-container hover:bg-primary text-white p-1.5 rounded-md transition-colors shadow-sm" title="Add to Cart">
+<span class="material-symbols-outlined text-[16px] block">add_shopping_cart</span>
+</button>
+</div>
+</div>
+</div>
+</div>
+<!-- Classic Minimal Pagination -->
+<div class="flex items-center justify-center gap-2 mt-4 pt-4 border-t border-slate-200">
+<button class="w-9 h-9 rounded bg-white border border-slate-200 text-slate-600 shadow-sm hover:bg-slate-50 flex items-center justify-center transition-colors" title="Previous page">
+<span class="material-symbols-outlined text-[18px]">chevron_left</span>
+</button>
+<button class="w-9 h-9 rounded bg-primary-container text-white font-semibold text-xs flex items-center justify-center shadow-sm">1</button>
+<button class="w-9 h-9 rounded bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold text-xs flex items-center justify-center transition-colors">2</button>
+<button class="w-9 h-9 rounded bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold text-xs flex items-center justify-center transition-colors">3</button>
+<button class="w-9 h-9 rounded bg-white border border-slate-200 text-slate-600 shadow-sm hover:bg-slate-50 flex items-center justify-center transition-colors" title="Next page">
+<span class="material-symbols-outlined text-[18px]">chevron_right</span>
+</button>
+</div>
+</section>
+</div>
+</main>
+<!-- Clean Footer Bar -->
+<footer class="w-full bg-white border-t border-slate-200 py-6 mt-10">
+<div class="max-w-[1360px] mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
+<div class="flex items-center gap-2">
+<span>© 2025 MiniShop. All rights reserved.</span>
+</div>
+<div class="flex items-center gap-6">
+<a class="hover:text-primary-container transition-colors" href="#">Privacy Policy</a>
+<a class="hover:text-primary-container transition-colors" href="#">Terms of Service</a>
+<a class="hover:text-primary-container transition-colors" href="#">Delivery Information</a>
+<a class="hover:text-primary-container transition-colors" href="#">Contact Support</a>
+</div>
+</div>
+</footer>
+</body></html>
