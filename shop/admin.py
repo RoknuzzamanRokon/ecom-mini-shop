@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.utils.html import format_html
 
-from .models import Category, Order, OrderItem, Product
+from .models import Category, Order, OrderItem, Product, ProductImage
 
 
 @admin.register(Category)
@@ -10,6 +10,12 @@ class CategoryAdmin(admin.ModelAdmin):
     list_editable = ("is_active",)
     prepopulated_fields = {"slug": ("name",)}
     search_fields = ("name",)
+
+
+class ProductImageInline(admin.TabularInline):
+    model = ProductImage
+    extra = 1
+    fields = ("image", "order")
 
 
 @admin.register(Product)
@@ -28,6 +34,7 @@ class ProductAdmin(admin.ModelAdmin):
     list_filter = ("category", "is_active", "badge")
     search_fields = ("name", "description")
     prepopulated_fields = {"slug": ("name",)}
+    inlines = [ProductImageInline]
 
     def image_preview(self, obj):
         if obj.image:

@@ -81,6 +81,36 @@ class Product(models.Model):
             )
         return 0
 
+    @property
+    def savings_amount(self):
+        if self.old_price and self.old_price > self.price:
+            return self.old_price - self.price
+        return None
+
+    @property
+    def all_images(self):
+        gallery = [product_image.image for product_image in self.images.all()]
+        if self.image:
+            return [self.image] + gallery
+        return gallery
+
+
+class ProductImage(models.Model):
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name="images",
+    )
+    image = models.ImageField(upload_to="products/gallery/")
+    order = models.PositiveIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["order", "id"]
+
+    def __str__(self):
+        return f"{self.product.name} image #{self.order}"
+
 
 class Order(models.Model):
     STATUS_PENDING = "pending"

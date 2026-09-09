@@ -1,11 +1,14 @@
 import io
+import urllib.request
 
 from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand
 from django.utils.text import slugify
 from PIL import Image, ImageDraw, ImageFont
 
-from shop.models import Category, Product
+from shop.models import Category, Product, ProductImage
+
+DEMO_PHOTO_URL = "https://picsum.photos/seed/{seed}/{size}/{size}"
 
 CATEGORIES = [
     {"name": "Clothing", "icon": "checkroom"},
@@ -96,6 +99,18 @@ PRODUCTS = [
 ]
 
 
+def shade_color(color, factor):
+    r, g, b = color
+    if factor >= 0:
+        r, g, b = (channel + (255 - channel) * factor for channel in (r, g, b))
+    else:
+        r, g, b = (channel * (1 + factor) for channel in (r, g, b))
+    return tuple(max(0, min(255, int(channel))) for channel in (r, g, b))
+
+
+GALLERY_SHADE_FACTORS = (0.3, -0.25, 0.55)
+
+
 def generate_placeholder_image(label, color):
     image = Image.new("RGB", (800, 800), color=color)
     draw = ImageDraw.Draw(image)
@@ -129,10 +144,43 @@ def generate_placeholder_image(label, color):
     return ContentFile(buffer.getvalue())
 
 
+def build_product_photo(label, color, seed):
+    # Real photos make the demo UI look right; fall back to a drawn placeholder
+    # whenever the network/service is unavailable (offline dev, CI, outages).
+    try:
+        request = urllib.request.Request(
+            DEMO_PHOTO_URL.format(seed=seed, size=800),
+            headers={"User-Agent": "MiniShop-DemoSeeder/1.0"},
+        )
+        with urllib.request.urlopen(request, timeout=8) as response:
+            return ContentFile(response.read()), "jpg"
+    except Exception:
+        return generate_placeholder_image(label, color), "png"
+
+
 class Command(BaseCommand):
     help = "Seed the database with demo categories and products."
 
+    def add_arguments(self, parser):
+        parser.add_argument(
+            "--force",
+            action="store_true",
+            help="Replace images for products/gallery that already exist.",
+        )
+
+    def set_cover_image(self, product, name, color, slug):
+        photo, ext = build_product_photo(name, color, slug)
+        product.image.save(f"{slug}.{ext}", photo, save=False)
+
+    def add_gallery_image(self, product, name, color, slug, index, factor):
+        seed = f"{slug}-{index}"
+        photo, ext = build_product_photo(f"{name} {index + 1}", shade_color(color, factor), seed)
+        gallery_image = ProductImage(product=product, order=index)
+        gallery_image.image.save(f"{slug}-{index}.{ext}", photo, save=False)
+        gallery_image.save()
+
     def handle(self, *args, **options):
+        force = options["force"]
         categories_by_name = {}
         for entry in CATEGORIES:
             category, created = Category.objects.get_or_create(
@@ -144,24 +192,36 @@ class Command(BaseCommand):
 
         for name, cat_name, price, old_price, badge, stock, description, color in PRODUCTS:
             slug = slugify(name)
-            if Product.objects.filter(slug=slug).exists():
-                self.stdout.write(f"Exists product: {name}")
-                continue
+            product = Product.objects.filter(slug=slug).first()
 
-            product = Product(
-                name=name,
-                slug=slug,
-                category=categories_by_name[cat_name],
-                description=description,
-                price=price,
-                old_price=old_price or None,
-                stock=stock,
-                badge=badge,
-            )
-            product.image.save(
-                f"{slug}.png", generate_placeholder_image(name, color), save=False
-            )
-            product.save()
-            self.stdout.write(f"Created product: {name}")
+            if product is None:
+                product = Product(
+                    name=name,
+                    slug=slug,
+                    category=categories_by_name[cat_name],
+                    description=description,
+                    price=price,
+                    old_price=old_price or None,
+                    stock=stock,
+                    badge=badge,
+                )
+                self.set_cover_image(product, name, color, slug)
+                product.save()
+                self.stdout.write(f"Created product: {name}")
+            else:
+                self.stdout.write(f"Exists product: {name}")
+                if force:
+                    product.image.delete(save=False)
+                    self.set_cover_image(product, name, color, slug)
+                    product.save()
+                    self.stdout.write("  Replaced cover image")
+
+            if force or not product.images.exists():
+                for old_image in product.images.all():
+                    old_image.image.delete(save=False)
+                product.images.all().delete()
+                for index, factor in enumerate(GALLERY_SHADE_FACTORS, start=1):
+                    self.add_gallery_image(product, name, color, slug, index, factor)
+                self.stdout.write(f"  Set {len(GALLERY_SHADE_FACTORS)} gallery images")
 
         self.stdout.write(self.style.SUCCESS("Demo data seeding complete."))
