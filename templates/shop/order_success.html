@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block title %}Order Confirmed{% endblock %}
+
+{% block content %}
+<main class="max-w-[1360px] mx-auto px-4 sm:px-6 py-6">
+  <div class="max-w-xl mx-auto bg-white rounded-lg border border-slate-200 shadow-sm p-8 text-center">
+    <div class="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-4">
+      <span class="material-symbols-outlined text-[36px]">check_circle</span>
+    </div>
+    <h1 class="text-xl font-bold text-slate-900 mb-1">Order Placed Successfully!</h1>
+    <p class="text-sm text-slate-500 mb-6">Thank you, {{ order.customer_name }}. Your order will be delivered soon.</p>
+
+    <div class="bg-slate-50 rounded-md border border-slate-200 p-5 text-left text-sm mb-6">
+      <div class="flex items-center justify-between py-1.5">
+        <span class="text-slate-500">Order Number</span>
+        <span class="font-semibold text-slate-900">{{ order.order_number }}</span>
+      </div>
+      <div class="flex items-center justify-between py-1.5">
+        <span class="text-slate-500">Customer Name</span>
+        <span class="font-semibold text-slate-900">{{ order.customer_name }}</span>
+      </div>
+      <div class="flex items-center justify-between py-1.5">
+        <span class="text-slate-500">Phone</span>
+        <span class="font-semibold text-slate-900">{{ order.phone }}</span>
+      </div>
+      <div class="flex items-center justify-between py-1.5">
+        <span class="text-slate-500">Delivery Address</span>
+        <span class="font-semibold text-slate-900 text-right">{{ order.address }}, {{ order.city }}</span>
+      </div>
+      <div class="flex items-center justify-between py-1.5">
+        <span class="text-slate-500">Payment Method</span>
+        <span class="font-semibold text-slate-900">Cash on Delivery</span>
+      </div>
+      <div class="flex items-center justify-between pt-2.5 mt-1 border-t border-slate-200">
+        <span class="text-slate-700 font-semibold">Total Amount</span>
+        <span class="font-bold text-primary-container text-base">${{ order.total_amount }}</span>
+      </div>
+    </div>
+
+    <a class="inline-flex items-center justify-center gap-2 bg-primary-container hover:bg-primary text-white font-bold text-xs uppercase tracking-wider px-6 py-2.5 rounded shadow-sm transition-all" href="{% url 'shop:product_list' %}">
+      Continue Shopping
+    </a>
+  </div>
+</main>
+{% endblock %}
