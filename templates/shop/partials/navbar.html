@@ -1,0 +1,56 @@
+{% load static %}
+<header class="w-full bg-primary-container text-white shadow-sm sticky top-0 z-50">
+  <div class="max-w-[1360px] mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between gap-4">
+    <div class="flex items-center gap-3 shrink-0">
+      <a class="flex items-center bg-white px-3 py-1.5 rounded-lg shadow-sm" href="{% url 'shop:product_list' %}">
+        <svg fill="none" height="32" viewbox="0 0 160 40" width="130" xmlns="http://www.w3.org/2000/svg">
+          <rect fill="#2563EB" height="28" rx="8" width="28" x="2" y="6"></rect>
+          <path d="M10 14h12l-1.5 11h-9L10 14z" stroke="#FFFFFF" stroke-linejoin="round" stroke-width="2"></path>
+          <path d="M13 14v-2a3 3 0 0 1 6 0v2" stroke="#FFFFFF" stroke-linecap="round" stroke-width="2"></path>
+          <text fill="#0F172A" font-family="Inter, -apple-system, sans-serif" font-size="18" font-weight="700" letter-spacing="-0.5px" x="38" y="26">MINISHOP</text>
+        </svg>
+      </a>
+    </div>
+
+    <form action="{% url 'shop:product_list' %}" class="hidden md:flex flex-1 max-w-xl mx-4" method="get">
+      <div class="relative w-full flex items-center">
+        <input class="w-full bg-white/95 text-slate-800 placeholder-slate-400 text-sm rounded-l-md py-2 pl-3.5 pr-10 border-0 focus:ring-2 focus:ring-amber-400 outline-none" name="q" placeholder="Search products, brands and categories..." type="text" value="{{ search_query }}"/>
+        <button class="bg-[#FBBF24] hover:bg-amber-400 text-slate-900 px-4 py-2 rounded-r-md font-medium text-sm flex items-center justify-center transition-colors" type="submit">
+          <span class="material-symbols-outlined text-[20px]">search</span>
+        </button>
+      </div>
+    </form>
+
+    <div class="flex items-center gap-4 text-white shrink-0">
+      <a class="relative flex items-center p-1.5 hover:bg-blue-700/60 rounded-full transition-colors" href="{% url 'shop:cart' %}" title="Shopping Cart">
+        <span class="material-symbols-outlined text-[24px]">shopping_bag</span>
+        {% if cart_item_count > 0 %}
+        <span class="absolute -top-1 -right-1 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-[#FBBF24] text-[10px] font-bold text-slate-900">{{ cart_item_count }}</span>
+        {% endif %}
+      </a>
+      <div class="flex items-center gap-2 pl-2 border-l border-blue-400/40">
+        <div class="w-8 h-8 rounded-full bg-white/20 border border-white/40 flex items-center justify-center">
+          <span class="material-symbols-outlined text-[18px]">person</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <form action="{% url 'shop:product_list' %}" class="flex md:hidden px-4 pb-2.5" method="get">
+    <div class="relative w-full flex items-center">
+      <input class="w-full bg-white/95 text-slate-800 placeholder-slate-400 text-sm rounded-l-md py-2 pl-3.5 pr-10 border-0 focus:ring-2 focus:ring-amber-400 outline-none" name="q" placeholder="Search products..." type="text" value="{{ search_query }}"/>
+      <button class="bg-[#FBBF24] hover:bg-amber-400 text-slate-900 px-4 py-2 rounded-r-md font-medium text-sm flex items-center justify-center transition-colors" type="submit">
+        <span class="material-symbols-outlined text-[20px]">search</span>
+      </button>
+    </div>
+  </form>
+
+  <nav class="bg-[#1d4ed8] border-t border-blue-400/20 text-xs tracking-wider uppercase font-semibold text-white/90 overflow-x-auto">
+    <div class="max-w-[1360px] mx-auto px-4 sm:px-6 flex items-center space-x-1 sm:space-x-4 py-2 whitespace-nowrap">
+      <a class="px-2.5 py-1 rounded {% if not category %}bg-blue-800 text-amber-300 font-bold{% else %}hover:text-white hover:bg-blue-600/40 transition-colors{% endif %}" href="{% url 'shop:product_list' %}">Home</a>
+      {% for cat in nav_categories %}
+      <a class="px-2 py-1 rounded transition-colors {% if category.slug == cat.slug %}bg-blue-800 text-amber-300 font-bold{% else %}hover:text-white hover:bg-blue-600/40{% endif %}" href="{% url 'shop:category' cat.slug %}">{{ cat.name }}</a>
+      {% endfor %}
+    </div>
+  </nav>
+</header>

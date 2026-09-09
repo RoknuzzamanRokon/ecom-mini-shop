@@ -1,0 +1,39 @@
+<div class="bg-white rounded-lg border border-slate-200 p-4 shadow-sm">
+  <div class="flex items-center justify-between border-b border-slate-100 pb-2.5 mb-3">
+    <h3 class="font-bold text-xs uppercase tracking-wider text-slate-800">HOT DEALS</h3>
+  </div>
+  <a class="relative bg-slate-50 rounded-lg overflow-hidden mb-3 aspect-[4/3] flex items-center justify-center" href="{% url 'shop:product_detail' hot_deal.slug %}">
+    {% if hot_deal.image %}
+    <img alt="{{ hot_deal.name }}" class="w-full h-full object-cover" src="{{ hot_deal.image.url }}"/>
+    {% else %}
+    <span class="material-symbols-outlined text-[48px] text-slate-300">image</span>
+    {% endif %}
+    {% if hot_deal.discount_percent %}
+    <span class="absolute top-2 right-2 w-9 h-9 rounded-full bg-rose-500 text-white font-bold text-[11px] leading-tight flex flex-col items-center justify-center shadow-md">
+      <span>{{ hot_deal.discount_percent }}%</span>
+      <span class="text-[9px] font-medium leading-none">OFF</span>
+    </span>
+    {% endif %}
+  </a>
+  <div class="text-center">
+    <a class="font-semibold text-sm text-slate-800 hover:text-primary-container line-clamp-1" href="{% url 'shop:product_detail' hot_deal.slug %}">{{ hot_deal.name }}</a>
+    <div class="flex items-center justify-center gap-2 my-2">
+      <span class="text-base font-bold text-primary-container">${{ hot_deal.price }}</span>
+      {% if hot_deal.old_price %}
+      <span class="text-xs text-slate-400 line-through">${{ hot_deal.old_price }}</span>
+      {% endif %}
+    </div>
+    <form action="{% url 'shop:cart_add' hot_deal.id %}" method="post">
+      {% csrf_token %}
+      <input name="next" type="hidden" value="{{ request.path }}"/>
+      <div class="flex rounded-md overflow-hidden shadow-sm">
+        <div class="bg-[#FBBF24] px-2.5 py-1.5 flex items-center justify-center text-slate-900">
+          <span class="material-symbols-outlined text-[16px]">shopping_cart</span>
+        </div>
+        <button class="flex-1 bg-primary-container hover:bg-primary text-white text-xs font-semibold py-1.5 px-3 transition-colors text-center uppercase tracking-wider" type="submit">
+          Add to cart
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
