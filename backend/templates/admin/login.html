@@ -1,0 +1,509 @@
+{% load i18n static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% if form.errors %}Error | {% endif %}MiniShop Admin Portal</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+  <style>
+    :root {
+      --c-primary: #21486B;
+      --c-primary-light: #2d5e8a;
+      --c-primary-dark: #16324c;
+      --c-accent: #BA8630;
+      --c-accent-light: #d69b38;
+      --c-bg: #0B131F;
+      --c-card: rgba(18, 28, 43, 0.85);
+      --c-border: rgba(255, 255, 255, 0.1);
+      --c-text-main: #F1F5F9;
+      --c-text-muted: #94A3B8;
+      --c-danger: #EF4444;
+      --c-danger-bg: rgba(239, 68, 68, 0.12);
+      --c-danger-border: rgba(239, 68, 68, 0.3);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: var(--c-bg);
+      background-image: 
+        radial-gradient(at 15% 15%, rgba(33, 72, 107, 0.45) 0px, transparent 50%),
+        radial-gradient(at 85% 85%, rgba(186, 134, 48, 0.2) 0px, transparent 55%),
+        radial-gradient(at 50% 50%, rgba(15, 23, 42, 0.8) 0px, transparent 100%);
+      color: var(--c-text-main);
+      padding: 24px 16px;
+      position: relative;
+      overflow-x: hidden;
+    }
+
+    /* Ambient background grid */
+    body::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-size: 32px 32px;
+      background-image: 
+        linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .login-container {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 440px;
+    }
+
+    .login-card {
+      background: var(--c-card);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid var(--c-border);
+      border-radius: 20px;
+      padding: 38px 32px 32px;
+      box-shadow: 
+        0 20px 40px -15px rgba(0, 0, 0, 0.6),
+        0 0 0 1px rgba(255, 255, 255, 0.05),
+        inset 0 1px 1px rgba(255, 255, 255, 0.1);
+      animation: fadeIn 0.4s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(12px) scale(0.98);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    /* Header & Branding */
+    .brand-header {
+      text-align: center;
+      margin-bottom: 28px;
+    }
+
+    .brand-logo {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 14px;
+    }
+
+    .brand-title {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: #FFFFFF;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .badge-admin {
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      padding: 3px 8px;
+      background: rgba(186, 134, 48, 0.15);
+      border: 1px solid rgba(186, 134, 48, 0.35);
+      color: var(--c-accent-light);
+      border-radius: 6px;
+    }
+
+    .brand-subtitle {
+      font-size: 13px;
+      color: var(--c-text-muted);
+      margin-top: 6px;
+      line-height: 1.4;
+    }
+
+    /* Error alert */
+    .error-alert {
+      background: var(--c-danger-bg);
+      border: 1px solid var(--c-danger-border);
+      color: #FCA5A5;
+      padding: 12px 14px;
+      border-radius: 12px;
+      font-size: 13px;
+      line-height: 1.4;
+      margin-bottom: 22px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .error-alert .material-symbols-outlined {
+      font-size: 18px;
+      color: var(--c-danger);
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    /* Form Fields */
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--c-text-muted);
+      margin-bottom: 8px;
+    }
+
+    .input-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .input-icon {
+      position: absolute;
+      left: 14px;
+      color: var(--c-text-muted);
+      font-size: 18px;
+      pointer-events: none;
+      transition: color 0.2s;
+    }
+
+    .form-input {
+      width: 100%;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid var(--c-border);
+      border-radius: 12px;
+      padding: 12px 14px 12px 42px;
+      font-size: 14px;
+      color: #FFFFFF;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    .form-input::placeholder {
+      color: rgba(148, 163, 184, 0.5);
+    }
+
+    .form-input:focus {
+      border-color: var(--c-accent);
+      background: rgba(255, 255, 255, 0.08);
+      box-shadow: 0 0 0 3px rgba(186, 134, 48, 0.2);
+    }
+
+    .form-input:focus + .input-icon,
+    .input-wrapper:focus-within .input-icon {
+      color: var(--c-accent-light);
+    }
+
+    /* Toggle password visibility button */
+    .password-toggle {
+      position: absolute;
+      right: 12px;
+      background: transparent;
+      border: none;
+      color: var(--c-text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px;
+      border-radius: 6px;
+      transition: color 0.2s;
+    }
+
+    .password-toggle:hover {
+      color: #FFFFFF;
+    }
+
+    .password-toggle .material-symbols-outlined {
+      font-size: 18px;
+    }
+
+    /* Submit button */
+    .btn-submit {
+      width: 100%;
+      background: linear-gradient(135deg, var(--c-primary) 0%, #152E46 100%);
+      color: #FFFFFF;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 12px;
+      padding: 13px 20px;
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin-top: 26px;
+      box-shadow: 0 6px 20px -3px rgba(33, 72, 107, 0.6);
+      transition: all 0.2s ease;
+    }
+
+    .btn-submit:hover {
+      background: linear-gradient(135deg, var(--c-primary-light) 0%, #1c3c5c 100%);
+      transform: translateY(-1px);
+      box-shadow: 0 8px 25px -4px rgba(33, 72, 107, 0.75);
+    }
+
+    .btn-submit:active {
+      transform: translateY(0);
+    }
+
+    .btn-submit .material-symbols-outlined {
+      font-size: 18px;
+      transition: transform 0.2s;
+    }
+
+    .btn-submit:hover .material-symbols-outlined {
+      transform: translateX(3px);
+    }
+
+    /* Footer & External Links */
+    .card-footer {
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: var(--c-text-muted);
+    }
+
+    .link-storefront {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      color: var(--c-text-muted);
+      text-decoration: none;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .link-storefront:hover {
+      color: var(--c-accent-light);
+    }
+
+    .link-storefront .material-symbols-outlined {
+      font-size: 16px;
+    }
+
+    .security-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+      color: var(--c-text-muted);
+      opacity: 0.8;
+    }
+
+    .security-tag .material-symbols-outlined {
+      font-size: 14px;
+      color: #10B981;
+    }
+
+    /* Bottom System Note */
+    .system-info {
+      text-align: center;
+      margin-top: 20px;
+      font-size: 11px;
+      color: rgba(148, 163, 184, 0.6);
+      letter-spacing: 0.2px;
+    }
+
+    @media (max-width: 480px) {
+      .login-card {
+        padding: 30px 22px 24px;
+        border-radius: 16px;
+      }
+      .card-footer {
+        flex-direction: column;
+        gap: 12px;
+        align-items: center;
+        text-align: center;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="login-container">
+    <div class="login-card">
+      
+      <!-- Brand Logo & Header -->
+      <div class="brand-header">
+        <div class="brand-logo">
+          <svg width="140" height="36" viewBox="0 0 160 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="2" y="6" width="28" height="28" rx="8" fill="#21486B"/>
+            <path d="M10 14h12l-1.5 11h-9L10 14z" stroke="#FFFFFF" stroke-width="2" stroke-linejoin="round"/>
+            <path d="M13 14v-2a3 3 0 0 1 6 0v2" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+            <text x="38" y="26" fill="#FFFFFF" font-family="'Inter', sans-serif" font-weight="800" font-size="18" letter-spacing="-0.5px">MINISHOP</text>
+          </svg>
+        </div>
+        <div class="brand-title">
+          <span>Control Center</span>
+          <span class="badge-admin">Admin</span>
+        </div>
+        <p class="brand-subtitle">Sign in to manage catalog, orders, and categories</p>
+      </div>
+
+      <!-- Error Messages -->
+      {% if form.errors and not form.non_field_errors %}
+        <div class="error-alert">
+          <span class="material-symbols-outlined">error</span>
+          <div>
+            {% blocktranslate count counter=form.errors.items|length %}Please correct the error below.{% plural %}Please correct the errors below.{% endblocktranslate %}
+          </div>
+        </div>
+      {% endif %}
+
+      {% if form.non_field_errors %}
+        {% for error in form.non_field_errors %}
+          <div class="error-alert">
+            <span class="material-symbols-outlined">warning</span>
+            <div>{{ error }}</div>
+          </div>
+        {% endfor %}
+      {% endif %}
+
+      {% if user.is_authenticated %}
+        <div class="error-alert">
+          <span class="material-symbols-outlined">info</span>
+          <div>
+            {% blocktranslate trimmed %}
+              You are authenticated as {{ username }}, but not authorized to access this section. Please log in with an administrator account.
+            {% endblocktranslate %}
+          </div>
+        </div>
+      {% endif %}
+
+      <!-- Login Form -->
+      <form action="{{ app_path }}" method="post" id="login-form">
+        {% csrf_token %}
+        
+        <!-- Username Field -->
+        <div class="form-group">
+          <label class="form-label" for="id_username">Username</label>
+          <div class="input-wrapper">
+            <span class="material-symbols-outlined input-icon">person</span>
+            <input 
+              type="text" 
+              name="username" 
+              id="id_username" 
+              class="form-input" 
+              placeholder="Enter admin username" 
+              autofocus 
+              required
+              value="{{ form.username.value|default:'' }}"
+            >
+          </div>
+          {% if form.username.errors %}
+            <div style="color: var(--c-danger); font-size: 12px; margin-top: 4px;">
+              {{ form.username.errors.0 }}
+            </div>
+          {% endif %}
+        </div>
+
+        <!-- Password Field -->
+        <div class="form-group">
+          <label class="form-label" for="id_password">Password</label>
+          <div class="input-wrapper">
+            <span class="material-symbols-outlined input-icon">lock</span>
+            <input 
+              type="password" 
+              name="password" 
+              id="id_password" 
+              class="form-input" 
+              placeholder="Enter password" 
+              required
+            >
+            <button type="button" class="password-toggle" id="togglePassword" aria-label="Toggle password visibility">
+              <span class="material-symbols-outlined" id="toggleIcon">visibility</span>
+            </button>
+          </div>
+          {% if form.password.errors %}
+            <div style="color: var(--c-danger); font-size: 12px; margin-top: 4px;">
+              {{ form.password.errors.0 }}
+            </div>
+          {% endif %}
+        </div>
+
+        <input type="hidden" name="next" value="{{ next }}">
+
+        <!-- Submit Button -->
+        <button type="submit" class="btn-submit">
+          <span>Sign In</span>
+          <span class="material-symbols-outlined">arrow_forward</span>
+        </button>
+
+      </form>
+
+      <!-- Card Footer -->
+      <div class="card-footer">
+        <a href="http://localhost:3000" class="link-storefront" title="Open Next.js Storefront">
+          <span class="material-symbols-outlined">storefront</span>
+          <span>View Storefront</span>
+        </a>
+        <div class="security-tag">
+          <span class="material-symbols-outlined">verified_user</span>
+          <span>Encrypted Session</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- System Info Footer -->
+    <div class="system-info">
+      MiniShop E-Commerce v1.0 • Django 5.2 • Port 8001
+    </div>
+  </div>
+
+  <script>
+    // Password toggle visibility
+    const togglePassword = document.getElementById('togglePassword');
+    const passwordInput = document.getElementById('id_password');
+    const toggleIcon = document.getElementById('toggleIcon');
+
+    if (togglePassword && passwordInput && toggleIcon) {
+      togglePassword.addEventListener('click', function () {
+        const isPassword = passwordInput.getAttribute('type') === 'password';
+        passwordInput.setAttribute('type', isPassword ? 'text' : 'password');
+        toggleIcon.textContent = isPassword ? 'visibility_off' : 'visibility';
+      });
+    }
+
+    // Auto-focus username if empty, or password if username pre-filled
+    const usernameInput = document.getElementById('id_username');
+    if (usernameInput && usernameInput.value) {
+      if (passwordInput) passwordInput.focus();
+    } else if (usernameInput) {
+      usernameInput.focus();
+    }
+  </script>
+</body>
+</html>

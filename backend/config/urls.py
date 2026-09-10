@@ -19,6 +19,10 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path
 
+admin.site.site_header = "MiniShop Administration"
+admin.site.site_title = "MiniShop Admin Portal"
+admin.site.index_title = "Dashboard & Store Management"
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('shop.urls')),
