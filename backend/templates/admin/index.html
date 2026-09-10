@@ -23,7 +23,7 @@
     }
 
     .zen-dashboard-hero::after {
-      content: "店舗管理";
+      content: "MINISHOP";
       position: absolute;
       right: 20px;
       bottom: -15px;
@@ -155,7 +155,6 @@
 {% block coltype %}colMS{% endblock %}
 {% block bodyclass %}{{ block.super }} dashboard{% endblock %}
 {% block nav-breadcrumbs %}{% endblock %}
-{% block nav-sidebar %}{% endblock %}
 
 {% block content %}
 <div id="content-main">
@@ -164,7 +163,7 @@
   <div class="zen-dashboard-hero">
     <div class="hero-top-badge">
       <span class="material-symbols-outlined" style="font-size: 16px;">dashboard_customize</span>
-      <span>店舗管理コンソール • Admin Overview</span>
+      <span>Store Management Console • Overview</span>
     </div>
     <h2 class="hero-title">Welcome, {{ user.get_username }}</h2>
     <p class="hero-subtitle">

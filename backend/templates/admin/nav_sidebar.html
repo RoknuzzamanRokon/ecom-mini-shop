@@ -1,0 +1,179 @@
+{% load i18n static %}
+<button class="sticky toggle-nav-sidebar" id="toggle-nav-sidebar" aria-label="{% translate 'Toggle navigation' %}" title="Toggle navigation (shortcut: A)"></button>
+<nav class="sticky" id="nav-sidebar" aria-label="{% translate 'Sidebar' %}">
+  <div class="sidebar-inner">
+    
+    <!-- Sidebar Header / Branding -->
+    <div class="sidebar-header">
+      <div class="sidebar-header-title">
+        <span class="material-symbols-outlined sidebar-brand-icon">storefront</span>
+        <div>
+          <div class="sidebar-brand-name">MiniShop</div>
+          <div class="sidebar-brand-sub">Management Panel</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Navigation Section -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">
+        <span>MAIN MENU</span>
+      </div>
+      <ul class="sidebar-menu">
+        <li>
+          <a href="{% url 'admin:index' %}" class="sidebar-link {% if request.path == '/admin/' %}active{% endif %}">
+            <span class="material-symbols-outlined">space_dashboard</span>
+            <span class="link-label">Dashboard</span>
+          </a>
+        </li>
+        <li>
+          <a href="{% url 'admin:shop_product_changelist' %}" class="sidebar-link {% if '/admin/shop/product/' in request.path and not request.GET.category__id__exact %}active{% endif %}">
+            <span class="material-symbols-outlined">shopping_bag</span>
+            <span class="link-label">All Products</span>
+          </a>
+        </li>
+        <li>
+          <a href="{% url 'admin:shop_order_changelist' %}" class="sidebar-link {% if '/admin/shop/order/' in request.path %}active{% endif %}">
+            <span class="material-symbols-outlined">receipt_long</span>
+            <span class="link-label">Customer Orders</span>
+          </a>
+        </li>
+        <li>
+          <a href="{% url 'admin:shop_category_changelist' %}" class="sidebar-link {% if '/admin/shop/category/' in request.path %}active{% endif %}">
+            <span class="material-symbols-outlined">category</span>
+            <span class="link-label">Categories Admin</span>
+          </a>
+        </li>
+      </ul>
+    </div>
+
+    <!-- Categories Section -->
+    <div class="sidebar-section category-section">
+      <div class="sidebar-section-header">
+        <div class="sidebar-section-title">
+          <span>CATEGORIES</span>
+          <span class="sidebar-count-badge" id="cat-count-badge">{{ nav_categories|length }}</span>
+        </div>
+        <a href="{% url 'admin:shop_category_add' %}" class="sidebar-add-btn" title="Add new category">
+          <span class="material-symbols-outlined">add</span>
+        </a>
+      </div>
+
+      <!-- Quick Filter Categories Box -->
+      <div class="sidebar-filter-wrap">
+        <span class="material-symbols-outlined filter-icon">search</span>
+        <input type="text" id="cat-sidebar-filter" placeholder="Filter categories..." autocomplete="off">
+        <button type="button" id="cat-filter-clear" class="filter-clear-btn" style="display:none;" title="Clear filter">
+          <span class="material-symbols-outlined">close</span>
+        </button>
+      </div>
+
+      <!-- Category Links List -->
+      <ul class="sidebar-cat-list" id="sidebar-cat-list">
+        {% for cat in nav_categories %}
+        <li class="cat-item" data-cat-name="{{ cat.name|lower }}">
+          <div class="cat-item-row {% if request.GET.category__id__exact == cat.id|stringformat:'s' %}active{% endif %}">
+            <a href="{% url 'admin:shop_product_changelist' %}?category__id__exact={{ cat.id }}" class="cat-main-link" title="Filter products by {{ cat.name }}">
+              <span class="material-symbols-outlined cat-symbol">{{ cat.icon|default:'sell' }}</span>
+              <span class="cat-name-text">{{ cat.name }}</span>
+              <span class="cat-product-count" title="{{ cat.product_count }} products">{{ cat.product_count }}</span>
+            </a>
+            <a href="{% url 'admin:shop_category_change' cat.id %}" class="cat-quick-edit" title="Edit {{ cat.name }} category settings">
+              <span class="material-symbols-outlined">edit_note</span>
+            </a>
+          </div>
+        </li>
+        {% empty %}
+        <li class="cat-empty">No active categories found</li>
+        {% endfor %}
+      </ul>
+      <div id="cat-no-results" class="cat-no-match" style="display: none;">
+        <span>No matching category</span>
+      </div>
+    </div>
+
+    <!-- System / Access Section -->
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">
+        <span>ACCESS & ACCOUNTS</span>
+      </div>
+      <ul class="sidebar-menu">
+        <li>
+          <a href="{% url 'admin:auth_user_changelist' %}" class="sidebar-link {% if '/admin/auth/user/' in request.path %}active{% endif %}">
+            <span class="material-symbols-outlined">manage_accounts</span>
+            <span class="link-label">Admin Users</span>
+          </a>
+        </li>
+        <li>
+          <a href="{% url 'admin:auth_group_changelist' %}" class="sidebar-link {% if '/admin/auth/group/' in request.path %}active{% endif %}">
+            <span class="material-symbols-outlined">shield_person</span>
+            <span class="link-label">User Groups</span>
+          </a>
+        </li>
+      </ul>
+    </div>
+
+    <!-- Storefront Quick Link -->
+    <div class="sidebar-footer">
+      <a href="http://localhost:3000" target="_blank" rel="noopener noreferrer" class="sidebar-store-button">
+        <span class="pulse-dot"></span>
+        <span class="material-symbols-outlined" style="font-size: 18px;">storefront</span>
+        <span>View Storefront ↗</span>
+      </a>
+    </div>
+
+  </div>
+</nav>
+
+<script>
+  (function() {
+    // Dynamic real-time filter for categories in sidebar
+    const filterInput = document.getElementById('cat-sidebar-filter');
+    const clearBtn = document.getElementById('cat-filter-clear');
+    const catList = document.getElementById('sidebar-cat-list');
+    const noResults = document.getElementById('cat-no-results');
+
+    if (filterInput && catList) {
+      const items = catList.querySelectorAll('.cat-item');
+
+      function filterCategories() {
+        const query = (filterInput.value || '').trim().toLowerCase();
+        let matches = 0;
+
+        items.forEach(function(item) {
+          const name = item.getAttribute('data-cat-name') || '';
+          if (!query || name.includes(query)) {
+            item.style.display = '';
+            matches++;
+          } else {
+            item.style.display = 'none';
+          }
+        });
+
+        if (clearBtn) {
+          clearBtn.style.display = query ? 'flex' : 'none';
+        }
+
+        if (noResults) {
+          noResults.style.display = (items.length > 0 && matches === 0) ? 'block' : 'none';
+        }
+      }
+
+      filterInput.addEventListener('input', filterCategories);
+      filterInput.addEventListener('keyup', function(e) {
+        if (e.key === 'Escape') {
+          filterInput.value = '';
+          filterCategories();
+        }
+      });
+
+      if (clearBtn) {
+        clearBtn.addEventListener('click', function() {
+          filterInput.value = '';
+          filterCategories();
+          filterInput.focus();
+        });
+      }
+    }
+  })();
+</script>
