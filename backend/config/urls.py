@@ -25,6 +25,7 @@ admin.site.index_title = "Dashboard & Store Management"
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('api/auth/', include('rbac.urls')),
     path('', include('shop.urls')),
 ]
 
