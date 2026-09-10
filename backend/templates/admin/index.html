@@ -1,0 +1,257 @@
+{% extends "admin/base_site.html" %}
+{% load i18n static log %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'admin/css/dashboard.css' %}">
+  <style>
+    /* Dashboard Zen Hero Banner */
+    .zen-dashboard-hero {
+      background: linear-gradient(135deg, rgba(33, 72, 107, 0.15) 0%, rgba(186, 134, 48, 0.08) 100%);
+      border: 1px solid var(--jp-border-line);
+      border-radius: 16px;
+      padding: 24px 28px;
+      margin-bottom: 28px;
+      position: relative;
+      overflow: hidden;
+      backdrop-filter: blur(8px);
+    }
+
+    [data-theme="dark"] .zen-dashboard-hero {
+      background: linear-gradient(135deg, rgba(33, 72, 107, 0.3) 0%, rgba(186, 134, 48, 0.12) 100%);
+      border-color: rgba(255, 255, 255, 0.08);
+    }
+
+    .zen-dashboard-hero::after {
+      content: "店舗管理";
+      position: absolute;
+      right: 20px;
+      bottom: -15px;
+      font-size: 80px;
+      font-weight: 900;
+      color: var(--jp-text-ink);
+      opacity: 0.04;
+      pointer-events: none;
+      letter-spacing: 10px;
+    }
+
+    .hero-top-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--jp-kinari-gold);
+      margin-bottom: 6px;
+    }
+
+    .hero-title {
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--jp-text-ink);
+      letter-spacing: -0.5px;
+      margin-bottom: 6px;
+    }
+
+    .hero-subtitle {
+      font-size: 13px;
+      color: var(--jp-text-ink-body);
+      max-width: 600px;
+      line-height: 1.5;
+    }
+
+    /* KPI Quick Cards Grid */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    .kpi-card {
+      background: var(--jp-bg-surface);
+      border: 1px solid var(--jp-border-line);
+      border-radius: 14px;
+      padding: 18px 20px;
+      box-shadow: var(--jp-card-shadow);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      text-decoration: none;
+      transition: all 0.2s ease;
+    }
+
+    .kpi-card:hover {
+      transform: translateY(-2px);
+      border-color: var(--jp-kinari-gold);
+      box-shadow: 0 8px 25px -4px rgba(0, 0, 0, 0.1);
+    }
+
+    .kpi-info h4 {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: var(--jp-text-ink-muted);
+      margin-bottom: 4px;
+    }
+
+    .kpi-info .kpi-label {
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--jp-text-ink);
+    }
+
+    .kpi-icon-wrap {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .kpi-icon-wrap.indigo {
+      background: rgba(33, 72, 107, 0.12);
+      color: #21486B;
+    }
+
+    [data-theme="dark"] .kpi-icon-wrap.indigo {
+      background: rgba(96, 165, 250, 0.15);
+      color: #93C5FD;
+    }
+
+    .kpi-icon-wrap.gold {
+      background: rgba(186, 134, 48, 0.12);
+      color: #BA8630;
+    }
+
+    .kpi-icon-wrap.green {
+      background: rgba(16, 185, 129, 0.12);
+      color: #10B981;
+    }
+
+    .kpi-icon-wrap.rose {
+      background: rgba(225, 29, 72, 0.12);
+      color: #E11D48;
+    }
+
+    /* Action List in Sidebar */
+    .actionlist li {
+      padding: 10px 14px !important;
+      border-bottom: 1px solid var(--jp-border-line-subtle) !important;
+      font-size: 12px !important;
+      line-height: 1.4 !important;
+    }
+
+    .actionlist li:last-child {
+      border-bottom: none !important;
+    }
+  </style>
+{% endblock %}
+
+{% block coltype %}colMS{% endblock %}
+{% block bodyclass %}{{ block.super }} dashboard{% endblock %}
+{% block nav-breadcrumbs %}{% endblock %}
+{% block nav-sidebar %}{% endblock %}
+
+{% block content %}
+<div id="content-main">
+
+  <!-- Zen Japanese Hero Banner -->
+  <div class="zen-dashboard-hero">
+    <div class="hero-top-badge">
+      <span class="material-symbols-outlined" style="font-size: 16px;">dashboard_customize</span>
+      <span>店舗管理コンソール • Admin Overview</span>
+    </div>
+    <h2 class="hero-title">Welcome, {{ user.get_username }}</h2>
+    <p class="hero-subtitle">
+      Control catalog items, categories, customer orders, and media assets. Real-time changes are dynamically mirrored to the Next.js storefront.
+    </p>
+  </div>
+
+  <!-- KPI Quick Navigation Cards -->
+  <div class="kpi-grid">
+    <a href="{% url 'admin:shop_product_changelist' %}" class="kpi-card" title="Manage Products">
+      <div class="kpi-info">
+        <h4>Catalog</h4>
+        <div class="kpi-label">Products</div>
+      </div>
+      <div class="kpi-icon-wrap indigo">
+        <span class="material-symbols-outlined">shopping_bag</span>
+      </div>
+    </a>
+
+    <a href="{% url 'admin:shop_category_changelist' %}" class="kpi-card" title="Manage Categories & Banners">
+      <div class="kpi-info">
+        <h4>Organization</h4>
+        <div class="kpi-label">Categories</div>
+      </div>
+      <div class="kpi-icon-wrap gold">
+        <span class="material-symbols-outlined">category</span>
+      </div>
+    </a>
+
+    <a href="{% url 'admin:shop_order_changelist' %}" class="kpi-card" title="View Customer Orders">
+      <div class="kpi-info">
+        <h4>Sales</h4>
+        <div class="kpi-label">Orders</div>
+      </div>
+      <div class="kpi-icon-wrap green">
+        <span class="material-symbols-outlined">receipt_long</span>
+      </div>
+    </a>
+
+    <a href="http://localhost:3000" target="_blank" rel="noopener noreferrer" class="kpi-card" title="Open Next.js Storefront">
+      <div class="kpi-info">
+        <h4>Next.js App</h4>
+        <div class="kpi-label">Storefront ↗</div>
+      </div>
+      <div class="kpi-icon-wrap rose">
+        <span class="material-symbols-outlined">storefront</span>
+      </div>
+    </a>
+  </div>
+
+  <!-- Apps and Models Tables -->
+  {% include "admin/app_list.html" with app_list=app_list show_changelinks=True %}
+
+</div>
+{% endblock %}
+
+{% block sidebar %}
+<div id="content-related">
+    <div class="module" id="recent-actions-module">
+        <h2>
+          <span>{% translate 'Recent actions' %}</span>
+          <span class="material-symbols-outlined" style="font-size: 18px; color: var(--jp-kinari-gold);">history</span>
+        </h2>
+        <h3>{% translate 'My actions' %}</h3>
+        {% get_admin_log 10 as admin_log for_user user %}
+        {% if not admin_log %}
+        <p style="padding: 16px; color: var(--jp-text-ink-muted); font-size: 12px;">{% translate 'None available' %}</p>
+        {% else %}
+        <ul class="actionlist">
+        {% for entry in admin_log %}
+        <li class="{% if entry.is_addition %}addlink{% endif %}{% if entry.is_change %}changelink{% endif %}{% if entry.is_deletion %}deletelink{% endif %}">
+            <span class="visually-hidden">{% if entry.is_addition %}{% translate 'Added:' %}{% elif entry.is_change %}{% translate 'Changed:' %}{% elif entry.is_deletion %}{% translate 'Deleted:' %}{% endif %}</span>
+            {% if entry.is_deletion or not entry.get_admin_url %}
+                <strong style="color: var(--jp-text-ink);">{{ entry.object_repr }}</strong>
+            {% else %}
+                <a href="{{ entry.get_admin_url }}" style="font-weight: 600;">{{ entry.object_repr }}</a>
+            {% endif %}
+            <br>
+            {% if entry.content_type %}
+                <span class="mini quiet" style="font-size: 11px; opacity: 0.75;">{{ entry.content_type.name|capfirst }}</span>
+            {% else %}
+                <span class="mini quiet">{% translate 'Unknown content' %}</span>
+            {% endif %}
+        </li>
+        {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

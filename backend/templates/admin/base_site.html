@@ -1,0 +1,37 @@
+{% extends "admin/base.html" %}
+{% load i18n static %}
+
+{% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('MiniShop Admin') }}{% endblock %}
+
+{% block extrahead %}
+  {{ block.super }}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+{% endblock %}
+
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'css/japanese_admin.css' %}">
+{% endblock %}
+
+{% block branding %}
+  <div class="brand-wrapper">
+    <a href="{% url 'admin:index' %}" style="display: flex; align-items: center; gap: 10px; text-decoration: none;">
+      <!-- MiniShop SVG Mark -->
+      <svg width="130" height="32" viewBox="0 0 160 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="2" y="6" width="28" height="28" rx="8" fill="#BA8630"/>
+        <path d="M10 14h12l-1.5 11h-9L10 14z" stroke="#FFFFFF" stroke-width="2" stroke-linejoin="round"/>
+        <path d="M13 14v-2a3 3 0 0 1 6 0v2" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+        <text x="38" y="26" fill="#FFFFFF" font-family="'Inter', sans-serif" font-weight="800" font-size="18" letter-spacing="-0.5px">MINISHOP</text>
+      </svg>
+      <span class="brand-kanji-tag">管理画面</span>
+    </a>
+
+    <!-- Live Next.js Storefront link with pulsing green activity dot -->
+    <a href="http://localhost:3000" target="_blank" rel="noopener noreferrer" class="storefront-live-pill" title="Open Next.js Storefront in new tab">
+      <span class="pulse-dot"></span>
+      <span>Storefront ↗</span>
+    </a>
+  </div>
+{% endblock %}

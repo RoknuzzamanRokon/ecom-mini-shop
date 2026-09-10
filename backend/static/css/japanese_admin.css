@@ -1,0 +1,691 @@
+/* ==========================================================================
+   MINISHOP - JAPANESE ZEN ADMIN THEME (日本の伝統美意識デザイン)
+   Colors: Kachi-iro (褐色), Kinari (生成り), Aki-kin (秋金), Sumi (墨)
+   ========================================================================== */
+
+:root {
+  /* Japanese Color Grading Palette */
+  --jp-kachi-primary: #21486B;
+  --jp-kachi-hover: #2B5C88;
+  --jp-kachi-deep: #132B40;
+  --jp-kinari-gold: #BA8630;
+  --jp-kinari-gold-hover: #CE9638;
+  --jp-kinari-gold-bg: rgba(186, 134, 48, 0.12);
+  --jp-tokiwa-green: #10B981;
+  --jp-tokiwa-green-bg: rgba(16, 185, 129, 0.12);
+  --jp-shu-vermilion: #E11D48;
+  --jp-shu-vermilion-bg: rgba(225, 29, 72, 0.12);
+
+  /* Light Palette Defaults */
+  --jp-bg-canvas: #F9F8F5;
+  --jp-bg-surface: #FFFFFF;
+  --jp-bg-surface-sunken: #F2EFE9;
+  --jp-border-line: rgba(0, 0, 0, 0.08);
+  --jp-border-line-subtle: rgba(0, 0, 0, 0.04);
+  --jp-text-ink: #19232D;
+  --jp-text-ink-body: #4A5568;
+  --jp-text-ink-muted: #8291A0;
+  --jp-card-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.03);
+  --jp-header-bg: rgba(19, 43, 64, 0.96);
+  --jp-header-text: #FFFFFF;
+}
+
+/* Dark Mode Overrides */
+[data-theme="dark"],
+body.theme-dark {
+  --jp-bg-canvas: #091019;
+  --jp-bg-surface: #101B26;
+  --jp-bg-surface-sunken: #0C1520;
+  --jp-border-line: rgba(255, 255, 255, 0.09);
+  --jp-border-line-subtle: rgba(255, 255, 255, 0.05);
+  --jp-text-ink: #F1F5F9;
+  --jp-text-ink-body: #CBD5E1;
+  --jp-text-ink-muted: #8E9FB0;
+  --jp-card-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --jp-header-bg: rgba(10, 20, 31, 0.94);
+  --jp-header-text: #F8FAFC;
+}
+
+/* Global resets & typography */
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  background-color: var(--jp-bg-canvas) !important;
+  color: var(--jp-text-ink) !important;
+  letter-spacing: -0.01em;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --------------------------------------------------------------------------
+   1. TOP NAVIGATION HEADER (ヘッダー)
+   -------------------------------------------------------------------------- */
+#header {
+  background: var(--jp-header-bg) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: var(--jp-header-text) !important;
+  padding: 10px 24px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  position: sticky !important;
+  top: 0 !important;
+  z-index: 1000 !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15) !important;
+}
+
+#branding {
+  display: flex !important;
+  align-items: center !important;
+  gap: 14px !important;
+}
+
+#branding h1 {
+  margin: 0 !important;
+  padding: 0 !important;
+  font-size: 16px !important;
+  font-weight: 800 !important;
+}
+
+.brand-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-decoration: none;
+}
+
+.brand-wrapper svg {
+  height: 32px;
+  width: auto;
+  border-radius: 6px;
+}
+
+.brand-kanji-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(186, 134, 48, 0.2);
+  border: 1px solid rgba(186, 134, 48, 0.4);
+  color: #E2B35B;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 6px;
+  letter-spacing: 0.5px;
+}
+
+.storefront-live-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  color: #34D399;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  text-decoration: none;
+  transition: all 0.2s ease;
+  margin-left: 10px;
+}
+
+.storefront-live-pill:hover {
+  background: rgba(16, 185, 129, 0.25);
+  transform: translateY(-1px);
+}
+
+.pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: #10B981;
+  box-shadow: 0 0 8px #10B981;
+  animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(0.95); opacity: 0.8; }
+  50% { transform: scale(1.2); opacity: 1; }
+  100% { transform: scale(0.95); opacity: 0.8; }
+}
+
+/* User tools on header right */
+#user-tools {
+  display: flex !important;
+  align-items: center !important;
+  gap: 12px !important;
+  font-size: 13px !important;
+  color: rgba(255, 255, 255, 0.8) !important;
+}
+
+#user-tools strong {
+  color: #FFFFFF !important;
+  font-weight: 700 !important;
+}
+
+#user-tools a {
+  color: rgba(255, 255, 255, 0.85) !important;
+  text-decoration: none !important;
+  padding: 5px 10px !important;
+  border-radius: 6px !important;
+  background: rgba(255, 255, 255, 0.08) !important;
+  transition: all 0.2s ease !important;
+}
+
+#user-tools a:hover {
+  background: rgba(255, 255, 255, 0.18) !important;
+  color: #FFFFFF !important;
+}
+
+#user-tools button[type="submit"] {
+  background: rgba(225, 29, 72, 0.2) !important;
+  border: 1px solid rgba(225, 29, 72, 0.4) !important;
+  color: #FDA4AF !important;
+  padding: 5px 12px !important;
+  border-radius: 6px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+#user-tools button[type="submit"]:hover {
+  background: rgba(225, 29, 72, 0.35) !important;
+  color: #FFFFFF !important;
+}
+
+/* --------------------------------------------------------------------------
+   2. BREADCRUMBS (パンくずリスト)
+   -------------------------------------------------------------------------- */
+.breadcrumbs {
+  background: var(--jp-bg-surface) !important;
+  border-bottom: 1px solid var(--jp-border-line) !important;
+  padding: 10px 24px !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+  color: var(--jp-text-ink-muted) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+.breadcrumbs a {
+  color: var(--jp-kachi-primary) !important;
+  text-decoration: none !important;
+  font-weight: 600 !important;
+  transition: color 0.15s ease !important;
+}
+
+[data-theme="dark"] .breadcrumbs a {
+  color: #60A5FA !important;
+}
+
+.breadcrumbs a:hover {
+  color: var(--jp-kinari-gold) !important;
+}
+
+/* --------------------------------------------------------------------------
+   3. MAIN CONTENT CONTAINER (メインコンテンツ)
+   -------------------------------------------------------------------------- */
+#content {
+  padding: 24px !important;
+  max-width: 1400px !important;
+  margin: 0 auto !important;
+}
+
+#content > h1 {
+  font-size: 24px !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.5px !important;
+  color: var(--jp-text-ink) !important;
+  margin-bottom: 20px !important;
+}
+
+/* Flash Messages */
+.messagelist {
+  margin: 0 0 20px 0 !important;
+  padding: 0 !important;
+  list-style: none !important;
+}
+
+.messagelist li {
+  padding: 12px 16px !important;
+  border-radius: 10px !important;
+  margin-bottom: 10px !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+
+.messagelist li.success {
+  background: var(--jp-tokiwa-green-bg) !important;
+  border: 1px solid rgba(16, 185, 129, 0.3) !important;
+  color: #059669 !important;
+}
+
+[data-theme="dark"] .messagelist li.success {
+  color: #34D399 !important;
+}
+
+.messagelist li.warning {
+  background: var(--jp-kinari-gold-bg) !important;
+  border: 1px solid rgba(186, 134, 48, 0.3) !important;
+  color: #D97706 !important;
+}
+
+.messagelist li.error {
+  background: var(--jp-shu-vermilion-bg) !important;
+  border: 1px solid rgba(225, 29, 72, 0.3) !important;
+  color: #E11D48 !important;
+}
+
+/* --------------------------------------------------------------------------
+   4. DASHBOARD & MODULE CARDS (モジュール・カード)
+   -------------------------------------------------------------------------- */
+.module {
+  background: var(--jp-bg-surface) !important;
+  border: 1px solid var(--jp-border-line) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--jp-card-shadow) !important;
+  margin-bottom: 24px !important;
+  overflow: hidden !important;
+  transition: all 0.2s ease !important;
+}
+
+.module:hover {
+  border-color: rgba(33, 72, 107, 0.25) !important;
+}
+
+[data-theme="dark"] .module:hover {
+  border-color: rgba(255, 255, 255, 0.16) !important;
+}
+
+.module h2, .module caption {
+  background: var(--jp-bg-surface-sunken) !important;
+  color: var(--jp-text-ink) !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.8px !important;
+  padding: 12px 18px !important;
+  border-bottom: 1px solid var(--jp-border-line) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+
+.module table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+}
+
+.module th, .module td {
+  padding: 12px 18px !important;
+  border-bottom: 1px solid var(--jp-border-line-subtle) !important;
+  font-size: 13px !important;
+  color: var(--jp-text-ink-body) !important;
+}
+
+.module tr:last-child th,
+.module tr:last-child td {
+  border-bottom: none !important;
+}
+
+.module th a {
+  font-weight: 600 !important;
+  color: var(--jp-text-ink) !important;
+  text-decoration: none !important;
+  transition: color 0.15s ease !important;
+}
+
+.module th a:hover {
+  color: var(--jp-kinari-gold) !important;
+}
+
+/* Action links inside dashboard tables */
+.addlink, .changelink, .viewlink {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  padding: 4px 10px !important;
+  border-radius: 6px !important;
+  text-decoration: none !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  transition: all 0.15s ease !important;
+}
+
+.addlink {
+  color: #059669 !important;
+  background: var(--jp-tokiwa-green-bg) !important;
+}
+
+[data-theme="dark"] .addlink {
+  color: #34D399 !important;
+}
+
+.addlink:hover {
+  background: rgba(16, 185, 129, 0.25) !important;
+}
+
+.changelink {
+  color: var(--jp-kachi-primary) !important;
+  background: rgba(33, 72, 107, 0.08) !important;
+}
+
+[data-theme="dark"] .changelink {
+  color: #93C5FD !important;
+  background: rgba(147, 197, 253, 0.1) !important;
+}
+
+.changelink:hover {
+  background: rgba(33, 72, 107, 0.18) !important;
+}
+
+/* --------------------------------------------------------------------------
+   5. CHANGE LIST / DATA TABLES (データ一覧テーブル)
+   -------------------------------------------------------------------------- */
+#changelist {
+  background: var(--jp-bg-surface) !important;
+  border: 1px solid var(--jp-border-line) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--jp-card-shadow) !important;
+  overflow: hidden !important;
+}
+
+#changelist-form {
+  border: none !important;
+}
+
+#toolbar {
+  background: var(--jp-bg-surface-sunken) !important;
+  border-bottom: 1px solid var(--jp-border-line) !important;
+  padding: 12px 18px !important;
+}
+
+#searchbar {
+  background: var(--jp-bg-surface) !important;
+  border: 1px solid var(--jp-border-line) !important;
+  border-radius: 8px !important;
+  padding: 8px 14px !important;
+  font-size: 13px !important;
+  color: var(--jp-text-ink) !important;
+  outline: none !important;
+  transition: all 0.2s ease !important;
+}
+
+#searchbar:focus {
+  border-color: var(--jp-kinari-gold) !important;
+  box-shadow: 0 0 0 3px rgba(186, 134, 48, 0.18) !important;
+}
+
+#toolbar input[type="submit"] {
+  background: var(--jp-kachi-primary) !important;
+  color: #FFFFFF !important;
+  border: none !important;
+  border-radius: 8px !important;
+  padding: 8px 16px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  cursor: pointer !important;
+  margin-left: 8px !important;
+  transition: background 0.2s ease !important;
+}
+
+#toolbar input[type="submit"]:hover {
+  background: var(--jp-kachi-hover) !important;
+}
+
+/* Results Table */
+#result_list {
+  width: 100% !important;
+  border-collapse: collapse !important;
+}
+
+#result_list thead th {
+  background: var(--jp-bg-surface-sunken) !important;
+  border-bottom: 1px solid var(--jp-border-line) !important;
+  color: var(--jp-text-ink-muted) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.6px !important;
+  padding: 12px 16px !important;
+}
+
+#result_list tbody tr {
+  transition: background-color 0.15s ease !important;
+}
+
+#result_list tbody tr:hover {
+  background-color: rgba(33, 72, 107, 0.05) !important;
+}
+
+[data-theme="dark"] #result_list tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.04) !important;
+}
+
+#result_list tbody td, #result_list tbody th {
+  padding: 12px 16px !important;
+  border-bottom: 1px solid var(--jp-border-line-subtle) !important;
+  font-size: 13px !important;
+  color: var(--jp-text-ink) !important;
+}
+
+/* Actions Bar */
+.actions {
+  padding: 12px 18px !important;
+  background: var(--jp-bg-surface-sunken) !important;
+  border-bottom: 1px solid var(--jp-border-line) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  font-size: 12px !important;
+}
+
+.actions select {
+  background: var(--jp-bg-surface) !important;
+  border: 1px solid var(--jp-border-line) !important;
+  color: var(--jp-text-ink) !important;
+  border-radius: 6px !important;
+  padding: 6px 12px !important;
+  font-size: 12px !important;
+}
+
+.actions .button {
+  background: var(--jp-kachi-primary) !important;
+  color: #FFFFFF !important;
+  border: none !important;
+  border-radius: 6px !important;
+  padding: 6px 14px !important;
+  font-weight: 700 !important;
+  font-size: 11px !important;
+  text-transform: uppercase !important;
+  cursor: pointer !important;
+}
+
+/* Filter Sidebar */
+#changelist-filter {
+  background: var(--jp-bg-surface-sunken) !important;
+  border-left: 1px solid var(--jp-border-line) !important;
+}
+
+#changelist-filter h2 {
+  background: var(--jp-kachi-deep) !important;
+  color: #FFFFFF !important;
+  font-size: 11px !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.8px !important;
+  padding: 12px 16px !important;
+  font-weight: 800 !important;
+}
+
+#changelist-filter h3 {
+  color: var(--jp-text-ink) !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  padding: 12px 16px 4px !important;
+}
+
+#changelist-filter ul {
+  padding: 4px 16px 14px !important;
+}
+
+#changelist-filter li {
+  margin-bottom: 4px !important;
+}
+
+#changelist-filter a {
+  color: var(--jp-text-ink-body) !important;
+  font-size: 12px !important;
+  text-decoration: none !important;
+  transition: color 0.15s ease !important;
+}
+
+#changelist-filter a:hover {
+  color: var(--jp-kinari-gold) !important;
+}
+
+#changelist-filter li.selected a {
+  color: var(--jp-kinari-gold) !important;
+  font-weight: 700 !important;
+}
+
+/* Paginator */
+.paginator {
+  background: var(--jp-bg-surface-sunken) !important;
+  border-top: 1px solid var(--jp-border-line) !important;
+  padding: 12px 18px !important;
+  font-size: 12px !important;
+  color: var(--jp-text-ink-muted) !important;
+}
+
+/* --------------------------------------------------------------------------
+   6. FORMS & SUBMIT BUTTONS (フォーム・ボタン)
+   -------------------------------------------------------------------------- */
+fieldset {
+  background: var(--jp-bg-surface) !important;
+  border: 1px solid var(--jp-border-line) !important;
+  border-radius: 14px !important;
+  box-shadow: var(--jp-card-shadow) !important;
+  margin-bottom: 24px !important;
+  padding: 20px 24px !important;
+}
+
+fieldset h2 {
+  font-size: 14px !important;
+  font-weight: 800 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.8px !important;
+  color: var(--jp-kachi-primary) !important;
+  margin-bottom: 16px !important;
+  padding-bottom: 8px !important;
+  border-bottom: 1px solid var(--jp-border-line) !important;
+}
+
+[data-theme="dark"] fieldset h2 {
+  color: #93C5FD !important;
+}
+
+input[type="text"],
+input[type="password"],
+input[type="email"],
+input[type="url"],
+input[type="number"],
+textarea,
+select {
+  background: var(--jp-bg-surface) !important;
+  border: 1px solid var(--jp-border-line) !important;
+  border-radius: 8px !important;
+  padding: 9px 12px !important;
+  font-size: 13px !important;
+  color: var(--jp-text-ink) !important;
+  outline: none !important;
+  transition: all 0.2s ease !important;
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: var(--jp-kinari-gold) !important;
+  box-shadow: 0 0 0 3px rgba(186, 134, 48, 0.2) !important;
+}
+
+/* Bottom submit bar */
+.submit-row {
+  background: var(--jp-bg-surface) !important;
+  border: 1px solid var(--jp-border-line) !important;
+  border-radius: 12px !important;
+  padding: 14px 20px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 10px !important;
+  box-shadow: var(--jp-card-shadow) !important;
+}
+
+.submit-row input[type="submit"] {
+  border-radius: 8px !important;
+  padding: 9px 18px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.6px !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease !important;
+}
+
+.submit-row input[type="submit"].default {
+  background: var(--jp-kachi-primary) !important;
+  color: #FFFFFF !important;
+  border: none !important;
+}
+
+.submit-row input[type="submit"].default:hover {
+  background: var(--jp-kachi-hover) !important;
+  transform: translateY(-1px) !important;
+}
+
+.submit-row a.deletelink {
+  background: var(--jp-shu-vermilion-bg) !important;
+  color: var(--jp-shu-vermilion) !important;
+  border: 1px solid rgba(225, 29, 72, 0.3) !important;
+  border-radius: 8px !important;
+  padding: 8px 14px !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  text-decoration: none !important;
+  margin-right: auto !important;
+}
+
+/* --------------------------------------------------------------------------
+   7. OBJECT TOOLS (ADD BUTTONS AT TOP RIGHT)
+   -------------------------------------------------------------------------- */
+.object-tools {
+  margin-bottom: 16px !important;
+}
+
+.object-tools a {
+  background: var(--jp-kachi-primary) !important;
+  color: #FFFFFF !important;
+  border-radius: 8px !important;
+  padding: 8px 16px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.5px !important;
+  text-transform: uppercase !important;
+  text-decoration: none !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  transition: all 0.2s ease !important;
+  box-shadow: 0 2px 8px rgba(33, 72, 107, 0.3) !important;
+}
+
+.object-tools a:hover {
+  background: var(--jp-kachi-hover) !important;
+  transform: translateY(-1px) !important;
+}
