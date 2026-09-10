@@ -1,0 +1,58 @@
+<!doctype html>
+<html>
+  <head>
+    <title>My Current Location</title>
+  </head>
+  <body>
+    <h2>My Current Location</h2>
+
+    <button onclick="getLocation()">Get My Location</button>
+
+    <p id="result"></p>
+
+    <script>
+      function getLocation() {
+        if (!navigator.geolocation) {
+          document.getElementById("result").innerText =
+            "Geolocation is not supported by this browser.";
+          return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+          function (position) {
+            const latitude = position.coords.latitude;
+            const longitude = position.coords.longitude;
+            const accuracy = position.coords.accuracy;
+
+            console.log("Latitude:", latitude);
+            console.log("Longitude:", longitude);
+            console.log("Accuracy:", accuracy, "meters");
+
+            const googleMapsUrl = `https://www.google.com/maps?q=${latitude},${longitude}`;
+
+            document.getElementById("result").innerHTML = `
+                Latitude: ${latitude}<br>
+                Longitude: ${longitude}<br>
+                Accuracy: ${accuracy} meters<br><br>
+
+                <a href="${googleMapsUrl}" target="_blank">
+                    Open My Location in Google Maps
+                </a>
+            `;
+          },
+
+          function (error) {
+            document.getElementById("result").innerText =
+              "Unable to get location: " + error.message;
+          },
+
+          {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0,
+          },
+        );
+      }
+    </script>
+  </body>
+</html>
