@@ -4,30 +4,90 @@
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>{% block title %}MiniShop{% endblock %}</title>
+
+<script>
+  /* Apply the saved theme before first paint so the page never flashes
+     the default palette on the way to the chosen one. */
+  (function () {
+    try {
+      var t = localStorage.getItem("minishop-theme") || "ai";
+      var d = localStorage.getItem("minishop-dark") === "1";
+      document.documentElement.setAttribute("data-theme", t);
+      if (d) { document.documentElement.classList.add("dark"); }
+    } catch (e) {
+      document.documentElement.setAttribute("data-theme", "ai");
+    }
+  })();
+</script>
+
 <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="{% static 'css/theme.css' %}" rel="stylesheet"/>
 <link href="{% static 'css/style.css' %}" rel="stylesheet"/>
 <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
 <script id="tailwind-config">
+    /* Every colour resolves to a CSS custom property defined in
+       static/css/theme.css. The rgb(var(--x) / <alpha-value>) form keeps
+       Tailwind's opacity modifiers working, e.g. bg-primary/40. */
+    const themed = (v) => `rgb(var(${v}) / <alpha-value>)`;
+
     tailwind.config = {
       darkMode: "class",
       theme: {
         extend: {
           colors: {
-            "surface": "#f8f9ff",
-            "on-surface": "#0b1c30",
-            "on-surface-variant": "#434655",
-            "primary": "#004ac6",
-            "primary-container": "#2563eb",
-            "on-primary": "#ffffff",
-            "secondary": "#565e74",
-            "surface-container-lowest": "#ffffff",
-            "surface-container-low": "#eff4ff",
-            "surface-container": "#e5eeff",
-            "outline-variant": "#e2e8f0",
-            "outline": "#737686",
-            "brand-yellow": "#FBBF24",
-            "brand-yellow-hover": "#F59E0B"
+            /* ground and surfaces */
+            "page":             themed("--c-page-bg"),
+            "surface":          themed("--c-surface"),
+            "surface-alt":      themed("--c-surface-alt"),
+            "surface-sunken":   themed("--c-surface-sunken"),
+            "line":             themed("--c-border"),
+            "line-subtle":      themed("--c-border-subtle"),
+
+            /* text */
+            "ink":              themed("--c-text-strong"),
+            "ink-body":         themed("--c-text-body"),
+            "ink-muted":        themed("--c-text-muted"),
+            "ink-faint":        themed("--c-text-faint"),
+
+            /* primary action */
+            "primary":          themed("--c-primary"),
+            "primary-hover":    themed("--c-primary-hover"),
+            "primary-deep":     themed("--c-primary-deep"),
+            "on-primary":       themed("--c-on-primary"),
+
+            /* accent */
+            "accent":           themed("--c-accent"),
+            "accent-hover":     themed("--c-accent-hover"),
+            "on-accent":        themed("--c-on-accent"),
+
+            /* navigation */
+            "nav":              themed("--c-nav-bg"),
+            "nav-strip":        themed("--c-nav-strip-bg"),
+            "nav-active":       themed("--c-nav-active-bg"),
+            "nav-active-text":  themed("--c-nav-active-text"),
+            "nav-text":         themed("--c-nav-text"),
+
+            /* money */
+            "price":            themed("--c-price"),
+            "sale":             themed("--c-sale-price"),
+            "price-old":        themed("--c-old-price"),
+
+            /* status */
+            "success":          themed("--c-success"),
+            "danger":           themed("--c-danger"),
+            "info":             themed("--c-info"),
+            "warning":          themed("--c-warning"),
+            "star":             themed("--c-star"),
+
+            /* badges */
+            "badge-new":        themed("--c-badge-new"),
+            "badge-hot":        themed("--c-badge-hot"),
+            "badge-top":        themed("--c-badge-top"),
+            "badge-default":    themed("--c-badge-default"),
+            "on-badge-default": themed("--c-on-badge-default"),
+
+            "focus":            themed("--c-focus-ring")
           },
           borderRadius: {
             "DEFAULT": "0.25rem",
@@ -43,13 +103,13 @@
     }
   </script>
 </head>
-<body class="bg-[#f4f6fb] font-sans text-on-surface antialiased">
+<body class="bg-page font-sans text-ink-body antialiased">
 {% include "shop/partials/navbar.html" %}
 
 {% if messages %}
 <div class="max-w-[1360px] mx-auto px-4 sm:px-6 pt-4">
   {% for message in messages %}
-  <div class="rounded-md px-4 py-2.5 text-sm font-medium mb-2 {% if message.tags == 'success' %}bg-emerald-50 text-emerald-700 border border-emerald-200{% elif message.tags == 'error' %}bg-rose-50 text-rose-700 border border-rose-200{% else %}bg-blue-50 text-primary-container border border-blue-100{% endif %}">
+  <div class="rounded-md px-4 py-2.5 text-sm font-medium mb-2 border {% if message.tags == 'success' %}bg-success/10 text-success border-success/30{% elif message.tags == 'error' %}bg-danger/10 text-danger border-danger/30{% else %}bg-info/10 text-info border-info/30{% endif %}">
     {{ message }}
   </div>
   {% endfor %}
@@ -59,7 +119,9 @@
 {% block content %}{% endblock %}
 
 {% include "shop/partials/footer.html" %}
+{% include "shop/partials/theme_switcher.html" %}
 <script src="{% static 'js/cart.js' %}"></script>
+<script src="{% static 'js/theme.js' %}"></script>
 {% block extra_js %}{% endblock %}
 </body>
 </html>

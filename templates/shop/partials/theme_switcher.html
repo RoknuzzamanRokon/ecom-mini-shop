@@ -1,0 +1,38 @@
+{% comment %}
+  Theme switcher — a development/preview control.
+  Remove this include from base.html once a direction is chosen and locked in.
+{% endcomment %}
+<div class="fixed bottom-5 right-5 z-[100] flex flex-col items-end gap-3" id="theme-switcher">
+
+  <div aria-labelledby="theme-panel-title"
+       class="hidden w-[19rem] max-w-[calc(100vw-2.5rem)] origin-bottom-right rounded-xl border border-line bg-surface shadow-2xl shadow-black/20"
+       id="theme-panel" role="dialog">
+
+    <div class="flex items-center justify-between border-b border-line-subtle px-4 py-3">
+      <h2 class="text-[11px] font-bold uppercase tracking-[0.14em] text-ink" id="theme-panel-title">Theme</h2>
+      <button aria-label="Close theme picker"
+              class="flex h-7 w-7 items-center justify-center rounded-full text-ink-muted transition-colors hover:bg-surface-sunken hover:text-ink"
+              id="theme-close" type="button">
+        <span class="material-symbols-outlined text-[18px]">close</span>
+      </button>
+    </div>
+
+    <div class="max-h-[min(26rem,60vh)] overflow-y-auto p-2" id="theme-list"></div>
+
+    <div class="flex items-center justify-between gap-3 border-t border-line-subtle px-4 py-3">
+      <span class="text-[11px] font-semibold uppercase tracking-[0.12em] text-ink-muted">Appearance</span>
+      <div class="flex overflow-hidden rounded-md border border-line" role="group">
+        <button class="theme-mode px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] transition-colors"
+                data-mode="light" type="button">Light</button>
+        <button class="theme-mode border-l border-line px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.1em] transition-colors"
+                data-mode="dark" type="button">Dark</button>
+      </div>
+    </div>
+  </div>
+
+  <button aria-controls="theme-panel" aria-expanded="false"
+          class="flex h-12 w-12 items-center justify-center rounded-full bg-primary text-on-primary shadow-lg shadow-black/25 transition-transform hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus active:scale-95"
+          id="theme-toggle" title="Change theme" type="button">
+    <span class="material-symbols-outlined text-[22px]">palette</span>
+  </button>
+</div>

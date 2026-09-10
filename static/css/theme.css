@@ -1,0 +1,617 @@
+/* ==========================================================================
+   MiniShop theme system
+   --------------------------------------------------------------------------
+   Every colour in the storefront resolves through one of these custom
+   properties. Values are space-separated RGB triplets so that Tailwind's
+   <alpha-value> placeholder keeps working -- bg-primary/40 renders correctly.
+
+   Two independent axes:
+     <html data-theme="ai|sumi|shu|matsu|den|haizakura|current">   palette
+     <html class="dark">                                          light / dark
+
+   Generated file -- edit the palette source, not this, if regenerating.
+   ========================================================================== */
+
+/* -- Default (falls back to the shortlisted direction) ------------------ */
+:root {
+  --c-page-bg: 242 238 228;   /* #F2EEE4 */
+  --c-surface: 251 249 244;   /* #FBF9F4 */
+  --c-surface-alt: 237 231 218;   /* #EDE7DA */
+  --c-surface-sunken: 229 222 208;   /* #E5DED0 */
+  --c-border: 211 203 185;   /* #D3CBB9 */
+  --c-border-subtle: 227 220 204;   /* #E3DCCC */
+  --c-text-strong: 20 33 44;   /* #14212C */
+  --c-text-body: 51 67 79;   /* #33434F */
+  --c-text-muted: 87 100 109;   /* #57646D */
+  --c-text-faint: 127 137 144;   /* #7F8990 */
+  --c-primary: 33 72 107;   /* #21486B */
+  --c-primary-hover: 26 58 88;   /* #1A3A58 */
+  --c-primary-deep: 14 30 44;   /* #0E1E2C */
+  --c-on-primary: 247 244 237;   /* #F7F4ED */
+  --c-accent: 186 134 48;   /* #BA8630 */
+  --c-accent-hover: 203 152 71;   /* #CB9847 */
+  --c-on-accent: 22 34 46;   /* #16222E */
+  --c-nav-bg: 27 58 85;   /* #1B3A55 */
+  --c-nav-strip-bg: 16 31 46;   /* #101F2E */
+  --c-nav-active-bg: 53 112 143;   /* #35708F */
+  --c-nav-active-text: 244 240 230;   /* #F4F0E6 */
+  --c-nav-text: 201 196 182;   /* #C9C4B6 */
+  --c-price: 22 41 60;   /* #16293C */
+  --c-sale-price: 165 39 61;   /* #A5273D */
+  --c-old-price: 120 130 138;   /* #78828A */
+  --c-success: 46 107 79;   /* #2E6B4F */
+  --c-danger: 143 42 28;   /* #8F2A1C */
+  --c-info: 42 106 134;   /* #2A6A86 */
+  --c-warning: 154 90 32;   /* #9A5A20 */
+  --c-star: 159 116 26;   /* #9F741A */
+  --c-badge-new: 37 124 136;   /* #257C88 */
+  --c-badge-hot: 169 58 40;   /* #A93A28 */
+  --c-badge-top: 89 48 102;   /* #593066 */
+  --c-badge-default: 221 213 196;   /* #DDD5C4 */
+  --c-on-badge-default: 36 49 61;   /* #24313D */
+  --c-focus-ring: 46 124 153;   /* #2E7C99 */
+}
+
+/* -- Kachi Indigo on Kinari / 褐色と生成り (Kachi-iro to Kinari) --------- */
+:root[data-theme="ai"] {
+  --c-page-bg: 242 238 228;   /* #F2EEE4 */
+  --c-surface: 251 249 244;   /* #FBF9F4 */
+  --c-surface-alt: 237 231 218;   /* #EDE7DA */
+  --c-surface-sunken: 229 222 208;   /* #E5DED0 */
+  --c-border: 211 203 185;   /* #D3CBB9 */
+  --c-border-subtle: 227 220 204;   /* #E3DCCC */
+  --c-text-strong: 20 33 44;   /* #14212C */
+  --c-text-body: 51 67 79;   /* #33434F */
+  --c-text-muted: 87 100 109;   /* #57646D */
+  --c-text-faint: 127 137 144;   /* #7F8990 */
+  --c-primary: 33 72 107;   /* #21486B */
+  --c-primary-hover: 26 58 88;   /* #1A3A58 */
+  --c-primary-deep: 14 30 44;   /* #0E1E2C */
+  --c-on-primary: 247 244 237;   /* #F7F4ED */
+  --c-accent: 186 134 48;   /* #BA8630 */
+  --c-accent-hover: 203 152 71;   /* #CB9847 */
+  --c-on-accent: 22 34 46;   /* #16222E */
+  --c-nav-bg: 27 58 85;   /* #1B3A55 */
+  --c-nav-strip-bg: 16 31 46;   /* #101F2E */
+  --c-nav-active-bg: 53 112 143;   /* #35708F */
+  --c-nav-active-text: 244 240 230;   /* #F4F0E6 */
+  --c-nav-text: 201 196 182;   /* #C9C4B6 */
+  --c-price: 22 41 60;   /* #16293C */
+  --c-sale-price: 165 39 61;   /* #A5273D */
+  --c-old-price: 120 130 138;   /* #78828A */
+  --c-success: 46 107 79;   /* #2E6B4F */
+  --c-danger: 143 42 28;   /* #8F2A1C */
+  --c-info: 42 106 134;   /* #2A6A86 */
+  --c-warning: 154 90 32;   /* #9A5A20 */
+  --c-star: 159 116 26;   /* #9F741A */
+  --c-badge-new: 37 124 136;   /* #257C88 */
+  --c-badge-hot: 169 58 40;   /* #A93A28 */
+  --c-badge-top: 89 48 102;   /* #593066 */
+  --c-badge-default: 221 213 196;   /* #DDD5C4 */
+  --c-on-badge-default: 36 49 61;   /* #24313D */
+  --c-focus-ring: 46 124 153;   /* #2E7C99 */
+}
+:root[data-theme="ai"].dark {
+  --c-page-bg: 10 18 24;   /* #0A1218 */
+  --c-surface: 20 31 41;   /* #141F29 */
+  --c-surface-alt: 29 42 53;   /* #1D2A35 */
+  --c-surface-sunken: 229 222 208;   /* #E5DED0 */
+  --c-border: 48 64 77;   /* #30404D */
+  --c-border-subtle: 34 48 59;   /* #22303B */
+  --c-text-strong: 240 235 224;   /* #F0EBE0 */
+  --c-text-body: 203 198 186;   /* #CBC6BA */
+  --c-text-muted: 155 165 172;   /* #9BA5AC */
+  --c-text-faint: 127 137 144;   /* #7F8990 */
+  --c-primary: 92 144 186;   /* #5C90BA */
+  --c-primary-hover: 109 160 199;   /* #6DA0C7 */
+  --c-primary-deep: 14 30 44;   /* #0E1E2C */
+  --c-on-primary: 11 22 32;   /* #0B1620 */
+  --c-accent: 211 162 75;   /* #D3A24B */
+  --c-accent-hover: 203 152 71;   /* #CB9847 */
+  --c-on-accent: 23 18 8;   /* #171208 */
+  --c-nav-bg: 22 35 46;   /* #16232E */
+  --c-nav-strip-bg: 13 24 33;   /* #0D1821 */
+  --c-nav-active-bg: 53 112 143;   /* #35708F */
+  --c-nav-active-text: 244 240 230;   /* #F4F0E6 */
+  --c-nav-text: 201 196 182;   /* #C9C4B6 */
+  --c-price: 237 231 219;   /* #EDE7DB */
+  --c-sale-price: 224 117 127;   /* #E0757F */
+  --c-old-price: 120 130 138;   /* #78828A */
+  --c-success: 46 107 79;   /* #2E6B4F */
+  --c-danger: 143 42 28;   /* #8F2A1C */
+  --c-info: 42 106 134;   /* #2A6A86 */
+  --c-warning: 154 90 32;   /* #9A5A20 */
+  --c-star: 159 116 26;   /* #9F741A */
+  --c-badge-new: 37 124 136;   /* #257C88 */
+  --c-badge-hot: 169 58 40;   /* #A93A28 */
+  --c-badge-top: 89 48 102;   /* #593066 */
+  --c-badge-default: 221 213 196;   /* #DDD5C4 */
+  --c-on-badge-default: 36 49 61;   /* #24313D */
+  --c-focus-ring: 46 124 153;   /* #2E7C99 */
+}
+
+/* -- Sumi & Seal / 墨と朱印 (Sumi to Shuin) ---------------------------- */
+:root[data-theme="sumi"] {
+  --c-page-bg: 241 237 228;   /* #F1EDE4 */
+  --c-surface: 251 248 241;   /* #FBF8F1 */
+  --c-surface-alt: 245 241 232;   /* #F5F1E8 */
+  --c-surface-sunken: 233 228 217;   /* #E9E4D9 */
+  --c-border: 216 209 194;   /* #D8D1C2 */
+  --c-border-subtle: 231 225 213;   /* #E7E1D5 */
+  --c-text-strong: 27 23 18;   /* #1B1712 */
+  --c-text-body: 61 55 46;   /* #3D372E */
+  --c-text-muted: 106 97 85;   /* #6A6155 */
+  --c-text-faint: 142 132 118;   /* #8E8476 */
+  --c-primary: 38 32 25;   /* #262019 */
+  --c-primary-hover: 62 54 43;   /* #3E362B */
+  --c-primary-deep: 20 17 13;   /* #14110D */
+  --c-on-primary: 251 248 241;   /* #FBF8F1 */
+  --c-accent: 168 58 24;   /* #A83A18 */
+  --c-accent-hover: 140 46 17;   /* #8C2E11 */
+  --c-on-accent: 253 247 240;   /* #FDF7F0 */
+  --c-nav-bg: 241 237 228;   /* #F1EDE4 */
+  --c-nav-strip-bg: 52 44 35;   /* #342C23 */
+  --c-nav-active-bg: 20 17 13;   /* #14110D */
+  --c-nav-active-text: 245 240 229;   /* #F5F0E5 */
+  --c-nav-text: 198 188 172;   /* #C6BCAC */
+  --c-price: 32 27 21;   /* #201B15 */
+  --c-sale-price: 126 43 61;   /* #7E2B3D */
+  --c-old-price: 135 125 111;   /* #877D6F */
+  --c-success: 46 98 72;   /* #2E6248 */
+  --c-danger: 152 35 42;   /* #98232A */
+  --c-info: 61 85 104;   /* #3D5568 */
+  --c-warning: 138 106 28;   /* #8A6A1C */
+  --c-star: 160 120 42;   /* #A0782A */
+  --c-badge-new: 43 74 97;   /* #2B4A61 */
+  --c-badge-hot: 198 82 42;   /* #C6522A */
+  --c-badge-top: 34 29 23;   /* #221D17 */
+  --c-badge-default: 227 221 208;   /* #E3DDD0 */
+  --c-on-badge-default: 42 36 29;   /* #2A241D */
+  --c-focus-ring: 203 90 44;   /* #CB5A2C */
+}
+:root[data-theme="sumi"].dark {
+  --c-page-bg: 20 17 13;   /* #14110D */
+  --c-surface: 30 26 21;   /* #1E1A15 */
+  --c-surface-alt: 39 33 25;   /* #272119 */
+  --c-surface-sunken: 233 228 217;   /* #E9E4D9 */
+  --c-border: 59 52 42;   /* #3B342A */
+  --c-border-subtle: 43 37 29;   /* #2B251D */
+  --c-text-strong: 243 238 228;   /* #F3EEE4 */
+  --c-text-body: 214 207 194;   /* #D6CFC2 */
+  --c-text-muted: 162 152 137;   /* #A29889 */
+  --c-text-faint: 142 132 118;   /* #8E8476 */
+  --c-primary: 237 231 218;   /* #EDE7DA */
+  --c-primary-hover: 251 246 234;   /* #FBF6EA */
+  --c-primary-deep: 20 17 13;   /* #14110D */
+  --c-on-primary: 23 19 15;   /* #17130F */
+  --c-accent: 222 95 53;   /* #DE5F35 */
+  --c-accent-hover: 140 46 17;   /* #8C2E11 */
+  --c-on-accent: 26 20 16;   /* #1A1410 */
+  --c-nav-bg: 25 21 16;   /* #191510 */
+  --c-nav-strip-bg: 14 12 9;   /* #0E0C09 */
+  --c-nav-active-bg: 20 17 13;   /* #14110D */
+  --c-nav-active-text: 245 240 229;   /* #F5F0E5 */
+  --c-nav-text: 198 188 172;   /* #C6BCAC */
+  --c-price: 243 238 228;   /* #F3EEE4 */
+  --c-sale-price: 226 145 166;   /* #E291A6 */
+  --c-old-price: 135 125 111;   /* #877D6F */
+  --c-success: 46 98 72;   /* #2E6248 */
+  --c-danger: 152 35 42;   /* #98232A */
+  --c-info: 61 85 104;   /* #3D5568 */
+  --c-warning: 138 106 28;   /* #8A6A1C */
+  --c-star: 160 120 42;   /* #A0782A */
+  --c-badge-new: 43 74 97;   /* #2B4A61 */
+  --c-badge-hot: 198 82 42;   /* #C6522A */
+  --c-badge-top: 34 29 23;   /* #221D17 */
+  --c-badge-default: 227 221 208;   /* #E3DDD0 */
+  --c-on-badge-default: 42 36 29;   /* #2A241D */
+  --c-focus-ring: 203 90 44;   /* #CB5A2C */
+}
+
+/* -- Torii Vermilion on Kinari / 朱色 (shu-iro) ---------------------- */
+:root[data-theme="shu"] {
+  --c-page-bg: 245 241 232;   /* #f5f1e8 */
+  --c-surface: 253 251 246;   /* #fdfbf6 */
+  --c-surface-alt: 241 236 225;   /* #f1ece1 */
+  --c-surface-sunken: 233 226 211;   /* #e9e2d3 */
+  --c-border: 218 209 192;   /* #dad1c0 */
+  --c-border-subtle: 235 229 216;   /* #ebe5d8 */
+  --c-text-strong: 28 22 19;   /* #1c1613 */
+  --c-text-body: 66 58 50;   /* #423a32 */
+  --c-text-muted: 110 99 87;   /* #6e6357 */
+  --c-text-faint: 148 134 118;   /* #948676 */
+  --c-primary: 194 55 26;   /* #c2371a */
+  --c-primary-hover: 166 44 18;   /* #a62c12 */
+  --c-primary-deep: 126 34 16;   /* #7e2210 */
+  --c-on-primary: 255 247 242;   /* #fff7f2 */
+  --c-accent: 185 131 34;   /* #b98322 */
+  --c-accent-hover: 165 116 26;   /* #a5741a */
+  --c-on-accent: 21 15 8;   /* #150f08 */
+  --c-nav-bg: 42 33 28;   /* #2a211c */
+  --c-nav-strip-bg: 26 20 17;   /* #1a1411 */
+  --c-nav-active-bg: 194 55 26;   /* #c2371a */
+  --c-nav-active-text: 255 247 241;   /* #fff7f1 */
+  --c-nav-text: 214 204 189;   /* #d6ccbd */
+  --c-price: 31 24 19;   /* #1f1813 */
+  --c-sale-price: 179 47 20;   /* #b32f14 */
+  --c-old-price: 154 140 123;   /* #9a8c7b */
+  --c-success: 31 107 74;   /* #1f6b4a */
+  --c-danger: 150 31 51;   /* #961f33 */
+  --c-info: 58 90 112;   /* #3a5a70 */
+  --c-warning: 140 95 18;   /* #8c5f12 */
+  --c-star: 188 134 24;   /* #bc8618 */
+  --c-badge-new: 35 80 58;   /* #23503a */
+  --c-badge-hot: 207 62 23;   /* #cf3e17 */
+  --c-badge-top: 32 25 21;   /* #201915 */
+  --c-badge-default: 231 224 208;   /* #e7e0d0 */
+  --c-on-badge-default: 51 41 31;   /* #33291f */
+  --c-focus-ring: 217 84 43;   /* #d9542b */
+}
+:root[data-theme="shu"].dark {
+  --c-page-bg: 22 17 14;   /* #16110e */
+  --c-surface: 31 25 21;   /* #1f1915 */
+  --c-surface-alt: 42 35 29;   /* #2a231d */
+  --c-surface-sunken: 233 226 211;   /* #e9e2d3 */
+  --c-border: 61 51 43;   /* #3d332b */
+  --c-border-subtle: 44 37 31;   /* #2c251f */
+  --c-text-strong: 246 238 228;   /* #f6eee4 */
+  --c-text-body: 222 212 199;   /* #ded4c7 */
+  --c-text-muted: 167 154 138;   /* #a79a8a */
+  --c-text-faint: 148 134 118;   /* #948676 */
+  --c-primary: 201 58 22;   /* #c93a16 */
+  --c-primary-hover: 174 46 16;   /* #ae2e10 */
+  --c-primary-deep: 126 34 16;   /* #7e2210 */
+  --c-on-primary: 255 246 242;   /* #fff6f2 */
+  --c-accent: 223 168 63;   /* #dfa83f */
+  --c-accent-hover: 165 116 26;   /* #a5741a */
+  --c-on-accent: 30 22 16;   /* #1e1610 */
+  --c-nav-bg: 39 31 25;   /* #271f19 */
+  --c-nav-strip-bg: 29 23 19;   /* #1d1713 */
+  --c-nav-active-bg: 194 55 26;   /* #c2371a */
+  --c-nav-active-text: 255 247 241;   /* #fff7f1 */
+  --c-nav-text: 214 204 189;   /* #d6ccbd */
+  --c-price: 244 236 225;   /* #f4ece1 */
+  --c-sale-price: 238 98 66;   /* #ee6242 */
+  --c-old-price: 154 140 123;   /* #9a8c7b */
+  --c-success: 31 107 74;   /* #1f6b4a */
+  --c-danger: 150 31 51;   /* #961f33 */
+  --c-info: 58 90 112;   /* #3a5a70 */
+  --c-warning: 140 95 18;   /* #8c5f12 */
+  --c-star: 188 134 24;   /* #bc8618 */
+  --c-badge-new: 35 80 58;   /* #23503a */
+  --c-badge-hot: 207 62 23;   /* #cf3e17 */
+  --c-badge-top: 32 25 21;   /* #201915 */
+  --c-badge-default: 231 224 208;   /* #e7e0d0 */
+  --c-on-badge-default: 51 41 31;   /* #33291f */
+  --c-focus-ring: 217 84 43;   /* #d9542b */
+}
+
+/* -- Tokiwa Pine / 常磐松 (Tokiwa Matsu) ------------------------------ */
+:root[data-theme="matsu"] {
+  --c-page-bg: 245 242 233;   /* #f5f2e9 */
+  --c-surface: 252 251 246;   /* #fcfbf6 */
+  --c-surface-alt: 239 235 223;   /* #efebdf */
+  --c-surface-sunken: 232 227 213;   /* #e8e3d5 */
+  --c-border: 213 208 191;   /* #d5d0bf */
+  --c-border-subtle: 230 226 213;   /* #e6e2d5 */
+  --c-text-strong: 30 35 28;   /* #1e231c */
+  --c-text-body: 59 65 55;   /* #3b4137 */
+  --c-text-muted: 95 101 90;   /* #5f655a */
+  --c-text-faint: 127 132 116;   /* #7f8474 */
+  --c-primary: 46 94 73;   /* #2e5e49 */
+  --c-primary-hover: 39 80 65;   /* #275041 */
+  --c-primary-deep: 18 50 39;   /* #123227 */
+  --c-on-primary: 243 247 240;   /* #f3f7f0 */
+  --c-accent: 176 124 34;   /* #b07c22 */
+  --c-accent-hover: 192 138 50;   /* #c08a32 */
+  --c-on-accent: 27 19 5;   /* #1b1305 */
+  --c-nav-bg: 43 90 70;   /* #2b5a46 */
+  --c-nav-strip-bg: 29 66 52;   /* #1d4234 */
+  --c-nav-active-bg: 18 50 39;   /* #123227 */
+  --c-nav-active-text: 233 200 127;   /* #e9c87f */
+  --c-nav-text: 188 204 192;   /* #bcccc0 */
+  --c-price: 30 58 45;   /* #1e3a2d */
+  --c-sale-price: 168 42 56;   /* #a82a38 */
+  --c-old-price: 138 132 120;   /* #8a8478 */
+  --c-success: 63 128 51;   /* #3f8033 */
+  --c-danger: 143 42 34;   /* #8f2a22 */
+  --c-info: 43 97 131;   /* #2b6183 */
+  --c-warning: 158 93 24;   /* #9e5d18 */
+  --c-star: 184 134 43;   /* #b8862b */
+  --c-badge-new: 31 94 128;   /* #1f5e80 */
+  --c-badge-hot: 192 83 32;   /* #c05320 */
+  --c-badge-top: 58 37 80;   /* #3a2550 */
+  --c-badge-default: 222 216 199;   /* #ded8c7 */
+  --c-on-badge-default: 59 65 55;   /* #3b4137 */
+  --c-focus-ring: 169 116 28;   /* #a9741c */
+}
+:root[data-theme="matsu"].dark {
+  --c-page-bg: 18 22 15;   /* #12160f */
+  --c-surface: 26 31 22;   /* #1a1f16 */
+  --c-surface-alt: 34 40 32;   /* #222820 */
+  --c-surface-sunken: 232 227 213;   /* #e8e3d5 */
+  --c-border: 54 61 49;   /* #363d31 */
+  --c-border-subtle: 40 46 36;   /* #282e24 */
+  --c-text-strong: 236 239 227;   /* #ecefe3 */
+  --c-text-body: 199 205 188;   /* #c7cdbc */
+  --c-text-muted: 148 155 136;   /* #949b88 */
+  --c-text-faint: 127 132 116;   /* #7f8474 */
+  --c-primary: 111 169 138;   /* #6fa98a */
+  --c-primary-hover: 130 187 156;   /* #82bb9c */
+  --c-primary-deep: 18 50 39;   /* #123227 */
+  --c-on-primary: 15 27 21;   /* #0f1b15 */
+  --c-accent: 216 166 63;   /* #d8a63f */
+  --c-accent-hover: 192 138 50;   /* #c08a32 */
+  --c-on-accent: 30 22 5;   /* #1e1605 */
+  --c-nav-bg: 25 30 21;   /* #191e15 */
+  --c-nav-strip-bg: 16 20 14;   /* #10140e */
+  --c-nav-active-bg: 18 50 39;   /* #123227 */
+  --c-nav-active-text: 233 200 127;   /* #e9c87f */
+  --c-nav-text: 188 204 192;   /* #bcccc0 */
+  --c-price: 233 237 225;   /* #e9ede1 */
+  --c-sale-price: 228 116 122;   /* #e4747a */
+  --c-old-price: 138 132 120;   /* #8a8478 */
+  --c-success: 63 128 51;   /* #3f8033 */
+  --c-danger: 143 42 34;   /* #8f2a22 */
+  --c-info: 43 97 131;   /* #2b6183 */
+  --c-warning: 158 93 24;   /* #9e5d18 */
+  --c-star: 184 134 43;   /* #b8862b */
+  --c-badge-new: 31 94 128;   /* #1f5e80 */
+  --c-badge-hot: 192 83 32;   /* #c05320 */
+  --c-badge-top: 58 37 80;   /* #3a2550 */
+  --c-badge-default: 222 216 199;   /* #ded8c7 */
+  --c-on-badge-default: 59 65 55;   /* #3b4137 */
+  --c-focus-ring: 169 116 28;   /* #a9741c */
+}
+
+/* -- Signal Graphite / 電光信号 (Denkō Shingō) ------------------------- */
+:root[data-theme="den"] {
+  --c-page-bg: 237 241 245;   /* #EDF1F5 */
+  --c-surface: 255 255 255;   /* #FFFFFF */
+  --c-surface-alt: 246 248 250;   /* #F6F8FA */
+  --c-surface-sunken: 227 232 238;   /* #E3E8EE */
+  --c-border: 199 208 217;   /* #C7D0D9 */
+  --c-border-subtle: 226 231 236;   /* #E2E7EC */
+  --c-text-strong: 14 21 28;   /* #0E151C */
+  --c-text-body: 51 60 70;   /* #333C46 */
+  --c-text-muted: 92 103 115;   /* #5C6773 */
+  --c-text-faint: 132 143 155;   /* #848F9B */
+  --c-primary: 29 42 54;   /* #1D2A36 */
+  --c-primary-hover: 43 59 74;   /* #2B3B4A */
+  --c-primary-deep: 14 20 28;   /* #0E141C */
+  --c-on-primary: 255 255 255;   /* #FFFFFF */
+  --c-accent: 0 179 204;   /* #00B3CC */
+  --c-accent-hover: 0 160 184;   /* #00A0B8 */
+  --c-on-accent: 4 34 42;   /* #04222A */
+  --c-nav-bg: 27 39 51;   /* #1B2733 */
+  --c-nav-strip-bg: 14 20 28;   /* #0E141C */
+  --c-nav-active-bg: 233 239 244;   /* #E9EFF4 */
+  --c-nav-active-text: 14 20 28;   /* #0E141C */
+  --c-nav-text: 165 178 191;   /* #A5B2BF */
+  --c-price: 14 21 28;   /* #0E151C */
+  --c-sale-price: 200 30 60;   /* #C81E3C */
+  --c-old-price: 126 138 150;   /* #7E8A96 */
+  --c-success: 11 125 85;   /* #0B7D55 */
+  --c-danger: 179 23 44;   /* #B3172C */
+  --c-info: 43 93 168;   /* #2B5DA8 */
+  --c-warning: 194 112 11;   /* #C2700B */
+  --c-star: 239 160 16;   /* #EFA010 */
+  --c-badge-new: 11 94 142;   /* #0B5E8E */
+  --c-badge-hot: 206 65 20;   /* #CE4114 */
+  --c-badge-top: 69 42 134;   /* #452A86 */
+  --c-badge-default: 24 33 41;   /* #182129 */
+  --c-on-badge-default: 255 255 255;   /* #FFFFFF */
+  --c-focus-ring: 0 144 168;   /* #0090A8 */
+}
+:root[data-theme="den"].dark {
+  --c-page-bg: 11 17 22;   /* #0B1116 */
+  --c-surface: 19 27 34;   /* #131B22 */
+  --c-surface-alt: 26 36 44;   /* #1A242C */
+  --c-surface-sunken: 227 232 238;   /* #E3E8EE */
+  --c-border: 43 55 66;   /* #2B3742 */
+  --c-border-subtle: 31 42 51;   /* #1F2A33 */
+  --c-text-strong: 237 242 246;   /* #EDF2F6 */
+  --c-text-body: 195 205 214;   /* #C3CDD6 */
+  --c-text-muted: 139 152 165;   /* #8B98A5 */
+  --c-text-faint: 132 143 155;   /* #848F9B */
+  --c-primary: 221 230 237;   /* #DDE6ED */
+  --c-primary-hover: 238 243 247;   /* #EEF3F7 */
+  --c-primary-deep: 14 20 28;   /* #0E141C */
+  --c-on-primary: 12 19 25;   /* #0C1319 */
+  --c-accent: 31 196 219;   /* #1FC4DB */
+  --c-accent-hover: 0 160 184;   /* #00A0B8 */
+  --c-on-accent: 4 34 42;   /* #04222A */
+  --c-nav-bg: 16 24 31;   /* #10181F */
+  --c-nav-strip-bg: 10 16 22;   /* #0A1016 */
+  --c-nav-active-bg: 233 239 244;   /* #E9EFF4 */
+  --c-nav-active-text: 14 20 28;   /* #0E141C */
+  --c-nav-text: 165 178 191;   /* #A5B2BF */
+  --c-price: 242 246 250;   /* #F2F6FA */
+  --c-sale-price: 255 92 110;   /* #FF5C6E */
+  --c-old-price: 126 138 150;   /* #7E8A96 */
+  --c-success: 11 125 85;   /* #0B7D55 */
+  --c-danger: 179 23 44;   /* #B3172C */
+  --c-info: 43 93 168;   /* #2B5DA8 */
+  --c-warning: 194 112 11;   /* #C2700B */
+  --c-star: 239 160 16;   /* #EFA010 */
+  --c-badge-new: 11 94 142;   /* #0B5E8E */
+  --c-badge-hot: 206 65 20;   /* #CE4114 */
+  --c-badge-top: 69 42 134;   /* #452A86 */
+  --c-badge-default: 24 33 41;   /* #182129 */
+  --c-on-badge-default: 255 255 255;   /* #FFFFFF */
+  --c-focus-ring: 0 144 168;   /* #0090A8 */
+}
+
+/* -- Ash Blossom / 灰桜 (Haizakura) ---------------------------------- */
+:root[data-theme="haizakura"] {
+  --c-page-bg: 243 238 237;   /* #f3eeed */
+  --c-surface: 253 250 250;   /* #fdfafa */
+  --c-surface-alt: 248 242 241;   /* #f8f2f1 */
+  --c-surface-sunken: 238 231 230;   /* #eee7e6 */
+  --c-border: 220 209 209;   /* #dcd1d1 */
+  --c-border-subtle: 234 225 224;   /* #eae1e0 */
+  --c-text-strong: 36 26 32;   /* #241a20 */
+  --c-text-body: 70 56 62;   /* #46383e */
+  --c-text-muted: 107 90 98;   /* #6b5a62 */
+  --c-text-faint: 152 135 142;   /* #98878e */
+  --c-primary: 90 43 72;   /* #5a2b48 */
+  --c-primary-hover: 74 32 57;   /* #4a2039 */
+  --c-primary-deep: 46 23 39;   /* #2e1727 */
+  --c-on-primary: 253 244 248;   /* #fdf4f8 */
+  --c-accent: 176 138 69;   /* #b08a45 */
+  --c-accent-hover: 166 127 60;   /* #a67f3c */
+  --c-on-accent: 37 24 32;   /* #251820 */
+  --c-nav-bg: 67 32 58;   /* #43203a */
+  --c-nav-strip-bg: 46 23 39;   /* #2e1727 */
+  --c-nav-active-bg: 92 46 77;   /* #5c2e4d */
+  --c-nav-active-text: 247 228 238;   /* #f7e4ee */
+  --c-nav-text: 211 192 200;   /* #d3c0c8 */
+  --c-price: 43 30 36;   /* #2b1e24 */
+  --c-sale-price: 166 47 76;   /* #a62f4c */
+  --c-old-price: 156 139 145;   /* #9c8b91 */
+  --c-success: 47 106 76;   /* #2f6a4c */
+  --c-danger: 168 62 34;   /* #a83e22 */
+  --c-info: 63 85 128;   /* #3f5580 */
+  --c-warning: 140 95 28;   /* #8c5f1c */
+  --c-star: 181 129 31;   /* #b5811f */
+  --c-badge-new: 78 127 104;   /* #4e7f68 */
+  --c-badge-hot: 158 46 63;   /* #9e2e3f */
+  --c-badge-top: 71 33 60;   /* #47213c */
+  --c-badge-default: 233 224 223;   /* #e9e0df */
+  --c-on-badge-default: 70 56 62;   /* #46383e */
+  --c-focus-ring: 139 76 116;   /* #8b4c74 */
+}
+:root[data-theme="haizakura"].dark {
+  --c-page-bg: 22 17 20;   /* #161114 */
+  --c-surface: 31 25 29;   /* #1f191d */
+  --c-surface-alt: 41 34 39;   /* #292227 */
+  --c-surface-sunken: 238 231 230;   /* #eee7e6 */
+  --c-border: 62 52 58;   /* #3e343a */
+  --c-border-subtle: 46 38 43;   /* #2e262b */
+  --c-text-strong: 246 238 241;   /* #f6eef1 */
+  --c-text-body: 219 207 212;   /* #dbcfd4 */
+  --c-text-muted: 166 149 157;   /* #a6959d */
+  --c-text-faint: 152 135 142;   /* #98878e */
+  --c-primary: 155 80 129;   /* #9b5081 */
+  --c-primary-hover: 162 86 138;   /* #a2568a */
+  --c-primary-deep: 46 23 39;   /* #2e1727 */
+  --c-on-primary: 255 247 251;   /* #fff7fb */
+  --c-accent: 201 164 92;   /* #c9a45c */
+  --c-accent-hover: 166 127 60;   /* #a67f3c */
+  --c-on-accent: 34 26 31;   /* #221a1f */
+  --c-nav-bg: 27 21 25;   /* #1b1519 */
+  --c-nav-strip-bg: 34 27 32;   /* #221b20 */
+  --c-nav-active-bg: 92 46 77;   /* #5c2e4d */
+  --c-nav-active-text: 247 228 238;   /* #f7e4ee */
+  --c-nav-text: 211 192 200;   /* #d3c0c8 */
+  --c-price: 242 233 236;   /* #f2e9ec */
+  --c-sale-price: 233 130 152;   /* #e98298 */
+  --c-old-price: 156 139 145;   /* #9c8b91 */
+  --c-success: 47 106 76;   /* #2f6a4c */
+  --c-danger: 168 62 34;   /* #a83e22 */
+  --c-info: 63 85 128;   /* #3f5580 */
+  --c-warning: 140 95 28;   /* #8c5f1c */
+  --c-star: 181 129 31;   /* #b5811f */
+  --c-badge-new: 78 127 104;   /* #4e7f68 */
+  --c-badge-hot: 158 46 63;   /* #9e2e3f */
+  --c-badge-top: 71 33 60;   /* #47213c */
+  --c-badge-default: 233 224 223;   /* #e9e0df */
+  --c-on-badge-default: 70 56 62;   /* #46383e */
+  --c-focus-ring: 139 76 116;   /* #8b4c74 */
+}
+
+/* -- Current (the palette the shop ships today, for comparison) --------- */
+:root[data-theme="current"] {
+  --c-page-bg: 244 246 251;   /* #f4f6fb */
+  --c-surface: 255 255 255;   /* #ffffff */
+  --c-surface-alt: 239 244 255;   /* #eff4ff */
+  --c-surface-sunken: 248 250 252;   /* #f8fafc */
+  --c-border: 226 232 240;   /* #e2e8f0 */
+  --c-border-subtle: 241 245 249;   /* #f1f5f9 */
+  --c-text-strong: 15 23 42;   /* #0f172a */
+  --c-text-body: 71 85 105;   /* #475569 */
+  --c-text-muted: 100 116 139;   /* #64748b */
+  --c-text-faint: 148 163 184;   /* #94a3b8 */
+  --c-primary: 37 99 235;   /* #2563eb */
+  --c-primary-hover: 0 74 198;   /* #004ac6 */
+  --c-primary-deep: 29 78 216;   /* #1d4ed8 */
+  --c-on-primary: 255 255 255;   /* #ffffff */
+  --c-accent: 251 191 36;   /* #fbbf24 */
+  --c-accent-hover: 245 158 11;   /* #f59e0b */
+  --c-on-accent: 15 23 42;   /* #0f172a */
+  --c-nav-bg: 37 99 235;   /* #2563eb */
+  --c-nav-strip-bg: 29 78 216;   /* #1d4ed8 */
+  --c-nav-active-bg: 30 64 175;   /* #1e40af */
+  --c-nav-active-text: 252 211 77;   /* #fcd34d */
+  --c-nav-text: 255 255 255;   /* #ffffff */
+  --c-price: 15 23 42;   /* #0f172a */
+  --c-sale-price: 225 29 72;   /* #e11d48 */
+  --c-old-price: 148 163 184;   /* #94a3b8 */
+  --c-success: 5 150 105;   /* #059669 */
+  --c-danger: 225 29 72;   /* #e11d48 */
+  --c-info: 37 99 235;   /* #2563eb */
+  --c-warning: 245 158 11;   /* #f59e0b */
+  --c-star: 251 191 36;   /* #fbbf24 */
+  --c-badge-new: 2 132 199;   /* #0284c7 */
+  --c-badge-hot: 225 29 72;   /* #e11d48 */
+  --c-badge-top: 5 150 105;   /* #059669 */
+  --c-badge-default: 251 191 36;   /* #fbbf24 */
+  --c-on-badge-default: 2 6 23;   /* #020617 */
+  --c-focus-ring: 251 191 36;   /* #fbbf24 */
+}
+:root[data-theme="current"].dark {
+  --c-page-bg: 11 17 32;   /* #0b1120 */
+  --c-surface: 17 26 46;   /* #111a2e */
+  --c-surface-alt: 22 33 58;   /* #16213a */
+  --c-surface-sunken: 248 250 252;   /* #f8fafc */
+  --c-border: 36 48 73;   /* #243049 */
+  --c-border-subtle: 27 39 64;   /* #1b2740 */
+  --c-text-strong: 232 237 247;   /* #e8edf7 */
+  --c-text-body: 179 190 211;   /* #b3bed3 */
+  --c-text-muted: 133 147 173;   /* #8593ad */
+  --c-text-faint: 148 163 184;   /* #94a3b8 */
+  --c-primary: 59 130 246;   /* #3b82f6 */
+  --c-primary-hover: 96 165 250;   /* #60a5fa */
+  --c-primary-deep: 29 78 216;   /* #1d4ed8 */
+  --c-on-primary: 4 18 43;   /* #04122b */
+  --c-accent: 251 191 36;   /* #fbbf24 */
+  --c-accent-hover: 245 158 11;   /* #f59e0b */
+  --c-on-accent: 26 18 4;   /* #1a1204 */
+  --c-nav-bg: 19 32 60;   /* #13203c */
+  --c-nav-strip-bg: 14 26 51;   /* #0e1a33 */
+  --c-nav-active-bg: 30 64 175;   /* #1e40af */
+  --c-nav-active-text: 252 211 77;   /* #fcd34d */
+  --c-nav-text: 255 255 255;   /* #ffffff */
+  --c-price: 232 237 247;   /* #e8edf7 */
+  --c-sale-price: 251 113 133;   /* #fb7185 */
+  --c-old-price: 148 163 184;   /* #94a3b8 */
+  --c-success: 5 150 105;   /* #059669 */
+  --c-danger: 225 29 72;   /* #e11d48 */
+  --c-info: 37 99 235;   /* #2563eb */
+  --c-warning: 245 158 11;   /* #f59e0b */
+  --c-star: 251 191 36;   /* #fbbf24 */
+  --c-badge-new: 2 132 199;   /* #0284c7 */
+  --c-badge-hot: 225 29 72;   /* #e11d48 */
+  --c-badge-top: 5 150 105;   /* #059669 */
+  --c-badge-default: 251 191 36;   /* #fbbf24 */
+  --c-on-badge-default: 2 6 23;   /* #020617 */
+  --c-focus-ring: 251 191 36;   /* #fbbf24 */
+}
+
+/* -- Base ---------------------------------------------------------------- */
+html, body { margin: 0; padding: 0; }
+body { overscroll-behavior: none; background: rgb(var(--c-page-bg)); }
+::-webkit-scrollbar { display: none; }
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+.material-symbols-outlined.fill-active {
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* Colour changes should feel like a change of light, not a flash. */
+@media (prefers-reduced-motion: no-preference) {
+  body, header, footer, aside, main,
+  .themed-fade { transition: background-color .28s ease, border-color .28s ease, color .28s ease; }
+}
