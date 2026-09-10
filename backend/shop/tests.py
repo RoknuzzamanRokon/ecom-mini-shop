@@ -157,3 +157,77 @@ class CheckoutTests(ShopTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, order.order_number)
         self.assertContains(response, "Jane Doe")
+
+
+class APITests(ShopTestCase):
+    def test_api_categories(self):
+        response = self.client.get(reverse("shop:api_categories"))
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data), 2)
+        cat_names = [c["name"] for c in data]
+        self.assertIn("Electronics", cat_names)
+        self.assertIn("Clothing", cat_names)
+
+    def test_api_products_list(self):
+        response = self.client.get(reverse("shop:api_products"))
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("results", data)
+        self.assertEqual(len(data["results"]), 2)
+
+    def test_api_products_filter_category(self):
+        response = self.client.get(reverse("shop:api_products"), {"category": self.electronics.slug})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data["results"]), 1)
+        self.assertEqual(data["results"][0]["name"], "Custom Mechanical Keyboard")
+
+    def test_api_products_search(self):
+        response = self.client.get(reverse("shop:api_products"), {"q": "tee"})
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(len(data["results"]), 1)
+        self.assertEqual(data["results"][0]["name"], "Organic Heavyweight Tee")
+
+    def test_api_product_detail(self):
+        response = self.client.get(reverse("shop:api_product_detail", args=[self.keyboard.slug]))
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["name"], "Custom Mechanical Keyboard")
+        self.assertEqual(float(data["price"]), 148.0)
+        self.assertIn("related_products", data)
+
+    def test_api_hot_deal(self):
+        response = self.client.get(reverse("shop:api_hot_deal"))
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["name"], "Custom Mechanical Keyboard")
+        self.assertIn("deal_ends_in_hours", data)
+
+    def test_api_order_create_and_retrieve(self):
+        payload = {
+            "customer_name": "Alice Smith",
+            "phone": "+1987654321",
+            "address": "456 Elm St",
+            "city": "Metropolis",
+            "items": [
+                {"product_id": self.keyboard.id, "quantity": 1}
+            ]
+        }
+        create_resp = self.client.post(
+            reverse("shop:api_order_create"),
+            payload,
+            content_type="application/json"
+        )
+        self.assertEqual(create_resp.status_code, 201)
+        order_data = create_resp.json()
+        self.assertEqual(order_data["customer_name"], "Alice Smith")
+        self.assertEqual(float(order_data["total_amount"]), 148.0)
+        self.assertEqual(len(order_data["items"]), 1)
+
+        # Retrieve order
+        order_num = order_data["order_number"]
+        get_resp = self.client.get(reverse("shop:api_order_detail", args=[order_num]))
+        self.assertEqual(get_resp.status_code, 200)
+        self.assertEqual(get_resp.json()["order_number"], order_num)

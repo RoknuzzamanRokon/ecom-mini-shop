@@ -1,0 +1,312 @@
+import { Category, PaginatedResponse, Product, Order } from "./types";
+
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
+
+export function formatImageUrl(url?: string | null): string {
+  if (!url) return "/placeholder.svg";
+
+  // If it's a full URL
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    try {
+      const parsed = new URL(url);
+      // If it's a local Django media URL, convert to relative /media/ path so it proxies cleanly
+      if (
+        (parsed.hostname === "127.0.0.1" || parsed.hostname === "localhost") &&
+        parsed.pathname.startsWith("/media/")
+      ) {
+        return parsed.pathname;
+      }
+    } catch {}
+    return url;
+  }
+
+  // If it's already a relative /media path
+  if (url.startsWith("/media/")) {
+    return url;
+  }
+  if (url.startsWith("media/")) {
+    return `/${url}`;
+  }
+
+  return url;
+}
+
+// Fallback demo data from main_ui.html for seamless dev/offline mode
+export const DEMO_CATEGORIES: Category[] = [
+  { id: 1, name: "Clothing", slug: "clothing", icon: "checkroom", is_active: true, products_count: 6 },
+  { id: 2, name: "Electronics", slug: "electronics", icon: "devices", is_active: true, products_count: 5 },
+  { id: 3, name: "Shoes", slug: "shoes", icon: "roller_skating", is_active: true, products_count: 3 },
+  { id: 4, name: "Watches", slug: "watches", icon: "watch", is_active: true, products_count: 2 },
+  { id: 5, name: "Jewellery", slug: "jewellery", icon: "diamond", is_active: true, products_count: 2 },
+  { id: 6, name: "Health and Beauty", slug: "health-and-beauty", icon: "spa", is_active: true, products_count: 3 },
+  { id: 7, name: "Kids and Babies", slug: "kids-and-babies", icon: "child_friendly", is_active: true, products_count: 1 },
+  { id: 8, name: "Sports", slug: "sports", icon: "sports_soccer", is_active: true, products_count: 1 },
+  { id: 9, name: "Home and Garden", slug: "home-and-garden", icon: "yard", is_active: true, products_count: 1 },
+];
+
+export const DEMO_PRODUCTS: Product[] = [
+  {
+    id: 1,
+    name: "Custom Mechanical Keyboard",
+    slug: "custom-mechanical-keyboard",
+    category: DEMO_CATEGORIES[1],
+    description: "Compact mechanical keyboard with hot-swappable switches and RGB backlighting.",
+    price: "148.00",
+    old_price: "180.00",
+    image_url: "https://lh3.googleusercontent.com/aida-public/AB6AXuCS6sypzndN_SgiO4iIg0BMA6tbwvyxKryvnom3evr2SbTGUheIdO0LkdClavdRt4UC-5ts-io4yhKksBPexn3Sc479zwe8I8TKaacjyI-grGmeXlNUiHv0ABT92TR-pmTU6bza_cNXnuxNhveOkUiYwsH-ZjrnyExiL8_UcP8Bz8UioBysE6WU9Pz2EBRzKLpnGkc5A49mClPw0liVVRDYowaaLGyTZhn4fOqqhKyiJj8NWoca4cbauw",
+    stock: 12,
+    badge: "NEW",
+    is_active: true,
+    discount_percent: 18,
+    savings_amount: "32.00",
+    in_stock: true,
+    created_at: "2025-01-01T00:00:00Z",
+  },
+  {
+    id: 2,
+    name: "Insulated Flask 750ml",
+    slug: "insulated-flask-750ml",
+    category: DEMO_CATEGORIES[8],
+    description: "Double-walled vacuum insulated stainless steel water bottle keeps beverages cold for 24h.",
+    price: "34.00",
+    old_price: "45.00",
+    image_url: "https://lh3.googleusercontent.com/aida-public/AB6AXuBJCdTq3ylJtUfYWOdZhrcKHWkNJ8DvWrSLzy3V1QzhwMetiCcNN7UNOaRkotdhqHzYQImmYKAVzWLBY-4xWJkDGVhM89MjV1DXbCaEb-SOvTU69ByLVRKsrzLFy36YeLjg8ti7GdNZTspBXWzYFdm5Ai8VC78qMxSRKQ1BYZ_2u6aktHNFgMOuHsyWN3EdcyqGGOwWxid1jLjHaCp0nRf7i6nqe8d6gNocJarz-dwRERUys0qtKlnV7Q",
+    stock: 25,
+    badge: "HOT",
+    is_active: true,
+    discount_percent: 24,
+    savings_amount: "11.00",
+    in_stock: true,
+    created_at: "2025-01-02T00:00:00Z",
+  },
+  {
+    id: 3,
+    name: "Wireless Studio Headphones",
+    slug: "wireless-studio-headphones",
+    category: DEMO_CATEGORIES[1],
+    description: "High-fidelity active noise-cancelling over-ear headphones with 40-hour battery life.",
+    price: "220.00",
+    old_price: "280.00",
+    image_url: "https://lh3.googleusercontent.com/aida-public/AB6AXuD43564gcsa-DVPOlXi8rSh6pJZfr4jzVDyoymyBJGgrlHlh_yiGjJgNBfbb8wMoVwVCMqp13i8PnY_BqIlR9dhzMcYm2lijA4XDyNL_ymgTsIg1zMMTJrLhRb2p_-NDKNUfSUo8hllb_0QWdLYbFxuGTMMFRpgs85k2M1ZV-nB1HV0FdDcZHz3h4ahcsNAlWxr5pFqoDeNanPjqCZ8a8Y2-wdPG4NWnMQeAugN4KAqeMS9xWiM0qMIwQ",
+    stock: 8,
+    badge: "SALE",
+    is_active: true,
+    discount_percent: 21,
+    savings_amount: "60.00",
+    in_stock: true,
+    created_at: "2025-01-03T00:00:00Z",
+  },
+  {
+    id: 4,
+    name: "Heavy Canvas Tote Bag",
+    slug: "heavy-canvas-tote-bag",
+    category: DEMO_CATEGORIES[0],
+    description: "Durable 16oz cotton canvas tote with interior zipped pocket and reinforced handles.",
+    price: "38.00",
+    old_price: "50.00",
+    image_url: "https://lh3.googleusercontent.com/aida-public/AB6AXuBbX5hWfItjxF759_1cLGpsW2phqfec7mVCz3Ic7t5-eTRD3THah4uOx05-aDWthMwFROgfp9-1VqMHJv9tQpmPTqwdl7yF1x6nn6y4CLLfNAh8uZzNSntJuqG2RzddGP5uWLjvxtSwpWbP4d50lt2Ri8lRH1hudYmwK5M3uQsjE9lOlx_6-iBPI9mdO-3gNrlR4rWKd53bOnSaEVNPkpmd9pGC7aSVt9l0UvmY6zz4vEAmwgIUjBfRDA",
+    stock: 30,
+    badge: "SALE",
+    is_active: true,
+    discount_percent: 24,
+    savings_amount: "12.00",
+    in_stock: true,
+    created_at: "2025-01-04T00:00:00Z",
+  },
+  {
+    id: 5,
+    name: "Artisan Ceramic Mug",
+    slug: "artisan-ceramic-mug",
+    category: DEMO_CATEGORIES[8],
+    description: "Wheel-thrown ceramic mug finished with a reactive stoneware glaze.",
+    price: "26.00",
+    old_price: "32.00",
+    image_url: "https://lh3.googleusercontent.com/aida-public/AB6AXuCNBZDu8naCghbQgJYWtLFYrFvsII4DO8kpQ6jxvnuIFjKl2ywCY7p5h9oLOCZSLKPpTYT3yYycRP84xvsk0CubP7JRBFDQWYCy_9WJSBcFCIgmn8rvAh_PUu_53nB_Hc1I0wtk_gvbz8pIGAEvGHe8_jbaaqC-FYJFwx3HIY7HsDPWwkDmRzcxzY9MjWOY6bVQE_CQKyWuwpmR-hCso9lLpVmihrZorj1rm0W5su-RU8AlVCc9CaPZTQ",
+    stock: 15,
+    badge: "",
+    is_active: true,
+    discount_percent: 19,
+    savings_amount: "6.00",
+    in_stock: true,
+    created_at: "2025-01-05T00:00:00Z",
+  },
+  {
+    id: 6,
+    name: "Task Desk Lamp",
+    slug: "task-desk-lamp",
+    category: DEMO_CATEGORIES[1],
+    description: "Minimalist aluminum task lamp with touch dimmer and adjustable arm.",
+    price: "89.00",
+    old_price: "110.00",
+    image_url: "https://lh3.googleusercontent.com/aida-public/AB6AXuCSVwxG52Hz7vhpEWeXPi5UJm20e7TlgZtWZbHszLI4cifI7F5uPYFbxEy59NIlYWIUigqpNJ2egy32cewdQGxDTxh8kV6bZ4Nf3w3s4jW6RW8lR0YCkvt9InRkL9IWpB-tIKgwd5-gZ27tVGExSWYVzPjmxSQkjJsfrPKBicGIs9IV5ytAnf5usn6PU6lCg0h8tocx1ADCxwNN9AUQJhhhCJ3zCib2ZZadlDXWecBkEWqBrt2ESFdvQQ",
+    stock: 6,
+    badge: "NEW",
+    is_active: true,
+    discount_percent: 19,
+    savings_amount: "21.00",
+    in_stock: true,
+    created_at: "2025-01-06T00:00:00Z",
+  },
+  {
+    id: 7,
+    name: "Minimalist Cardholder",
+    slug: "minimalist-cardholder",
+    category: DEMO_CATEGORIES[0],
+    description: "Full-grain vegetable-tanned leather cardholder with 4 card slots and central compartment.",
+    price: "48.00",
+    old_price: "60.00",
+    image_url: "https://lh3.googleusercontent.com/aida-public/AB6AXuAEnFF8b8fZhwGjv9tsHeILb1K3cZr2rOm7PbLISfudcvD22tUhS35wxJEZvJldvsxrF--Nb_71ivUqag_7k2WSby8fUn3pVjJNG4MQL1d5hDM5KQFpt0IeKhMcM--YRcN0Ml95oqVpLBKziSceTMdpgNQhvJKMz0IoWP8exWUapdjFL2p2wBsLz5bqZQoVCFD2lyVE7CLQACvDa8MCjdPrY3mmZSwvJTz6cHVEkhwR7Vsq99P9hNNs-g",
+    stock: 18,
+    badge: "TOP",
+    is_active: true,
+    discount_percent: 20,
+    savings_amount: "12.00",
+    in_stock: true,
+    created_at: "2025-01-07T00:00:00Z",
+  },
+  {
+    id: 8,
+    name: "Organic Heavyweight Tee",
+    slug: "organic-heavyweight-tee",
+    category: DEMO_CATEGORIES[0],
+    description: "280gsm heavyweight combed organic cotton boxy fit tee.",
+    price: "42.00",
+    old_price: "55.00",
+    image_url: "https://lh3.googleusercontent.com/aida-public/AB6AXuCuEZkhQLBvJUd2tKiM1YXdA3qHGqfoC1gOJ_5TqdJRzg7iRIg-0h3LZ4jopXxdRwV5H1_yryNObHo7djUIO6S0_42grlXucu8hJTcyp5f6kLXKCpKUjKQ6tOnNKNS5VwI5tTae84KBLGKSh7CqivtV3NBTcEuGPbaYT-2_QAScX9W6AxQ0O2MRjN8linJ33YO9g15jPy5se-Daf1ffgopzI-wyzmlJotp_Z75g1RUP_IeoZf0XJtiL6g",
+    stock: 40,
+    badge: "SALE",
+    is_active: true,
+    discount_percent: 24,
+    savings_amount: "13.00",
+    in_stock: true,
+    created_at: "2025-01-08T00:00:00Z",
+  },
+];
+
+export async function getCategories(): Promise<Category[]> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/categories/`, {
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error("Failed to fetch categories");
+    return await res.json();
+  } catch (err) {
+    console.warn("Using fallback demo categories:", err);
+    return DEMO_CATEGORIES;
+  }
+}
+
+export async function getProducts(params?: {
+  category?: string;
+  q?: string;
+  badge?: string;
+  ordering?: string;
+  page?: number;
+}): Promise<PaginatedResponse<Product>> {
+  const query = new URLSearchParams();
+  if (params?.category && params.category !== "all") query.set("category", params.category);
+  if (params?.q) query.set("q", params.q);
+  if (params?.badge) query.set("badge", params.badge);
+  if (params?.ordering) query.set("ordering", params.ordering);
+  if (params?.page) query.set("page", params.page.toString());
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/products/?${query.toString()}`, {
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error("Failed to fetch products");
+    return await res.json();
+  } catch (err) {
+    console.warn("Using fallback demo products:", err);
+    let filtered = [...DEMO_PRODUCTS];
+    if (params?.category && params.category !== "all") {
+      filtered = filtered.filter((p) => p.category?.slug === params.category);
+    }
+    if (params?.q) {
+      const q = params.q.toLowerCase();
+      filtered = filtered.filter(
+        (p) =>
+          p.name.toLowerCase().includes(q) ||
+          p.description.toLowerCase().includes(q) ||
+          p.category?.name.toLowerCase().includes(q)
+      );
+    }
+    if (params?.badge) {
+      filtered = filtered.filter((p) => p.badge?.toLowerCase() === params.badge?.toLowerCase());
+    }
+    return {
+      count: filtered.length,
+      next: null,
+      previous: null,
+      results: filtered,
+    };
+  }
+}
+
+export async function getProductDetail(slug: string): Promise<Product | null> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/products/${slug}/`, {
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error("Product not found");
+    return await res.json();
+  } catch (err) {
+    console.warn("Using fallback demo product for slug:", slug, err);
+    const found = DEMO_PRODUCTS.find((p) => p.slug === slug);
+    if (!found) return null;
+    return {
+      ...found,
+      related_products: DEMO_PRODUCTS.filter((p) => p.slug !== slug).slice(0, 4),
+    };
+  }
+}
+
+export async function getHotDeal(): Promise<Product | null> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/hot-deals/`, {
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error("Failed to fetch hot deal");
+    return await res.json();
+  } catch (err) {
+    console.warn("Using fallback demo hot deal:", err);
+    return DEMO_PRODUCTS[7]; // Organic Heavyweight Tee (49% off)
+  }
+}
+
+export async function createOrder(data: {
+  customer_name: string;
+  phone: string;
+  address: string;
+  city: string;
+  items: { product_id: number; quantity: number }[];
+}): Promise<Order> {
+  const res = await fetch(`${API_BASE_URL}/api/orders/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({ detail: "Error creating order" }));
+    throw new Error(errorData.detail || "Failed to submit order");
+  }
+
+  return await res.json();
+}
+
+export async function getOrderDetail(orderNumber: string): Promise<Order | null> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/orders/${orderNumber}/`, {
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error("Order not found");
+    return await res.json();
+  } catch (err) {
+    console.error("Failed to fetch order detail:", err);
+    return null;
+  }
+}

@@ -1,0 +1,7 @@
+<svg width="400" height="400" viewBox="0 0 400 400" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="400" height="400" fill="#EDE8DF"/>
+  <rect x="140" y="140" width="120" height="120" rx="16" stroke="#BA8630" stroke-width="4" stroke-dasharray="8 8"/>
+  <path d="M165 210L185 185L210 215L225 195L245 220H155L165 210Z" fill="#21486B" opacity="0.4"/>
+  <circle cx="180" cy="175" r="10" fill="#BA8630" opacity="0.6"/>
+  <text x="200" y="285" fill="#57646D" font-family="sans-serif" font-size="12" font-weight="600" text-anchor="middle" letter-spacing="1">MINISHOP PRODUCT</text>
+</svg>

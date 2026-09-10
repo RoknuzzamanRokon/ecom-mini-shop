@@ -1,0 +1,439 @@
+@import "tailwindcss";
+
+@theme {
+  --color-page: var(--c-page-bg);
+  --color-surface: var(--c-surface);
+  --color-surface-alt: var(--c-surface-alt);
+  --color-surface-sunken: var(--c-surface-sunken);
+  --color-line: var(--c-border);
+  --color-line-subtle: var(--c-border-subtle);
+
+  --color-ink: var(--c-text-strong);
+  --color-ink-body: var(--c-text-body);
+  --color-ink-muted: var(--c-text-muted);
+  --color-ink-faint: var(--c-text-faint);
+
+  --color-primary: var(--c-primary);
+  --color-primary-hover: var(--c-primary-hover);
+  --color-primary-deep: var(--c-primary-deep);
+  --color-on-primary: var(--c-on-primary);
+
+  --color-accent: var(--c-accent);
+  --color-accent-hover: var(--c-accent-hover);
+  --color-on-accent: var(--c-on-accent);
+
+  --color-nav: var(--c-nav-bg);
+  --color-nav-strip: var(--c-nav-strip-bg);
+  --color-nav-active: var(--c-nav-active-bg);
+  --color-nav-active-text: var(--c-nav-active-text);
+  --color-nav-text: var(--c-nav-text);
+
+  --color-price: var(--c-price);
+  --color-sale: var(--c-sale-price);
+  --color-price-old: var(--c-old-price);
+
+  --color-star: var(--c-star);
+  --color-success: var(--c-success);
+  --color-danger: var(--c-danger);
+
+  --color-badge-new: var(--c-badge-new);
+  --color-badge-hot: var(--c-badge-hot);
+  --color-badge-top: var(--c-badge-top);
+  --color-badge-default: var(--c-badge-default);
+  --color-on-badge-default: var(--c-on-badge-default);
+
+  --color-focus: var(--c-focus-ring);
+}
+
+/* ==========================================================================
+   Palettes
+   ========================================================================== */
+
+/* 1. Default: Kachi Indigo on Kinari (ai) */
+:root, :root[data-theme="ai"] {
+  --c-page-bg: #F2EEE4;
+  --c-surface: #FBF9F4;
+  --c-surface-alt: #EDE7DA;
+  --c-surface-sunken: #E5DED0;
+  --c-border: #D3CBB9;
+  --c-border-subtle: #E3DCCC;
+  --c-text-strong: #14212C;
+  --c-text-body: #33434F;
+  --c-text-muted: #57646D;
+  --c-text-faint: #7F8990;
+  --c-primary: #21486B;
+  --c-primary-hover: #1A3A58;
+  --c-primary-deep: #0E1E2C;
+  --c-on-primary: #F7F4ED;
+  --c-accent: #BA8630;
+  --c-accent-hover: #CB9847;
+  --c-on-accent: #16222E;
+  --c-nav-bg: #1B3A55;
+  --c-nav-strip-bg: #101F2E;
+  --c-nav-active-bg: #35708F;
+  --c-nav-active-text: #F4F0E6;
+  --c-nav-text: #C9C4B6;
+  --c-price: #16293C;
+  --c-sale-price: #A5273D;
+  --c-old-price: #78828A;
+  --c-star: #9F741A;
+  --c-success: #2E6B4F;
+  --c-danger: #8F2A1C;
+  --c-badge-new: #257C88;
+  --c-badge-hot: #A93A28;
+  --c-badge-top: #593066;
+  --c-badge-default: #DDD5C4;
+  --c-on-badge-default: #24313D;
+  --c-focus-ring: #2E7C99;
+}
+:root.dark, :root[data-theme="ai"].dark {
+  --c-page-bg: #0A1218;
+  --c-surface: #141F29;
+  --c-surface-alt: #1D2A35;
+  --c-surface-sunken: #101921;
+  --c-border: #30404D;
+  --c-border-subtle: #22303B;
+  --c-text-strong: #EAE5D9;
+  --c-text-body: #CBD3D8;
+  --c-text-muted: #8E9BA4;
+  --c-text-faint: #5E6C76;
+  --c-primary: #4C82AF;
+  --c-primary-hover: #5F96C4;
+  --c-primary-deep: #2A5A82;
+  --c-on-primary: #0C151C;
+  --c-accent: #D79F45;
+  --c-accent-hover: #E3B05C;
+  --c-on-accent: #19140C;
+  --c-nav-bg: #0F1A24;
+  --c-nav-strip-bg: #091017;
+  --c-nav-active-bg: #274764;
+  --c-nav-active-text: #F2EFE8;
+  --c-nav-text: #96A3AC;
+  --c-price: #E5E0D5;
+  --c-sale-price: #F2687F;
+  --c-old-price: #72808A;
+  --c-star: #D79F45;
+  --c-success: #4CA47A;
+  --c-danger: #D45442;
+  --c-badge-new: #38A0AE;
+  --c-badge-hot: #E25E49;
+  --c-badge-top: #965FB0;
+  --c-badge-default: #283642;
+  --c-on-badge-default: #CBD3D8;
+  --c-focus-ring: #5FA5C4;
+}
+
+/* 2. Sumi & Seal (sumi) */
+:root[data-theme="sumi"] {
+  --c-page-bg: #F6F4EE;
+  --c-surface: #FAF9F6;
+  --c-surface-alt: #ECE7DE;
+  --c-surface-sunken: #E2DCD1;
+  --c-border: #D5CEC1;
+  --c-border-subtle: #E5DFD4;
+  --c-text-strong: #1C1814;
+  --c-text-body: #3E362D;
+  --c-text-muted: #6C6052;
+  --c-text-faint: #968979;
+  --c-primary: #262019;
+  --c-primary-hover: #3A3228;
+  --c-primary-deep: #14100C;
+  --c-on-primary: #F7F5F0;
+  --c-accent: #A83A18;
+  --c-accent-hover: #C0431E;
+  --c-on-accent: #FFFFFF;
+  --c-nav-bg: #262019;
+  --c-nav-strip-bg: #1A1510;
+  --c-nav-active-bg: #40362B;
+  --c-nav-active-text: #F7F5F0;
+  --c-nav-text: #CBC3B5;
+  --c-price: #1C1814;
+  --c-sale-price: #A83A18;
+  --c-old-price: #887B6C;
+  --c-star: #A83A18;
+  --c-success: #3A6946;
+  --c-danger: #962B1A;
+  --c-badge-new: #486581;
+  --c-badge-hot: #A83A18;
+  --c-badge-top: #5C3D5A;
+  --c-badge-default: #DED6C7;
+  --c-on-badge-default: #2B231B;
+  --c-focus-ring: #A83A18;
+}
+:root[data-theme="sumi"].dark {
+  --c-page-bg: #12100E;
+  --c-surface: #1E1A16;
+  --c-surface-alt: #2B2520;
+  --c-surface-sunken: #171411;
+  --c-border: #3D352E;
+  --c-border-subtle: #2C2621;
+  --c-text-strong: #EDE7DE;
+  --c-text-body: #CBC3B5;
+  --c-text-muted: #968979;
+  --c-text-faint: #6C6052;
+  --c-primary: #C5BAA8;
+  --c-primary-hover: #D7CEBF;
+  --c-primary-deep: #B0A490;
+  --c-on-primary: #171411;
+  --c-accent: #DE532B;
+  --c-accent-hover: #ED6740;
+  --c-on-accent: #FFFFFF;
+  --c-nav-bg: #171411;
+  --c-nav-strip-bg: #0F0D0B;
+  --c-nav-active-bg: #2B2520;
+  --c-nav-active-text: #EDE7DE;
+  --c-nav-text: #9E9283;
+  --c-price: #EDE7DE;
+  --c-sale-price: #DE532B;
+  --c-old-price: #7D7162;
+  --c-star: #DE532B;
+  --c-success: #528E61;
+  --c-danger: #DE532B;
+  --c-badge-new: #627D98;
+  --c-badge-hot: #DE532B;
+  --c-badge-top: #875E84;
+  --c-badge-default: #2E2721;
+  --c-on-badge-default: #CBC3B5;
+  --c-focus-ring: #DE532B;
+}
+
+/* 3. Tokiwa Pine (matsu) */
+:root[data-theme="matsu"] {
+  --c-page-bg: #F3EFE6;
+  --c-surface: #F9F7F1;
+  --c-surface-alt: #E8E2D4;
+  --c-surface-sunken: #DCD4C3;
+  --c-border: #CEC4B0;
+  --c-border-subtle: #DFD7C6;
+  --c-text-strong: #17221A;
+  --c-text-body: #324337;
+  --c-text-muted: #57685D;
+  --c-text-faint: #819287;
+  --c-primary: #2E5E49;
+  --c-primary-hover: #244C3B;
+  --c-primary-deep: #163226;
+  --c-on-primary: #F4F0E8;
+  --c-accent: #B07C22;
+  --c-accent-hover: #C58E2E;
+  --c-on-accent: #17221A;
+  --c-nav-bg: #254F3D;
+  --c-nav-strip-bg: #19382B;
+  --c-nav-active-bg: #3E795F;
+  --c-nav-active-text: #F4F0E8;
+  --c-nav-text: #C3CFCA;
+  --c-price: #17221A;
+  --c-sale-price: #A82A38;
+  --c-old-price: #75837A;
+  --c-star: #B07C22;
+  --c-success: #2E5E49;
+  --c-danger: #A82A38;
+  --c-badge-new: #2B6E7F;
+  --c-badge-hot: #A82A38;
+  --c-badge-top: #5A356A;
+  --c-badge-default: #DCD4C3;
+  --c-on-badge-default: #253329;
+  --c-focus-ring: #3E795F;
+}
+:root[data-theme="matsu"].dark {
+  --c-page-bg: #0C1410;
+  --c-surface: #14201A;
+  --c-surface-alt: #1C2B23;
+  --c-surface-sunken: #101A15;
+  --c-border: #2C3E33;
+  --c-border-subtle: #202F27;
+  --c-text-strong: #E5EDE7;
+  --c-text-body: #C2D1C7;
+  --c-text-muted: #8AA092;
+  --c-text-faint: #5C7063;
+  --c-primary: #529679;
+  --c-primary-hover: #64AA8B;
+  --c-primary-deep: #3B755C;
+  --c-on-primary: #0C1410;
+  --c-accent: #D29A38;
+  --c-accent-hover: #E4AE4E;
+  --c-on-accent: #17221A;
+  --c-nav-bg: #101A15;
+  --c-nav-strip-bg: #0A110E;
+  --c-nav-active-bg: #22372C;
+  --c-nav-active-text: #E5EDE7;
+  --c-nav-text: #96A89E;
+  --c-price: #E5EDE7;
+  --c-sale-price: #E24F5F;
+  --c-old-price: #6D7F74;
+  --c-star: #D29A38;
+  --c-success: #529679;
+  --c-danger: #E24F5F;
+  --c-badge-new: #4295A8;
+  --c-badge-hot: #E24F5F;
+  --c-badge-top: #8A5FA0;
+  --c-badge-default: #24352B;
+  --c-on-badge-default: #C2D1C7;
+  --c-focus-ring: #529679;
+}
+
+/* 4. Signal Graphite (den) */
+:root[data-theme="den"] {
+  --c-page-bg: #EAEFF2;
+  --c-surface: #F5F7F9;
+  --c-surface-alt: #DFE5EA;
+  --c-surface-sunken: #D2D9E0;
+  --c-border: #BDC6CF;
+  --c-border-subtle: #D2D9E0;
+  --c-text-strong: #0E141C;
+  --c-text-body: #2C3947;
+  --c-text-muted: #566473;
+  --c-text-faint: #81909F;
+  --c-primary: #1D2A36;
+  --c-primary-hover: #293B4D;
+  --c-primary-deep: #101820;
+  --c-on-primary: #F0F4F7;
+  --c-accent: #00B3CC;
+  --c-accent-hover: #00C8E5;
+  --c-on-accent: #0E141C;
+  --c-nav-bg: #151F28;
+  --c-nav-strip-bg: #0D141B;
+  --c-nav-active-bg: #293C4E;
+  --c-nav-active-text: #00E1FF;
+  --c-nav-text: #A8B8C6;
+  --c-price: #0E141C;
+  --c-sale-price: #C81E3C;
+  --c-old-price: #738290;
+  --c-star: #00B3CC;
+  --c-success: #1E8E62;
+  --c-danger: #C81E3C;
+  --c-badge-new: #00B3CC;
+  --c-badge-hot: #C81E3C;
+  --c-badge-top: #6B4E9B;
+  --c-badge-default: #D2D9E0;
+  --c-on-badge-default: #1D2A36;
+  --c-focus-ring: #00B3CC;
+}
+:root[data-theme="den"].dark {
+  --c-page-bg: #0A0E13;
+  --c-surface: #121921;
+  --c-surface-alt: #1A242F;
+  --c-surface-sunken: #0E131A;
+  --c-border: #283645;
+  --c-border-subtle: #1C2733;
+  --c-text-strong: #E6EDF4;
+  --c-text-body: #BDCBD8;
+  --c-text-muted: #7E92A4;
+  --c-text-faint: #4E5E6E;
+  --c-primary: #4C6882;
+  --c-primary-hover: #5F7E9C;
+  --c-primary-deep: #324759;
+  --c-on-primary: #E6EDF4;
+  --c-accent: #00D5F2;
+  --c-accent-hover: #26E1FA;
+  --c-on-accent: #061117;
+  --c-nav-bg: #0E131A;
+  --c-nav-strip-bg: #070B0E;
+  --c-nav-active-bg: #1E2B38;
+  --c-nav-active-text: #00E6FF;
+  --c-nav-text: #8E9EA9;
+  --c-price: #E6EDF4;
+  --c-sale-price: #F23D5F;
+  --c-old-price: #6A7986;
+  --c-star: #00D5F2;
+  --c-success: #2BB680;
+  --c-danger: #F23D5F;
+  --c-badge-new: #00D5F2;
+  --c-badge-hot: #F23D5F;
+  --c-badge-top: #9370C8;
+  --c-badge-default: #1C2733;
+  --c-on-badge-default: #BDCBD8;
+  --c-focus-ring: #00D5F2;
+}
+
+/* 5. Original Classic (current) */
+:root[data-theme="current"] {
+  --c-page-bg: #F4F6FB;
+  --c-surface: #FFFFFF;
+  --c-surface-alt: #EFF4FF;
+  --c-surface-sunken: #E5EEFF;
+  --c-border: #E2E8F0;
+  --c-border-subtle: #F1F5F9;
+  --c-text-strong: #0B1C30;
+  --c-text-body: #334155;
+  --c-text-muted: #64748B;
+  --c-text-faint: #94A3B8;
+  --c-primary: #2563EB;
+  --c-primary-hover: #1D4ED8;
+  --c-primary-deep: #1E40AF;
+  --c-on-primary: #FFFFFF;
+  --c-accent: #FBBF24;
+  --c-accent-hover: #F59E0B;
+  --c-on-accent: #0F172A;
+  --c-nav-bg: #2563EB;
+  --c-nav-strip-bg: #1D4ED8;
+  --c-nav-active-bg: #1E40AF;
+  --c-nav-active-text: #FDE68A;
+  --c-nav-text: #E0E7FF;
+  --c-price: #0B1C30;
+  --c-sale-price: #E11D48;
+  --c-old-price: #94A3B8;
+  --c-star: #FBBF24;
+  --c-success: #16A34A;
+  --c-danger: #DC2626;
+  --c-badge-new: #0284C7;
+  --c-badge-hot: #E11D48;
+  --c-badge-top: #059669;
+  --c-badge-default: #E2E8F0;
+  --c-on-badge-default: #334155;
+  --c-focus-ring: #3B82F6;
+}
+:root[data-theme="current"].dark {
+  --c-page-bg: #0B1120;
+  --c-surface: #131E32;
+  --c-surface-alt: #1A2844;
+  --c-surface-sunken: #0E1729;
+  --c-border: #243554;
+  --c-border-subtle: #19263E;
+  --c-text-strong: #F1F5F9;
+  --c-text-body: #CBD5E1;
+  --c-text-muted: #94A3B8;
+  --c-text-faint: #64748B;
+  --c-primary: #3B82F6;
+  --c-primary-hover: #60A5FA;
+  --c-primary-deep: #2563EB;
+  --c-on-primary: #FFFFFF;
+  --c-accent: #FBBF24;
+  --c-accent-hover: #FCD34D;
+  --c-on-accent: #0F172A;
+  --c-nav-bg: #0F172A;
+  --c-nav-strip-bg: #090D18;
+  --c-nav-active-bg: #1E293B;
+  --c-nav-active-text: #FDE68A;
+  --c-nav-text: #94A3B8;
+  --c-price: #F8FAFC;
+  --c-sale-price: #FB7185;
+  --c-old-price: #64748B;
+  --c-star: #FBBF24;
+  --c-success: #22C55E;
+  --c-danger: #EF4444;
+  --c-badge-new: #38BDF8;
+  --c-badge-hot: #FB7185;
+  --c-badge-top: #34D399;
+  --c-badge-default: #1E293B;
+  --c-on-badge-default: #CBD5E1;
+  --c-focus-ring: #60A5FA;
+}
+
+/* Base resets & typography */
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  background-color: var(--c-page-bg);
+  color: var(--c-text-body);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.material-symbols-outlined {
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+.material-symbols-outlined.fill-active {
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}

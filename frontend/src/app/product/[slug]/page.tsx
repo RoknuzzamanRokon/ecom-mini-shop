@@ -1,0 +1,287 @@
+"use client";
+
+import React, { useEffect, useState } from "react";
+import Image from "next/image";
+import Link from "next/link";
+import { useParams } from "next/navigation";
+import Header from "@/components/layout/Header";
+import Navbar from "@/components/layout/Navbar";
+import Footer from "@/components/layout/Footer";
+import ProductCard from "@/components/home/ProductCard";
+import { Product } from "@/lib/types";
+import { getProductDetail, formatImageUrl } from "@/lib/api";
+import { useCart } from "@/context/CartContext";
+
+export default function ProductDetailPage() {
+  const params = useParams();
+  const slug = params?.slug as string;
+
+  const [product, setProduct] = useState<Product | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [selectedImage, setSelectedImage] = useState<string>("/placeholder.svg");
+  const [quantity, setQuantity] = useState(1);
+  const { addToCart } = useCart();
+
+  useEffect(() => {
+    async function load() {
+      if (!slug) return;
+      setLoading(true);
+      const data = await getProductDetail(slug);
+      if (data) {
+        setProduct(data);
+        const mainImg = formatImageUrl(data.image_url || (data.image ? data.image : ""));
+        setSelectedImage(mainImg);
+      }
+      setLoading(false);
+    }
+    load();
+  }, [slug]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex flex-col bg-page">
+        <Header />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  if (!product) {
+    return (
+      <div className="min-h-screen flex flex-col bg-page">
+        <Header />
+        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
+          <span className="material-symbols-outlined text-[64px] text-ink-muted/50 mb-2">
+            inventory_2
+          </span>
+          <h2 className="text-xl font-bold text-ink">Product Not Found</h2>
+          <p className="text-sm text-ink-body mt-1">The requested product could not be located.</p>
+          <Link
+            href="/"
+            className="mt-4 bg-primary text-on-primary px-4 py-2 rounded-md font-semibold text-xs uppercase"
+          >
+            Back to Store
+          </Link>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
+  const galleryImages =
+    product.all_image_urls && product.all_image_urls.length > 0
+      ? product.all_image_urls
+      : selectedImage
+      ? [selectedImage]
+      : [];
+
+  return (
+    <div className="min-h-screen flex flex-col bg-page transition-colors duration-200">
+      <div className="sticky top-0 z-40 w-full shadow-sm">
+        <Header />
+        <Navbar />
+      </div>
+
+      <main className="max-w-[1360px] mx-auto px-4 sm:px-6 py-6 flex-1 w-full">
+        {/* Breadcrumb */}
+        <nav className="flex items-center gap-2 text-xs text-ink-muted mb-6">
+          <Link href="/" className="hover:text-primary transition-colors">
+            Home
+          </Link>
+          <span className="material-symbols-outlined text-[14px]">chevron_right</span>
+          {product.category && (
+            <>
+              <Link href={`/?category=${product.category.slug}`} className="hover:text-primary transition-colors">
+                {product.category.name}
+              </Link>
+              <span className="material-symbols-outlined text-[14px]">chevron_right</span>
+            </>
+          )}
+          <span className="text-ink font-medium truncate">{product.name}</span>
+        </nav>
+
+        {/* Product Details Section */}
+        <div className="bg-surface rounded-xl border border-line p-6 lg:p-8 shadow-sm grid grid-cols-1 lg:grid-cols-12 gap-8">
+          {/* Left: Gallery */}
+          <div className="lg:col-span-6 flex flex-col gap-4">
+            <div className="relative aspect-square w-full bg-surface-alt rounded-lg overflow-hidden border border-line">
+              {selectedImage && (
+                <Image
+                  src={selectedImage}
+                  alt={product.name}
+                  fill
+                  priority
+                  onError={() => setSelectedImage("/placeholder.svg")}
+                  className="object-cover"
+                />
+              )}
+              {product.badge && (
+                <span className="absolute top-3 right-3 bg-badge-hot text-white text-xs font-bold px-3 py-1 rounded-full uppercase shadow-sm">
+                  {product.badge}
+                </span>
+              )}
+            </div>
+
+            {/* Thumbnail selector */}
+            {galleryImages.length > 1 && (
+              <div className="flex gap-2.5 overflow-x-auto pb-1">
+                {galleryImages.map((img, i) => {
+                  const formattedThumb = formatImageUrl(img);
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => setSelectedImage(formattedThumb)}
+                      className={`relative w-16 h-16 rounded-md overflow-hidden border-2 shrink-0 transition-all cursor-pointer ${
+                        selectedImage === formattedThumb
+                          ? "border-primary shadow-xs"
+                          : "border-line hover:border-ink-muted"
+                      }`}
+                    >
+                      <Image src={formattedThumb} alt={`Thumb ${i}`} fill className="object-cover" />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Right: Info & Actions */}
+          <div className="lg:col-span-6 flex flex-col">
+            <span className="text-xs uppercase font-bold tracking-widest text-primary">
+              {product.category?.name || "Catalog"}
+            </span>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-ink mt-1.5 tracking-tight">
+              {product.name}
+            </h1>
+
+            {/* Rating */}
+            <div className="flex items-center gap-2 mt-2.5">
+              <div className="flex items-center text-star">
+                <span className="material-symbols-outlined fill-active text-[16px]">star</span>
+                <span className="material-symbols-outlined fill-active text-[16px]">star</span>
+                <span className="material-symbols-outlined fill-active text-[16px]">star</span>
+                <span className="material-symbols-outlined fill-active text-[16px]">star</span>
+                <span className="material-symbols-outlined fill-active text-[16px]">star</span>
+              </div>
+              <span className="text-xs font-semibold text-ink-muted">(42 customer reviews)</span>
+            </div>
+
+            {/* Price Box */}
+            <div className="mt-4 p-4 rounded-lg bg-surface-alt/60 border border-line flex items-baseline gap-3">
+              <span className="text-2xl sm:text-3xl font-extrabold text-primary">
+                ৳{product.price}
+              </span>
+              {product.old_price && (
+                <span className="text-base text-price-old line-through">
+                  ৳{product.old_price}
+                </span>
+              )}
+              {product.savings_amount && (
+                <span className="ml-auto bg-badge-hot/10 text-badge-hot border border-badge-hot/30 text-xs font-bold px-2.5 py-1 rounded">
+                  Save ৳{product.savings_amount}
+                </span>
+              )}
+            </div>
+
+            {/* Stock status */}
+            <div className="mt-4 flex items-center gap-2">
+              <span
+                className={`w-2.5 h-2.5 rounded-full ${
+                  product.in_stock ? "bg-success" : "bg-danger"
+                }`}
+              />
+              <span className="text-xs font-semibold text-ink">
+                {product.in_stock ? `In Stock (${product.stock} available)` : "Out of Stock"}
+              </span>
+            </div>
+
+            {/* Description */}
+            <p className="text-sm text-ink-body mt-4 leading-relaxed">
+              {product.description}
+            </p>
+
+            {/* Quantity and Add to Cart */}
+            <div className="mt-6 pt-6 border-t border-line flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+              <div className="flex items-center border border-line rounded-lg bg-surface overflow-hidden w-fit">
+                <button
+                  onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                  className="px-3.5 py-2 text-sm text-ink hover:bg-surface-sunken transition-colors cursor-pointer"
+                  type="button"
+                >
+                  -
+                </button>
+                <span className="px-4 py-2 text-sm font-bold text-ink min-w-[3rem] text-center">
+                  {quantity}
+                </span>
+                <button
+                  onClick={() => setQuantity(quantity + 1)}
+                  className="px-3.5 py-2 text-sm text-ink hover:bg-surface-sunken transition-colors cursor-pointer"
+                  type="button"
+                >
+                  +
+                </button>
+              </div>
+
+              <button
+                onClick={() => addToCart(product, quantity)}
+                disabled={!product.in_stock}
+                className="flex-1 bg-primary hover:bg-primary-hover disabled:opacity-50 text-on-primary font-bold text-xs uppercase tracking-wider py-3 px-6 rounded-lg shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+                type="button"
+              >
+                <span className="material-symbols-outlined text-[18px]">add_shopping_cart</span>
+                <span>Add to Cart</span>
+              </button>
+            </div>
+
+            {/* Perks breakdown */}
+            <div className="mt-8 grid grid-cols-2 gap-3 pt-6 border-t border-line text-xs text-ink-body">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-[18px]">
+                  local_shipping
+                </span>
+                <span>Free shipping over ৳99</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-[18px]">
+                  verified_user
+                </span>
+                <span>30-day money back guarantee</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-[18px]">
+                  workspace_premium
+                </span>
+                <span>100% Genuine product</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary text-[18px]">
+                  support_agent
+                </span>
+                <span>24/7 dedicated support</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Related Products */}
+        {product.related_products && product.related_products.length > 0 && (
+          <div className="mt-12">
+            <h3 className="font-bold text-base uppercase tracking-wider text-ink mb-4">
+              Related Products
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {product.related_products.map((rel) => (
+                <ProductCard key={rel.id} product={rel} />
+              ))}
+            </div>
+          </div>
+        )}
+      </main>
+
+      <Footer />
+    </div>
+  );
+}

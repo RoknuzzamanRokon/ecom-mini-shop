@@ -1,10 +1,11 @@
 from django.urls import path
 
-from . import views
+from . import api_views, views
 
 app_name = "shop"
 
 urlpatterns = [
+    # Traditional Django template views
     path("", views.product_list, name="product_list"),
     path("category/<slug:category_slug>/", views.product_list, name="category"),
     path("product/<slug:slug>/", views.product_detail, name="product_detail"),
@@ -15,4 +16,12 @@ urlpatterns = [
     path("cart/remove/<int:product_id>/", views.cart_remove, name="cart_remove"),
     path("checkout/", views.checkout, name="checkout"),
     path("order-success/<int:order_id>/", views.order_success, name="order_success"),
+
+    # REST API endpoints for Next.js frontend
+    path("api/categories/", api_views.CategoryListView.as_view(), name="api_categories"),
+    path("api/products/", api_views.ProductListAPIView.as_view(), name="api_products"),
+    path("api/products/<slug:slug>/", api_views.ProductDetailAPIView.as_view(), name="api_product_detail"),
+    path("api/hot-deals/", api_views.HotDealAPIView.as_view(), name="api_hot_deal"),
+    path("api/orders/", api_views.OrderCreateAPIView.as_view(), name="api_order_create"),
+    path("api/orders/<str:order_number>/", api_views.OrderDetailAPIView.as_view(), name="api_order_detail"),
 ]
