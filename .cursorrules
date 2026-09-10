@@ -1,0 +1,14 @@
+# MiniShop Cursor Rules
+
+- Full-stack decoupled architecture: Django REST API (backend/) on port 8001, Next.js 16 (frontend/) on port 3000.
+- Mandatory Currency: Always use Bangladeshi Taka symbol '৳' everywhere. Never use '$'.
+- Design Tokens: Always use semantic CSS tokens (bg-primary, bg-surface, text-ink, text-accent, border-line, bg-nav). Avoid hardcoded colors like bg-blue-600.
+- Layout:
+  - Header and Navbar must remain sticky together on scroll.
+  - Left sidebar is hidden on mobile (< lg screens).
+  - Mobile category toggler button with collapsible menu on Navbar.
+  - Hero banner is an animated category slider on Home, and a single category showcase on category filter.
+  - Product detail page has balanced 5:7 column split with circular zoom loupe on hover.
+- Verification: Run 'python manage.py test shop' in backend and 'npm run build' in frontend to ensure zero errors.
+- Version Control: Always run 'git add' and 'git commit -m "<subject line>"' with a descriptive subject line for any modification or update stage.
+

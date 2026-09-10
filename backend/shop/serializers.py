@@ -4,6 +4,8 @@ from .models import Category, Product, ProductImage, Order, OrderItem
 
 class CategorySerializer(serializers.ModelSerializer):
     products_count = serializers.IntegerField(read_only=True, default=0)
+    image_url = serializers.SerializerMethodField()
+    description = serializers.SerializerMethodField()
 
     class Meta:
         model = Category
@@ -14,7 +16,39 @@ class CategorySerializer(serializers.ModelSerializer):
             "icon",
             "is_active",
             "products_count",
+            "image_url",
+            "description",
         ]
+
+    def get_image_url(self, obj):
+        request = self.context.get("request")
+        if obj.image and hasattr(obj.image, "url"):
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+
+        first_product = obj.products.filter(is_active=True).exclude(image="").first()
+        if first_product and first_product.image and hasattr(first_product.image, "url"):
+            if request:
+                return request.build_absolute_uri(first_product.image.url)
+            return first_product.image.url
+        return None
+
+    def get_description(self, obj):
+        if obj.description:
+            return obj.description
+        CATEGORY_DESCRIPTIONS = {
+            "clothing": "Curated essentials designed for everyday comfort, timeless modern silhouettes, and architectural elegance.",
+            "electronics": "Cutting-edge audio, custom mechanical keyboards, smart wearable tech, and innovative everyday workspace accessories.",
+            "shoes": "Step into comfort and style with everyday canvas sneakers, trail runners, athletic footwear, and lightweight soles.",
+            "watches": "Precision timepieces featuring genuine leather straps, scratch-resistant dials, and timeless chronograph detailing.",
+            "jewellery": "Handcrafted sterling silver necklaces, delicate pendants, and natural stone beaded bracelet sets.",
+            "health-and-beauty": "Formulated with clean botanical extracts, refreshing natural serums, and daily restorative wellness essentials.",
+            "kids-and-babies": "Ultra-soft gentle cotton essentials, playful educational puzzle sets, and durable wear for the little ones.",
+            "sports": "High-performance workout equipment, premium yoga mats, and rugged essentials designed to keep you moving.",
+            "home-and-garden": "Elevate your living spaces with functional home decor, modern planters, cozy textures, and indoor botanicals.",
+        }
+        return CATEGORY_DESCRIPTIONS.get(obj.slug, "Explore our curated collection of quality products.")
 
 
 class ProductImageSerializer(serializers.ModelSerializer):

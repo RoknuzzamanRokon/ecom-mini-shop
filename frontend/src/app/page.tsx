@@ -97,7 +97,11 @@ export default function HomePage() {
 
           {/* RIGHT MAIN AREA: Banner, Product Grid & Pagination (full width on mobile, 9 columns on lg) */}
           <section className="w-full lg:col-span-9 flex flex-col gap-6">
-            <HeroBanner />
+            <HeroBanner
+              activeCategory={selectedCategory}
+              categories={categories}
+              onSelectCategory={handleCategoryChange}
+            />
 
             <ProductGrid
               products={products}

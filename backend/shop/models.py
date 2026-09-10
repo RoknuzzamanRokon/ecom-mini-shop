@@ -13,6 +13,16 @@ class Category(models.Model):
         blank=True,
         help_text="Material Symbols icon name, e.g. checkroom",
     )
+    image = models.ImageField(
+        upload_to="categories/",
+        blank=True,
+        null=True,
+        help_text="Category hero / banner image",
+    )
+    description = models.TextField(
+        blank=True,
+        help_text="Short description for category banners and headers",
+    )
     is_active = models.BooleanField(default=True)
 
     class Meta:

@@ -6,10 +6,22 @@ from .models import Category, Order, OrderItem, Product, ProductImage
 
 @admin.register(Category)
 class CategoryAdmin(admin.ModelAdmin):
-    list_display = ("name", "slug", "icon", "is_active")
+    list_display = ("image_preview", "name", "slug", "icon", "is_active")
     list_editable = ("is_active",)
     prepopulated_fields = {"slug": ("name",)}
-    search_fields = ("name",)
+    search_fields = ("name", "description")
+    fields = ("name", "slug", "icon", "image", "image_preview", "description", "is_active")
+    readonly_fields = ("image_preview",)
+
+    def image_preview(self, obj):
+        if obj.image:
+            return format_html(
+                '<img src="{}" style="height:44px;width:64px;object-fit:cover;border-radius:4px;border:1px solid #ddd;" />',
+                obj.image.url,
+            )
+        return format_html('<span style="color:#999;font-size:12px;">No image</span>')
+
+    image_preview.short_description = "Image Preview"
 
 
 class ProductImageInline(admin.TabularInline):

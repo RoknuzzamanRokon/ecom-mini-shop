@@ -5,6 +5,8 @@ export interface Category {
   icon?: string;
   is_active: boolean;
   products_count?: number;
+  image_url?: string | null;
+  description?: string;
 }
 
 export interface ProductImage {

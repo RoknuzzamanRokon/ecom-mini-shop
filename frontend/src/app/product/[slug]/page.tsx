@@ -8,6 +8,7 @@ import Header from "@/components/layout/Header";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import ProductCard from "@/components/home/ProductCard";
+import ProductImageZoom from "@/components/product/ProductImageZoom";
 import { Product } from "@/lib/types";
 import { getProductDetail, formatImageUrl } from "@/lib/api";
 import { useCart } from "@/context/CartContext";
@@ -104,26 +105,15 @@ export default function ProductDetailPage() {
         </nav>
 
         {/* Product Details Section */}
-        <div className="bg-surface rounded-xl border border-line p-6 lg:p-8 shadow-sm grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Left: Gallery */}
-          <div className="lg:col-span-6 flex flex-col gap-4">
-            <div className="relative aspect-square w-full bg-surface-alt rounded-lg overflow-hidden border border-line">
-              {selectedImage && (
-                <Image
-                  src={selectedImage}
-                  alt={product.name}
-                  fill
-                  priority
-                  onError={() => setSelectedImage("/placeholder.svg")}
-                  className="object-cover"
-                />
-              )}
-              {product.badge && (
-                <span className="absolute top-3 right-3 bg-badge-hot text-white text-xs font-bold px-3 py-1 rounded-full uppercase shadow-sm">
-                  {product.badge}
-                </span>
-              )}
-            </div>
+        <div className="bg-surface rounded-xl border border-line p-6 lg:p-8 shadow-sm grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+          {/* Left: Gallery (Compact, balanced 5 cols) */}
+          <div className="lg:col-span-5 flex flex-col gap-4">
+            <ProductImageZoom
+              src={selectedImage}
+              alt={product.name}
+              badge={product.badge}
+              fallbackSrc="/placeholder.svg"
+            />
 
             {/* Thumbnail selector */}
             {galleryImages.length > 1 && (
@@ -148,8 +138,8 @@ export default function ProductDetailPage() {
             )}
           </div>
 
-          {/* Right: Info & Actions */}
-          <div className="lg:col-span-6 flex flex-col">
+          {/* Right: Info & Actions (Spacious 7 cols) */}
+          <div className="lg:col-span-7 flex flex-col">
             <span className="text-xs uppercase font-bold tracking-widest text-primary">
               {product.category?.name || "Catalog"}
             </span>
