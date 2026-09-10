@@ -53,6 +53,7 @@ PERMISSIONS_DATA = [
     ("points.view", "View Points", "points", "view", "Can view point balances and history"),
     ("points.add", "Credit Points", "points", "add", "Can credit points to sellers"),
     ("points.deduct", "Debit Points", "points", "deduct", "Can debit points from sellers"),
+    ("points.adjust", "Adjust Points", "points", "adjust", "Can adjust seller point balances"),
     # Reports
     ("reports.view", "View Reports", "reports", "view", "Can access analytical and sales reports"),
 ]
@@ -105,7 +106,7 @@ ROLE_PERMISSIONS_MAPPING = {
         "sellers.view", "sellers.create", "sellers.update", "sellers.approve", "sellers.suspend",
         "orders.view", "orders.create", "orders.update", "orders.cancel",
         "payments.view",
-        "points.view", "points.add", "points.deduct",
+        "points.view", "points.add", "points.deduct", "points.adjust",
         "reports.view",
     ],
     Role.ROLE_OPERATION_MANAGER: [
@@ -129,7 +130,7 @@ ROLE_PERMISSIONS_MAPPING = {
     Role.ROLE_FINANCE: [
         "payments.view", "payments.verify", "payments.refund",
         "orders.view", "orders.refund",
-        "points.view", "points.add", "points.deduct",
+        "points.view", "points.add", "points.deduct", "points.adjust",
         "reports.view",
     ],
     Role.ROLE_SUPPORT_TEAM: [
