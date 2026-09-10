@@ -13,11 +13,11 @@ document.addEventListener("DOMContentLoaded", function () {
         if (!url) return;
         mainImage.setAttribute("src", url);
         thumbs.forEach(function (t) {
-          t.classList.remove("border-primary-container");
+          t.classList.remove("border-primary");
           t.classList.add("border-transparent");
         });
         thumb.classList.remove("border-transparent");
-        thumb.classList.add("border-primary-container");
+        thumb.classList.add("border-primary");
       });
     });
 

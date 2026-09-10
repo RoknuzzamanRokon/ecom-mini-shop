@@ -4,45 +4,45 @@
 
 {% block content %}
 <main class="max-w-[1360px] mx-auto px-4 sm:px-6 py-6">
-  <h1 class="text-lg font-bold text-slate-900 uppercase tracking-wider mb-4">Shopping Cart</h1>
+  <h1 class="text-lg font-bold text-ink uppercase tracking-wider mb-4">Shopping Cart</h1>
 
   {% if items %}
   <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
-    <div class="lg:col-span-8 bg-white rounded-lg border border-slate-200 shadow-sm divide-y divide-slate-100">
+    <div class="lg:col-span-8 bg-surface rounded-lg border border-line shadow-sm divide-y divide-line-subtle">
       {% for item in items %}
       <div class="flex items-center gap-4 p-4">
-        <a class="w-20 h-20 shrink-0 bg-slate-50 rounded-md overflow-hidden flex items-center justify-center" href="{% url 'shop:product_detail' item.product.slug %}">
+        <a class="w-20 h-20 shrink-0 bg-surface-alt rounded-md overflow-hidden flex items-center justify-center" href="{% url 'shop:product_detail' item.product.slug %}">
           {% if item.product.image %}
           <img alt="{{ item.product.name }}" class="w-full h-full object-cover" src="{{ item.product.image.url }}"/>
           {% else %}
-          <span class="material-symbols-outlined text-[28px] text-slate-300">image</span>
+          <span class="material-symbols-outlined text-[28px] text-ink-faint">image</span>
           {% endif %}
         </a>
         <div class="flex-1 min-w-0">
-          <a class="font-semibold text-sm text-slate-900 hover:text-primary-container line-clamp-1" href="{% url 'shop:product_detail' item.product.slug %}">{{ item.product.name }}</a>
-          <div class="text-xs text-slate-400 uppercase tracking-wide mt-0.5">{{ item.product.category.name }}</div>
-          <div class="text-sm font-bold text-slate-900 mt-1">${{ item.product.price }}</div>
+          <a class="font-semibold text-sm text-ink hover:text-primary line-clamp-1" href="{% url 'shop:product_detail' item.product.slug %}">{{ item.product.name }}</a>
+          <div class="text-xs text-ink-faint uppercase tracking-wide mt-0.5">{{ item.product.category.name }}</div>
+          <div class="text-sm font-bold text-price mt-1">${{ item.product.price }}</div>
         </div>
 
         <form action="{% url 'shop:cart_decrease' item.product.id %}" method="post">
           {% csrf_token %}
-          <button aria-label="Decrease quantity" class="w-8 h-8 flex items-center justify-center border border-slate-200 rounded-l-md text-slate-500 hover:bg-slate-50 transition-colors" type="submit">
+          <button aria-label="Decrease quantity" class="w-8 h-8 flex items-center justify-center border border-line rounded-l-md text-ink-muted hover:bg-surface-alt transition-colors" type="submit">
             <span class="material-symbols-outlined text-[16px]">remove</span>
           </button>
         </form>
-        <span class="w-10 h-8 flex items-center justify-center border-y border-slate-200 text-sm font-medium">{{ item.quantity }}</span>
+        <span class="w-10 h-8 flex items-center justify-center border-y border-line text-sm font-medium">{{ item.quantity }}</span>
         <form action="{% url 'shop:cart_increase' item.product.id %}" method="post">
           {% csrf_token %}
-          <button aria-label="Increase quantity" class="w-8 h-8 flex items-center justify-center border border-slate-200 rounded-r-md text-slate-500 hover:bg-slate-50 transition-colors" type="submit">
+          <button aria-label="Increase quantity" class="w-8 h-8 flex items-center justify-center border border-line rounded-r-md text-ink-muted hover:bg-surface-alt transition-colors" type="submit">
             <span class="material-symbols-outlined text-[16px]">add</span>
           </button>
         </form>
 
-        <div class="w-20 text-right font-bold text-sm text-slate-900">${{ item.subtotal }}</div>
+        <div class="w-20 text-right font-bold text-sm text-price">${{ item.subtotal }}</div>
 
         <form action="{% url 'shop:cart_remove' item.product.id %}" method="post">
           {% csrf_token %}
-          <button aria-label="Remove item" class="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-full transition-colors" title="Remove" type="submit">
+          <button aria-label="Remove item" class="w-8 h-8 flex items-center justify-center text-ink-faint hover:text-danger hover:bg-danger/10 rounded-full transition-colors" title="Remove" type="submit">
             <span class="material-symbols-outlined text-[18px]">delete</span>
           </button>
         </form>
@@ -51,35 +51,35 @@
     </div>
 
     <div class="lg:col-span-4">
-      <div class="bg-white rounded-lg border border-slate-200 shadow-sm p-5">
-        <h2 class="font-bold text-sm uppercase tracking-wider text-slate-900 mb-4">Order Summary</h2>
-        <div class="flex items-center justify-between text-sm text-slate-600 mb-2">
+      <div class="bg-surface rounded-lg border border-line shadow-sm p-5">
+        <h2 class="font-bold text-sm uppercase tracking-wider text-ink mb-4">Order Summary</h2>
+        <div class="flex items-center justify-between text-sm text-ink-body mb-2">
           <span>Subtotal</span>
-          <span class="font-medium text-slate-900">${{ total }}</span>
+          <span class="font-medium text-price">${{ total }}</span>
         </div>
-        <div class="flex items-center justify-between text-sm text-slate-600 mb-4 pb-4 border-b border-slate-100">
+        <div class="flex items-center justify-between text-sm text-ink-body mb-4 pb-4 border-b border-line-subtle">
           <span>Shipping</span>
-          <span class="font-medium text-emerald-600">Free</span>
+          <span class="font-medium text-success">Free</span>
         </div>
-        <div class="flex items-center justify-between text-base font-bold text-slate-900 mb-5">
+        <div class="flex items-center justify-between text-base font-bold text-ink mb-5">
           <span>Total</span>
-          <span class="text-primary-container">${{ total }}</span>
+          <span class="text-primary">${{ total }}</span>
         </div>
-        <a class="w-full inline-flex items-center justify-center gap-2 bg-primary-container hover:bg-primary text-white font-bold text-xs uppercase tracking-wider px-6 py-3 rounded shadow-sm transition-all" href="{% url 'shop:checkout' %}">
+        <a class="w-full inline-flex items-center justify-center gap-2 bg-primary hover:bg-primary-hover text-on-primary font-bold text-xs uppercase tracking-wider px-6 py-3 rounded shadow-sm transition-all" href="{% url 'shop:checkout' %}">
           <span>Proceed to Checkout</span>
           <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
         </a>
-        <a class="w-full mt-2 inline-flex items-center justify-center gap-2 text-primary-container hover:text-primary font-semibold text-xs uppercase tracking-wider px-6 py-2.5 transition-colors" href="{% url 'shop:product_list' %}">
+        <a class="w-full mt-2 inline-flex items-center justify-center gap-2 text-primary hover:text-primary-hover font-semibold text-xs uppercase tracking-wider px-6 py-2.5 transition-colors" href="{% url 'shop:product_list' %}">
           Continue Shopping
         </a>
       </div>
     </div>
   </div>
   {% else %}
-  <div class="bg-white rounded-lg border border-slate-200 shadow-sm py-20 flex flex-col items-center justify-center text-center gap-3">
-    <span class="material-symbols-outlined text-[56px] text-slate-300">shopping_bag</span>
-    <p class="text-sm font-medium text-slate-600">Your cart is empty</p>
-    <a class="inline-flex items-center gap-2 bg-primary-container hover:bg-primary text-white font-bold text-xs uppercase tracking-wider px-6 py-2.5 rounded shadow-sm transition-all mt-2" href="{% url 'shop:product_list' %}">Continue Shopping</a>
+  <div class="bg-surface rounded-lg border border-line shadow-sm py-20 flex flex-col items-center justify-center text-center gap-3">
+    <span class="material-symbols-outlined text-[56px] text-ink-faint">shopping_bag</span>
+    <p class="text-sm font-medium text-ink-body">Your cart is empty</p>
+    <a class="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-on-primary font-bold text-xs uppercase tracking-wider px-6 py-2.5 rounded shadow-sm transition-all mt-2" href="{% url 'shop:product_list' %}">Continue Shopping</a>
   </div>
   {% endif %}
 </main>

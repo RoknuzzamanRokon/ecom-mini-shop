@@ -1,8 +1,8 @@
 from django import forms
 
 INPUT_CLASSES = (
-    "w-full bg-white text-slate-800 placeholder-slate-400 text-sm rounded-md "
-    "py-2.5 px-3.5 border border-slate-200 focus:ring-2 focus:ring-amber-400 "
+    "w-full bg-surface text-ink placeholder-ink-faint text-sm rounded-md "
+    "py-2.5 px-3.5 border border-line focus:ring-2 focus:ring-focus "
     "focus:border-transparent outline-none"
 )
 

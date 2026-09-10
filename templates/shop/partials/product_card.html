@@ -1,37 +1,37 @@
-<div class="group bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col">
-  <a class="relative aspect-square w-full bg-slate-50 overflow-hidden block" href="{% url 'shop:product_detail' product.slug %}">
+<div class="group bg-surface rounded-lg border border-line overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col">
+  <a class="relative aspect-square w-full bg-surface-alt overflow-hidden block" href="{% url 'shop:product_detail' product.slug %}">
     {% if product.image %}
     <img alt="{{ product.name }}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" src="{{ product.image.url }}"/>
     {% else %}
     <span class="w-full h-full flex items-center justify-center">
-      <span class="material-symbols-outlined text-[48px] text-slate-300">image</span>
+      <span class="material-symbols-outlined text-[48px] text-ink-faint">image</span>
     </span>
     {% endif %}
     {% if product.badge %}
-    <span class="absolute top-2 right-2 text-white text-[10px] font-bold px-2 py-0.5 rounded-full uppercase shadow-sm
-      {% if product.badge == 'NEW' %}bg-sky-500
-      {% elif product.badge == 'HOT' %}bg-rose-500
-      {% elif product.badge == 'TOP' %}bg-emerald-600
-      {% else %}bg-amber-400 text-slate-950{% endif %}">{{ product.badge }}</span>
+    <span class="absolute top-2 right-2 text-on-primary text-[10px] font-bold px-2 py-0.5 rounded-full uppercase shadow-sm
+      {% if product.badge == 'NEW' %}bg-badge-new
+      {% elif product.badge == 'HOT' %}bg-badge-hot
+      {% elif product.badge == 'TOP' %}bg-badge-top
+      {% else %}bg-badge-default text-on-badge-default{% endif %}">{{ product.badge }}</span>
     {% endif %}
   </a>
   <div class="p-3.5 flex flex-col flex-1">
-    <span class="text-[11px] text-slate-400 uppercase tracking-wider font-medium">{{ product.category.name }}</span>
-    <a class="font-semibold text-xs text-slate-900 hover:text-primary-container line-clamp-1 mt-0.5" href="{% url 'shop:product_detail' product.slug %}">{{ product.name }}</a>
-    <div class="flex items-center gap-0.5 text-amber-400 my-1.5">
+    <span class="text-[11px] text-ink-faint uppercase tracking-wider font-medium">{{ product.category.name }}</span>
+    <a class="font-semibold text-xs text-ink hover:text-primary line-clamp-1 mt-0.5" href="{% url 'shop:product_detail' product.slug %}">{{ product.name }}</a>
+    <div class="flex items-center gap-0.5 text-star my-1.5">
       {% for _ in "12345" %}<span class="material-symbols-outlined fill-active text-[13px]">star</span>{% endfor %}
     </div>
-    <div class="mt-auto pt-2 flex items-center justify-between border-t border-slate-100">
+    <div class="mt-auto pt-2 flex items-center justify-between border-t border-line-subtle">
       <div class="flex items-baseline gap-1.5">
-        <span class="font-bold text-sm text-slate-900">${{ product.price }}</span>
+        <span class="font-bold text-sm text-price">${{ product.price }}</span>
         {% if product.old_price %}
-        <span class="text-[11px] text-slate-400 line-through">${{ product.old_price }}</span>
+        <span class="text-[11px] text-price-old line-through">${{ product.old_price }}</span>
         {% endif %}
       </div>
       <form action="{% url 'shop:cart_add' product.id %}" method="post">
         {% csrf_token %}
         <input name="next" type="hidden" value="{{ request.path }}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}"/>
-        <button class="bg-primary-container hover:bg-primary text-white p-1.5 rounded-md transition-colors shadow-sm" title="Add to Cart" type="submit">
+        <button class="bg-primary hover:bg-primary-hover text-on-primary p-1.5 rounded-md transition-colors shadow-sm" title="Add to Cart" type="submit">
           <span class="material-symbols-outlined text-[16px] block">add_shopping_cart</span>
         </button>
       </form>

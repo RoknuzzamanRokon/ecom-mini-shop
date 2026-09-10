@@ -1,18 +1,18 @@
 <aside class="lg:col-span-3 flex flex-col gap-6">
-  <div class="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
-    <div class="bg-[#FBBF24] px-4 py-3 flex items-center gap-2.5 text-slate-900 font-bold uppercase tracking-wider text-sm">
+  <div class="bg-surface rounded-lg border border-line overflow-hidden shadow-sm">
+    <div class="bg-accent px-4 py-3 flex items-center gap-2.5 text-on-accent font-bold uppercase tracking-wider text-sm">
       <span class="material-symbols-outlined text-[20px]">menu</span>
       <span>CATEGORIES</span>
     </div>
-    <ul class="divide-y divide-slate-100 text-sm text-slate-700">
+    <ul class="divide-y divide-line-subtle text-sm text-ink-body">
       {% for cat in nav_categories %}
       <li>
-        <a class="group flex items-center justify-between px-4 py-2.5 hover:bg-blue-50/80 hover:text-primary-container transition-colors {% if category.slug == cat.slug %}bg-blue-50/80 text-primary-container{% endif %}" href="{% url 'shop:category' cat.slug %}">
+        <a class="group flex items-center justify-between px-4 py-2.5 hover:bg-primary/10 hover:text-primary transition-colors {% if category.slug == cat.slug %}bg-primary/10 text-primary{% endif %}" href="{% url 'shop:category' cat.slug %}">
           <span class="flex items-center gap-3">
-            <span class="material-symbols-outlined text-[18px] text-slate-400 group-hover:text-primary-container transition-colors">{{ cat.icon|default:"category" }}</span>
+            <span class="material-symbols-outlined text-[18px] text-ink-faint group-hover:text-primary transition-colors">{{ cat.icon|default:"category" }}</span>
             <span>{{ cat.name }}</span>
           </span>
-          <span class="material-symbols-outlined text-[16px] text-slate-400 group-hover:translate-x-0.5 transition-transform">chevron_right</span>
+          <span class="material-symbols-outlined text-[16px] text-ink-faint group-hover:translate-x-0.5 transition-transform">chevron_right</span>
         </a>
       </li>
       {% endfor %}

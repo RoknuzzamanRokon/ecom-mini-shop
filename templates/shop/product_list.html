@@ -9,46 +9,46 @@
 
     <section class="lg:col-span-9 flex flex-col gap-6">
       {% if not category and not search_query %}
-      <div class="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-sm">
-        <div class="relative bg-gradient-to-r from-slate-100 via-slate-50 to-white min-h-[260px] sm:min-h-[300px] flex items-center">
+      <div class="bg-surface rounded-lg border border-line overflow-hidden shadow-sm">
+        <div class="relative bg-surface-alt min-h-[260px] sm:min-h-[300px] flex items-center">
           <div class="w-full sm:w-3/5 p-6 sm:p-10 z-10">
-            <span class="text-xs uppercase font-bold tracking-widest text-slate-500">NEW SEASON</span>
-            <h2 class="text-2xl sm:text-4xl font-extrabold text-slate-900 tracking-tight mt-1 mb-2">
-              EVERYDAY <span class="text-[#F59E0B]">ESSENTIALS</span>
+            <span class="text-xs uppercase font-bold tracking-widest text-ink-muted">NEW SEASON</span>
+            <h2 class="text-2xl sm:text-4xl font-extrabold text-ink tracking-tight mt-1 mb-2">
+              EVERYDAY <span class="text-accent">ESSENTIALS</span>
             </h2>
-            <p class="text-xs sm:text-sm text-slate-600 max-w-md line-clamp-2 mb-5">
+            <p class="text-xs sm:text-sm text-ink-body max-w-md line-clamp-2 mb-5">
               Carefully curated essentials designed for everyday comfort, timeless modern style, and everyday value.
             </p>
-            <a class="inline-flex items-center gap-2 bg-primary-container hover:bg-primary text-white font-bold text-xs uppercase tracking-wider px-6 py-2.5 rounded shadow-sm transition-all hover:shadow" href="#">
+            <a class="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-on-primary font-bold text-xs uppercase tracking-wider px-6 py-2.5 rounded shadow-sm transition-all hover:shadow" href="#">
               <span>SHOP NOW</span>
               <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
             </a>
           </div>
         </div>
-        <div class="bg-primary-container text-white grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-blue-400/30 text-center py-3 px-4">
+        <div class="bg-primary text-on-primary grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-on-primary/30 text-center py-3 px-4">
           <div class="flex flex-col items-center justify-center p-2">
             <span class="text-xs font-bold uppercase tracking-wider">MONEY BACK</span>
-            <span class="text-[11px] text-blue-100">30 Days Money Back Guarantee</span>
+            <span class="text-[11px] text-on-primary/75">30 Days Money Back Guarantee</span>
           </div>
           <div class="flex flex-col items-center justify-center p-2">
             <span class="text-xs font-bold uppercase tracking-wider">FREE SHIPPING</span>
-            <span class="text-[11px] text-blue-100">Shipping on orders over $99</span>
+            <span class="text-[11px] text-on-primary/75">Shipping on orders over $99</span>
           </div>
           <div class="flex flex-col items-center justify-center p-2">
             <span class="text-xs font-bold uppercase tracking-wider">SPECIAL SALE</span>
-            <span class="text-[11px] text-blue-100">Extra $5 off on all items</span>
+            <span class="text-[11px] text-on-primary/75">Extra $5 off on all items</span>
           </div>
         </div>
       </div>
       {% endif %}
 
-      <div class="bg-white rounded-lg border border-slate-200 px-4 py-3 shadow-sm flex items-center justify-between gap-3">
-        <h3 class="font-bold text-sm uppercase tracking-wider text-slate-900">
+      <div class="bg-surface rounded-lg border border-line px-4 py-3 shadow-sm flex items-center justify-between gap-3">
+        <h3 class="font-bold text-sm uppercase tracking-wider text-ink">
           {% if search_query %}Search results for &ldquo;{{ search_query }}&rdquo;
           {% elif category %}{{ category.name }}
           {% else %}NEW PRODUCTS{% endif %}
         </h3>
-        <span class="text-xs text-slate-400">{{ page_obj.paginator.count }} product{{ page_obj.paginator.count|pluralize }}</span>
+        <span class="text-xs text-ink-faint">{{ page_obj.paginator.count }} product{{ page_obj.paginator.count|pluralize }}</span>
       </div>
 
       {% if products %}
@@ -59,21 +59,21 @@
       </div>
 
       {% if page_obj.paginator.num_pages > 1 %}
-      <div class="flex items-center justify-center gap-2 mt-4 pt-4 border-t border-slate-200">
+      <div class="flex items-center justify-center gap-2 mt-4 pt-4 border-t border-line">
         {% if page_obj.has_previous %}
-        <a class="w-9 h-9 rounded bg-white border border-slate-200 text-slate-600 shadow-sm hover:bg-slate-50 flex items-center justify-center transition-colors" href="?{% if search_query %}q={{ search_query }}&amp;{% endif %}page={{ page_obj.previous_page_number }}" title="Previous page">
+        <a class="w-9 h-9 rounded bg-surface border border-line text-ink-body shadow-sm hover:bg-surface-alt flex items-center justify-center transition-colors" href="?{% if search_query %}q={{ search_query }}&amp;{% endif %}page={{ page_obj.previous_page_number }}" title="Previous page">
           <span class="material-symbols-outlined text-[18px]">chevron_left</span>
         </a>
         {% endif %}
         {% for num in page_obj.paginator.page_range %}
         {% if num == page_obj.number %}
-        <span class="w-9 h-9 rounded bg-primary-container text-white font-semibold text-xs flex items-center justify-center shadow-sm">{{ num }}</span>
+        <span class="w-9 h-9 rounded bg-primary text-on-primary font-semibold text-xs flex items-center justify-center shadow-sm">{{ num }}</span>
         {% else %}
-        <a class="w-9 h-9 rounded bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 font-semibold text-xs flex items-center justify-center transition-colors" href="?{% if search_query %}q={{ search_query }}&amp;{% endif %}page={{ num }}">{{ num }}</a>
+        <a class="w-9 h-9 rounded bg-surface border border-line text-ink-body hover:bg-surface-alt font-semibold text-xs flex items-center justify-center transition-colors" href="?{% if search_query %}q={{ search_query }}&amp;{% endif %}page={{ num }}">{{ num }}</a>
         {% endif %}
         {% endfor %}
         {% if page_obj.has_next %}
-        <a class="w-9 h-9 rounded bg-white border border-slate-200 text-slate-600 shadow-sm hover:bg-slate-50 flex items-center justify-center transition-colors" href="?{% if search_query %}q={{ search_query }}&amp;{% endif %}page={{ page_obj.next_page_number }}" title="Next page">
+        <a class="w-9 h-9 rounded bg-surface border border-line text-ink-body shadow-sm hover:bg-surface-alt flex items-center justify-center transition-colors" href="?{% if search_query %}q={{ search_query }}&amp;{% endif %}page={{ page_obj.next_page_number }}" title="Next page">
           <span class="material-symbols-outlined text-[18px]">chevron_right</span>
         </a>
         {% endif %}
@@ -81,10 +81,10 @@
       {% endif %}
 
       {% else %}
-      <div class="bg-white rounded-lg border border-slate-200 shadow-sm py-16 flex flex-col items-center justify-center text-center gap-3">
-        <span class="material-symbols-outlined text-[48px] text-slate-300">search_off</span>
-        <p class="text-sm text-slate-500">No products found{% if search_query %} for &ldquo;{{ search_query }}&rdquo;{% endif %}.</p>
-        <a class="inline-flex items-center gap-2 bg-primary-container hover:bg-primary text-white font-bold text-xs uppercase tracking-wider px-6 py-2.5 rounded shadow-sm transition-all" href="{% url 'shop:product_list' %}">Browse all products</a>
+      <div class="bg-surface rounded-lg border border-line shadow-sm py-16 flex flex-col items-center justify-center text-center gap-3">
+        <span class="material-symbols-outlined text-[48px] text-ink-faint">search_off</span>
+        <p class="text-sm text-ink-muted">No products found{% if search_query %} for &ldquo;{{ search_query }}&rdquo;{% endif %}.</p>
+        <a class="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-on-primary font-bold text-xs uppercase tracking-wider px-6 py-2.5 rounded shadow-sm transition-all" href="{% url 'shop:product_list' %}">Browse all products</a>
       </div>
       {% endif %}
     </section>
