@@ -12,6 +12,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.utils.dateparse import parse_date
 from points.services import InsufficientPointsError, PointService
 from rbac.models import Role
 from rbac.services import get_user_role_codes, has_user_permission
@@ -28,11 +29,13 @@ from .permissions import (
     CanRefundPayment,
     CanUpdateProduct,
     CanUpdateSellerOrder,
+    CanUpdateStaffOrders,
     CanVerifyPayment,
     CanViewInventory,
     CanViewOrder,
     CanViewPayment,
     CanViewSellerOrder,
+    CanViewStaffOrders,
     IsEligibleOrderSeller,
     IsEligibleProductSeller,
     IsInventoryProductOwner,
@@ -61,6 +64,9 @@ from .serializers import (
     SellerProductCreateSerializer,
     SellerProductSerializer,
     SellerProductUpdateSerializer,
+    StaffOrderDetailSerializer,
+    StaffOrderListSerializer,
+    StaffOrderStatusUpdateSerializer,
 )
 from .services import IneligibleSellerError, OrderService, ProductOwnershipError, ProductService
 
@@ -1089,6 +1095,213 @@ class StaffRefundListAPIView(generics.ListAPIView):
 
     def get_queryset(self):
         return Refund.objects.select_related("order", "payment", "processed_by").order_by("-created_at")
+
+
+# -------------------------------------------------------------------------
+# Staff & Admin Order Operations Views (Task 16)
+# -------------------------------------------------------------------------
+
+class StaffOrderListAPIView(generics.ListAPIView):
+    """
+    Staff Order Listing:
+      GET: Lists all customer orders across the platform with pagination,
+           search by order number, filters (order status, payment status, seller, shop, date range),
+           and optimized queries avoiding N+1.
+    Requires 'orders.staff.view' permission.
+    """
+    permission_classes = [permissions.IsAuthenticated, CanViewStaffOrders]
+    serializer_class = StaffOrderListSerializer
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        qs = (
+            Order.objects.select_related("user", "user__customer_profile", "shipping_address")
+            .prefetch_related(
+                "items",
+                "items__product",
+                "items__shop",
+                "items__seller",
+                "payments",
+                "refunds",
+            )
+            .order_by("-created_at")
+        )
+
+        params = self.request.query_params
+
+        # Filter by Order Status
+        status_filter = params.get("status")
+        if status_filter:
+            qs = qs.filter(status=status_filter.strip().upper())
+
+        # Filter by Payment Status
+        payment_status = params.get("payment_status")
+        if payment_status:
+            qs = qs.filter(payments__status=payment_status.strip().upper()).distinct()
+
+        # Search / Filter by Order Number
+        search = params.get("search") or params.get("order_number")
+        if search:
+            qs = qs.filter(order_number__icontains=search.strip())
+
+        # Filter by Seller
+        seller_id = params.get("seller_id")
+        if seller_id and str(seller_id).isdigit():
+            qs = qs.filter(items__seller_id=int(seller_id)).distinct()
+
+        # Filter by Shop
+        shop_id = params.get("shop_id")
+        if shop_id and str(shop_id).isdigit():
+            qs = qs.filter(items__shop_id=int(shop_id)).distinct()
+
+        # Date range filtering
+        start_date = params.get("start_date") or params.get("created_after")
+        if start_date:
+            parsed_start = parse_date(start_date.strip())
+            if parsed_start:
+                qs = qs.filter(created_at__date__gte=parsed_start)
+
+        end_date = params.get("end_date") or params.get("created_before")
+        if end_date:
+            parsed_end = parse_date(end_date.strip())
+            if parsed_end:
+                qs = qs.filter(created_at__date__lte=parsed_end)
+
+        return qs
+
+
+class StaffOrderDetailAPIView(APIView):
+    """
+    Staff Order Detail:
+      GET: Detailed operational order view with items, customer identity,
+           shipping snapshot, totals, payments, refunds, and allowed lifecycle transitions.
+    Requires 'orders.staff.view' permission.
+    """
+    permission_classes = [permissions.IsAuthenticated, CanViewStaffOrders]
+
+    def get(self, request, *args, **kwargs):
+        lookup = (
+            kwargs.get("order_number")
+            or kwargs.get("pk")
+            or kwargs.get("identifier")
+            or request.query_params.get("order_number")
+        )
+        if not lookup:
+            raise NotFound("Order reference missing.")
+
+        lookup_str = str(lookup).strip()
+        qs = (
+            Order.objects.select_related("user", "user__customer_profile", "shipping_address")
+            .prefetch_related(
+                "items",
+                "items__product",
+                "items__shop",
+                "items__seller",
+                "payments",
+                "refunds",
+                "refunds__processed_by",
+            )
+        )
+
+        if lookup_str.isdigit():
+            order = qs.filter(id=int(lookup_str)).first()
+        else:
+            order = qs.filter(order_number=lookup_str).first()
+
+        if not order:
+            raise NotFound("Order not found.")
+
+        serializer = StaffOrderDetailSerializer(order, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class StaffOrderStatusAPIView(APIView):
+    """
+    Staff Order Status Management:
+      PATCH /api/staff/orders/<order_number>/status/
+      POST  /api/staff/orders/<order_number>/status/
+      PATCH /api/staff/orders/<id>/status/
+      POST  /api/staff/orders/<id>/status/
+
+    Centrally transitions order status using OrderService.transition_order_status().
+    Validates state machine transitions (VALID_TRANSITIONS).
+    Executes atomic inventory release/finalization and payment refund/cancellation.
+    Requires 'orders.staff.update' permission.
+    """
+    permission_classes = [permissions.IsAuthenticated, CanUpdateStaffOrders]
+
+    def patch(self, request, *args, **kwargs):
+        return self._handle_transition(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        return self._handle_transition(request, *args, **kwargs)
+
+    def _handle_transition(self, request, *args, **kwargs):
+        lookup = (
+            kwargs.get("order_number")
+            or kwargs.get("pk")
+            or kwargs.get("identifier")
+            or request.query_params.get("order_number")
+        )
+        if not lookup:
+            raise NotFound("Order reference missing.")
+
+        lookup_str = str(lookup).strip()
+        if lookup_str.isdigit():
+            order = Order.objects.filter(id=int(lookup_str)).first()
+        else:
+            order = Order.objects.filter(order_number=lookup_str).first()
+
+        if not order:
+            raise NotFound("Order not found.")
+
+        serializer = StaffOrderStatusUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        target_status = serializer.validated_data["status"].upper()
+        note = (
+            serializer.validated_data.get("note")
+            or serializer.validated_data.get("reason")
+            or ""
+        )
+
+        # Central state machine validation
+        if not order.can_transition_to(target_status):
+            raise DRFValidationError({
+                "status": f"Invalid order status transition from '{order.status}' to '{target_status}'."
+            })
+
+        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+        ip_address = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else request.META.get("REMOTE_ADDR")
+
+        try:
+            updated_order = OrderService.transition_order_status(
+                order=order,
+                new_status=target_status,
+                actor=request.user,
+                note=note,
+                ip_address=ip_address,
+            )
+        except DjangoValidationError as exc:
+            detail = exc.message_dict if hasattr(exc, "message_dict") else {"detail": exc.messages}
+            raise DRFValidationError(detail)
+
+        # Reload with relations for comprehensive response
+        reloaded = (
+            Order.objects.select_related("user", "user__customer_profile", "shipping_address")
+            .prefetch_related(
+                "items",
+                "items__product",
+                "items__shop",
+                "items__seller",
+                "payments",
+                "refunds",
+                "refunds__processed_by",
+            )
+            .get(pk=updated_order.pk)
+        )
+        output = StaffOrderDetailSerializer(reloaded, context={"request": request})
+        return Response(output.data, status=status.HTTP_200_OK)
+
 
 
 

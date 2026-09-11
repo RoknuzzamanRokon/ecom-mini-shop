@@ -805,4 +805,257 @@ class RefundCreateSerializer(serializers.Serializer):
     )
 
 
+# -------------------------------------------------------------------------
+# Staff & Admin Order Serializers (Task 16)
+# -------------------------------------------------------------------------
+
+class StaffOrderItemSerializer(serializers.ModelSerializer):
+    product_id = serializers.IntegerField(source="product.id", allow_null=True, read_only=True)
+    shop_id = serializers.IntegerField(source="shop.id", allow_null=True, read_only=True)
+    seller_id = serializers.IntegerField(source="seller.id", allow_null=True, read_only=True)
+    unit_price = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    line_total = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = OrderItem
+        fields = [
+            "id",
+            "product_id",
+            "product_name",
+            "product_slug",
+            "shop_id",
+            "shop_name",
+            "seller_id",
+            "seller_name",
+            "unit_price",
+            "price",
+            "quantity",
+            "line_total",
+            "subtotal",
+            "created_at",
+        ]
+
+
+class StaffOrderPaymentSummarySerializer(serializers.ModelSerializer):
+    is_paid = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = Payment
+        fields = [
+            "id",
+            "payment_number",
+            "payment_method",
+            "status",
+            "amount",
+            "currency",
+            "transaction_id",
+            "provider",
+            "failure_reason",
+            "paid_at",
+            "is_paid",
+            "created_at",
+        ]
+
+
+class StaffOrderRefundSummarySerializer(serializers.ModelSerializer):
+    processed_by = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Refund
+        fields = [
+            "id",
+            "refund_number",
+            "amount",
+            "currency",
+            "status",
+            "reason",
+            "transaction_id",
+            "processed_by",
+            "created_at",
+        ]
+
+    def get_processed_by(self, obj):
+        return obj.processed_by.username if obj.processed_by else None
+
+
+class StaffOrderListSerializer(serializers.ModelSerializer):
+    """
+    Concise, operationally-focused representation for staff order listing.
+    """
+    customer = serializers.SerializerMethodField()
+    total_items_count = serializers.SerializerMethodField()
+    payment_status = serializers.SerializerMethodField()
+    payment_method = serializers.SerializerMethodField()
+    subtotal = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    discount_total = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    shipping_fee = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    total_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = Order
+        fields = [
+            "id",
+            "order_number",
+            "status",
+            "customer",
+            "subtotal",
+            "discount_total",
+            "shipping_fee",
+            "total_amount",
+            "total_items_count",
+            "payment_status",
+            "payment_method",
+            "shipping_city",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_customer(self, obj):
+        user = obj.user
+        profile = getattr(user, "customer_profile", None) if user else None
+        name = (
+            obj.shipping_recipient_name
+            or (profile.display_name if profile else "")
+            or (user.get_full_name() if user else "")
+            or obj.customer_name
+        )
+        phone = obj.shipping_phone or (profile.phone if profile else "") or obj.phone
+        return {
+            "id": user.id if user else None,
+            "username": user.username if user else "",
+            "email": user.email if user else "",
+            "name": name,
+            "phone": phone,
+        }
+
+    def get_total_items_count(self, obj):
+        return sum(item.quantity for item in obj.items.all())
+
+    def get_payment_status(self, obj):
+        current = obj.current_payment
+        return current.status if current else None
+
+    def get_payment_method(self, obj):
+        current = obj.current_payment
+        return current.payment_method if current else None
+
+
+class StaffOrderDetailSerializer(serializers.ModelSerializer):
+    """
+    Comprehensive staff order detail representation with full audit,
+    payment summary, refunds history, shipping snapshot, and allowed transitions.
+    Never exposes raw passwords, tokens, or card CVVs.
+    """
+    customer = serializers.SerializerMethodField()
+    shipping_address = serializers.SerializerMethodField()
+    items = StaffOrderItemSerializer(many=True, read_only=True)
+    payment = serializers.SerializerMethodField()
+    refunds = serializers.SerializerMethodField()
+    allowed_transitions = serializers.SerializerMethodField()
+    total_items_count = serializers.SerializerMethodField()
+    subtotal = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    discount_total = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    shipping_fee = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    total_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = Order
+        fields = [
+            "id",
+            "order_number",
+            "status",
+            "allowed_transitions",
+            "customer",
+            "shipping_address",
+            "items",
+            "subtotal",
+            "discount_total",
+            "shipping_fee",
+            "total_amount",
+            "total_items_count",
+            "payment",
+            "refunds",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_customer(self, obj):
+        user = obj.user
+        profile = getattr(user, "customer_profile", None) if user else None
+        name = (
+            obj.shipping_recipient_name
+            or (profile.display_name if profile else "")
+            or (user.get_full_name() if user else "")
+            or obj.customer_name
+        )
+        phone = obj.shipping_phone or (profile.phone if profile else "") or obj.phone
+        return {
+            "id": user.id if user else None,
+            "username": user.username if user else "",
+            "email": user.email if user else "",
+            "name": name,
+            "phone": phone,
+        }
+
+    def get_shipping_address(self, obj):
+        return {
+            "recipient_name": obj.shipping_recipient_name or obj.customer_name,
+            "phone": obj.shipping_phone or obj.phone,
+            "address_line_1": obj.shipping_address_line_1 or obj.address,
+            "address_line_2": obj.shipping_address_line_2,
+            "area": obj.shipping_area,
+            "city": obj.shipping_city or obj.city,
+            "state": obj.shipping_state,
+            "postal_code": obj.shipping_postal_code,
+            "country": obj.shipping_country,
+        }
+
+    def get_payment(self, obj):
+        current = obj.current_payment
+        if not current:
+            return None
+        return StaffOrderPaymentSummarySerializer(current).data
+
+    def get_refunds(self, obj):
+        refunds_qs = obj.refunds.all().order_by("-created_at")
+        return StaffOrderRefundSummarySerializer(refunds_qs, many=True).data
+
+    def get_allowed_transitions(self, obj):
+        return Order.VALID_TRANSITIONS.get(obj.status.upper() if obj.status else "", [])
+
+    def get_total_items_count(self, obj):
+        return sum(item.quantity for item in obj.items.all())
+
+
+class StaffOrderStatusUpdateSerializer(serializers.Serializer):
+    """
+    Validates staff order status transition requests.
+    Rejects arbitrary status values.
+    """
+    status = serializers.ChoiceField(
+        choices=[
+            Order.STATUS_CONFIRMED,
+            Order.STATUS_PROCESSING,
+            Order.STATUS_SHIPPED,
+            Order.STATUS_DELIVERED,
+            Order.STATUS_CANCELLED,
+        ],
+        help_text="Target order status.",
+    )
+    note = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        max_length=500,
+        help_text="Operational note or reason for the status transition.",
+    )
+    reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        max_length=500,
+        help_text="Alternative alias for operational note.",
+    )
+
+
 

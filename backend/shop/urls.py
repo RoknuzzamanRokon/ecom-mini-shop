@@ -51,6 +51,11 @@ urlpatterns = [
     path("api/staff/payments/<int:pk>/", api_views.StaffPaymentDetailAPIView.as_view(), name="api_staff_payment_detail"),
     path("api/staff/payments/<int:pk>/verify/", api_views.StaffPaymentVerifyAPIView.as_view(), name="api_staff_payment_verify"),
     path("api/staff/payments/<int:pk>/refund/", api_views.StaffPaymentRefundAPIView.as_view(), name="api_staff_payment_refund"),
-    path("api/staff/refunds/", api_views.StaffRefundListAPIView.as_view(), name="api_staff_refunds"),
+    # Staff Order Operations APIs (Task 16)
+    path("api/staff/orders/", api_views.StaffOrderListAPIView.as_view(), name="api_staff_orders"),
+    path("api/staff/orders/<int:pk>/", api_views.StaffOrderDetailAPIView.as_view(), name="api_staff_order_detail_pk"),
+    path("api/staff/orders/<str:order_number>/", api_views.StaffOrderDetailAPIView.as_view(), name="api_staff_order_detail"),
+    path("api/staff/orders/<int:pk>/status/", api_views.StaffOrderStatusAPIView.as_view(), name="api_staff_order_status_pk"),
+    path("api/staff/orders/<str:order_number>/status/", api_views.StaffOrderStatusAPIView.as_view(), name="api_staff_order_status"),
 ]
 

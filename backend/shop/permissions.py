@@ -364,3 +364,35 @@ class CanRefundPayment(BasePermission):
         return has_user_permission(user, "payments.refund") or has_user_permission(user, "orders.refund")
 
 
+class CanViewStaffOrders(BasePermission):
+    """
+    Enforces that the user holds the 'orders.staff.view' RBAC permission
+    or is a superuser / Super Administrator.
+    """
+    message = "You do not have permission to view staff orders."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
+            return True
+        return has_user_permission(user, "orders.staff.view")
+
+
+class CanUpdateStaffOrders(BasePermission):
+    """
+    Enforces that the user holds the 'orders.staff.update' RBAC permission
+    or is a superuser / Super Administrator.
+    """
+    message = "You do not have permission to update staff order statuses."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
+            return True
+        return has_user_permission(user, "orders.staff.update")
+
+

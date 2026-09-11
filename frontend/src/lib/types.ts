@@ -200,6 +200,100 @@ export interface RefundCreatePayload {
   reason?: string;
 }
 
+export interface StaffOrderCustomer {
+  id: number | null;
+  username: string;
+  email: string;
+  name: string;
+  phone: string;
+}
+
+export interface StaffOrderShipping {
+  recipient_name: string;
+  phone: string;
+  address_line_1: string;
+  address_line_2?: string;
+  area?: string;
+  city: string;
+  state?: string;
+  postal_code?: string;
+  country: string;
+}
+
+export interface StaffOrderItem {
+  id: number;
+  product_id?: number | null;
+  product_name: string;
+  product_slug?: string;
+  shop_id?: number | null;
+  shop_name?: string;
+  seller_id?: number | null;
+  seller_name?: string;
+  unit_price: string | number;
+  price?: string | number;
+  quantity: number;
+  line_total: string | number;
+  subtotal?: string | number;
+  created_at: string;
+}
+
+export interface StaffOrderListItem {
+  id: number;
+  order_number: string;
+  status: string;
+  customer: StaffOrderCustomer;
+  subtotal: string | number;
+  discount_total: string | number;
+  shipping_fee: string | number;
+  total_amount: string | number;
+  total_items_count: number;
+  payment_status?: string | null;
+  payment_method?: string | null;
+  shipping_city?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface StaffOrderDetail {
+  id: number;
+  order_number: string;
+  status: string;
+  allowed_transitions: string[];
+  customer: StaffOrderCustomer;
+  shipping_address: StaffOrderShipping;
+  items: StaffOrderItem[];
+  subtotal: string | number;
+  discount_total: string | number;
+  shipping_fee: string | number;
+  total_amount: string | number;
+  total_items_count: number;
+  payment?: PaymentSummary | null;
+  refunds?: Refund[];
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface StaffOrderStatusUpdatePayload {
+  status: string;
+  note?: string;
+  reason?: string;
+}
+
+export interface StaffOrderFilterParams {
+  status?: string;
+  payment_status?: string;
+  seller_id?: number;
+  shop_id?: number;
+  search?: string;
+  order_number?: string;
+  start_date?: string;
+  end_date?: string;
+  created_after?: string;
+  created_before?: string;
+  page?: number;
+  page_size?: number;
+}
+
 export interface PaginatedResponse<T> {
   count: number;
   next: string | null;

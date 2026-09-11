@@ -1,4 +1,4 @@
-import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload } from "./types";
+import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams } from "./types";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
@@ -846,6 +846,73 @@ export async function refundStaffPayment(
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
     const msg = errorData.detail || errorData.amount || errorData.refund || "Failed to process refund";
+    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+  }
+  return await res.json();
+}
+
+export async function getStaffOrders(
+  token: string,
+  params?: StaffOrderFilterParams
+): Promise<PaginatedResponse<StaffOrderListItem>> {
+  const query = new URLSearchParams();
+  if (params?.status) query.set("status", params.status);
+  if (params?.payment_status) query.set("payment_status", params.payment_status);
+  if (params?.seller_id) query.set("seller_id", params.seller_id.toString());
+  if (params?.shop_id) query.set("shop_id", params.shop_id.toString());
+  if (params?.search) query.set("search", params.search);
+  if (params?.order_number) query.set("order_number", params.order_number);
+  if (params?.start_date) query.set("start_date", params.start_date);
+  if (params?.end_date) query.set("end_date", params.end_date);
+  if (params?.created_after) query.set("created_after", params.created_after);
+  if (params?.created_before) query.set("created_before", params.created_before);
+  if (params?.page) query.set("page", params.page.toString());
+  if (params?.page_size) query.set("page_size", params.page_size.toString());
+
+  const res = await fetch(`${API_BASE_URL}/api/staff/orders/?${query.toString()}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Failed to fetch staff orders");
+  }
+  return await res.json();
+}
+
+export async function getStaffOrderDetail(
+  orderNumberOrId: string | number,
+  token: string
+): Promise<StaffOrderDetail> {
+  const res = await fetch(`${API_BASE_URL}/api/staff/orders/${orderNumberOrId}/`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Failed to fetch staff order details");
+  }
+  return await res.json();
+}
+
+export async function updateStaffOrderStatus(
+  orderNumberOrId: string | number,
+  payload: StaffOrderStatusUpdatePayload,
+  token: string
+): Promise<StaffOrderDetail> {
+  const res = await fetch(`${API_BASE_URL}/api/staff/orders/${orderNumberOrId}/status/`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    const msg = errorData.detail || errorData.status || errorData.order || "Failed to update order status";
     throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
   }
   return await res.json();
