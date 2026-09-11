@@ -17,6 +17,7 @@ export default function CartDrawer() {
     clearCart,
     totalItemsCount,
     totalAmount,
+    hasUnavailableItems,
   } = useCart();
 
   if (!isCartOpen) return null;
@@ -53,6 +54,16 @@ export default function CartDrawer() {
 
         {/* Item List */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {hasUnavailableItems && (
+            <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-start gap-2.5 text-xs text-amber-700 dark:text-amber-400">
+              <span className="material-symbols-outlined text-[18px] shrink-0 mt-0.5">warning</span>
+              <div>
+                <p className="font-semibold">Items unavailable</p>
+                <p className="text-[11px] opacity-90">Some items in your cart are no longer available for purchase and have been excluded from the total.</p>
+              </div>
+            </div>
+          )}
+
           {items.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-6 text-ink-muted">
               <span className="material-symbols-outlined text-[64px] text-ink-muted/40 mb-3">
@@ -70,16 +81,21 @@ export default function CartDrawer() {
               </button>
             </div>
           ) : (
-            items.map(({ product, quantity, subtotal }) => {
+            items.map(({ product, quantity, subtotal, is_available, unavailable_reason }) => {
               const imgUrl = formatImageUrl(
                 product.image_url ||
                 (product.image ? product.image : "/placeholder.svg")
               );
+              const isUnavailable = is_available === false;
 
               return (
                 <div
                   key={product.id}
-                  className="flex gap-3 bg-surface-alt/40 p-2.5 rounded-lg border border-line"
+                  className={`flex gap-3 p-2.5 rounded-lg border transition-colors ${
+                    isUnavailable
+                      ? "bg-danger/5 border-danger/30 opacity-80"
+                      : "bg-surface-alt/40 border-line"
+                  }`}
                 >
                   <div className="relative w-16 h-16 rounded-md overflow-hidden bg-surface-alt shrink-0 border border-line">
                     <Image
@@ -99,32 +115,44 @@ export default function CartDrawer() {
                       ৳{product.price} each
                     </p>
 
+                    {isUnavailable && (
+                      <div className="mt-1">
+                        <span className="inline-block px-1.5 py-0.5 text-[10px] font-medium bg-danger/10 text-danger rounded">
+                          {unavailable_reason || "Unavailable"}
+                        </span>
+                      </div>
+                    )}
+
                     <div className="flex items-center justify-between mt-2">
                       {/* Quantity Stepper */}
-                      <div className="flex items-center border border-line rounded bg-surface overflow-hidden">
-                        <button
-                          onClick={() => decreaseQuantity(product.id)}
-                          className="px-2 py-0.5 text-xs text-ink hover:bg-surface-sunken transition-colors cursor-pointer"
-                          type="button"
-                          title="Decrease"
-                        >
-                          -
-                        </button>
-                        <span className="px-2.5 text-xs font-semibold text-ink">
-                          {quantity}
-                        </span>
-                        <button
-                          onClick={() => increaseQuantity(product.id)}
-                          className="px-2 py-0.5 text-xs text-ink hover:bg-surface-sunken transition-colors cursor-pointer"
-                          type="button"
-                          title="Increase"
-                        >
-                          +
-                        </button>
-                      </div>
+                      {!isUnavailable ? (
+                        <div className="flex items-center border border-line rounded bg-surface overflow-hidden">
+                          <button
+                            onClick={() => decreaseQuantity(product.id)}
+                            className="px-2 py-0.5 text-xs text-ink hover:bg-surface-sunken transition-colors cursor-pointer"
+                            type="button"
+                            title="Decrease"
+                          >
+                            -
+                          </button>
+                          <span className="px-2.5 text-xs font-semibold text-ink">
+                            {quantity}
+                          </span>
+                          <button
+                            onClick={() => increaseQuantity(product.id)}
+                            className="px-2 py-0.5 text-xs text-ink hover:bg-surface-sunken transition-colors cursor-pointer"
+                            type="button"
+                            title="Increase"
+                          >
+                            +
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-[11px] text-ink-muted italic">Qty: {quantity}</span>
+                      )}
 
                       <div className="flex items-center gap-3">
-                        <span className="font-bold text-xs text-primary">
+                        <span className={`font-bold text-xs ${isUnavailable ? "text-ink-muted line-through" : "text-primary"}`}>
                           ৳{subtotal.toFixed(2)}
                         </span>
                         <button

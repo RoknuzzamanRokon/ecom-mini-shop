@@ -63,6 +63,9 @@ PERMISSIONS_DATA = [
     ("address.create", "Create Address", "address", "create", "Can create customer addresses"),
     ("address.update", "Update Address", "address", "update", "Can update customer addresses"),
     ("address.delete", "Delete Address", "address", "delete", "Can delete customer addresses"),
+    # Cart
+    ("cart.view", "View Cart", "cart", "view", "Can view customer cart"),
+    ("cart.update", "Update Cart", "cart", "update", "Can modify customer cart items"),
 ]
 
 ROLES_DATA = [
@@ -122,6 +125,7 @@ ROLE_PERMISSIONS_MAPPING = {
         "reports.view",
         "profile.view", "profile.update",
         "address.view", "address.create", "address.update", "address.delete",
+        "cart.view", "cart.update",
     ],
     Role.ROLE_OPERATION_MANAGER: [
         "products.view", "products.approve", "products.reject", "products.publish",
@@ -155,10 +159,12 @@ ROLE_PERMISSIONS_MAPPING = {
         "reports.view",
         "profile.view",
         "address.view",
+        "cart.view",
     ],
     Role.ROLE_CUSTOMER: [
         "profile.view", "profile.update",
         "address.view", "address.create", "address.update", "address.delete",
+        "cart.view", "cart.update",
     ],
 }
 

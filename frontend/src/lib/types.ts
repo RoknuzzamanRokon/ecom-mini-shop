@@ -62,9 +62,12 @@ export interface Product {
 }
 
 export interface CartItem {
+  id?: number;
   product: Product;
   quantity: number;
   subtotal: number;
+  is_available?: boolean;
+  unavailable_reason?: string;
 }
 
 export interface OrderItem {
@@ -132,4 +135,26 @@ export interface Address {
 }
 
 export type AddressInput = Omit<Address, "id" | "created_at" | "updated_at">;
+
+export interface BackendCartItem {
+  id: number;
+  product: Product;
+  quantity: number;
+  unit_price: string;
+  line_total: string;
+  is_available: boolean;
+  unavailable_reason: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BackendCart {
+  id: number;
+  items: BackendCartItem[];
+  total_items_count: number;
+  total_amount: string;
+  has_unavailable_items: boolean;
+  created_at: string;
+  updated_at: string;
+}
 

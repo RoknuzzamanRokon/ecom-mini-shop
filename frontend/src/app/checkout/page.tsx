@@ -44,10 +44,12 @@ export default function CheckoutPage() {
         phone: formData.phone,
         address: formData.address,
         city: formData.city,
-        items: items.map((i) => ({
-          product_id: i.product.id,
-          quantity: i.quantity,
-        })),
+        items: items
+          .filter((i) => i.is_available !== false)
+          .map((i) => ({
+            product_id: i.product.id,
+            quantity: i.quantity,
+          })),
       });
 
       clearCart();

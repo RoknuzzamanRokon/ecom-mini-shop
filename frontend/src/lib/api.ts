@@ -1,4 +1,4 @@
-import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput } from "./types";
+import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem } from "./types";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
@@ -501,5 +501,88 @@ export async function setDefaultCustomerAddress(id: number, token: string): Prom
     throw new Error(errorData.detail || "Failed to set default address");
   }
   return await res.json();
+}
+
+export async function getCart(token: string): Promise<BackendCart> {
+  const res = await fetch(`${API_BASE_URL}/api/cart/`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Failed to fetch cart");
+  }
+  return await res.json();
+}
+
+export async function addToCartApi(
+  productId: number,
+  quantity: number,
+  token: string
+): Promise<BackendCart> {
+  const res = await fetch(`${API_BASE_URL}/api/cart/items/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ product_id: productId, quantity }),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || errorData.product_id || "Failed to add item to cart");
+  }
+  return await res.json();
+}
+
+export async function updateCartItemApi(
+  itemId: number,
+  quantity: number,
+  token: string
+): Promise<BackendCart> {
+  const res = await fetch(`${API_BASE_URL}/api/cart/items/${itemId}/`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ quantity }),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || errorData.quantity || "Failed to update cart item");
+  }
+  return await res.json();
+}
+
+export async function removeCartItemApi(
+  itemId: number,
+  token: string
+): Promise<BackendCart> {
+  const res = await fetch(`${API_BASE_URL}/api/cart/items/${itemId}/`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Failed to remove item from cart");
+  }
+  return await res.json();
+}
+
+export async function clearCartApi(token: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/cart/`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Failed to clear cart");
+  }
 }
 
