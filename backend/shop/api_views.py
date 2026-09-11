@@ -20,7 +20,10 @@ from .permissions import (
     CanCreateProduct,
     CanDeleteProduct,
     CanUpdateProduct,
+    CanUpdateSellerOrder,
     CanViewOrder,
+    CanViewSellerOrder,
+    IsEligibleOrderSeller,
     IsEligibleProductSeller,
     IsOrderOwner,
     IsProductOwner,
@@ -31,6 +34,10 @@ from .serializers import (
     OrderDetailSerializer,
     ProductDetailSerializer,
     ProductListSerializer,
+    SellerOrderDetailSerializer,
+    SellerOrderItemSerializer,
+    SellerOrderListSerializer,
+    SellerOrderStatusUpdateSerializer,
     SellerProductCreateSerializer,
     SellerProductSerializer,
     SellerProductUpdateSerializer,
@@ -498,4 +505,105 @@ class SellerProductDetailAPIView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_403_FORBIDDEN)
 
         return Response({"message": "Product successfully deleted."}, status=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# Seller Order Management APIs
+# ---------------------------------------------------------------------------
+
+class SellerOrderListAPIView(APIView):
+    """
+    Seller-specific order listing endpoint:
+      GET /api/seller/orders/
+      Returns orders containing items belonging to the authenticated seller.
+      Each order's items list contains only that seller's items.
+    """
+    pagination_class = StandardResultsSetPagination
+    permission_classes = [permissions.IsAuthenticated, IsEligibleOrderSeller, CanViewSellerOrder]
+
+    def get(self, request):
+        seller = request.user.seller_profile
+        queryset = OrderService.get_seller_orders_queryset(seller)
+
+        status_param = request.query_params.get("status")
+        if status_param:
+            queryset = queryset.filter(status__iexact=status_param.strip())
+
+        search_query = request.query_params.get("q") or request.query_params.get("search")
+        if search_query:
+            query = search_query.strip()
+            queryset = queryset.filter(
+                Q(order_number__icontains=query)
+                | Q(shipping_recipient_name__icontains=query)
+                | Q(customer_name__icontains=query)
+            )
+
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(queryset, request)
+        serializer = SellerOrderListSerializer(page, many=True, context={"request": request})
+        return paginator.get_paginated_response(serializer.data)
+
+
+class SellerOrderDetailAPIView(APIView):
+    """
+    Seller-specific order detail endpoint:
+      GET /api/seller/orders/<order_number>/
+      Retrieves order details for fulfillment.
+      Enforces that the order contains items belonging to the authenticated seller.
+      Excludes another seller's items and private customer credentials.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsEligibleOrderSeller, CanViewSellerOrder]
+
+    def get(self, request, order_number=None, *args, **kwargs):
+        seller = request.user.seller_profile
+        lookup = order_number or kwargs.get("order_number") or kwargs.get("pk") or request.query_params.get("order_number")
+        if not lookup:
+            raise NotFound("Order reference missing.")
+
+        order = OrderService.get_seller_order(lookup, seller)
+        serializer = SellerOrderDetailSerializer(order, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class SellerOrderStatusUpdateAPIView(APIView):
+    """
+    Seller order status transition endpoint:
+      PATCH /api/seller/orders/<order_number>/status/
+      Safely advances an order's lifecycle status.
+      Rejects unilateral transitions on multi-seller orders.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsEligibleOrderSeller, CanUpdateSellerOrder]
+
+    def patch(self, request, order_number=None, *args, **kwargs):
+        seller = request.user.seller_profile
+        lookup = order_number or kwargs.get("order_number") or kwargs.get("pk")
+        if not lookup:
+            raise NotFound("Order reference missing.")
+
+        order = OrderService.get_seller_order(lookup, seller)
+        serializer = SellerOrderStatusUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        new_status = serializer.validated_data["status"]
+        note = serializer.validated_data.get("note", "")
+        ip_address = request.META.get("REMOTE_ADDR")
+
+        try:
+            updated_order = OrderService.transition_seller_order_status(
+                order=order,
+                new_status=new_status,
+                seller=seller,
+                actor=request.user,
+                note=note,
+                ip_address=ip_address,
+            )
+        except DjangoValidationError as exc:
+            detail = exc.message_dict if hasattr(exc, "message_dict") else {"detail": exc.messages}
+            return Response(detail, status=status.HTTP_400_BAD_REQUEST)
+        except PermissionDenied as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+
+        detail_serializer = SellerOrderDetailSerializer(updated_order, context={"request": request})
+        return Response(detail_serializer.data, status=status.HTTP_200_OK)
+
 

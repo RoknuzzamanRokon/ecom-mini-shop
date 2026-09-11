@@ -45,6 +45,8 @@ PERMISSIONS_DATA = [
     ("orders.update", "Update Orders", "orders", "update", "Can update order progression"),
     ("orders.cancel", "Cancel Orders", "orders", "cancel", "Can cancel customer orders"),
     ("orders.refund", "Refund Orders", "orders", "refund", "Can authorize order refunds"),
+    ("orders.seller.view", "View Seller Orders", "orders", "view", "Can view orders containing seller products"),
+    ("orders.seller.update", "Update Seller Orders", "orders", "update", "Can update order progression for seller products"),
     # Payments
     ("payments.view", "View Payments", "payments", "view", "Can inspect transaction ledgers"),
     ("payments.verify", "Verify Payments", "payments", "verify", "Can verify customer payments"),
@@ -120,6 +122,7 @@ ROLE_PERMISSIONS_MAPPING = {
         "shops.view", "shops.create", "shops.update", "shops.delete", "shops.approve",
         "sellers.view", "sellers.create", "sellers.update", "sellers.approve", "sellers.suspend",
         "orders.view", "orders.create", "orders.update", "orders.cancel",
+        "orders.seller.view", "orders.seller.update",
         "payments.view",
         "points.view", "points.add", "points.deduct", "points.adjust",
         "reports.view",
@@ -132,18 +135,21 @@ ROLE_PERMISSIONS_MAPPING = {
         "shops.view", "shops.approve",
         "sellers.view",
         "orders.view", "orders.update", "orders.cancel",
+        "orders.seller.view", "orders.seller.update",
         "reports.view",
     ],
     Role.ROLE_SALES_MANAGER: [
         "sellers.view", "sellers.create", "sellers.update", "sellers.approve",
         "products.view", "products.update",
         "orders.view",
+        "orders.seller.view",
         "reports.view",
     ],
     Role.ROLE_SALES_TEAM: [
         "sellers.view",
         "products.view", "products.create", "products.update",
         "orders.view",
+        "orders.seller.view", "orders.seller.update",
     ],
     Role.ROLE_FINANCE: [
         "payments.view", "payments.verify", "payments.refund",
@@ -153,6 +159,7 @@ ROLE_PERMISSIONS_MAPPING = {
     ],
     Role.ROLE_SUPPORT_TEAM: [
         "orders.view", "orders.update", "orders.cancel",
+        "orders.seller.view",
         "users.view",
         "sellers.view",
         "shops.view",

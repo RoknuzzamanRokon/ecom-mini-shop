@@ -5,18 +5,19 @@ from typing import Any, Dict, Optional, Union
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Count, Prefetch, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.text import slugify
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import NotFound, PermissionDenied
 
 from audit.services import AuditService
 from cart.models import Cart, CartItem
 from customers.models import Address
 from points.models import PointTransaction
 from points.services import InsufficientPointsError, PointService
-from rbac.services import has_user_permission
+from rbac.models import Role
+from rbac.services import get_user_role_codes, has_user_permission
 from sellers.models import SellerProfile
 from shops.models import Shop
 from .models import Category, Order, OrderItem, Product
@@ -612,6 +613,150 @@ class OrderService:
             logger.info(
                 "Order status updated: order=%s old=%s new=%s actor=%s",
                 locked_order.order_number,
+                old_status,
+                locked_order.status,
+                getattr(actor, "username", "system"),
+            )
+            return locked_order
+
+    @classmethod
+    def get_seller_orders_queryset(cls, seller: SellerProfile):
+        """
+        Returns authoritative queryset of orders containing items belonging to the seller.
+        Prefetches only items owned by the seller to prevent data leaks.
+        """
+        seller_items_prefetch = Prefetch(
+            "items",
+            queryset=OrderItem.objects.filter(
+                Q(seller=seller) | Q(shop__owner=seller)
+            ).select_related("product", "shop", "seller"),
+            to_attr="seller_items",
+        )
+
+        return (
+            Order.objects.filter(
+                Q(items__seller=seller) | Q(items__shop__owner=seller)
+            )
+            .distinct()
+            .prefetch_related(seller_items_prefetch)
+            .order_by("-created_at")
+        )
+
+    @classmethod
+    def get_seller_order(cls, order_identifier: Union[int, str], seller: SellerProfile) -> Order:
+        """
+        Retrieves a single order for a seller by order_number or id.
+        Enforces server-side ownership isolation. If the order does not contain
+        items owned by this seller, raises NotFound.
+        """
+        seller_items_prefetch = Prefetch(
+            "items",
+            queryset=OrderItem.objects.filter(
+                Q(seller=seller) | Q(shop__owner=seller)
+            ).select_related("product", "shop", "seller"),
+            to_attr="seller_items",
+        )
+
+        lookup_str = str(order_identifier).strip()
+        qs = Order.objects.prefetch_related(seller_items_prefetch)
+        if lookup_str.isdigit():
+            order = qs.filter(id=int(lookup_str)).first()
+        else:
+            order = qs.filter(order_number=lookup_str).first()
+
+        if not order:
+            raise NotFound("Order not found.")
+
+        # Verify seller ownership of at least one item in the order
+        has_seller_item = OrderItem.objects.filter(
+            order=order
+        ).filter(
+            Q(seller=seller) | Q(shop__owner=seller)
+        ).exists()
+
+        if not has_seller_item:
+            raise NotFound("Order not found.")
+
+        return order
+
+    @classmethod
+    def transition_seller_order_status(
+        cls,
+        order: Order,
+        new_status: str,
+        seller: SellerProfile,
+        actor: Optional[Any] = None,
+        note: str = "",
+        ip_address: Optional[str] = None,
+    ) -> Order:
+        """
+        Controlled state transition initiated by a seller.
+        Enforces:
+          1. Row-level concurrency locking via select_for_update().
+          2. Seller owns items in this order.
+          3. Multi-seller safety: If order contains items from other sellers,
+             rejects unilateral status change by single seller (unless actor has staff override).
+          4. Valid state machine transition via order.transition_to().
+          5. Immutable audit logging via AuditService.
+        """
+        with transaction.atomic():
+            locked_order = Order.objects.select_for_update().filter(pk=order.pk).first()
+            if not locked_order:
+                raise ValidationError({"order": "Order not found."})
+
+            # Check seller ownership of items in this order
+            seller_items = locked_order.items.filter(
+                Q(seller=seller) | Q(shop__owner=seller)
+            )
+            if not seller_items.exists():
+                raise PermissionDenied("You do not have items in this order.")
+
+            # Multi-seller safety check
+            other_items = locked_order.items.exclude(
+                Q(seller=seller) | Q(shop__owner=seller)
+            )
+            if other_items.exists():
+                is_staff_override = False
+                if actor and getattr(actor, "is_authenticated", False):
+                    role_codes = get_user_role_codes(actor)
+                    is_staff_override = (
+                        actor.is_superuser
+                        or Role.ROLE_SUPER_ADMINISTRATOR in role_codes
+                        or has_user_permission(actor, "orders.update")
+                    )
+                if not is_staff_override:
+                    raise ValidationError({
+                        "order": "This order contains items from multiple merchants. "
+                                 "Unilateral status updates are restricted to ensure fulfillment safety across all merchants. "
+                                 "Please contact platform operations."
+                    })
+
+            old_status = locked_order.status
+            locked_order.transition_to(new_status)
+            order.status = locked_order.status
+            order.updated_at = locked_order.updated_at
+
+            AuditService.log(
+                action="ORDER_STATUS_UPDATED",
+                target=locked_order,
+                actor=actor,
+                seller=seller,
+                metadata={
+                    "order_number": locked_order.order_number,
+                    "old_status": old_status,
+                    "new_status": locked_order.status,
+                    "initiator": "seller",
+                    "seller_id": seller.id,
+                    "seller_name": seller.business_name,
+                    "note": note,
+                },
+                ip_address=ip_address,
+            )
+
+            logger.info(
+                "Seller updated order status: order=%s seller=%s old=%s new=%s actor=%s",
+                locked_order.order_number,
+                seller.business_name,
                 old_status,
                 locked_order.status,
                 getattr(actor, "username", "system"),

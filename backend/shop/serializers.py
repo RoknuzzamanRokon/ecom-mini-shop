@@ -400,3 +400,153 @@ class OrderCreateSerializer(serializers.Serializer):
     shipping_postal_code = serializers.CharField(max_length=20, required=False, allow_blank=True)
     shipping_country = serializers.CharField(max_length=100, required=False, allow_blank=True)
     items = serializers.ListField(required=False, write_only=True)
+
+
+# ---------------------------------------------------------------------------
+# Seller Order Management Serializers
+# ---------------------------------------------------------------------------
+
+class SellerOrderItemSerializer(serializers.ModelSerializer):
+    """
+    Serializer for order items presented to a seller.
+    Includes only product, shop, pricing, and quantity details relevant to the seller.
+    """
+    unit_price = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    line_total = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = OrderItem
+        fields = [
+            "id",
+            "product",
+            "product_name",
+            "product_slug",
+            "shop",
+            "shop_name",
+            "seller",
+            "seller_name",
+            "unit_price",
+            "quantity",
+            "line_total",
+            "created_at",
+        ]
+
+
+class SellerOrderListSerializer(serializers.ModelSerializer):
+    """
+    Summary serializer for seller order listing.
+    Filters items to only include items belonging to the requesting seller.
+    """
+    items = serializers.SerializerMethodField()
+    seller_subtotal = serializers.SerializerMethodField()
+    seller_item_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Order
+        fields = [
+            "id",
+            "order_number",
+            "status",
+            "seller_subtotal",
+            "seller_item_count",
+            "total_amount",
+            "created_at",
+            "updated_at",
+            "items",
+        ]
+
+    def _get_seller_items(self, obj):
+        if hasattr(obj, "seller_items"):
+            return obj.seller_items
+        request = self.context.get("request")
+        if request and hasattr(request.user, "seller_profile"):
+            seller = request.user.seller_profile
+            return [
+                item for item in obj.items.all()
+                if item.seller == seller or (item.shop and item.shop.owner == seller)
+            ]
+        return obj.items.all()
+
+    def get_items(self, obj):
+        items = self._get_seller_items(obj)
+        return SellerOrderItemSerializer(items, many=True, context=self.context).data
+
+    def get_seller_subtotal(self, obj):
+        items = self._get_seller_items(obj)
+        return str(sum(Decimal(str(item.line_total)) for item in items))
+
+    def get_seller_item_count(self, obj):
+        items = self._get_seller_items(obj)
+        return sum(item.quantity for item in items)
+
+
+class SellerOrderDetailSerializer(serializers.ModelSerializer):
+    """
+    Detailed serializer for seller order fulfillment.
+    Provides shipping address snapshot, seller items, and seller-scoped totals.
+    Strictly excludes customer auth, credentials, internal IDs, and unrelated merchant items.
+    """
+    items = serializers.SerializerMethodField()
+    seller_subtotal = serializers.SerializerMethodField()
+    seller_item_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Order
+        fields = [
+            "id",
+            "order_number",
+            "status",
+            "shipping_recipient_name",
+            "shipping_phone",
+            "shipping_address_line_1",
+            "shipping_address_line_2",
+            "shipping_area",
+            "shipping_city",
+            "shipping_state",
+            "shipping_postal_code",
+            "shipping_country",
+            "customer_name",
+            "phone",
+            "address",
+            "city",
+            "seller_subtotal",
+            "seller_item_count",
+            "total_amount",
+            "created_at",
+            "updated_at",
+            "items",
+        ]
+
+    def _get_seller_items(self, obj):
+        if hasattr(obj, "seller_items"):
+            return obj.seller_items
+        request = self.context.get("request")
+        if request and hasattr(request.user, "seller_profile"):
+            seller = request.user.seller_profile
+            return [
+                item for item in obj.items.all()
+                if item.seller == seller or (item.shop and item.shop.owner == seller)
+            ]
+        return obj.items.all()
+
+    def get_items(self, obj):
+        items = self._get_seller_items(obj)
+        return SellerOrderItemSerializer(items, many=True, context=self.context).data
+
+    def get_seller_subtotal(self, obj):
+        items = self._get_seller_items(obj)
+        return str(sum(Decimal(str(item.line_total)) for item in items))
+
+    def get_seller_item_count(self, obj):
+        items = self._get_seller_items(obj)
+        return sum(item.quantity for item in items)
+
+
+class SellerOrderStatusUpdateSerializer(serializers.Serializer):
+    """
+    Input serializer for seller order status update.
+    Validates status parameter and rejects unauthorized client mutations.
+    """
+    status = serializers.ChoiceField(choices=Order.STATUS_CHOICES)
+    note = serializers.CharField(required=False, allow_blank=True, default="")
+

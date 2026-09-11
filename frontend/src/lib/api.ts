@@ -1,4 +1,4 @@
-import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem } from "./types";
+import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder } from "./types";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
@@ -626,4 +626,71 @@ export async function clearCartApi(token: string): Promise<void> {
     throw new Error(errorData.detail || "Failed to clear cart");
   }
 }
+
+export async function getSellerOrders(
+  token: string,
+  status?: string,
+  page: number = 1
+): Promise<PaginatedResponse<SellerOrder>> {
+  const query = new URLSearchParams({ page: page.toString() });
+  if (status) query.set("status", status);
+
+  const res = await fetch(`${API_BASE_URL}/api/seller/orders/?${query.toString()}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Failed to fetch seller orders");
+  }
+
+  return await res.json();
+}
+
+export async function getSellerOrderDetail(
+  orderNumber: string,
+  token: string
+): Promise<SellerOrder> {
+  const res = await fetch(`${API_BASE_URL}/api/seller/orders/${orderNumber}/`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Failed to fetch seller order detail");
+  }
+
+  return await res.json();
+}
+
+export async function updateSellerOrderStatus(
+  orderNumber: string,
+  status: string,
+  token: string,
+  note?: string
+): Promise<SellerOrder> {
+  const res = await fetch(`${API_BASE_URL}/api/seller/orders/${orderNumber}/status/`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ status, note }),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    const msg = errorData.detail || errorData.order || errorData.status || "Failed to update order status";
+    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+  }
+
+  return await res.json();
+}
+
 

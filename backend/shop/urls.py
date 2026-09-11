@@ -29,4 +29,10 @@ urlpatterns = [
     path("api/orders/", api_views.OrderListCreateAPIView.as_view(), name="api_order_create"),
     path("api/orders/<int:pk>/", api_views.OrderDetailAPIView.as_view(), name="api_order_detail_pk"),
     path("api/orders/<str:order_number>/", api_views.OrderDetailAPIView.as_view(), name="api_order_detail"),
+
+    # Seller Order APIs
+    path("api/seller/orders/", api_views.SellerOrderListAPIView.as_view(), name="api_seller_orders"),
+    path("api/seller/orders/<str:order_number>/", api_views.SellerOrderDetailAPIView.as_view(), name="api_seller_order_detail"),
+    path("api/seller/orders/<str:order_number>/status/", api_views.SellerOrderStatusUpdateAPIView.as_view(), name="api_seller_order_status_update"),
 ]
+

@@ -149,3 +149,75 @@ class IsOrderOwner(BasePermission):
             return True
 
         return obj.user == user
+
+
+class IsEligibleOrderSeller(BasePermission):
+    """
+    Enforces that the user has an active, operational SellerProfile.
+    Rejects users without a seller profile, suspended sellers, and pending sellers.
+    """
+    message = "Only active sellers can perform this seller order operation."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+
+        if not hasattr(user, "seller_profile"):
+            raise PermissionDenied("You do not have a registered seller profile.")
+
+        seller = user.seller_profile
+
+        if seller.status == SellerProfile.STATUS_SUSPENDED:
+            reason = f": {seller.suspension_reason}" if seller.suspension_reason else ""
+            raise PermissionDenied(f"Your seller account is currently suspended{reason}. Order operations are restricted.")
+
+        if seller.status in (SellerProfile.STATUS_PENDING, SellerProfile.STATUS_UNDER_REVIEW):
+            raise PermissionDenied("Your seller application is currently pending approval.")
+
+        if seller.status == SellerProfile.STATUS_REJECTED:
+            reason = f": {seller.rejection_reason}" if seller.rejection_reason else ""
+            raise PermissionDenied(f"Your seller application was rejected{reason}.")
+
+        return seller.is_operational
+
+
+class CanViewSellerOrder(BasePermission):
+    """
+    Enforces that the user holds 'orders.seller.view' or 'orders.view' permission.
+    """
+    message = "You do not have permission to view seller orders."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+
+        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
+            return True
+
+        return (
+            has_user_permission(user, "orders.seller.view")
+            or has_user_permission(user, "orders.view")
+        )
+
+
+class CanUpdateSellerOrder(BasePermission):
+    """
+    Enforces that the user holds 'orders.seller.update' or 'orders.update' permission.
+    """
+    message = "You do not have permission to update seller orders."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+
+        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
+            return True
+
+        return (
+            has_user_permission(user, "orders.seller.update")
+            or has_user_permission(user, "orders.update")
+        )
+
