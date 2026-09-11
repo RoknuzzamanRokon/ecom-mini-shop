@@ -68,6 +68,9 @@ PERMISSIONS_DATA = [
     # Cart
     ("cart.view", "View Cart", "cart", "view", "Can view customer cart"),
     ("cart.update", "Update Cart", "cart", "update", "Can modify customer cart items"),
+    # Inventory & Stock
+    ("inventory.view", "View Inventory", "inventory", "view", "Can view product inventory and stock levels"),
+    ("inventory.adjust", "Adjust Inventory", "inventory", "adjust", "Can adjust product inventory and stock levels"),
 ]
 
 ROLES_DATA = [
@@ -129,6 +132,7 @@ ROLE_PERMISSIONS_MAPPING = {
         "profile.view", "profile.update",
         "address.view", "address.create", "address.update", "address.delete",
         "cart.view", "cart.update",
+        "inventory.view", "inventory.adjust",
     ],
     Role.ROLE_OPERATION_MANAGER: [
         "products.view", "products.approve", "products.reject", "products.publish",
@@ -137,6 +141,7 @@ ROLE_PERMISSIONS_MAPPING = {
         "orders.view", "orders.update", "orders.cancel",
         "orders.seller.view", "orders.seller.update",
         "reports.view",
+        "inventory.view", "inventory.adjust",
     ],
     Role.ROLE_SALES_MANAGER: [
         "sellers.view", "sellers.create", "sellers.update", "sellers.approve",
@@ -144,12 +149,14 @@ ROLE_PERMISSIONS_MAPPING = {
         "orders.view",
         "orders.seller.view",
         "reports.view",
+        "inventory.view",
     ],
     Role.ROLE_SALES_TEAM: [
         "sellers.view",
         "products.view", "products.create", "products.update",
         "orders.view",
         "orders.seller.view", "orders.seller.update",
+        "inventory.view", "inventory.adjust",
     ],
     Role.ROLE_FINANCE: [
         "payments.view", "payments.verify", "payments.refund",
@@ -167,6 +174,7 @@ ROLE_PERMISSIONS_MAPPING = {
         "profile.view",
         "address.view",
         "cart.view",
+        "inventory.view",
     ],
     Role.ROLE_CUSTOMER: [
         "profile.view", "profile.update",

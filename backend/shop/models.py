@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Q
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.text import slugify
@@ -194,6 +195,8 @@ class Product(models.Model):
 
     @property
     def in_stock(self):
+        if hasattr(self, "inventory") and self.inventory:
+            return self.inventory.available_quantity > 0
         return self.stock > 0
 
     @property
@@ -235,6 +238,70 @@ class ProductImage(models.Model):
 
     def __str__(self):
         return f"{self.product.name} image #{self.order}"
+
+
+class ProductInventory(models.Model):
+    """
+    Dedicated server-authoritative inventory tracking model for Products.
+    Maintains available, reserved, and sold units with strict non-negative constraints.
+    """
+    product = models.OneToOneField(
+        Product,
+        on_delete=models.CASCADE,
+        related_name="inventory",
+        help_text="Product to which this inventory ledger belongs.",
+    )
+    available_quantity = models.PositiveIntegerField(
+        default=0,
+        help_text="Available stock units that can currently be purchased/ordered.",
+    )
+    reserved_quantity = models.PositiveIntegerField(
+        default=0,
+        help_text="Stock units committed to active orders but not yet completed.",
+    )
+    sold_quantity = models.PositiveIntegerField(
+        default=0,
+        help_text="Stock units from successfully delivered/completed orders.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Product Inventory"
+        verbose_name_plural = "Product Inventories"
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(available_quantity__gte=0),
+                name="inventory_available_qty_gte_0",
+            ),
+            models.CheckConstraint(
+                check=models.Q(reserved_quantity__gte=0),
+                name="inventory_reserved_qty_gte_0",
+            ),
+            models.CheckConstraint(
+                check=models.Q(sold_quantity__gte=0),
+                name="inventory_sold_qty_gte_0",
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.product.name} "
+            f"(avail: {self.available_quantity}, res: {self.reserved_quantity}, sold: {self.sold_quantity})"
+        )
+
+    @property
+    def total_quantity(self) -> int:
+        """Total inventory units tracked (available + reserved + sold)."""
+        return self.available_quantity + self.reserved_quantity + self.sold_quantity
+
+    def clean(self):
+        if self.available_quantity < 0:
+            raise ValidationError({"available_quantity": "Available quantity cannot be negative."})
+        if self.reserved_quantity < 0:
+            raise ValidationError({"reserved_quantity": "Reserved quantity cannot be negative."})
+        if self.sold_quantity < 0:
+            raise ValidationError({"sold_quantity": "Sold quantity cannot be negative."})
 
 
 class Order(models.Model):
@@ -419,3 +486,96 @@ class OrderItem(models.Model):
             self.subtotal = self.line_total
 
         super().save(*args, **kwargs)
+
+
+class InventoryTransaction(models.Model):
+    """
+    Immutable audit ledger for tracking all inventory quantity movements,
+    reservations, releases, sales, and adjustments.
+    """
+    TYPE_INITIAL_STOCK = "INITIAL_STOCK"
+    TYPE_STOCK_IN = "STOCK_IN"
+    TYPE_STOCK_OUT = "STOCK_OUT"
+    TYPE_RESERVATION = "RESERVATION"
+    TYPE_RELEASE = "RELEASE"
+    TYPE_SALE = "SALE"
+    TYPE_ADJUSTMENT = "ADJUSTMENT"
+
+    TRANSACTION_TYPE_CHOICES = [
+        (TYPE_INITIAL_STOCK, "Initial Stock"),
+        (TYPE_STOCK_IN, "Stock In"),
+        (TYPE_STOCK_OUT, "Stock Out"),
+        (TYPE_RESERVATION, "Reservation"),
+        (TYPE_RELEASE, "Release"),
+        (TYPE_SALE, "Sale"),
+        (TYPE_ADJUSTMENT, "Adjustment"),
+    ]
+
+    inventory = models.ForeignKey(
+        ProductInventory,
+        on_delete=models.CASCADE,
+        related_name="transactions",
+        help_text="The inventory record this transaction modified.",
+    )
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.CASCADE,
+        related_name="inventory_transactions",
+        help_text="Product associated with this inventory movement.",
+    )
+    transaction_type = models.CharField(
+        max_length=30,
+        choices=TRANSACTION_TYPE_CHOICES,
+        db_index=True,
+    )
+    quantity = models.IntegerField(
+        help_text="Delta quantity change (positive or negative).",
+    )
+    before_available = models.PositiveIntegerField(default=0)
+    after_available = models.PositiveIntegerField(default=0)
+    before_reserved = models.PositiveIntegerField(default=0)
+    after_reserved = models.PositiveIntegerField(default=0)
+    before_sold = models.PositiveIntegerField(default=0)
+    after_sold = models.PositiveIntegerField(default=0)
+
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="inventory_transactions",
+        help_text="Order referencing this inventory movement, if applicable.",
+    )
+    order_item = models.ForeignKey(
+        OrderItem,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="inventory_transactions",
+        help_text="OrderItem referencing this inventory movement, if applicable.",
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="inventory_transactions",
+        help_text="User or staff member who performed this inventory action.",
+    )
+    reason = models.TextField(
+        blank=True,
+        help_text="Operational justification or note for this transaction.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        verbose_name = "Inventory Transaction"
+        verbose_name_plural = "Inventory Transactions"
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["product", "created_at"]),
+            models.Index(fields=["transaction_type", "created_at"]),
+        ]
+
+    def __str__(self):
+        return f"{self.product.name} - {self.transaction_type}: {self.quantity:+d} at {self.created_at}"

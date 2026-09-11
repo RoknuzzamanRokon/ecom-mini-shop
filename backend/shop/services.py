@@ -139,6 +139,9 @@ class ProductService:
             product.full_clean()
             product.save()
 
+            # Initialize authoritative ProductInventory record
+            from shop.inventory_service import InventoryService
+            InventoryService.get_or_create_inventory(product, default_available=product.stock)
 
             # B. Atomically debit points via PointService (enforces row locking & ledger append)
             if required_points > 0:
@@ -550,10 +553,19 @@ class OrderService:
                     subtotal=item_info["line_total"],
                 )
 
-            # 9. Clear user's Cart items atomically
+            # 9. Atomically reserve inventory stock for cart items
+            from shop.inventory_service import InventoryService
+            InventoryService.reserve_stock_for_cart(
+                order=order,
+                cart_items=cart_items,
+                actor=actor or user,
+                ip_address=ip_address,
+            )
+
+            # 10. Clear user's Cart items atomically
             CartItem.objects.filter(cart=cart).delete()
 
-            # 10. Record immutable AuditLog entry
+            # 11. Record immutable AuditLog entry
             AuditService.log(
                 action="ORDER_CREATED",
                 target=order,
@@ -596,6 +608,23 @@ class OrderService:
             locked_order.transition_to(new_status)
             order.status = locked_order.status
             order.updated_at = locked_order.updated_at
+
+            # Apply atomic inventory lifecycle transitions
+            from shop.inventory_service import InventoryService
+            if locked_order.status == Order.STATUS_CANCELLED:
+                InventoryService.release_order_reservation(
+                    order=locked_order,
+                    actor=actor,
+                    note=note,
+                    ip_address=ip_address,
+                )
+            elif locked_order.status == Order.STATUS_DELIVERED:
+                InventoryService.finalize_order_delivery(
+                    order=locked_order,
+                    actor=actor,
+                    note=note,
+                    ip_address=ip_address,
+                )
 
             AuditService.log(
                 action="ORDER_STATUS_UPDATED",
@@ -735,6 +764,23 @@ class OrderService:
             locked_order.transition_to(new_status)
             order.status = locked_order.status
             order.updated_at = locked_order.updated_at
+
+            # Apply atomic inventory lifecycle transitions
+            from shop.inventory_service import InventoryService
+            if locked_order.status == Order.STATUS_CANCELLED:
+                InventoryService.release_order_reservation(
+                    order=locked_order,
+                    actor=actor,
+                    note=note,
+                    ip_address=ip_address,
+                )
+            elif locked_order.status == Order.STATUS_DELIVERED:
+                InventoryService.finalize_order_delivery(
+                    order=locked_order,
+                    actor=actor,
+                    note=note,
+                    ip_address=ip_address,
+                )
 
             AuditService.log(
                 action="ORDER_STATUS_UPDATED",

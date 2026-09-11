@@ -1,4 +1,4 @@
-import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder } from "./types";
+import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload } from "./types";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
@@ -692,5 +692,48 @@ export async function updateSellerOrderStatus(
 
   return await res.json();
 }
+
+export async function getSellerProductInventory(
+  productId: number,
+  token: string
+): Promise<ProductInventory> {
+  const res = await fetch(`${API_BASE_URL}/api/seller/inventory/${productId}/`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Failed to fetch inventory record");
+  }
+
+  return await res.json();
+}
+
+export async function adjustSellerProductStock(
+  productId: number,
+  payload: InventoryAdjustmentPayload,
+  token: string
+): Promise<ProductInventory> {
+  const res = await fetch(`${API_BASE_URL}/api/seller/inventory/${productId}/adjust/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    const msg = errorData.detail || errorData.quantity || "Failed to adjust inventory stock";
+    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+  }
+
+  return await res.json();
+}
+
 
 

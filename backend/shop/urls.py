@@ -34,5 +34,15 @@ urlpatterns = [
     path("api/seller/orders/", api_views.SellerOrderListAPIView.as_view(), name="api_seller_orders"),
     path("api/seller/orders/<str:order_number>/", api_views.SellerOrderDetailAPIView.as_view(), name="api_seller_order_detail"),
     path("api/seller/orders/<str:order_number>/status/", api_views.SellerOrderStatusUpdateAPIView.as_view(), name="api_seller_order_status_update"),
+
+    # Inventory APIs
+    path("api/seller/inventory/", api_views.SellerInventoryListAPIView.as_view(), name="api_seller_inventory_list"),
+    path("api/seller/inventory/<int:product_id>/", api_views.SellerInventoryDetailAPIView.as_view(), name="api_seller_inventory_detail"),
+    path("api/seller/inventory/<int:product_id>/adjust/", api_views.SellerInventoryAdjustAPIView.as_view(), name="api_seller_inventory_adjust"),
+    path("api/seller/inventory/<int:product_id>/transactions/", api_views.SellerInventoryTransactionsAPIView.as_view(), name="api_seller_inventory_transactions"),
+    path("api/inventory/", api_views.SellerInventoryListAPIView.as_view(), name="api_inventory_list"),
+    path("api/inventory/<int:product_id>/", api_views.SellerInventoryDetailAPIView.as_view(), name="api_inventory_detail"),
+    path("api/inventory/<int:product_id>/adjust/", api_views.SellerInventoryAdjustAPIView.as_view(), name="api_inventory_adjust"),
+    path("api/inventory/<int:product_id>/transactions/", api_views.SellerInventoryTransactionsAPIView.as_view(), name="api_inventory_transactions"),
 ]
 

@@ -13,26 +13,34 @@ from rest_framework.views import APIView
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from points.services import InsufficientPointsError, PointService
-from rbac.services import has_user_permission
-from .models import Category, Order, OrderItem, Product
+from rbac.models import Role
+from rbac.services import get_user_role_codes, has_user_permission
+from .inventory_service import InventoryService
+from .models import Category, InventoryTransaction, Order, OrderItem, Product, ProductInventory
 from .permissions import (
+    CanAdjustInventory,
     CanCreateOrder,
     CanCreateProduct,
     CanDeleteProduct,
     CanUpdateProduct,
     CanUpdateSellerOrder,
+    CanViewInventory,
     CanViewOrder,
     CanViewSellerOrder,
     IsEligibleOrderSeller,
     IsEligibleProductSeller,
+    IsInventoryProductOwner,
     IsOrderOwner,
     IsProductOwner,
 )
 from .serializers import (
     CategorySerializer,
+    InventoryAdjustmentSerializer,
+    InventoryTransactionSerializer,
     OrderCreateSerializer,
     OrderDetailSerializer,
     ProductDetailSerializer,
+    ProductInventorySerializer,
     ProductListSerializer,
     SellerOrderDetailSerializer,
     SellerOrderItemSerializer,
@@ -605,5 +613,175 @@ class SellerOrderStatusUpdateAPIView(APIView):
 
         detail_serializer = SellerOrderDetailSerializer(updated_order, context={"request": request})
         return Response(detail_serializer.data, status=status.HTTP_200_OK)
+
+
+class SellerInventoryDetailAPIView(APIView):
+    """
+    GET /api/seller/inventory/<product_id>/
+    GET /api/inventory/<product_id>/
+    Retrieves the authoritative inventory record for a product.
+    Enforces that caller is an operational seller owning the product (or staff with inventory.view).
+    """
+    permission_classes = [permissions.IsAuthenticated, CanViewInventory]
+
+    def get(self, request, product_id):
+        product = get_object_or_404(Product, pk=product_id)
+
+        # Check ownership or staff permission via RBAC
+        role_codes = get_user_role_codes(request.user)
+        is_staff_override = (
+            request.user.is_superuser
+            or request.user.is_staff
+            or Role.ROLE_SUPER_ADMINISTRATOR in role_codes
+            or Role.ROLE_ADMINISTRATOR in role_codes
+            or Role.ROLE_OPERATION_MANAGER in role_codes
+        )
+
+        if not is_staff_override:
+            if not hasattr(request.user, "seller_profile"):
+                raise PermissionDenied("You do not have a registered seller profile.")
+            seller = request.user.seller_profile
+            if not seller.is_operational:
+                raise PermissionDenied("Your seller account is not operational.")
+            if not (product.shop and product.shop.owner == seller):
+                raise PermissionDenied("You do not own the product associated with this inventory.")
+
+        inventory = InventoryService.get_or_create_inventory(product)
+        serializer = ProductInventorySerializer(inventory)
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class SellerInventoryAdjustAPIView(APIView):
+    """
+    POST /api/seller/inventory/<product_id>/adjust/
+    POST /api/inventory/<product_id>/adjust/
+    PATCH /api/seller/inventory/<product_id>/
+    PATCH /api/inventory/<product_id>/
+    Adjusts available stock for a product by delta quantity (+/-).
+    Enforces that caller is an operational seller owning the product (or staff with inventory.adjust).
+    """
+    permission_classes = [permissions.IsAuthenticated, CanAdjustInventory]
+
+    def post(self, request, product_id):
+        return self._handle_adjustment(request, product_id)
+
+    def patch(self, request, product_id):
+        return self._handle_adjustment(request, product_id)
+
+    def _handle_adjustment(self, request, product_id):
+        product = get_object_or_404(Product, pk=product_id)
+
+        # Check ownership or staff permission via RBAC
+        role_codes = get_user_role_codes(request.user)
+        is_staff_override = (
+            request.user.is_superuser
+            or request.user.is_staff
+            or Role.ROLE_SUPER_ADMINISTRATOR in role_codes
+            or Role.ROLE_ADMINISTRATOR in role_codes
+            or Role.ROLE_OPERATION_MANAGER in role_codes
+        )
+
+        if not is_staff_override:
+            if not hasattr(request.user, "seller_profile"):
+                raise PermissionDenied("You do not have a registered seller profile.")
+            seller = request.user.seller_profile
+            if not seller.is_operational:
+                raise PermissionDenied("Your seller account is not operational.")
+            if not (product.shop and product.shop.owner == seller):
+                raise PermissionDenied("You do not own the product associated with this inventory.")
+
+        serializer = InventoryAdjustmentSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        quantity_delta = serializer.validated_data["quantity"]
+        reason = serializer.validated_data.get("reason", "")
+        ip_address = request.META.get("REMOTE_ADDR")
+
+        try:
+            inventory = InventoryService.adjust_stock(
+                product=product,
+                quantity_delta=quantity_delta,
+                actor=request.user,
+                reason=reason,
+                ip_address=ip_address,
+            )
+        except DjangoValidationError as exc:
+            detail = exc.message_dict if hasattr(exc, "message_dict") else {"detail": exc.messages}
+            return Response(detail, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(ProductInventorySerializer(inventory).data, status=status.HTTP_200_OK)
+
+
+class SellerInventoryListAPIView(generics.ListAPIView):
+    """
+    GET /api/seller/inventory/
+    GET /api/inventory/
+    Lists inventory records for products belonging to the authenticated seller (or all for staff).
+    """
+    permission_classes = [permissions.IsAuthenticated, CanViewInventory]
+    serializer_class = ProductInventorySerializer
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        user = self.request.user
+        role_codes = get_user_role_codes(user)
+        is_staff_override = (
+            user.is_superuser
+            or user.is_staff
+            or Role.ROLE_SUPER_ADMINISTRATOR in role_codes
+            or Role.ROLE_ADMINISTRATOR in role_codes
+            or Role.ROLE_OPERATION_MANAGER in role_codes
+        )
+
+        if is_staff_override:
+            return ProductInventory.objects.select_related("product").order_by("-updated_at")
+
+        if not hasattr(user, "seller_profile"):
+            raise PermissionDenied("You do not have a registered seller profile.")
+        seller = user.seller_profile
+        if not seller.is_operational:
+            raise PermissionDenied("Your seller account is not operational.")
+
+        return ProductInventory.objects.filter(
+            product__shop__owner=seller
+        ).select_related("product").order_by("-updated_at")
+
+
+class SellerInventoryTransactionsAPIView(generics.ListAPIView):
+    """
+    GET /api/seller/inventory/<product_id>/transactions/
+    GET /api/inventory/<product_id>/transactions/
+    Retrieves the immutable transaction history for a product.
+    """
+    permission_classes = [permissions.IsAuthenticated, CanViewInventory]
+    serializer_class = InventoryTransactionSerializer
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        product_id = self.kwargs.get("product_id")
+        product = get_object_or_404(Product, pk=product_id)
+        user = self.request.user
+
+        role_codes = get_user_role_codes(user)
+        is_staff_override = (
+            user.is_superuser
+            or user.is_staff
+            or Role.ROLE_SUPER_ADMINISTRATOR in role_codes
+            or Role.ROLE_ADMINISTRATOR in role_codes
+            or Role.ROLE_OPERATION_MANAGER in role_codes
+        )
+
+        if not is_staff_override:
+            if not hasattr(user, "seller_profile"):
+                raise PermissionDenied("You do not have a registered seller profile.")
+            seller = user.seller_profile
+            if not seller.is_operational:
+                raise PermissionDenied("Your seller account is not operational.")
+            if not (product.shop and product.shop.owner == seller):
+                raise PermissionDenied("You do not own the product associated with this inventory.")
+
+        return InventoryTransaction.objects.filter(product=product).order_by("-created_at")
+
+
 
 

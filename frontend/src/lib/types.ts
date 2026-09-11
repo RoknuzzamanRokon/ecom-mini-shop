@@ -225,4 +225,48 @@ export interface SellerOrderStatusUpdatePayload {
   note?: string;
 }
 
+export interface ProductInventory {
+  id: number;
+  product_id: number;
+  product_name: string;
+  product_slug: string;
+  available_quantity: number;
+  reserved_quantity: number;
+  sold_quantity: number;
+  total_quantity: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InventoryAdjustmentPayload {
+  quantity: number;
+  reason?: string;
+}
+
+export interface InventoryTransaction {
+  id: number;
+  product_id: number;
+  product_name: string;
+  transaction_type:
+    | "INITIAL_STOCK"
+    | "STOCK_IN"
+    | "STOCK_OUT"
+    | "RESERVATION"
+    | "RELEASE"
+    | "SALE"
+    | "ADJUSTMENT"
+    | string;
+  quantity: number;
+  before_available: number;
+  after_available: number;
+  before_reserved: number;
+  after_reserved: number;
+  before_sold: number;
+  after_sold: number;
+  actor_name: string;
+  reason: string;
+  created_at: string;
+}
+
+
 

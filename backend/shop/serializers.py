@@ -1,7 +1,7 @@
 from decimal import Decimal
 from rest_framework import serializers
 from shops.models import Shop
-from .models import Category, Product, ProductImage, Order, OrderItem
+from .models import Category, Product, ProductImage, Order, OrderItem, ProductInventory, InventoryTransaction
 
 
 class ShopSummarySerializer(serializers.ModelSerializer):
@@ -549,4 +549,98 @@ class SellerOrderStatusUpdateSerializer(serializers.Serializer):
     """
     status = serializers.ChoiceField(choices=Order.STATUS_CHOICES)
     note = serializers.CharField(required=False, allow_blank=True, default="")
+
+
+class ProductInventorySerializer(serializers.ModelSerializer):
+    """
+    Authoritative representation of a product's current inventory status.
+    """
+    product_id = serializers.ReadOnlyField(source="product.id")
+    product_name = serializers.ReadOnlyField(source="product.name")
+    product_slug = serializers.ReadOnlyField(source="product.slug")
+    total_quantity = serializers.ReadOnlyField()
+
+    class Meta:
+        model = ProductInventory
+        fields = [
+            "id",
+            "product_id",
+            "product_name",
+            "product_slug",
+            "available_quantity",
+            "reserved_quantity",
+            "sold_quantity",
+            "total_quantity",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "product_id",
+            "product_name",
+            "product_slug",
+            "reserved_quantity",
+            "sold_quantity",
+            "total_quantity",
+            "created_at",
+            "updated_at",
+        ]
+
+
+class InventoryAdjustmentSerializer(serializers.Serializer):
+    """
+    Input serializer for authorized seller stock adjustments.
+    Requires signed quantity delta (non-zero) and optional reason note.
+    """
+    quantity = serializers.IntegerField(
+        required=True,
+        help_text="Signed stock quantity change (positive to increment, negative to decrement). Cannot be 0.",
+    )
+    reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        max_length=500,
+        help_text="Operational justification for the stock adjustment.",
+    )
+
+    def validate_quantity(self, value):
+        if value == 0:
+            raise serializers.ValidationError("Adjustment quantity cannot be zero.")
+        return value
+
+
+class InventoryTransactionSerializer(serializers.ModelSerializer):
+    """
+    Serializer for immutable inventory transaction audit records.
+    """
+    product_id = serializers.ReadOnlyField(source="product.id")
+    product_name = serializers.ReadOnlyField(source="product.name")
+    actor_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = InventoryTransaction
+        fields = [
+            "id",
+            "product_id",
+            "product_name",
+            "transaction_type",
+            "quantity",
+            "before_available",
+            "after_available",
+            "before_reserved",
+            "after_reserved",
+            "before_sold",
+            "after_sold",
+            "actor_name",
+            "reason",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_actor_name(self, obj):
+        if obj.actor:
+            return obj.actor.get_full_name() or obj.actor.username
+        return "System"
+
 
