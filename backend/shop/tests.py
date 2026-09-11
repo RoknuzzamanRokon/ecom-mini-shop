@@ -1,31 +1,54 @@
 from decimal import Decimal
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.urls import reverse
 
+from sellers.models import SellerProfile
+from shops.models import Shop
 from .models import Category, Order, OrderItem, Product
+
+User = get_user_model()
 
 
 class ShopTestCase(TestCase):
     def setUp(self):
+        self.user = User.objects.create_user(username="test_merchant", password="password")
+        self.seller = SellerProfile.objects.create(
+            user=self.user,
+            seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+            status=SellerProfile.STATUS_ACTIVE,
+            business_name="Tech Merchant",
+        )
+        self.shop = Shop.objects.create(
+            owner=self.seller,
+            name="Tech Shop",
+            slug="tech-shop",
+            status=Shop.STATUS_ACTIVE,
+        )
+
         self.electronics = Category.objects.create(name="Electronics", icon="devices")
         self.clothing = Category.objects.create(name="Clothing", icon="checkroom")
 
         self.keyboard = Product.objects.create(
             name="Custom Mechanical Keyboard",
             category=self.electronics,
+            shop=self.shop,
             description="A great keyboard.",
             price=Decimal("148.00"),
             old_price=Decimal("180.00"),
             stock=10,
             badge="NEW",
+            status=Product.STATUS_PUBLISHED,
         )
         self.tee = Product.objects.create(
             name="Organic Heavyweight Tee",
             category=self.clothing,
+            shop=self.shop,
             description="A soft tee.",
             price=Decimal("42.00"),
             stock=0,
+            status=Product.STATUS_PUBLISHED,
         )
 
 
@@ -61,9 +84,11 @@ class ProductListViewTests(ShopTestCase):
             Product.objects.create(
                 name=f"Extra Product {i}",
                 category=self.electronics,
+                shop=self.shop,
                 description="x",
                 price=Decimal("10.00"),
                 stock=5,
+                status=Product.STATUS_PUBLISHED,
             )
         response = self.client.get(reverse("shop:product_list"))
         self.assertEqual(len(response.context["page_obj"].object_list), 12)

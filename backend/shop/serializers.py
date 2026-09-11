@@ -26,6 +26,8 @@ class CategorySerializer(serializers.ModelSerializer):
             "products_count",
             "image_url",
             "description",
+            "created_at",
+            "updated_at",
         ]
 
     def get_image_url(self, obj):

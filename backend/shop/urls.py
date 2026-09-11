@@ -22,6 +22,7 @@ urlpatterns = [
     path("api/products/mine/", api_views.SellerProductListCreateAPIView.as_view(), name="api_seller_products"),
     path("api/products/mine/<int:pk>/", api_views.SellerProductDetailAPIView.as_view(), name="api_seller_product_detail"),
     path("api/products/", api_views.ProductListAPIView.as_view(), name="api_products"),
+    path("api/products/<int:pk>/", api_views.ProductDetailAPIView.as_view(), name="api_product_detail_pk"),
     path("api/products/<slug:slug>/", api_views.ProductDetailAPIView.as_view(), name="api_product_detail"),
     path("api/hot-deals/", api_views.HotDealAPIView.as_view(), name="api_hot_deal"),
     path("api/orders/", api_views.OrderCreateAPIView.as_view(), name="api_order_create"),

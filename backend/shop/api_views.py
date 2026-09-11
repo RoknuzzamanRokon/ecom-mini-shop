@@ -43,79 +43,136 @@ class StandardResultsSetPagination(PageNumberPagination):
 
 
 class CategoryListView(generics.ListAPIView):
+    """
+    Public listing of active categories.
+    Annotates products_count based strictly on publicly visible products.
+    """
+    permission_classes = [permissions.AllowAny]
     serializer_class = CategorySerializer
     pagination_class = None
 
     def get_queryset(self):
-        return (
-            Category.objects.filter(is_active=True)
-            .annotate(
-                products_count=Count(
-                    "products", filter=Q(products__is_active=True)
-                )
-            )
-            .order_by("name")
-        )
+        return ProductService.get_public_categories_queryset()
 
 
 class ProductListAPIView(generics.ListAPIView):
+    """
+    Public catalog product listing.
+    Enforces strict database-level public visibility:
+      - Product is active and published
+      - Category is active
+      - Shop is approved/active
+      - Seller is operational
+    Supports filtering by category, shop, price range, badge, search, and sorting.
+    """
+    permission_classes = [permissions.AllowAny]
     serializer_class = ProductListSerializer
     pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
-        queryset = (
-            Product.objects.filter(is_active=True)
-            .select_related("category")
-            .order_by("-created_at")
-        )
+        queryset = ProductService.get_public_products_queryset()
 
         # Filter by category slug
         category_slug = self.request.query_params.get("category")
         if category_slug and category_slug.lower() != "all":
             queryset = queryset.filter(category__slug=category_slug)
 
+        # Filter by shop (ID or slug)
+        shop_param = self.request.query_params.get("shop")
+        if shop_param:
+            shop_str = str(shop_param).strip()
+            if shop_str.isdigit():
+                queryset = queryset.filter(shop_id=int(shop_str))
+            else:
+                queryset = queryset.filter(shop__slug=shop_str)
+
+        # Filter by minimum price
+        min_price = self.request.query_params.get("min_price")
+        if min_price is not None and min_price != "":
+            try:
+                min_val = Decimal(min_price)
+                if min_val >= 0:
+                    queryset = queryset.filter(price__gte=min_val)
+            except Exception:
+                pass
+
+        # Filter by maximum price
+        max_price = self.request.query_params.get("max_price")
+        if max_price is not None and max_price != "":
+            try:
+                max_val = Decimal(max_price)
+                if max_val >= 0:
+                    queryset = queryset.filter(price__lte=max_val)
+            except Exception:
+                pass
+
         # Filter by badge
         badge = self.request.query_params.get("badge")
         if badge:
-            queryset = queryset.filter(badge__iexact=badge)
+            queryset = queryset.filter(badge__iexact=badge.strip())
 
-        # Search filter
+        # Search filter (name, description, category name)
         search_query = self.request.query_params.get("q") or self.request.query_params.get("search")
         if search_query:
-            search_query = search_query.strip()
+            term = search_query.strip()
             queryset = queryset.filter(
-                Q(name__icontains=search_query)
-                | Q(description__icontains=search_query)
-                | Q(category__name__icontains=search_query)
+                Q(name__icontains=term)
+                | Q(description__icontains=term)
+                | Q(category__name__icontains=term)
             ).distinct()
 
         # Ordering
         ordering = self.request.query_params.get("ordering")
-        if ordering:
-            allowed_orderings = ["price", "-price", "created_at", "-created_at", "name", "-name"]
-            if ordering in allowed_orderings:
-                queryset = queryset.order_by(ordering)
+        ORDERING_MAP = {
+            "newest": "-created_at",
+            "-created_at": "-created_at",
+            "created_at": "created_at",
+            "oldest": "created_at",
+            "price": "price",
+            "price_asc": "price",
+            "-price": "-price",
+            "price_desc": "-price",
+            "name": "name",
+            "name_asc": "name",
+            "-name": "-name",
+            "name_desc": "-name",
+        }
+        if ordering and ordering in ORDERING_MAP:
+            queryset = queryset.order_by(ORDERING_MAP[ordering])
+        else:
+            queryset = queryset.order_by("-created_at")
 
         return queryset
 
 
 class ProductDetailAPIView(generics.RetrieveAPIView):
+    """
+    Public product detail endpoint.
+    Supports lookup by either primary key (ID) or slug:
+      - /api/products/<int:pk>/
+      - /api/products/<slug:slug>/
+    Enforces strict database-level public visibility.
+    Non-public, draft, rejected, or suspended-shop products return HTTP 404.
+    """
+    permission_classes = [permissions.AllowAny]
     serializer_class = ProductDetailSerializer
-    lookup_field = "slug"
 
-    def get_queryset(self):
-        return Product.objects.filter(is_active=True).select_related("category").prefetch_related("images")
+    def get_object(self):
+        pk = self.kwargs.get("pk")
+        slug = self.kwargs.get("slug")
+        identifier = pk if pk is not None else slug
+        return ProductService.get_public_product_by_identifier(identifier)
 
     def retrieve(self, request, *args, **kwargs):
         instance = self.get_object()
         serializer = self.get_serializer(instance)
         data = serializer.data
 
-        # Add related products in the same category
+        # Add related public products in the same category
         related_products = (
-            Product.objects.filter(category=instance.category, is_active=True)
-            .exclude(id=instance.id)
-            .order_by("-created_at")[:4]
+            ProductService.get_public_products_queryset()
+            .filter(category=instance.category)
+            .exclude(id=instance.id)[:4]
         )
         data["related_products"] = ProductListSerializer(
             related_products, many=True, context={"request": request}
@@ -125,21 +182,23 @@ class ProductDetailAPIView(generics.RetrieveAPIView):
 
 
 class HotDealAPIView(APIView):
+    """
+    Public endpoint returning the most featured/discounted deal product.
+    Only publicly visible products are eligible.
+    """
+    permission_classes = [permissions.AllowAny]
+
     def get(self, request):
-        # Pick the most heavily discounted product or newest discounted product
+        public_qs = ProductService.get_public_products_queryset()
         deal_product = (
-            Product.objects.filter(is_active=True, old_price__isnull=False)
+            public_qs.filter(old_price__isnull=False)
             .exclude(old_price__lte=0)
             .order_by("-created_at")
             .first()
         )
 
         if not deal_product:
-            deal_product = (
-                Product.objects.filter(is_active=True)
-                .order_by("-created_at")
-                .first()
-            )
+            deal_product = public_qs.order_by("-created_at").first()
 
         if not deal_product:
             return Response({"detail": "No hot deal available."}, status=status.HTTP_404_NOT_FOUND)

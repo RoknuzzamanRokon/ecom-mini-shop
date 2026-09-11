@@ -1,9 +1,11 @@
 import logging
 from decimal import Decimal
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Count, Q
+from django.shortcuts import get_object_or_404
 from django.utils.text import slugify
 from rest_framework.exceptions import PermissionDenied
 
@@ -273,3 +275,53 @@ class ProductService:
             )
             product.delete()
             logger.info("Product deleted: id=%s by seller=%s", product.id, seller.business_name)
+
+    @classmethod
+    def get_public_products_queryset(cls):
+        """
+        Authoritative public catalog queryset with optimal join prefetching.
+        Enforces public visibility at database level:
+          - product.is_active is True
+          - product.status == 'PUBLISHED'
+          - category.is_active is True
+          - shop is not null and shop.status in ['APPROVED', 'ACTIVE']
+          - shop.owner is operational (status in ['APPROVED', 'ACTIVE'])
+        """
+        return (
+            Product.objects.public()
+            .select_related("category", "shop", "shop__owner")
+            .prefetch_related("images")
+        )
+
+    @classmethod
+    def get_public_product_by_identifier(cls, identifier: Union[int, str]) -> Product:
+        """
+        Retrieves a single publicly visible product by its primary key (ID) or slug.
+        Raises Http404 if the product does not exist or fails public visibility rules.
+        """
+        qs = cls.get_public_products_queryset()
+        if isinstance(identifier, int) or (isinstance(identifier, str) and identifier.isdigit()):
+            return get_object_or_404(qs, pk=int(identifier))
+        return get_object_or_404(qs, slug=identifier)
+
+    @classmethod
+    def get_public_categories_queryset(cls):
+        """
+        Returns active categories annotated with the count of publicly visible products only.
+        """
+        return (
+            Category.objects.filter(is_active=True)
+            .annotate(
+                products_count=Count(
+                    "products",
+                    filter=Q(
+                        products__is_active=True,
+                        products__status=Product.STATUS_PUBLISHED,
+                        products__shop__isnull=False,
+                        products__shop__status__in=[Shop.STATUS_APPROVED, Shop.STATUS_ACTIVE],
+                        products__shop__owner__status__in=[SellerProfile.STATUS_APPROVED, SellerProfile.STATUS_ACTIVE],
+                    ),
+                )
+            )
+            .order_by("name")
+        )

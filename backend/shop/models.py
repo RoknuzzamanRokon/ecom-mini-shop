@@ -4,6 +4,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.text import slugify
 
 
@@ -26,6 +27,8 @@ class Category(models.Model):
         help_text="Short description for category banners and headers",
     )
     is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(default=timezone.now)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         verbose_name_plural = "categories"
@@ -41,6 +44,27 @@ class Category(models.Model):
 
     def get_absolute_url(self):
         return reverse("shop:category", args=[self.slug])
+
+
+class ProductQuerySet(models.QuerySet):
+    def public(self):
+        """
+        Authoritative queryset for publicly visible catalog products.
+        Enforces:
+          1. Product is active (is_active=True).
+          2. Product status is PUBLISHED.
+          3. Category is active (category__is_active=True).
+          4. Product belongs to an approved/active shop (shop__status in [APPROVED, ACTIVE]).
+          5. Shop owner (seller) is operational (shop__owner__status in [APPROVED, ACTIVE]).
+        """
+        return self.filter(
+            is_active=True,
+            status="PUBLISHED",
+            category__is_active=True,
+            shop__isnull=False,
+            shop__status__in=["APPROVED", "ACTIVE"],
+            shop__owner__status__in=["APPROVED", "ACTIVE"],
+        )
 
 
 class Product(models.Model):
@@ -60,6 +84,8 @@ class Product(models.Model):
         (STATUS_PUBLISHED, "Published"),
         (STATUS_UNPUBLISHED, "Unpublished"),
     ]
+
+    objects = ProductQuerySet.as_manager()
 
     name = models.CharField(max_length=200)
     slug = models.SlugField(max_length=220, unique=True)
@@ -142,6 +168,25 @@ class Product(models.Model):
     def owner(self):
         """Alias for seller property."""
         return self.seller
+
+    @property
+    def is_publicly_visible(self) -> bool:
+        """
+        Determines whether this product is visible in the public catalog.
+        Corresponds exactly with ProductQuerySet.public() criteria.
+        """
+        return bool(
+            self.is_active
+            and self.status == self.STATUS_PUBLISHED
+            and self.category_id
+            and self.category.is_active
+            and self.shop_id is not None
+            and self.shop
+            and self.shop.status in ("APPROVED", "ACTIVE")
+            and self.shop.owner_id is not None
+            and self.shop.owner
+            and self.shop.owner.status in ("APPROVED", "ACTIVE")
+        )
 
     def get_absolute_url(self):
         return reverse("shop:product_detail", args=[self.slug])

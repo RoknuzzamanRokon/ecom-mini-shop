@@ -1,4 +1,4 @@
-import { Category, PaginatedResponse, Product, Order, CustomerProfile, Address, AddressInput } from "./types";
+import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput } from "./types";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
@@ -197,19 +197,18 @@ export async function getCategories(): Promise<Category[]> {
   }
 }
 
-export async function getProducts(params?: {
-  category?: string;
-  q?: string;
-  badge?: string;
-  ordering?: string;
-  page?: number;
-}): Promise<PaginatedResponse<Product>> {
+export async function getProducts(params?: ProductFilterParams): Promise<PaginatedResponse<Product>> {
   const query = new URLSearchParams();
   if (params?.category && params.category !== "all") query.set("category", params.category);
-  if (params?.q) query.set("q", params.q);
+  const searchQuery = params?.q || params?.search;
+  if (searchQuery) query.set("q", searchQuery);
   if (params?.badge) query.set("badge", params.badge);
+  if (params?.shop !== undefined && params?.shop !== null) query.set("shop", params.shop.toString());
+  if (params?.min_price !== undefined && params?.min_price !== null) query.set("min_price", params.min_price.toString());
+  if (params?.max_price !== undefined && params?.max_price !== null) query.set("max_price", params.max_price.toString());
   if (params?.ordering) query.set("ordering", params.ordering);
   if (params?.page) query.set("page", params.page.toString());
+  if (params?.page_size) query.set("page_size", params.page_size.toString());
 
   try {
     const res = await fetch(`${API_BASE_URL}/api/products/?${query.toString()}`, {
@@ -223,8 +222,8 @@ export async function getProducts(params?: {
     if (params?.category && params.category !== "all") {
       filtered = filtered.filter((p) => p.category?.slug === params.category);
     }
-    if (params?.q) {
-      const q = params.q.toLowerCase();
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
       filtered = filtered.filter(
         (p) =>
           p.name.toLowerCase().includes(q) ||
@@ -258,6 +257,24 @@ export async function getProductDetail(slug: string): Promise<Product | null> {
     return {
       ...found,
       related_products: DEMO_PRODUCTS.filter((p) => p.slug !== slug).slice(0, 4),
+    };
+  }
+}
+
+export async function getProductById(id: number): Promise<Product | null> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/products/${id}/`, {
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error("Product not found");
+    return await res.json();
+  } catch (err) {
+    console.warn("Using fallback demo product for id:", id, err);
+    const found = DEMO_PRODUCTS.find((p) => p.id === id);
+    if (!found) return null;
+    return {
+      ...found,
+      related_products: DEMO_PRODUCTS.filter((p) => p.id !== id).slice(0, 4),
     };
   }
 }

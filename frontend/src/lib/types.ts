@@ -7,6 +7,21 @@ export interface Category {
   products_count?: number;
   image_url?: string | null;
   description?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ProductFilterParams {
+  category?: string;
+  q?: string;
+  search?: string;
+  badge?: string;
+  shop?: number | string;
+  min_price?: number | string;
+  max_price?: number | string;
+  ordering?: string;
+  page?: number;
+  page_size?: number;
 }
 
 export interface ProductImage {
