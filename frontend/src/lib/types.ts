@@ -80,3 +80,41 @@ export interface PaginatedResponse<T> {
   previous: string | null;
   results: T[];
 }
+
+export interface CustomerProfile {
+  id: number;
+  user_id: number;
+  username: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  display_name: string;
+  phone: string;
+  avatar?: string | null;
+  date_of_birth?: string | null;
+  gender?: "MALE" | "FEMALE" | "OTHER" | "PREFER_NOT_TO_SAY" | "";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Address {
+  id: number;
+  label: "Home" | "Work" | "Office" | "Other" | string;
+  recipient_name: string;
+  phone: string;
+  address_line_1: string;
+  address_line_2?: string;
+  area?: string;
+  city: string;
+  state?: string;
+  postal_code: string;
+  country: string;
+  latitude?: string | number | null;
+  longitude?: string | number | null;
+  is_default: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type AddressInput = Omit<Address, "id" | "created_at" | "updated_at">;
+

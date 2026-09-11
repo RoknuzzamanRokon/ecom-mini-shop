@@ -59,6 +59,7 @@ INSTALLED_APPS = [
     'points',
     'shops',
     'audit',
+    'customers',
     'shop',
 ]
 

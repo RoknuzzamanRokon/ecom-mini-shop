@@ -11,6 +11,7 @@ class Role(models.Model):
     ROLE_SALES_TEAM = "SALES_TEAM"
     ROLE_FINANCE = "FINANCE"
     ROLE_SUPPORT_TEAM = "SUPPORT_TEAM"
+    ROLE_CUSTOMER = "CUSTOMER"
 
     ROLE_CHOICES = [
         (ROLE_SUPER_ADMINISTRATOR, "Super Administrator"),
@@ -20,6 +21,7 @@ class Role(models.Model):
         (ROLE_SALES_TEAM, "Sales Team"),
         (ROLE_FINANCE, "Finance"),
         (ROLE_SUPPORT_TEAM, "Support Team"),
+        (ROLE_CUSTOMER, "Customer"),
     ]
 
     code = models.CharField(

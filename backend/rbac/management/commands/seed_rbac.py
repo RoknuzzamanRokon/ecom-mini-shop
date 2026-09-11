@@ -56,6 +56,13 @@ PERMISSIONS_DATA = [
     ("points.adjust", "Adjust Points", "points", "adjust", "Can adjust seller point balances"),
     # Reports
     ("reports.view", "View Reports", "reports", "view", "Can access analytical and sales reports"),
+    # Customer Profile & Addresses
+    ("profile.view", "View Profile", "profile", "view", "Can view customer profile"),
+    ("profile.update", "Update Profile", "profile", "update", "Can update customer profile"),
+    ("address.view", "View Addresses", "address", "view", "Can view customer addresses"),
+    ("address.create", "Create Address", "address", "create", "Can create customer addresses"),
+    ("address.update", "Update Address", "address", "update", "Can update customer addresses"),
+    ("address.delete", "Delete Address", "address", "delete", "Can delete customer addresses"),
 ]
 
 ROLES_DATA = [
@@ -94,6 +101,11 @@ ROLES_DATA = [
         "Support Team",
         "Handles customer inquiries, order issues, complaints, and returns.",
     ),
+    (
+        Role.ROLE_CUSTOMER,
+        "Customer",
+        "Standard retail customer account for managing personal profile and delivery addresses.",
+    ),
 ]
 
 ROLE_PERMISSIONS_MAPPING = {
@@ -108,6 +120,8 @@ ROLE_PERMISSIONS_MAPPING = {
         "payments.view",
         "points.view", "points.add", "points.deduct", "points.adjust",
         "reports.view",
+        "profile.view", "profile.update",
+        "address.view", "address.create", "address.update", "address.delete",
     ],
     Role.ROLE_OPERATION_MANAGER: [
         "products.view", "products.approve", "products.reject", "products.publish",
@@ -139,6 +153,12 @@ ROLE_PERMISSIONS_MAPPING = {
         "sellers.view",
         "shops.view",
         "reports.view",
+        "profile.view",
+        "address.view",
+    ],
+    Role.ROLE_CUSTOMER: [
+        "profile.view", "profile.update",
+        "address.view", "address.create", "address.update", "address.delete",
     ],
 }
 

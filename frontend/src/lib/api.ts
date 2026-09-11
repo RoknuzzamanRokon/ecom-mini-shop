@@ -1,4 +1,4 @@
-import { Category, PaginatedResponse, Product, Order } from "./types";
+import { Category, PaginatedResponse, Product, Order, CustomerProfile, Address, AddressInput } from "./types";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
@@ -369,6 +369,120 @@ export async function createSellerProduct(
     throw new Error(errorData.error || "Failed to create product");
   }
 
+  return await res.json();
+}
+
+/**
+ * Customer Profile & Address API Methods (Task 8)
+ */
+export async function getCustomerProfile(token: string): Promise<CustomerProfile> {
+  const res = await fetch(`${API_BASE_URL}/api/profile/me/`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Failed to fetch customer profile");
+  }
+  return await res.json();
+}
+
+export async function updateCustomerProfile(
+  data: Partial<CustomerProfile>,
+  token: string
+): Promise<CustomerProfile> {
+  const res = await fetch(`${API_BASE_URL}/api/profile/me/`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Failed to update customer profile");
+  }
+  return await res.json();
+}
+
+export async function getCustomerAddresses(token: string): Promise<Address[]> {
+  const res = await fetch(`${API_BASE_URL}/api/addresses/`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Failed to fetch addresses");
+  }
+  return await res.json();
+}
+
+export async function createCustomerAddress(
+  data: AddressInput,
+  token: string
+): Promise<Address> {
+  const res = await fetch(`${API_BASE_URL}/api/addresses/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Failed to create address");
+  }
+  return await res.json();
+}
+
+export async function updateCustomerAddress(
+  id: number,
+  data: Partial<AddressInput>,
+  token: string
+): Promise<Address> {
+  const res = await fetch(`${API_BASE_URL}/api/addresses/${id}/`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Failed to update address");
+  }
+  return await res.json();
+}
+
+export async function deleteCustomerAddress(id: number, token: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/addresses/${id}/`, {
+    method: "DELETE",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Failed to delete address");
+  }
+}
+
+export async function setDefaultCustomerAddress(id: number, token: string): Promise<Address> {
+  const res = await fetch(`${API_BASE_URL}/api/addresses/${id}/set-default/`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Failed to set default address");
+  }
   return await res.json();
 }
 
