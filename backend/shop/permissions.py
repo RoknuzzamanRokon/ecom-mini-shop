@@ -101,3 +101,51 @@ class IsProductOwner(BasePermission):
 
         seller = user.seller_profile
         return bool(obj.shop and obj.shop.owner == seller)
+
+
+class CanCreateOrder(BasePermission):
+    """
+    Enforces that the user holds the 'orders.create' RBAC permission.
+    """
+    message = "You do not have permission to place orders."
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        return has_user_permission(request.user, "orders.create")
+
+
+class CanViewOrder(BasePermission):
+    """
+    Enforces that the user holds the 'orders.view' RBAC permission.
+    """
+    message = "You do not have permission to view orders."
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        return has_user_permission(request.user, "orders.view")
+
+
+class IsOrderOwner(BasePermission):
+    """
+    Object-level permission enforcing that the order belongs to the authenticated customer.
+    Staff/Admin with appropriate permissions may view any order.
+    """
+    message = "You do not have permission to access this order."
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated)
+
+    def has_object_permission(self, request, view, obj):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+
+        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
+            return True
+
+        if getattr(view, "allow_staff_override", False) and has_user_permission(user, "orders.view"):
+            return True
+
+        return obj.user == user

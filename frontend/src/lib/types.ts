@@ -74,21 +74,43 @@ export interface OrderItem {
   id: number;
   product?: number | null;
   product_name: string;
+  product_slug?: string;
+  shop?: number | null;
+  shop_name?: string;
+  seller?: number | null;
+  seller_name?: string;
+  unit_price?: string | number;
   price: string | number;
   quantity: number;
+  line_total?: string | number;
   subtotal: string | number;
+  created_at?: string;
 }
 
 export interface Order {
   id: number;
   order_number: string;
-  customer_name: string;
-  phone: string;
-  address: string;
-  city: string;
+  customer_name?: string;
+  phone?: string;
+  address?: string;
+  city?: string;
+  shipping_recipient_name?: string;
+  shipping_phone?: string;
+  shipping_address_line_1?: string;
+  shipping_address_line_2?: string;
+  shipping_area?: string;
+  shipping_city?: string;
+  shipping_state?: string;
+  shipping_postal_code?: string;
+  shipping_country?: string;
+  subtotal?: string | number;
+  discount_total?: string | number;
+  shipping_fee?: string | number;
   total_amount: string | number;
+  total_items_count?: number;
   status: string;
   created_at: string;
+  updated_at?: string;
   items: OrderItem[];
 }
 

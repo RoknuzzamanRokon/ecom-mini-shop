@@ -25,6 +25,8 @@ urlpatterns = [
     path("api/products/<int:pk>/", api_views.ProductDetailAPIView.as_view(), name="api_product_detail_pk"),
     path("api/products/<slug:slug>/", api_views.ProductDetailAPIView.as_view(), name="api_product_detail"),
     path("api/hot-deals/", api_views.HotDealAPIView.as_view(), name="api_hot_deal"),
-    path("api/orders/", api_views.OrderCreateAPIView.as_view(), name="api_order_create"),
+    path("api/orders/", api_views.OrderListCreateAPIView.as_view(), name="api_orders"),
+    path("api/orders/", api_views.OrderListCreateAPIView.as_view(), name="api_order_create"),
+    path("api/orders/<int:pk>/", api_views.OrderDetailAPIView.as_view(), name="api_order_detail_pk"),
     path("api/orders/<str:order_number>/", api_views.OrderDetailAPIView.as_view(), name="api_order_detail"),
 ]

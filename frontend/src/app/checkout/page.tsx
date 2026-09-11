@@ -39,18 +39,32 @@ export default function CheckoutPage() {
     setError(null);
 
     try {
-      const order = await createOrder({
-        customer_name: formData.fullName,
-        phone: formData.phone,
-        address: formData.address,
-        city: formData.city,
-        items: items
-          .filter((i) => i.is_available !== false)
-          .map((i) => ({
-            product_id: i.product.id,
-            quantity: i.quantity,
-          })),
-      });
+      const token =
+        typeof window !== "undefined"
+          ? localStorage.getItem("minishop_token") ||
+            localStorage.getItem("token") ||
+            localStorage.getItem("access_token")
+          : null;
+
+      const order = await createOrder(
+        {
+          customer_name: formData.fullName,
+          phone: formData.phone,
+          address: formData.address,
+          city: formData.city,
+          shipping_recipient_name: formData.fullName,
+          shipping_phone: formData.phone,
+          shipping_address_line_1: formData.address,
+          shipping_city: formData.city,
+          items: items
+            .filter((i) => i.is_available !== false)
+            .map((i) => ({
+              product_id: i.product.id,
+              quantity: i.quantity,
+            })),
+        },
+        token
+      );
 
       clearCart();
       router.push(`/order-success/${order.order_number}`);

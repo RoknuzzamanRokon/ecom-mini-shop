@@ -165,6 +165,7 @@ ROLE_PERMISSIONS_MAPPING = {
         "profile.view", "profile.update",
         "address.view", "address.create", "address.update", "address.delete",
         "cart.view", "cart.update",
+        "orders.view", "orders.create",
     ],
 }
 

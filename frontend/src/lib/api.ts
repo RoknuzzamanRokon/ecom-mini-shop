@@ -292,32 +292,73 @@ export async function getHotDeal(): Promise<Product | null> {
   }
 }
 
-export async function createOrder(data: {
-  customer_name: string;
-  phone: string;
-  address: string;
-  city: string;
-  items: { product_id: number; quantity: number }[];
-}): Promise<Order> {
+export async function createOrder(
+  data: {
+    customer_name?: string;
+    phone?: string;
+    address?: string;
+    city?: string;
+    address_id?: number | null;
+    shipping_recipient_name?: string;
+    shipping_phone?: string;
+    shipping_address_line_1?: string;
+    shipping_city?: string;
+    items?: { product_id: number; quantity: number }[];
+  },
+  token?: string | null
+): Promise<Order> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
   const res = await fetch(`${API_BASE_URL}/api/orders/`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
+    headers,
     body: JSON.stringify(data),
   });
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({ detail: "Error creating order" }));
-    throw new Error(errorData.detail || "Failed to submit order");
+    const msg = errorData.detail || errorData.cart || "Failed to submit order";
+    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
   }
 
   return await res.json();
 }
 
-export async function getOrderDetail(orderNumber: string): Promise<Order | null> {
+export async function getUserOrders(
+  token: string,
+  page: number = 1
+): Promise<PaginatedResponse<Order>> {
+  const res = await fetch(`${API_BASE_URL}/api/orders/?page=${page}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Failed to fetch orders");
+  }
+
+  return await res.json();
+}
+
+export async function getOrderDetail(
+  orderNumber: string,
+  token?: string | null
+): Promise<Order | null> {
   try {
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
     const res = await fetch(`${API_BASE_URL}/api/orders/${orderNumber}/`, {
+      headers,
       cache: "no-store",
     });
     if (!res.ok) throw new Error("Order not found");

@@ -238,37 +238,117 @@ class ProductImage(models.Model):
 
 
 class Order(models.Model):
-    STATUS_PENDING = "pending"
-    STATUS_PROCESSING = "processing"
-    STATUS_SHIPPED = "shipped"
-    STATUS_DELIVERED = "delivered"
-    STATUS_CANCELLED = "cancelled"
+    STATUS_PENDING = "PENDING"
+    STATUS_CONFIRMED = "CONFIRMED"
+    STATUS_PROCESSING = "PROCESSING"
+    STATUS_SHIPPED = "SHIPPED"
+    STATUS_DELIVERED = "DELIVERED"
+    STATUS_CANCELLED = "CANCELLED"
+
     STATUS_CHOICES = [
         (STATUS_PENDING, "Pending"),
+        (STATUS_CONFIRMED, "Confirmed"),
         (STATUS_PROCESSING, "Processing"),
         (STATUS_SHIPPED, "Shipped"),
         (STATUS_DELIVERED, "Delivered"),
         (STATUS_CANCELLED, "Cancelled"),
+        # Legacy lowercase support for backwards compatibility
+        ("pending", "Pending (Legacy)"),
+        ("processing", "Processing (Legacy)"),
+        ("shipped", "Shipped (Legacy)"),
+        ("delivered", "Delivered (Legacy)"),
+        ("cancelled", "Cancelled (Legacy)"),
     ]
 
-    order_number = models.CharField(max_length=32, unique=True)
-    customer_name = models.CharField(max_length=200)
-    phone = models.CharField(max_length=20)
-    address = models.TextField()
-    city = models.CharField(max_length=100)
-    total_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    VALID_TRANSITIONS = {
+        STATUS_PENDING: [STATUS_CONFIRMED, STATUS_CANCELLED],
+        STATUS_CONFIRMED: [STATUS_PROCESSING, STATUS_CANCELLED],
+        STATUS_PROCESSING: [STATUS_SHIPPED],
+        STATUS_SHIPPED: [STATUS_DELIVERED],
+        STATUS_DELIVERED: [],
+        STATUS_CANCELLED: [],
+        # Legacy lowercase mapping
+        "pending": [STATUS_CONFIRMED, STATUS_CANCELLED],
+        "processing": [STATUS_SHIPPED],
+        "shipped": [STATUS_DELIVERED],
+        "delivered": [],
+        "cancelled": [],
+    }
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="orders",
+        db_index=True,
+        help_text="The authenticated user who placed this order. Preserved upon user deletion.",
+    )
+    order_number = models.CharField(max_length=64, unique=True, db_index=True)
     status = models.CharField(
         max_length=20,
         choices=STATUS_CHOICES,
         default=STATUS_PENDING,
+        db_index=True,
     )
-    created_at = models.DateTimeField(auto_now_add=True)
+
+    # Shipping Address Historical Snapshot
+    shipping_recipient_name = models.CharField(max_length=150, blank=True)
+    shipping_phone = models.CharField(max_length=20, blank=True)
+    shipping_address_line_1 = models.CharField(max_length=255, blank=True)
+    shipping_address_line_2 = models.CharField(max_length=255, blank=True)
+    shipping_area = models.CharField(max_length=100, blank=True)
+    shipping_city = models.CharField(max_length=100, blank=True)
+    shipping_state = models.CharField(max_length=100, blank=True)
+    shipping_postal_code = models.CharField(max_length=20, blank=True)
+    shipping_country = models.CharField(max_length=100, default="Bangladesh")
+    shipping_address = models.ForeignKey(
+        "customers.Address",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text="Optional reference to the original address; snapshot fields remain authoritative.",
+    )
+
+    # Backwards-compatible legacy address fields
+    customer_name = models.CharField(max_length=200, blank=True)
+    phone = models.CharField(max_length=20, blank=True)
+    address = models.TextField(blank=True)
+    city = models.CharField(max_length=100, blank=True)
+
+    # Server-Authoritative Monetary Totals
+    subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    discount_total = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    shipping_fee = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    total_amount = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["-created_at"]
+        verbose_name = "Order"
+        verbose_name_plural = "Orders"
 
     def __str__(self):
-        return self.order_number
+        return f"{self.order_number} ({self.status})"
+
+    def can_transition_to(self, new_status: str) -> bool:
+        """Checks whether the requested status transition is allowed."""
+        current = self.status.upper() if self.status else ""
+        target = new_status.upper() if new_status else ""
+        return target in self.VALID_TRANSITIONS.get(current, [])
+
+    def transition_to(self, new_status: str):
+        """Transitions order status or raises ValidationError if invalid."""
+        target = new_status.upper()
+        if not self.can_transition_to(target):
+            raise ValidationError(
+                f"Invalid order status transition from '{self.status}' to '{target}'."
+            )
+        self.status = target
+        self.save(update_fields=["status", "updated_at"])
 
 
 class OrderItem(models.Model):
@@ -283,11 +363,59 @@ class OrderItem(models.Model):
         null=True,
         blank=True,
         related_name="order_items",
+        help_text="Reference to product; snapshot fields remain authoritative.",
     )
     product_name = models.CharField(max_length=200)
-    price = models.DecimalField(max_digits=10, decimal_places=2)
-    quantity = models.PositiveIntegerField()
-    subtotal = models.DecimalField(max_digits=10, decimal_places=2)
+    product_slug = models.CharField(max_length=200, blank=True)
+
+    shop = models.ForeignKey(
+        "shops.Shop",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="order_items",
+    )
+    shop_name = models.CharField(max_length=200, blank=True)
+
+    seller = models.ForeignKey(
+        "sellers.SellerProfile",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="order_items",
+    )
+    seller_name = models.CharField(max_length=200, blank=True)
+
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    price = models.DecimalField(max_digits=10, decimal_places=2, default=Decimal("0.00"))
+    quantity = models.PositiveIntegerField(default=1)
+    line_total = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+    subtotal = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal("0.00"))
+
+    created_at = models.DateTimeField(default=timezone.now, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Order Item"
+        verbose_name_plural = "Order Items"
+        ordering = ["created_at"]
 
     def __str__(self):
         return f"{self.product_name} x {self.quantity}"
+
+    def save(self, *args, **kwargs):
+        # Sync unit_price/price and line_total/subtotal
+        if not self.unit_price and self.price:
+            self.unit_price = self.price
+        elif not self.price and self.unit_price:
+            self.price = self.unit_price
+
+        if not self.line_total and self.subtotal:
+            self.line_total = self.subtotal
+        elif not self.subtotal and self.line_total:
+            self.subtotal = self.line_total
+        elif self.unit_price and self.quantity and not self.line_total:
+            self.line_total = self.unit_price * self.quantity
+            self.subtotal = self.line_total
+
+        super().save(*args, **kwargs)

@@ -316,45 +316,87 @@ class OrderItemInputSerializer(serializers.Serializer):
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
+    unit_price = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    line_total = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+
     class Meta:
         model = OrderItem
         fields = [
             "id",
             "product",
             "product_name",
+            "product_slug",
+            "shop",
+            "shop_name",
+            "seller",
+            "seller_name",
+            "unit_price",
             "price",
             "quantity",
+            "line_total",
             "subtotal",
+            "created_at",
         ]
 
 
 class OrderDetailSerializer(serializers.ModelSerializer):
     items = OrderItemSerializer(many=True, read_only=True)
+    subtotal = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    discount_total = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    shipping_fee = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
+    total_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    total_items_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
         fields = [
             "id",
             "order_number",
+            "status",
             "customer_name",
             "phone",
             "address",
             "city",
+            "shipping_recipient_name",
+            "shipping_phone",
+            "shipping_address_line_1",
+            "shipping_address_line_2",
+            "shipping_area",
+            "shipping_city",
+            "shipping_state",
+            "shipping_postal_code",
+            "shipping_country",
+            "subtotal",
+            "discount_total",
+            "shipping_fee",
             "total_amount",
-            "status",
+            "total_items_count",
             "created_at",
+            "updated_at",
             "items",
         ]
 
+    def get_total_items_count(self, obj):
+        return sum(item.quantity for item in obj.items.all())
+
 
 class OrderCreateSerializer(serializers.Serializer):
-    customer_name = serializers.CharField(max_length=200)
-    phone = serializers.CharField(max_length=20)
-    address = serializers.CharField()
-    city = serializers.CharField(max_length=100)
-    items = OrderItemInputSerializer(many=True)
-
-    def validate_items(self, value):
-        if not value:
-            raise serializers.ValidationError("Order must contain at least one item.")
-        return value
+    """
+    Input serializer for order creation from authenticated cart.
+    Client-provided prices/totals/items are strictly ignored.
+    """
+    address_id = serializers.IntegerField(required=False, allow_null=True)
+    customer_name = serializers.CharField(max_length=200, required=False, allow_blank=True)
+    phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    address = serializers.CharField(required=False, allow_blank=True)
+    city = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    shipping_recipient_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    shipping_phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    shipping_address_line_1 = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    shipping_address_line_2 = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    shipping_area = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    shipping_city = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    shipping_state = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    shipping_postal_code = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    shipping_country = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    items = serializers.ListField(required=False, write_only=True)

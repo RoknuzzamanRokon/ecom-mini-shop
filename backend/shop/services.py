@@ -1,4 +1,5 @@
 import logging
+import uuid
 from decimal import Decimal
 from typing import Any, Dict, Optional, Union
 
@@ -6,17 +7,19 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework.exceptions import PermissionDenied
 
-
 from audit.services import AuditService
+from cart.models import Cart, CartItem
+from customers.models import Address
 from points.models import PointTransaction
 from points.services import InsufficientPointsError, PointService
 from rbac.services import has_user_permission
 from sellers.models import SellerProfile
 from shops.models import Shop
-from .models import Category, Product
+from .models import Category, Order, OrderItem, Product
 
 logger = logging.getLogger(__name__)
 
@@ -325,3 +328,292 @@ class ProductService:
             )
             .order_by("name")
         )
+
+
+class OrderService:
+    """
+    Domain service for Order lifecycle, atomic Cart-to-Order conversion,
+    concurrency control, authoritative snapshot recording, and audit logging.
+    """
+
+    @classmethod
+    def generate_order_number(cls) -> str:
+        """
+        Generates a unique, server-controlled order reference string.
+        Format: ORD<YYYYMMDD><6-HEX> (e.g. ORD20260911A1B2C3).
+        """
+        prefix = f"ORD{timezone.now():%Y%m%d}"
+        for _ in range(10):
+            candidate = f"{prefix}{uuid.uuid4().hex[:6].upper()}"
+            if not Order.objects.filter(order_number=candidate).exists():
+                return candidate
+        return f"{prefix}{uuid.uuid4().hex[:10].upper()}"
+
+    @classmethod
+    def create_order_from_cart(
+        cls,
+        user,
+        address_id: Optional[int] = None,
+        address_data: Optional[Dict[str, Any]] = None,
+        actor: Optional[Any] = None,
+        ip_address: Optional[str] = None,
+    ) -> Order:
+        """
+        Atomically converts the authenticated user's current Cart into a persistent Order snapshot.
+
+        Enforces:
+          1. Row-level locking on the user's Cart and CartItems to prevent duplicate orders.
+          2. Re-validation of all cart products against authoritative public visibility.
+          3. Rejection of empty or stale carts without clearing the cart.
+          4. Historical snapshots of shipping address, products, shops, and sellers.
+          5. Server-authoritative Decimal price calculation ignoring any client inputs.
+          6. Atomic cart clearing upon successful order creation.
+          7. AuditLog entry for ORDER_CREATED.
+        """
+        with transaction.atomic():
+            # 1. Lock user's Cart with row-level lock
+            cart = Cart.objects.select_for_update().filter(user=user).first()
+            if not cart:
+                raise ValidationError({"cart": "Shopping cart not found for this user."})
+
+            # 2. Lock CartItems with row-level lock
+            cart_items = list(
+                CartItem.objects.select_for_update()
+                .filter(cart=cart)
+                .select_related(
+                    "product",
+                    "product__category",
+                    "product__shop",
+                    "product__shop__owner",
+                )
+            )
+            if not cart_items:
+                raise ValidationError({"cart": "Your shopping cart is empty."})
+
+            # 3. Authoritative public product eligibility check
+            for item in cart_items:
+                product = item.product
+                if not product or not product.is_active:
+                    raise ValidationError(
+                        {"cart": f"Product '{product.name if product else 'Unknown'}' is no longer active."}
+                    )
+                if product.status != Product.STATUS_PUBLISHED:
+                    raise ValidationError(
+                        {"cart": f"Product '{product.name}' is no longer published."}
+                    )
+                if not product.category or not product.category.is_active:
+                    raise ValidationError(
+                        {"cart": f"The category for product '{product.name}' is currently unavailable."}
+                    )
+                if not product.shop or product.shop.status not in (Shop.STATUS_APPROVED, Shop.STATUS_ACTIVE):
+                    raise ValidationError(
+                        {"cart": f"The shop for product '{product.name}' is currently unavailable."}
+                    )
+                if not product.shop.owner or product.shop.owner.status not in (SellerProfile.STATUS_APPROVED, SellerProfile.STATUS_ACTIVE):
+                    raise ValidationError(
+                        {"cart": f"The merchant selling '{product.name}' is currently unavailable."}
+                    )
+                if item.quantity < 1:
+                    raise ValidationError(
+                        {"cart": f"Invalid quantity for '{product.name}'."}
+                    )
+
+            # 4. Resolve shipping address and historical snapshot
+            shipping_address = None
+            if address_id:
+                shipping_address = Address.objects.filter(id=address_id, user=user).first()
+                if not shipping_address:
+                    raise ValidationError({"address_id": "Selected address does not exist or does not belong to you."})
+                recipient_name = shipping_address.recipient_name
+                phone = shipping_address.phone
+                line_1 = shipping_address.address_line_1
+                line_2 = shipping_address.address_line_2
+                area = shipping_address.area
+                city = shipping_address.city
+                state = shipping_address.state
+                postal = shipping_address.postal_code
+                country = shipping_address.country
+            elif address_data:
+                recipient_name = (
+                    address_data.get("shipping_recipient_name")
+                    or address_data.get("customer_name")
+                    or address_data.get("recipient_name")
+                    or user.get_full_name()
+                    or user.username
+                )
+                phone = address_data.get("shipping_phone") or address_data.get("phone") or ""
+                line_1 = address_data.get("shipping_address_line_1") or address_data.get("address") or ""
+                line_2 = address_data.get("shipping_address_line_2") or ""
+                area = address_data.get("shipping_area") or address_data.get("area") or ""
+                city = address_data.get("shipping_city") or address_data.get("city") or ""
+                state = address_data.get("shipping_state") or address_data.get("state") or ""
+                postal = address_data.get("shipping_postal_code") or address_data.get("postal_code") or ""
+                country = address_data.get("shipping_country") or address_data.get("country") or "Bangladesh"
+            else:
+                default_addr = Address.objects.filter(user=user, is_default=True).first()
+                if default_addr:
+                    shipping_address = default_addr
+                    recipient_name = default_addr.recipient_name
+                    phone = default_addr.phone
+                    line_1 = default_addr.address_line_1
+                    line_2 = default_addr.address_line_2
+                    area = default_addr.area
+                    city = default_addr.city
+                    state = default_addr.state
+                    postal = default_addr.postal_code
+                    country = default_addr.country
+                else:
+                    profile = getattr(user, "customer_profile", None)
+                    recipient_name = (profile.display_name if profile else None) or user.get_full_name() or user.username
+                    phone = (profile.phone if profile else "")
+                    line_1 = "Standard Delivery Address"
+                    line_2 = ""
+                    area = ""
+                    city = "Dhaka"
+                    state = ""
+                    postal = ""
+                    country = "Bangladesh"
+
+            # 5. Calculate authoritative Decimal totals and prepare OrderItem snapshots
+            subtotal = Decimal("0.00")
+            order_items_to_create = []
+            for item in cart_items:
+                product = item.product
+                unit_price = Decimal(str(product.price))
+                line_total = unit_price * item.quantity
+                subtotal += line_total
+
+                shop = product.shop
+                seller = shop.owner if shop else None
+
+                order_items_to_create.append({
+                    "product": product,
+                    "product_name": product.name,
+                    "product_slug": product.slug,
+                    "shop": shop,
+                    "shop_name": shop.name if shop else "",
+                    "seller": seller,
+                    "seller_name": seller.business_name if seller else "",
+                    "unit_price": unit_price,
+                    "quantity": item.quantity,
+                    "line_total": line_total,
+                })
+
+            discount_total = Decimal("0.00")
+            shipping_fee = Decimal("0.00")
+            total_amount = subtotal + shipping_fee - discount_total
+
+            # 6. Generate order number
+            order_number = cls.generate_order_number()
+
+            # 7. Create Order snapshot
+            order = Order.objects.create(
+                user=user,
+                order_number=order_number,
+                status=Order.STATUS_PENDING,
+                shipping_address=shipping_address,
+                shipping_recipient_name=recipient_name,
+                shipping_phone=phone,
+                shipping_address_line_1=line_1,
+                shipping_address_line_2=line_2,
+                shipping_area=area,
+                shipping_city=city,
+                shipping_state=state,
+                shipping_postal_code=postal,
+                shipping_country=country,
+                customer_name=recipient_name,
+                phone=phone,
+                address=line_1,
+                city=city,
+                subtotal=subtotal,
+                discount_total=discount_total,
+                shipping_fee=shipping_fee,
+                total_amount=total_amount,
+            )
+
+            # 8. Create OrderItem snapshots
+            for item_info in order_items_to_create:
+                OrderItem.objects.create(
+                    order=order,
+                    product=item_info["product"],
+                    product_name=item_info["product_name"],
+                    product_slug=item_info["product_slug"],
+                    shop=item_info["shop"],
+                    shop_name=item_info["shop_name"],
+                    seller=item_info["seller"],
+                    seller_name=item_info["seller_name"],
+                    unit_price=item_info["unit_price"],
+                    price=item_info["unit_price"],
+                    quantity=item_info["quantity"],
+                    line_total=item_info["line_total"],
+                    subtotal=item_info["line_total"],
+                )
+
+            # 9. Clear user's Cart items atomically
+            CartItem.objects.filter(cart=cart).delete()
+
+            # 10. Record immutable AuditLog entry
+            AuditService.log(
+                action="ORDER_CREATED",
+                target=order,
+                actor=actor or user,
+                metadata={
+                    "order_number": order.order_number,
+                    "total_amount": str(order.total_amount),
+                    "items_count": len(order_items_to_create),
+                },
+                ip_address=ip_address,
+            )
+
+            logger.info(
+                "Order created: user=%s order_number=%s total=%s items=%d",
+                user.username,
+                order.order_number,
+                order.total_amount,
+                len(order_items_to_create),
+            )
+            return order
+
+    @classmethod
+    def transition_order_status(
+        cls,
+        order: Order,
+        new_status: str,
+        actor: Optional[Any] = None,
+        note: str = "",
+        ip_address: Optional[str] = None,
+    ) -> Order:
+        """
+        Controlled state transition for an Order with row-level locking and audit logging.
+        """
+        with transaction.atomic():
+            locked_order = Order.objects.select_for_update().filter(pk=order.pk).first()
+            if not locked_order:
+                raise ValidationError({"order": "Order not found."})
+
+            old_status = locked_order.status
+            locked_order.transition_to(new_status)
+            order.status = locked_order.status
+            order.updated_at = locked_order.updated_at
+
+            AuditService.log(
+                action="ORDER_STATUS_UPDATED",
+                target=locked_order,
+                actor=actor,
+                metadata={
+                    "order_number": locked_order.order_number,
+                    "old_status": old_status,
+                    "new_status": locked_order.status,
+                    "note": note,
+                },
+                ip_address=ip_address,
+            )
+
+            logger.info(
+                "Order status updated: order=%s old=%s new=%s actor=%s",
+                locked_order.order_number,
+                old_status,
+                locked_order.status,
+                getattr(actor, "username", "system"),
+            )
+            return locked_order

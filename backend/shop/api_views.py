@@ -6,7 +6,7 @@ from django.db.models import Count, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, permissions, status
-from rest_framework.exceptions import PermissionDenied, ValidationError as DRFValidationError
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError as DRFValidationError
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -16,10 +16,13 @@ from points.services import InsufficientPointsError, PointService
 from rbac.services import has_user_permission
 from .models import Category, Order, OrderItem, Product
 from .permissions import (
+    CanCreateOrder,
     CanCreateProduct,
     CanDeleteProduct,
     CanUpdateProduct,
+    CanViewOrder,
     IsEligibleProductSeller,
+    IsOrderOwner,
     IsProductOwner,
 )
 from .serializers import (
@@ -32,7 +35,7 @@ from .serializers import (
     SellerProductSerializer,
     SellerProductUpdateSerializer,
 )
-from .services import IneligibleSellerError, ProductOwnershipError, ProductService
+from .services import IneligibleSellerError, OrderService, ProductOwnershipError, ProductService
 
 
 
@@ -210,78 +213,115 @@ class HotDealAPIView(APIView):
         return Response(data)
 
 
-class OrderCreateAPIView(APIView):
+class OrderListCreateAPIView(APIView):
+    """
+    Customer Order API:
+      GET: Lists authenticated customer's orders with pagination.
+      POST: Converts the authenticated customer's Cart into a persistent Order snapshot.
+    """
+    pagination_class = StandardResultsSetPagination
+
+    def get_permissions(self):
+        if self.request.method == "POST":
+            return [permissions.IsAuthenticated(), CanCreateOrder()]
+        return [permissions.IsAuthenticated(), CanViewOrder()]
+
+    def get(self, request):
+        queryset = (
+            Order.objects.filter(user=request.user)
+            .prefetch_related(
+                "items",
+                "items__product",
+                "items__shop",
+                "items__seller",
+            )
+            .order_by("-created_at")
+        )
+
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(queryset, request)
+        if page is not None:
+            serializer = OrderDetailSerializer(page, many=True, context={"request": request})
+            return paginator.get_paginated_response(serializer.data)
+
+        serializer = OrderDetailSerializer(queryset, many=True, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
     def post(self, request):
         serializer = OrderCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         validated_data = serializer.validated_data
 
-        items_data = validated_data["items"]
-        product_ids = [item["product_id"] for item in items_data]
-        products_map = {
-            p.id: p
-            for p in Product.objects.filter(id__in=product_ids, is_active=True)
-        }
+        # Extract client IP for audit recording
+        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+        ip_address = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else request.META.get("REMOTE_ADDR")
 
-        # Check all products exist
-        missing_ids = [pid for pid in product_ids if pid not in products_map]
-        if missing_ids:
-            return Response(
-                {"detail": f"Products with IDs {missing_ids} do not exist or are inactive."},
-                status=status.HTTP_400_BAD_REQUEST,
+        try:
+            order = OrderService.create_order_from_cart(
+                user=request.user,
+                address_id=validated_data.get("address_id"),
+                address_data=validated_data,
+                actor=request.user,
+                ip_address=ip_address,
             )
+        except DjangoValidationError as exc:
+            raise DRFValidationError(exc.message_dict if hasattr(exc, "message_dict") else {"detail": exc.messages})
 
-        # Calculate totals and validate stock
-        total_amount = Decimal("0.00")
-        order_items_to_create = []
-
-        for item_data in items_data:
-            product = products_map[item_data["product_id"]]
-            quantity = item_data["quantity"]
-            subtotal = product.price * quantity
-            total_amount += subtotal
-
-            order_items_to_create.append(
-                {
-                    "product": product,
-                    "product_name": product.name,
-                    "price": product.price,
-                    "quantity": quantity,
-                    "subtotal": subtotal,
-                }
-            )
-
-        order_number = f"ORD{timezone.now():%Y%m%d}{uuid.uuid4().hex[:6].upper()}"
-
-        with transaction.atomic():
-            order = Order.objects.create(
-                order_number=order_number,
-                customer_name=validated_data["customer_name"],
-                phone=validated_data["phone"],
-                address=validated_data["address"],
-                city=validated_data["city"],
-                total_amount=total_amount,
-                status=Order.STATUS_PENDING,
-            )
-
-            for item_info in order_items_to_create:
-                OrderItem.objects.create(
-                    order=order,
-                    product=item_info["product"],
-                    product_name=item_info["product_name"],
-                    price=item_info["price"],
-                    quantity=item_info["quantity"],
-                    subtotal=item_info["subtotal"],
-                )
-
-        detail_serializer = OrderDetailSerializer(order)
+        detail_serializer = OrderDetailSerializer(order, context={"request": request})
         return Response(detail_serializer.data, status=status.HTTP_201_CREATED)
 
 
-class OrderDetailAPIView(generics.RetrieveAPIView):
-    serializer_class = OrderDetailSerializer
-    lookup_field = "order_number"
-    queryset = Order.objects.prefetch_related("items")
+# Backwards-compatibility alias
+OrderCreateAPIView = OrderListCreateAPIView
+
+
+class OrderDetailAPIView(APIView):
+    """
+    Customer Order Detail API:
+      GET: Retrieves an order by ID or order_number.
+      Enforces strict customer ownership isolation (User B receives 404 for User A's order).
+    """
+    permission_classes = [permissions.IsAuthenticated, CanViewOrder]
+
+    def get(self, request, *args, **kwargs):
+        lookup = (
+            kwargs.get("order_number")
+            or kwargs.get("pk")
+            or kwargs.get("identifier")
+            or request.query_params.get("order_number")
+        )
+        if not lookup:
+            raise NotFound("Order reference missing.")
+
+        lookup_str = str(lookup).strip()
+        qs = Order.objects.prefetch_related(
+            "items",
+            "items__product",
+            "items__shop",
+            "items__seller",
+        )
+
+        if lookup_str.isdigit():
+            order = qs.filter(id=int(lookup_str)).first()
+        else:
+            order = qs.filter(order_number=lookup_str).first()
+
+        if not order:
+            raise NotFound("Order not found.")
+
+        # Strict customer ownership isolation
+        user = request.user
+        is_staff_override = (
+            user.is_superuser
+            or user.is_staff
+            or has_user_permission(user, "orders.update")
+            or has_user_permission(user, "orders.cancel")
+        )
+        if order.user != user and not is_staff_override:
+            raise NotFound("Order not found.")
+
+        serializer = OrderDetailSerializer(order, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
 
 
 # ---------------------------------------------------------------------------

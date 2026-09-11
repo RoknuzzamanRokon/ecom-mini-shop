@@ -1,9 +1,13 @@
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
 from django.test import TestCase
 from django.urls import reverse
 
+from rbac.models import Role
+from rbac.services import assign_user_role
+from cart.services import CartService
 from sellers.models import SellerProfile
 from shops.models import Shop
 from .models import Category, Order, OrderItem, Product
@@ -13,6 +17,7 @@ User = get_user_model()
 
 class ShopTestCase(TestCase):
     def setUp(self):
+        call_command("seed_rbac")
         self.user = User.objects.create_user(username="test_merchant", password="password")
         self.seller = SellerProfile.objects.create(
             user=self.user,
@@ -231,14 +236,16 @@ class APITests(ShopTestCase):
         self.assertIn("deal_ends_in_hours", data)
 
     def test_api_order_create_and_retrieve(self):
+        customer = User.objects.create_user(username="alice_test", password="password123")
+        assign_user_role(customer, Role.ROLE_CUSTOMER)
+        CartService.add_item(customer, self.keyboard.id, quantity=1)
+        self.client.force_login(user=customer)
+
         payload = {
             "customer_name": "Alice Smith",
             "phone": "+1987654321",
             "address": "456 Elm St",
             "city": "Metropolis",
-            "items": [
-                {"product_id": self.keyboard.id, "quantity": 1}
-            ]
         }
         create_resp = self.client.post(
             reverse("shop:api_order_create"),

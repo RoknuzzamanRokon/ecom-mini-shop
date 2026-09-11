@@ -68,7 +68,15 @@ class ProductAdmin(admin.ModelAdmin):
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
     extra = 0
-    readonly_fields = ("product", "product_name", "price", "quantity", "subtotal")
+    readonly_fields = (
+        "product",
+        "product_name",
+        "shop_name",
+        "seller_name",
+        "unit_price",
+        "quantity",
+        "line_total",
+    )
     can_delete = False
 
     def has_add_permission(self, request, obj=None):
@@ -79,21 +87,48 @@ class OrderItemInline(admin.TabularInline):
 class OrderAdmin(admin.ModelAdmin):
     list_display = (
         "order_number",
+        "user",
         "customer_name",
-        "phone",
-        "city",
+        "shipping_city",
+        "subtotal",
         "total_amount",
         "status",
         "created_at",
     )
     list_editable = ("status",)
     list_filter = ("status", "created_at")
-    search_fields = ("order_number", "customer_name", "phone")
-    readonly_fields = ("order_number", "total_amount", "created_at")
+    search_fields = ("order_number", "customer_name", "shipping_phone", "user__username")
+    readonly_fields = (
+        "order_number",
+        "user",
+        "subtotal",
+        "discount_total",
+        "shipping_fee",
+        "total_amount",
+        "created_at",
+        "updated_at",
+    )
     inlines = [OrderItemInline]
 
 
 @admin.register(OrderItem)
 class OrderItemAdmin(admin.ModelAdmin):
-    list_display = ("order", "product_name", "price", "quantity", "subtotal")
-    search_fields = ("product_name", "order__order_number")
+    list_display = ("order", "product_name", "shop_name", "unit_price", "quantity", "line_total")
+    search_fields = ("product_name", "shop_name", "order__order_number")
+    readonly_fields = (
+        "order",
+        "product",
+        "product_name",
+        "product_slug",
+        "shop",
+        "shop_name",
+        "seller",
+        "seller_name",
+        "unit_price",
+        "price",
+        "quantity",
+        "line_total",
+        "subtotal",
+        "created_at",
+        "updated_at",
+    )
