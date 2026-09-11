@@ -13,11 +13,13 @@ from .permissions import (
     IsShopOwner,
 )
 from .serializers import (
+    NearbyShopSerializer,
     PublicShopSerializer,
     SellerShopCreateSerializer,
     SellerShopSerializer,
     SellerShopUpdateSerializer,
     ShopActionReasonSerializer,
+    ShopLocationUpdateSerializer,
     StaffShopSerializer,
 )
 from .services import (
@@ -26,6 +28,8 @@ from .services import (
     ShopError,
     ShopLimitExceededError,
     ShopService,
+    validate_coordinates,
+    validate_radius,
 )
 
 
@@ -54,10 +58,46 @@ class PublicShopListView(generics.ListAPIView):
                 Q(name__icontains=term)
                 | Q(description__icontains=term)
                 | Q(address__icontains=term)
-                | Q(location__icontains=term)
             )
 
         return queryset
+
+
+class PublicNearbyShopListView(APIView):
+    """
+    Public nearby search for approved/active shops within a given radius in kilometers.
+    Query parameters:
+      - lat: float (latitude: [-90, 90])
+      - lng: float (longitude: [-180, 180])
+      - radius: float (kilometers: > 0, max 1000)
+    Results are sorted nearest to farthest via MySQL ST_Distance_Sphere.
+    Draft, pending, suspended, and rejected shops are strictly excluded.
+    """
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        lat = request.query_params.get("lat")
+        lng = request.query_params.get("lng")
+        radius = request.query_params.get("radius")
+
+        if lat is None or lng is None or radius is None:
+            return Response(
+                {"error": "Missing required query parameters: 'lat', 'lng', and 'radius' are all required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            shops = ShopService.get_nearby_shops(latitude=lat, longitude=lng, radius_km=radius)
+            data = NearbyShopSerializer(shops, many=True).data
+            return Response({
+                "count": len(data),
+                "results": data,
+            }, status=status.HTTP_200_OK)
+        except ValidationError as e:
+            msg = e.message if hasattr(e, "message") else str(e)
+            return Response({"error": msg}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
 
 class PublicShopDetailView(generics.RetrieveAPIView):
@@ -177,6 +217,50 @@ class SellerShopSubmitView(APIView):
 
         return Response(
             {"message": f"Shop '{shop.name}' submitted for staff review.", "shop": SellerShopSerializer(shop).data},
+            status=status.HTTP_200_OK,
+        )
+
+
+class SellerShopLocationUpdateView(APIView):
+    """
+    Allows an authenticated seller to update their own shop's geographic coordinates.
+    Requires seller ownership and operational seller status.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsShopOwner]
+
+    def patch(self, request, pk):
+        return self._update_location(request, pk)
+
+    def put(self, request, pk):
+        return self._update_location(request, pk)
+
+    def _update_location(self, request, pk):
+        shop = get_object_or_404(Shop, pk=pk)
+        self.check_object_permissions(request, shop)
+
+        serializer = ShopLocationUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            shop = ShopService.update_shop_location(
+                shop=shop,
+                seller=request.user.seller_profile,
+                latitude=serializer.validated_data["latitude"],
+                longitude=serializer.validated_data["longitude"],
+            )
+        except IneligibleSellerError as e:
+            return Response({"error": str(e)}, status=status.HTTP_403_FORBIDDEN)
+        except PermissionDenied as e:
+            return Response({"error": str(e)}, status=status.HTTP_403_FORBIDDEN)
+        except ValidationError as e:
+            msg = e.message if hasattr(e, "message") else str(e)
+            return Response({"error": msg}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(
+            {
+                "message": "Shop location updated successfully.",
+                "shop": SellerShopSerializer(shop).data,
+            },
             status=status.HTTP_200_OK,
         )
 

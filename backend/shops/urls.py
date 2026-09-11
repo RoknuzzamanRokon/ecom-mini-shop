@@ -1,10 +1,12 @@
 from django.urls import path
 from .views import (
+    PublicNearbyShopListView,
     PublicShopDetailView,
     PublicShopListView,
     SellerShopCreateView,
     SellerShopDetailView,
     SellerShopListView,
+    SellerShopLocationUpdateView,
     SellerShopSubmitView,
     SellerShopUpdateView,
     StaffShopApproveView,
@@ -18,11 +20,15 @@ from .views import (
 app_name = "shops"
 
 urlpatterns = [
+    # Public nearby search route (must be before <slug:slug>/ to avoid collision)
+    path("nearby/", PublicNearbyShopListView.as_view(), name="public-shop-nearby"),
+
     # Seller self-service routes (placed before slug to avoid collisions)
     path("mine/", SellerShopListView.as_view(), name="seller-shop-list"),
     path("mine/create/", SellerShopCreateView.as_view(), name="seller-shop-create"),
     path("mine/<int:pk>/", SellerShopDetailView.as_view(), name="seller-shop-detail"),
     path("mine/<int:pk>/update/", SellerShopUpdateView.as_view(), name="seller-shop-update"),
+    path("mine/<int:pk>/location/", SellerShopLocationUpdateView.as_view(), name="seller-shop-location"),
     path("mine/<int:pk>/submit/", SellerShopSubmitView.as_view(), name="seller-shop-submit"),
 
     # Staff / Admin RBAC routes

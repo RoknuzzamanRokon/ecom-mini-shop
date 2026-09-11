@@ -1,8 +1,13 @@
+import math
+from typing import Any, Optional, Tuple
+
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.db.models.expressions import RawSQL
 from django.utils import timezone
 
 from sellers.models import SellerProfile
+from shops.fields import Point
 from .models import Shop
 
 
@@ -24,6 +29,61 @@ class IneligibleSellerError(ShopError):
 class ShopLimitExceededError(ShopError):
     """Raised when a seller attempts to exceed their allowed shop quota."""
     pass
+
+
+def validate_coordinates(latitude: Any, longitude: Any) -> Tuple[float, float]:
+    """
+    Centralized validator for geographic coordinates.
+    - latitude: [-90.0, 90.0]
+    - longitude: [-180.0, 180.0]
+    Rejects missing, null, NaN, Inf, non-numeric, or out-of-bounds coordinates.
+    Returns (float(latitude), float(longitude)).
+    """
+    if latitude is None or longitude is None:
+        raise ValidationError("Both 'latitude' and 'longitude' coordinates are required.")
+
+    try:
+        lat = float(latitude)
+        lng = float(longitude)
+    except (ValueError, TypeError):
+        raise ValidationError("Coordinates must be valid numeric values.")
+
+    if math.isnan(lat) or math.isinf(lat) or math.isnan(lng) or math.isinf(lng):
+        raise ValidationError("Coordinates cannot be NaN or Infinite.")
+
+    if lat < -90.0 or lat > 90.0:
+        raise ValidationError(f"Latitude must be between -90.0 and 90.0 degrees. Received: {lat}.")
+
+    if lng < -180.0 or lng > 180.0:
+        raise ValidationError(f"Longitude must be between -180.0 and 180.0 degrees. Received: {lng}.")
+
+    return round(lat, 7), round(lng, 7)
+
+
+def validate_radius(radius_km: Any, max_radius_km: float = 1000.0) -> float:
+    """
+    Centralized validator for search radius in kilometers.
+    - radius > 0
+    - radius <= max_radius_km (default 1000 km)
+    """
+    if radius_km is None:
+        raise ValidationError("Search 'radius' in kilometers is required.")
+
+    try:
+        rad = float(radius_km)
+    except (ValueError, TypeError):
+        raise ValidationError("Search 'radius' must be a valid numeric value.")
+
+    if math.isnan(rad) or math.isinf(rad):
+        raise ValidationError("Search 'radius' cannot be NaN or Infinite.")
+
+    if rad <= 0.0:
+        raise ValidationError(f"Search 'radius' must be greater than 0 km. Received: {rad}.")
+
+    if rad > max_radius_km:
+        raise ValidationError(f"Search 'radius' cannot exceed {max_radius_km} km. Received: {rad}.")
+
+    return round(rad, 4)
 
 
 class ShopService:
@@ -60,7 +120,9 @@ class ShopService:
         description: str = "",
         phone: str = "",
         address: str = "",
-        location: str = "",
+        location: Any = None,
+        latitude: Optional[float] = None,
+        longitude: Optional[float] = None,
         logo=None,
         cover_image=None,
         submit_for_review: bool = False,
@@ -76,9 +138,14 @@ class ShopService:
             description=description.strip(),
             phone=phone.strip(),
             address=address.strip(),
-            location=location.strip(),
             status=initial_status,
         )
+
+        if latitude is not None and longitude is not None:
+            lat, lng = validate_coordinates(latitude, longitude)
+            shop.location = Point(longitude=lng, latitude=lat)
+        elif location:
+            shop.location = location
 
         if logo:
             shop.logo = logo
@@ -98,6 +165,10 @@ class ShopService:
         if not seller.is_operational:
             raise IneligibleSellerError("Suspended or inactive sellers cannot modify shop details.")
 
+        if "latitude" in fields and "longitude" in fields:
+            lat, lng = validate_coordinates(fields.pop("latitude"), fields.pop("longitude"))
+            shop.location = Point(longitude=lng, latitude=lat)
+
         allowed_fields = {
             "name",
             "description",
@@ -114,6 +185,73 @@ class ShopService:
 
         shop.save()
         return shop
+
+    @classmethod
+    @transaction.atomic
+    def update_shop_location(
+        cls,
+        shop: Shop,
+        seller: SellerProfile,
+        latitude: Any,
+        longitude: Any,
+    ) -> Shop:
+        """
+        Updates the spatial geographic location of a shop.
+        Enforces seller ownership and operational seller status.
+        """
+        if shop.owner != seller:
+            raise PermissionDenied("You do not have permission to modify this shop.")
+
+        if not seller.is_operational:
+            raise IneligibleSellerError("Suspended or inactive sellers cannot modify shop details.")
+
+        lat, lng = validate_coordinates(latitude, longitude)
+        shop.location = Point(longitude=lng, latitude=lat)
+        shop.save()
+        return shop
+
+    @classmethod
+    def get_nearby_shops(
+        cls,
+        latitude: Any,
+        longitude: Any,
+        radius_km: Any,
+        max_radius_km: float = 1000.0,
+    ):
+        """
+        Executes a MySQL 8 native spatial query using ST_Distance_Sphere.
+        Returns public APPROVED/ACTIVE shops within radius_km, ordered nearest-first.
+        Excludes DRAFT, PENDING, SUSPENDED, and REJECTED shops.
+        """
+        lat, lng = validate_coordinates(latitude, longitude)
+        rad = validate_radius(radius_km, max_radius_km=max_radius_km)
+
+        origin_wkt = f"POINT({lng:.7f} {lat:.7f})"
+        radius_meters = rad * 1000.0
+
+        distance_meters_sql = RawSQL(
+            "ST_Distance_Sphere(location, ST_GeomFromText(%s, 4326, 'axis-order=long-lat'))",
+            (origin_wkt,),
+        )
+        distance_km_sql = RawSQL(
+            "ROUND(ST_Distance_Sphere(location, ST_GeomFromText(%s, 4326, 'axis-order=long-lat')) / 1000.0, 3)",
+            (origin_wkt,),
+        )
+
+        qs = (
+            Shop.objects.filter(
+                status__in=[Shop.STATUS_APPROVED, Shop.STATUS_ACTIVE]
+            )
+            .annotate(
+                distance_meters=distance_meters_sql,
+                distance_km=distance_km_sql,
+            )
+            .filter(
+                distance_meters__lte=radius_meters
+            )
+            .order_by("distance_meters")
+        )
+        return qs
 
     @classmethod
     @transaction.atomic

@@ -10,11 +10,24 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
+import os
+import re
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+# Load environment variables from .env file if present
+_env_file = BASE_DIR / '.env'
+if _env_file.is_file():
+    with open(_env_file, 'r', encoding='utf-8') as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith('#') and '=' in _line:
+                _k, _v = _line.split('=', 1)
+                os.environ.setdefault(_k.strip(), _v.strip())
 
 
 # Quick-start development settings - unsuitable for production
@@ -83,10 +96,32 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
+DATABASE_URL = os.environ.get('DATABASE_URL')
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL environment variable is required and must point to MySQL.")
+
+_normalized_url = re.sub(r'^mysql\+[a-zA-Z0-9_]+://', 'mysql://', DATABASE_URL)
+_db_parsed = urlparse(_normalized_url)
+
+if _db_parsed.scheme != 'mysql':
+    raise RuntimeError(f"Unsupported database scheme: '{_db_parsed.scheme}'. MySQL 8+ is required.")
+
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': _db_parsed.path.lstrip('/'),
+        'USER': _db_parsed.username or '',
+        'PASSWORD': unquote(_db_parsed.password) if _db_parsed.password else '',
+        'HOST': _db_parsed.hostname or '127.0.0.1',
+        'PORT': _db_parsed.port or 3306,
+        'OPTIONS': {
+            'charset': 'utf8mb4',
+            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
+        },
+        'TEST': {
+            'CHARSET': 'utf8mb4',
+            'COLLATION': 'utf8mb4_unicode_ci',
+        },
     }
 }
 

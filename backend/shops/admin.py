@@ -10,7 +10,7 @@ class ShopAdmin(admin.ModelAdmin):
         "owner",
         "status",
         "phone",
-        "location",
+        "location_display",
         "created_at",
     )
     list_filter = ("status", "created_at")
@@ -22,8 +22,13 @@ class ShopAdmin(admin.ModelAdmin):
         "owner__user__email",
         "phone",
         "address",
-        "location",
     )
+
+    @admin.display(description="Location (Lat, Lng)")
+    def location_display(self, obj):
+        if obj.has_coordinates:
+            return f"{obj.latitude:.5f}, {obj.longitude:.5f}"
+        return "Unassigned"
     readonly_fields = (
         "slug",
         "reviewed_by",
