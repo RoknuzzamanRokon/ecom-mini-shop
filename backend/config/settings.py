@@ -44,6 +44,7 @@ INSTALLED_APPS = [
     'rbac',
     'sellers',
     'points',
+    'shops',
     'shop',
 ]
 

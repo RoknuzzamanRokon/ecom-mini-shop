@@ -49,6 +49,13 @@ class Product(models.Model):
         on_delete=models.CASCADE,
         related_name="products",
     )
+    shop = models.ForeignKey(
+        "shops.Shop",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="products",
+    )
     description = models.TextField()
     price = models.DecimalField(max_digits=10, decimal_places=2)
     old_price = models.DecimalField(
