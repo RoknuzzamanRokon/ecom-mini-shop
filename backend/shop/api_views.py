@@ -19,6 +19,7 @@ from .inventory_service import InventoryService
 from .models import Category, InventoryTransaction, Order, OrderItem, Product, ProductInventory
 from .permissions import (
     CanAdjustInventory,
+    CanCancelOrder,
     CanCreateOrder,
     CanCreateProduct,
     CanDeleteProduct,
@@ -37,6 +38,7 @@ from .serializers import (
     CategorySerializer,
     InventoryAdjustmentSerializer,
     InventoryTransactionSerializer,
+    OrderCancelSerializer,
     OrderCreateSerializer,
     OrderDetailSerializer,
     ProductDetailSerializer,
@@ -326,17 +328,103 @@ class OrderDetailAPIView(APIView):
 
         # Strict customer ownership isolation
         user = request.user
+        role_codes = get_user_role_codes(user)
         is_staff_override = (
             user.is_superuser
             or user.is_staff
-            or has_user_permission(user, "orders.update")
-            or has_user_permission(user, "orders.cancel")
+            or Role.ROLE_SUPER_ADMINISTRATOR in role_codes
+            or Role.ROLE_ADMINISTRATOR in role_codes
+            or Role.ROLE_OPERATION_MANAGER in role_codes
         )
         if order.user != user and not is_staff_override:
             raise NotFound("Order not found.")
 
         serializer = OrderDetailSerializer(order, context={"request": request})
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class OrderCancelAPIView(APIView):
+    """
+    Customer Order Cancellation API:
+      PATCH /api/orders/<order_number>/cancel/
+      POST  /api/orders/<order_number>/cancel/
+      PATCH /api/orders/<id>/cancel/
+      POST  /api/orders/<id>/cancel/
+
+    Allows authenticated customers to cancel eligible orders (PENDING, CONFIRMED, PROCESSING).
+    Rejects arbitrary status manipulations.
+    Atomically releases inventory reservations and writes immutable audit entries.
+    Returns safe 404 for orders belonging to other customers.
+    """
+    permission_classes = [permissions.IsAuthenticated, CanCancelOrder]
+
+    def patch(self, request, *args, **kwargs):
+        return self._handle_cancellation(request, *args, **kwargs)
+
+    def post(self, request, *args, **kwargs):
+        return self._handle_cancellation(request, *args, **kwargs)
+
+    def _handle_cancellation(self, request, *args, **kwargs):
+        lookup = (
+            kwargs.get("order_number")
+            or kwargs.get("pk")
+            or kwargs.get("identifier")
+            or request.query_params.get("order_number")
+        )
+        if not lookup:
+            raise NotFound("Order reference missing.")
+
+        lookup_str = str(lookup).strip()
+        qs = Order.objects.prefetch_related(
+            "items",
+            "items__product",
+            "items__shop",
+            "items__seller",
+        )
+
+        if lookup_str.isdigit():
+            order = qs.filter(id=int(lookup_str)).first()
+        else:
+            order = qs.filter(order_number=lookup_str).first()
+
+        if not order:
+            raise NotFound("Order not found.")
+
+        # Strict customer ownership isolation (User B receives safe 404 for User A's order)
+        user = request.user
+        role_codes = get_user_role_codes(user)
+        is_staff_override = (
+            user.is_superuser
+            or user.is_staff
+            or Role.ROLE_SUPER_ADMINISTRATOR in role_codes
+            or Role.ROLE_ADMINISTRATOR in role_codes
+            or Role.ROLE_OPERATION_MANAGER in role_codes
+        )
+        if order.user != user and not is_staff_override:
+            raise NotFound("Order not found.")
+
+        serializer = OrderCancelSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        reason = serializer.validated_data.get("reason", "")
+
+        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+        ip_address = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else request.META.get("REMOTE_ADDR")
+
+        try:
+            cancelled_order = OrderService.cancel_customer_order(
+                order=order,
+                customer=request.user,
+                reason=reason,
+                ip_address=ip_address,
+            )
+        except DjangoValidationError as exc:
+            detail = exc.message_dict if hasattr(exc, "message_dict") else {"detail": exc.messages}
+            return Response(detail, status=status.HTTP_400_BAD_REQUEST)
+        except PermissionDenied as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_403_FORBIDDEN)
+
+        detail_serializer = OrderDetailSerializer(cancelled_order, context={"request": request})
+        return Response(detail_serializer.data, status=status.HTTP_200_OK)
 
 
 # ---------------------------------------------------------------------------

@@ -346,6 +346,7 @@ class OrderDetailSerializer(serializers.ModelSerializer):
     shipping_fee = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     total_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     total_items_count = serializers.SerializerMethodField()
+    can_cancel = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -353,6 +354,7 @@ class OrderDetailSerializer(serializers.ModelSerializer):
             "id",
             "order_number",
             "status",
+            "can_cancel",
             "customer_name",
             "phone",
             "address",
@@ -378,6 +380,23 @@ class OrderDetailSerializer(serializers.ModelSerializer):
 
     def get_total_items_count(self, obj):
         return sum(item.quantity for item in obj.items.all())
+
+    def get_can_cancel(self, obj):
+        return obj.can_transition_to(Order.STATUS_CANCELLED)
+
+
+class OrderCancelSerializer(serializers.Serializer):
+    """
+    Input validation serializer for customer order cancellation.
+    Allows optional cancellation reason. Rejects arbitrary status updates.
+    """
+    reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        max_length=500,
+        help_text="Optional customer reason for cancelling the order.",
+    )
 
 
 class OrderCreateSerializer(serializers.Serializer):

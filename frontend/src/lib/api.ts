@@ -1,4 +1,4 @@
-import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload } from "./types";
+import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload } from "./types";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
@@ -734,6 +734,30 @@ export async function adjustSellerProductStock(
 
   return await res.json();
 }
+
+export async function cancelCustomerOrder(
+  orderNumber: string,
+  token: string,
+  reason?: string
+): Promise<Order> {
+  const res = await fetch(`${API_BASE_URL}/api/orders/${orderNumber}/cancel/`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ reason }),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    const msg = errorData.detail || errorData.order || "Failed to cancel order";
+    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+  }
+
+  return await res.json();
+}
+
 
 
 

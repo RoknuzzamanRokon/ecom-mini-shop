@@ -330,13 +330,13 @@ class Order(models.Model):
     VALID_TRANSITIONS = {
         STATUS_PENDING: [STATUS_CONFIRMED, STATUS_CANCELLED],
         STATUS_CONFIRMED: [STATUS_PROCESSING, STATUS_CANCELLED],
-        STATUS_PROCESSING: [STATUS_SHIPPED],
+        STATUS_PROCESSING: [STATUS_SHIPPED, STATUS_CANCELLED],
         STATUS_SHIPPED: [STATUS_DELIVERED],
         STATUS_DELIVERED: [],
         STATUS_CANCELLED: [],
         # Legacy lowercase mapping
         "pending": [STATUS_CONFIRMED, STATUS_CANCELLED],
-        "processing": [STATUS_SHIPPED],
+        "processing": [STATUS_SHIPPED, STATUS_CANCELLED],
         "shipped": [STATUS_DELIVERED],
         "delivered": [],
         "cancelled": [],

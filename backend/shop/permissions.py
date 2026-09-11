@@ -127,6 +127,24 @@ class CanViewOrder(BasePermission):
         return has_user_permission(request.user, "orders.view")
 
 
+class CanCancelOrder(BasePermission):
+    """
+    Enforces that the user holds the 'orders.cancel' RBAC permission (or admin/superuser bypass).
+    """
+    message = "You do not have permission to cancel orders."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+
+        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
+            return True
+
+        return has_user_permission(user, "orders.cancel")
+
+
+
 class IsOrderOwner(BasePermission):
     """
     Object-level permission enforcing that the order belongs to the authenticated customer.

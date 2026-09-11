@@ -649,6 +649,63 @@ class OrderService:
             return locked_order
 
     @classmethod
+    def cancel_customer_order(
+        cls,
+        order: Order,
+        customer: Any,
+        reason: str = "",
+        ip_address: Optional[str] = None,
+    ) -> Order:
+        """
+        Safely cancels a customer order initiated by the customer (or staff override).
+        Enforces:
+          1. Row-level concurrency locking via select_for_update().
+          2. Customer ownership: order.user == customer (or staff override).
+          3. Idempotency: if order is already CANCELLED, raises ValidationError ("Order is already cancelled.").
+          4. Transition eligibility: verifies order.can_transition_to(Order.STATUS_CANCELLED).
+          5. Calls transition_order_status() which atomically:
+             - advances status to CANCELLED
+             - releases inventory reservation via InventoryService.release_order_reservation()
+             - appends RELEASE ledger transaction
+             - creates immutable AuditLog entry
+          6. Preserves historical Order and OrderItem snapshots.
+        """
+        with transaction.atomic():
+            locked_order = Order.objects.select_for_update().filter(pk=order.pk).first()
+            if not locked_order:
+                raise ValidationError({"order": "Order not found."})
+
+            # Check customer ownership or staff override
+            role_codes = get_user_role_codes(customer) if customer and customer.is_authenticated else []
+            is_staff_override = (
+                getattr(customer, "is_superuser", False)
+                or getattr(customer, "is_staff", False)
+                or Role.ROLE_SUPER_ADMINISTRATOR in role_codes
+                or Role.ROLE_ADMINISTRATOR in role_codes
+                or Role.ROLE_OPERATION_MANAGER in role_codes
+            )
+            if locked_order.user != customer and not is_staff_override:
+                raise PermissionDenied("You do not have permission to cancel this order.")
+
+            if locked_order.status == Order.STATUS_CANCELLED:
+                raise ValidationError({"order": "Order is already cancelled."})
+
+            if not locked_order.can_transition_to(Order.STATUS_CANCELLED):
+                raise ValidationError({
+                    "order": f"Order in '{locked_order.status}' status cannot be cancelled."
+                })
+
+            note = f"Customer cancellation: {reason}".strip() if reason else "Customer cancellation"
+            return cls.transition_order_status(
+                order=locked_order,
+                new_status=Order.STATUS_CANCELLED,
+                actor=customer,
+                note=note,
+                ip_address=ip_address,
+            )
+
+
+    @classmethod
     def get_seller_orders_queryset(cls, seller: SellerProfile):
         """
         Returns authoritative queryset of orders containing items belonging to the seller.

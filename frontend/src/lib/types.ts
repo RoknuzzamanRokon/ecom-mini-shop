@@ -109,9 +109,14 @@ export interface Order {
   total_amount: string | number;
   total_items_count?: number;
   status: string;
+  can_cancel?: boolean;
   created_at: string;
   updated_at?: string;
   items: OrderItem[];
+}
+
+export interface OrderCancelPayload {
+  reason?: string;
 }
 
 export interface PaginatedResponse<T> {
