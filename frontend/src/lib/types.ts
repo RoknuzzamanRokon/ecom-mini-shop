@@ -110,12 +110,93 @@ export interface Order {
   total_items_count?: number;
   status: string;
   can_cancel?: boolean;
+  payment?: PaymentSummary | null;
   created_at: string;
   updated_at?: string;
   items: OrderItem[];
 }
 
 export interface OrderCancelPayload {
+  reason?: string;
+}
+
+export type PaymentStatus =
+  | "PENDING"
+  | "PROCESSING"
+  | "PAID"
+  | "FAILED"
+  | "CANCELLED"
+  | "REFUNDED"
+  | "PARTIALLY_REFUNDED";
+
+export type PaymentMethod =
+  | "CASH_ON_DELIVERY"
+  | "BKASH"
+  | "NAGAD"
+  | "ROCKET"
+  | "CARD"
+  | "ONLINE";
+
+export interface Refund {
+  id: number;
+  refund_number: string;
+  order_id: number;
+  order_number: string;
+  payment_id: number;
+  payment_number: string;
+  amount: string | number;
+  currency: string;
+  reason: string;
+  status: string;
+  processed_by_name?: string;
+  transaction_id?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface PaymentSummary {
+  payment_number: string;
+  payment_method: PaymentMethod | string;
+  status: PaymentStatus;
+  amount: string | number;
+  currency: string;
+  paid_at?: string | null;
+  is_paid: boolean;
+}
+
+export interface Payment {
+  id: number;
+  payment_number: string;
+  order_id: number;
+  order_number: string;
+  payment_method: PaymentMethod | string;
+  status: PaymentStatus;
+  amount: string | number;
+  currency: string;
+  transaction_id?: string;
+  provider?: string;
+  failure_reason?: string;
+  metadata?: Record<string, any>;
+  is_paid: boolean;
+  refundable_amount: string | number;
+  refunds: Refund[];
+  paid_at?: string | null;
+  created_at: string;
+  updated_at?: string;
+}
+
+export interface PaymentInitiatePayload {
+  payment_method: PaymentMethod | string;
+}
+
+export interface PaymentVerifyPayload {
+  status: "PAID" | "FAILED";
+  transaction_id?: string;
+  reason?: string;
+}
+
+export interface RefundCreatePayload {
+  amount?: string | number;
   reason?: string;
 }
 

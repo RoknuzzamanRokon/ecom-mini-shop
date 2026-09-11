@@ -44,7 +44,13 @@ urlpatterns = [
     path("api/seller/inventory/<int:product_id>/transactions/", api_views.SellerInventoryTransactionsAPIView.as_view(), name="api_seller_inventory_transactions"),
     path("api/inventory/", api_views.SellerInventoryListAPIView.as_view(), name="api_inventory_list"),
     path("api/inventory/<int:product_id>/", api_views.SellerInventoryDetailAPIView.as_view(), name="api_inventory_detail"),
-    path("api/inventory/<int:product_id>/adjust/", api_views.SellerInventoryAdjustAPIView.as_view(), name="api_inventory_adjust"),
-    path("api/inventory/<int:product_id>/transactions/", api_views.SellerInventoryTransactionsAPIView.as_view(), name="api_inventory_transactions"),
+    # Payment & Refund APIs (Task 15)
+    path("api/orders/<int:pk>/payment/", api_views.CustomerOrderPaymentAPIView.as_view(), name="api_order_payment_pk"),
+    path("api/orders/<str:order_number>/payment/", api_views.CustomerOrderPaymentAPIView.as_view(), name="api_order_payment"),
+    path("api/staff/payments/", api_views.StaffPaymentListAPIView.as_view(), name="api_staff_payments"),
+    path("api/staff/payments/<int:pk>/", api_views.StaffPaymentDetailAPIView.as_view(), name="api_staff_payment_detail"),
+    path("api/staff/payments/<int:pk>/verify/", api_views.StaffPaymentVerifyAPIView.as_view(), name="api_staff_payment_verify"),
+    path("api/staff/payments/<int:pk>/refund/", api_views.StaffPaymentRefundAPIView.as_view(), name="api_staff_payment_refund"),
+    path("api/staff/refunds/", api_views.StaffRefundListAPIView.as_view(), name="api_staff_refunds"),
 ]
 

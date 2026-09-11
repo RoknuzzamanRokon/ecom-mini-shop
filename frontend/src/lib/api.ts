@@ -1,4 +1,4 @@
-import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload } from "./types";
+import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload } from "./types";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
@@ -757,6 +757,100 @@ export async function cancelCustomerOrder(
 
   return await res.json();
 }
+
+export async function getOrderPayment(orderNumber: string, token: string): Promise<Payment> {
+  const res = await fetch(`${API_BASE_URL}/api/orders/${orderNumber}/payment/`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Failed to fetch order payment");
+  }
+  return await res.json();
+}
+
+export async function initiateOrderPayment(
+  orderNumber: string,
+  payload: PaymentInitiatePayload,
+  token: string
+): Promise<Payment> {
+  const res = await fetch(`${API_BASE_URL}/api/orders/${orderNumber}/payment/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    const msg = errorData.detail || errorData.payment || "Failed to initiate payment";
+    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+  }
+  return await res.json();
+}
+
+export async function getStaffPayments(
+  token: string,
+  params?: { status?: string; order_number?: string; page?: number }
+): Promise<PaginatedResponse<Payment>> {
+  const query = new URLSearchParams();
+  if (params?.status) query.set("status", params.status);
+  if (params?.order_number) query.set("order_number", params.order_number);
+  if (params?.page) query.set("page", params.page.toString());
+
+  const res = await fetch(`${API_BASE_URL}/api/staff/payments/?${query.toString()}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!res.ok) throw new Error("Failed to fetch staff payments");
+  return await res.json();
+}
+
+export async function verifyStaffPayment(
+  paymentId: number,
+  payload: PaymentVerifyPayload,
+  token: string
+): Promise<Payment> {
+  const res = await fetch(`${API_BASE_URL}/api/staff/payments/${paymentId}/verify/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || "Failed to verify payment");
+  }
+  return await res.json();
+}
+
+export async function refundStaffPayment(
+  paymentId: number,
+  payload: RefundCreatePayload,
+  token: string
+): Promise<Refund> {
+  const res = await fetch(`${API_BASE_URL}/api/staff/payments/${paymentId}/refund/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    const msg = errorData.detail || errorData.amount || errorData.refund || "Failed to process refund";
+    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+  }
+  return await res.json();
+}
+
 
 
 

@@ -417,6 +417,35 @@ class Order(models.Model):
         self.status = target
         self.save(update_fields=["status", "updated_at"])
 
+    @property
+    def current_payment(self):
+        """Returns the primary or most recent payment record associated with this order."""
+        return self.payments.order_by("-created_at").first()
+
+    @property
+    def is_paid(self) -> bool:
+        """Returns True if the order has at least one successful PAID payment."""
+        return self.payments.filter(status="PAID").exists()
+
+    @property
+    def total_paid_amount(self) -> Decimal:
+        """Calculates total paid amount across successful payments."""
+        from django.db.models import Sum
+        result = self.payments.filter(status__in=["PAID", "REFUNDED", "PARTIALLY_REFUNDED"]).aggregate(total=Sum("amount"))["total"]
+        return result or Decimal("0.00")
+
+    @property
+    def total_refunded_amount(self) -> Decimal:
+        """Calculates total refunded amount across completed refunds."""
+        from django.db.models import Sum
+        result = self.refunds.filter(status="COMPLETED").aggregate(total=Sum("amount"))["total"]
+        return result or Decimal("0.00")
+
+    @property
+    def refundable_amount(self) -> Decimal:
+        """Remaining refundable amount."""
+        return max(Decimal("0.00"), self.total_paid_amount - self.total_refunded_amount)
+
 
 class OrderItem(models.Model):
     order = models.ForeignKey(
@@ -579,3 +608,229 @@ class InventoryTransaction(models.Model):
 
     def __str__(self):
         return f"{self.product.name} - {self.transaction_type}: {self.quantity:+d} at {self.created_at}"
+
+
+class Payment(models.Model):
+    """
+    Dedicated server-authoritative payment tracking model for Orders.
+    Maintains financial status, payment method, gateway references, and timestamps.
+    Never stores sensitive payment credentials.
+    """
+    STATUS_PENDING = "PENDING"
+    STATUS_PROCESSING = "PROCESSING"
+    STATUS_PAID = "PAID"
+    STATUS_FAILED = "FAILED"
+    STATUS_CANCELLED = "CANCELLED"
+    STATUS_REFUNDED = "REFUNDED"
+    STATUS_PARTIALLY_REFUNDED = "PARTIALLY_REFUNDED"
+
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_PROCESSING, "Processing"),
+        (STATUS_PAID, "Paid"),
+        (STATUS_FAILED, "Failed"),
+        (STATUS_CANCELLED, "Cancelled"),
+        (STATUS_REFUNDED, "Refunded"),
+        (STATUS_PARTIALLY_REFUNDED, "Partially Refunded"),
+    ]
+
+    METHOD_CASH_ON_DELIVERY = "CASH_ON_DELIVERY"
+    METHOD_BKASH = "BKASH"
+    METHOD_NAGAD = "NAGAD"
+    METHOD_ROCKET = "ROCKET"
+    METHOD_CARD = "CARD"
+    METHOD_ONLINE = "ONLINE"
+
+    METHOD_CHOICES = [
+        (METHOD_CASH_ON_DELIVERY, "Cash on Delivery"),
+        (METHOD_BKASH, "bKash"),
+        (METHOD_NAGAD, "Nagad"),
+        (METHOD_ROCKET, "Rocket"),
+        (METHOD_CARD, "Credit / Debit Card"),
+        (METHOD_ONLINE, "Online Payment"),
+    ]
+
+    VALID_TRANSITIONS = {
+        STATUS_PENDING: [STATUS_PROCESSING, STATUS_PAID, STATUS_FAILED, STATUS_CANCELLED],
+        STATUS_PROCESSING: [STATUS_PAID, STATUS_FAILED, STATUS_CANCELLED],
+        STATUS_PAID: [STATUS_REFUNDED, STATUS_PARTIALLY_REFUNDED],
+        STATUS_PARTIALLY_REFUNDED: [STATUS_REFUNDED],
+        STATUS_FAILED: [STATUS_PENDING, STATUS_PROCESSING],
+        STATUS_CANCELLED: [],
+        STATUS_REFUNDED: [],
+    }
+
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.CASCADE,
+        related_name="payments",
+        help_text="Order associated with this payment.",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="payments",
+        help_text="Customer associated with this payment.",
+    )
+    payment_number = models.CharField(max_length=64, unique=True, db_index=True)
+    payment_method = models.CharField(
+        max_length=30,
+        choices=METHOD_CHOICES,
+        default=METHOD_CASH_ON_DELIVERY,
+        db_index=True,
+    )
+    status = models.CharField(
+        max_length=30,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING,
+        db_index=True,
+    )
+    amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        default=Decimal("0.00"),
+        help_text="Server-authoritative payable amount.",
+    )
+    currency = models.CharField(max_length=10, default="BDT")
+    transaction_id = models.CharField(
+        max_length=100,
+        blank=True,
+        db_index=True,
+        help_text="External provider transaction or reference identifier.",
+    )
+    provider = models.CharField(
+        max_length=50,
+        blank=True,
+        default="internal",
+        help_text="Payment provider / gateway identifier.",
+    )
+    failure_reason = models.TextField(
+        blank=True,
+        help_text="Reason recorded if payment failed.",
+    )
+    metadata = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text="Non-sensitive payment transaction metadata.",
+    )
+    paid_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Payment"
+        verbose_name_plural = "Payments"
+        indexes = [
+            models.Index(fields=["order", "status"]),
+            models.Index(fields=["status", "created_at"]),
+            models.Index(fields=["payment_number"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(amount__gte=0),
+                name="payment_amount_gte_0",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.payment_number} ({self.status}) - {self.amount} {self.currency}"
+
+    def can_transition_to(self, new_status: str) -> bool:
+        current = self.status.upper() if self.status else ""
+        target = new_status.upper() if new_status else ""
+        return target in self.VALID_TRANSITIONS.get(current, [])
+
+    def transition_to(self, new_status: str):
+        target = new_status.upper()
+        if not self.can_transition_to(target):
+            raise ValidationError(
+                f"Invalid payment status transition from '{self.status}' to '{target}'."
+            )
+        self.status = target
+        update_fields = ["status", "updated_at"]
+        if target == self.STATUS_PAID and not self.paid_at:
+            self.paid_at = timezone.now()
+            update_fields.append("paid_at")
+        self.save(update_fields=update_fields)
+
+
+class Refund(models.Model):
+    """
+    Immutable audit and ledger record for refunds issued against payments/orders.
+    Tracks authorization, amount, gateway reference, and actor.
+    """
+    STATUS_PENDING = "PENDING"
+    STATUS_COMPLETED = "COMPLETED"
+    STATUS_FAILED = "FAILED"
+
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_COMPLETED, "Completed"),
+        (STATUS_FAILED, "Failed"),
+    ]
+
+    refund_number = models.CharField(max_length=64, unique=True, db_index=True)
+    payment = models.ForeignKey(
+        Payment,
+        on_delete=models.PROTECT,
+        related_name="refunds",
+        help_text="Payment record being refunded.",
+    )
+    order = models.ForeignKey(
+        Order,
+        on_delete=models.PROTECT,
+        related_name="refunds",
+        help_text="Order associated with this refund.",
+    )
+    amount = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        help_text="Refund amount in BDT.",
+    )
+    currency = models.CharField(max_length=10, default="BDT")
+    reason = models.TextField(blank=True, help_text="Reason for the refund.")
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_COMPLETED,
+        db_index=True,
+    )
+    processed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="processed_refunds",
+        help_text="Staff or system user who authorized this refund.",
+    )
+    transaction_id = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text="Gateway refund reference identifier.",
+    )
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Refund"
+        verbose_name_plural = "Refunds"
+        indexes = [
+            models.Index(fields=["order", "status"]),
+            models.Index(fields=["payment", "status"]),
+            models.Index(fields=["status", "created_at"]),
+        ]
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(amount__gt=0),
+                name="refund_amount_gt_0",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.refund_number} ({self.status}) - {self.amount} {self.currency}"
+

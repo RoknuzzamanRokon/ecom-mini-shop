@@ -16,17 +16,22 @@ from points.services import InsufficientPointsError, PointService
 from rbac.models import Role
 from rbac.services import get_user_role_codes, has_user_permission
 from .inventory_service import InventoryService
-from .models import Category, InventoryTransaction, Order, OrderItem, Product, ProductInventory
+from .models import Category, InventoryTransaction, Order, OrderItem, Product, ProductInventory, Payment, Refund
+from .payment_service import PaymentService
 from .permissions import (
     CanAdjustInventory,
     CanCancelOrder,
     CanCreateOrder,
+    CanCreatePayment,
     CanCreateProduct,
     CanDeleteProduct,
+    CanRefundPayment,
     CanUpdateProduct,
     CanUpdateSellerOrder,
+    CanVerifyPayment,
     CanViewInventory,
     CanViewOrder,
+    CanViewPayment,
     CanViewSellerOrder,
     IsEligibleOrderSeller,
     IsEligibleProductSeller,
@@ -41,9 +46,14 @@ from .serializers import (
     OrderCancelSerializer,
     OrderCreateSerializer,
     OrderDetailSerializer,
+    PaymentInitiateSerializer,
+    PaymentSerializer,
+    PaymentVerifySerializer,
     ProductDetailSerializer,
     ProductInventorySerializer,
     ProductListSerializer,
+    RefundCreateSerializer,
+    RefundSerializer,
     SellerOrderDetailSerializer,
     SellerOrderItemSerializer,
     SellerOrderListSerializer,
@@ -869,6 +879,217 @@ class SellerInventoryTransactionsAPIView(generics.ListAPIView):
                 raise PermissionDenied("You do not own the product associated with this inventory.")
 
         return InventoryTransaction.objects.filter(product=product).order_by("-created_at")
+
+
+# ==============================================================================
+# Task 15: Payment & Refund API Views
+# ==============================================================================
+
+def _get_customer_order_or_404(request, kwargs):
+    lookup = (
+        kwargs.get("order_number")
+        or kwargs.get("pk")
+        or kwargs.get("identifier")
+        or request.query_params.get("order_number")
+    )
+    if not lookup:
+        raise NotFound("Order reference missing.")
+
+    lookup_str = str(lookup).strip()
+    qs = Order.objects.all()
+    if lookup_str.isdigit():
+        order = qs.filter(id=int(lookup_str)).first()
+    else:
+        order = qs.filter(order_number=lookup_str).first()
+
+    if not order:
+        raise NotFound("Order not found.")
+
+    user = request.user
+    role_codes = get_user_role_codes(user)
+    is_staff_override = (
+        user.is_superuser
+        or user.is_staff
+        or Role.ROLE_SUPER_ADMINISTRATOR in role_codes
+        or Role.ROLE_ADMINISTRATOR in role_codes
+        or Role.ROLE_OPERATION_MANAGER in role_codes
+    )
+    if order.user != user and not is_staff_override:
+        raise NotFound("Order not found.")
+
+    return order
+
+
+class CustomerOrderPaymentAPIView(APIView):
+    """
+    Customer Order Payment API:
+      GET: Retrieves payment details for the customer's own order.
+      POST: Initiates payment for the customer's own order with server-authoritative pricing.
+    Strictly isolates customer ownership (User B receives safe 404 for User A's order).
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        order = _get_customer_order_or_404(request, kwargs)
+        payment = order.current_payment
+        if not payment:
+            raise NotFound("No payment record found for this order.")
+
+        serializer = PaymentSerializer(payment, context={"request": request})
+        return Response(serializer.data, status=status.HTTP_200_OK)
+
+    def post(self, request, *args, **kwargs):
+        order = _get_customer_order_or_404(request, kwargs)
+
+        serializer = PaymentInitiateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payment_method = serializer.validated_data.get("payment_method")
+
+        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+        ip_address = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else request.META.get("REMOTE_ADDR")
+
+        try:
+            payment = PaymentService.create_or_get_payment(
+                order=order,
+                payment_method=payment_method,
+                actor=request.user,
+                ip_address=ip_address,
+            )
+        except DjangoValidationError as exc:
+            detail = exc.message_dict if hasattr(exc, "message_dict") else {"detail": exc.messages}
+            raise DRFValidationError(detail)
+
+        output_serializer = PaymentSerializer(payment, context={"request": request})
+        return Response(output_serializer.data, status=status.HTTP_201_CREATED)
+
+
+class StaffPaymentListAPIView(generics.ListAPIView):
+    """
+    Staff Payment Management:
+      GET: Lists all payments across orders with status/order filtering and pagination.
+    Requires 'payments.view' permission.
+    """
+    permission_classes = [permissions.IsAuthenticated, CanViewPayment]
+    serializer_class = PaymentSerializer
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        qs = Payment.objects.select_related("order", "user").prefetch_related("refunds").order_by("-created_at")
+        status_filter = self.request.query_params.get("status")
+        if status_filter:
+            qs = qs.filter(status=status_filter.upper())
+        order_number = self.request.query_params.get("order_number")
+        if order_number:
+            qs = qs.filter(order__order_number__icontains=order_number)
+        payment_method = self.request.query_params.get("payment_method")
+        if payment_method:
+            qs = qs.filter(payment_method=payment_method.upper())
+        return qs
+
+
+class StaffPaymentDetailAPIView(generics.RetrieveAPIView):
+    """
+    Staff Payment Detail:
+      GET: Detailed view of a single payment including nested refunds.
+    Requires 'payments.view' permission.
+    """
+    permission_classes = [permissions.IsAuthenticated, CanViewPayment]
+    serializer_class = PaymentSerializer
+    queryset = Payment.objects.select_related("order", "user").prefetch_related("refunds")
+
+
+class StaffPaymentVerifyAPIView(APIView):
+    """
+    Staff Payment Verification:
+      POST: Updates payment status to PAID or FAILED with transaction reference.
+    Requires 'payments.verify' permission.
+    """
+    permission_classes = [permissions.IsAuthenticated, CanVerifyPayment]
+
+    def post(self, request, pk, *args, **kwargs):
+        payment = get_object_or_404(Payment, pk=pk)
+
+        serializer = PaymentVerifySerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        target_status = serializer.validated_data["status"]
+        transaction_id = serializer.validated_data.get("transaction_id", "")
+        reason = serializer.validated_data.get("reason", "")
+
+        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+        ip_address = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else request.META.get("REMOTE_ADDR")
+
+        try:
+            if target_status == Payment.STATUS_PAID:
+                updated_payment = PaymentService.process_payment_success(
+                    payment=payment,
+                    transaction_id=transaction_id,
+                    provider="manual/staff",
+                    actor=request.user,
+                    ip_address=ip_address,
+                )
+            else:
+                updated_payment = PaymentService.process_payment_failure(
+                    payment=payment,
+                    reason=reason or "Failed by staff verification",
+                    actor=request.user,
+                    ip_address=ip_address,
+                )
+        except DjangoValidationError as exc:
+            detail = exc.message_dict if hasattr(exc, "message_dict") else {"detail": exc.messages}
+            raise DRFValidationError(detail)
+
+        output = PaymentSerializer(updated_payment, context={"request": request})
+        return Response(output.data, status=status.HTTP_200_OK)
+
+
+class StaffPaymentRefundAPIView(APIView):
+    """
+    Staff Refund Processing:
+      POST: Processes full or partial refund against a paid payment.
+    Requires 'payments.refund' permission.
+    """
+    permission_classes = [permissions.IsAuthenticated, CanRefundPayment]
+
+    def post(self, request, pk, *args, **kwargs):
+        payment = get_object_or_404(Payment, pk=pk)
+
+        serializer = RefundCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        amount = serializer.validated_data.get("amount")
+        reason = serializer.validated_data.get("reason", "")
+
+        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+        ip_address = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else request.META.get("REMOTE_ADDR")
+
+        try:
+            refund = PaymentService.process_refund(
+                payment=payment,
+                amount=amount,
+                reason=reason,
+                actor=request.user,
+                ip_address=ip_address,
+            )
+        except DjangoValidationError as exc:
+            detail = exc.message_dict if hasattr(exc, "message_dict") else {"detail": exc.messages}
+            raise DRFValidationError(detail)
+
+        output = RefundSerializer(refund, context={"request": request})
+        return Response(output.data, status=status.HTTP_201_CREATED)
+
+
+class StaffRefundListAPIView(generics.ListAPIView):
+    """
+    Staff Refund Listing:
+      GET: Lists all refunds across all orders with pagination.
+    Requires 'payments.view' permission.
+    """
+    permission_classes = [permissions.IsAuthenticated, CanViewPayment]
+    serializer_class = RefundSerializer
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        return Refund.objects.select_related("order", "payment", "processed_by").order_by("-created_at")
+
 
 
 

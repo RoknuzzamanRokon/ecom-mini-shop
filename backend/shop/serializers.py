@@ -1,7 +1,7 @@
 from decimal import Decimal
 from rest_framework import serializers
 from shops.models import Shop
-from .models import Category, Product, ProductImage, Order, OrderItem, ProductInventory, InventoryTransaction
+from .models import Category, Product, ProductImage, Order, OrderItem, ProductInventory, InventoryTransaction, Payment, Refund
 
 
 class ShopSummarySerializer(serializers.ModelSerializer):
@@ -347,6 +347,7 @@ class OrderDetailSerializer(serializers.ModelSerializer):
     total_amount = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     total_items_count = serializers.SerializerMethodField()
     can_cancel = serializers.SerializerMethodField()
+    payment = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -355,6 +356,7 @@ class OrderDetailSerializer(serializers.ModelSerializer):
             "order_number",
             "status",
             "can_cancel",
+            "payment",
             "customer_name",
             "phone",
             "address",
@@ -383,6 +385,20 @@ class OrderDetailSerializer(serializers.ModelSerializer):
 
     def get_can_cancel(self, obj):
         return obj.can_transition_to(Order.STATUS_CANCELLED)
+
+    def get_payment(self, obj):
+        current = obj.current_payment
+        if not current:
+            return None
+        return {
+            "payment_number": current.payment_number,
+            "payment_method": current.payment_method,
+            "status": current.status,
+            "amount": str(current.amount),
+            "currency": current.currency,
+            "paid_at": current.paid_at,
+            "is_paid": (current.status == Payment.STATUS_PAID),
+        }
 
 
 class OrderCancelSerializer(serializers.Serializer):
@@ -661,5 +677,132 @@ class InventoryTransactionSerializer(serializers.ModelSerializer):
         if obj.actor:
             return obj.actor.get_full_name() or obj.actor.username
         return "System"
+
+
+class RefundSerializer(serializers.ModelSerializer):
+    order_number = serializers.CharField(source="order.order_number", read_only=True)
+    payment_number = serializers.CharField(source="payment.payment_number", read_only=True)
+    processed_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Refund
+        fields = [
+            "id",
+            "refund_number",
+            "order_id",
+            "order_number",
+            "payment_id",
+            "payment_number",
+            "amount",
+            "currency",
+            "reason",
+            "status",
+            "processed_by_name",
+            "transaction_id",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+    def get_processed_by_name(self, obj):
+        if obj.processed_by:
+            return obj.processed_by.get_full_name() or obj.processed_by.username
+        return "System"
+
+
+class PaymentSerializer(serializers.ModelSerializer):
+    order_number = serializers.CharField(source="order.order_number", read_only=True)
+    refunds = RefundSerializer(many=True, read_only=True)
+    refundable_amount = serializers.SerializerMethodField()
+    is_paid = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Payment
+        fields = [
+            "id",
+            "payment_number",
+            "order_id",
+            "order_number",
+            "payment_method",
+            "status",
+            "amount",
+            "currency",
+            "transaction_id",
+            "provider",
+            "failure_reason",
+            "metadata",
+            "is_paid",
+            "refundable_amount",
+            "refunds",
+            "paid_at",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+    def get_is_paid(self, obj):
+        return obj.status == Payment.STATUS_PAID
+
+    def get_refundable_amount(self, obj):
+        completed_refunds_sum = sum(r.amount for r in obj.refunds.filter(status=Refund.STATUS_COMPLETED))
+        return max(Decimal("0.00"), obj.amount - completed_refunds_sum)
+
+
+class PaymentInitiateSerializer(serializers.Serializer):
+    """
+    Validates customer payment initiation.
+    Server calculates amount strictly from the Order.
+    Client amount or status is strictly forbidden/ignored.
+    """
+    payment_method = serializers.ChoiceField(
+        choices=Payment.METHOD_CHOICES,
+        default=Payment.METHOD_CASH_ON_DELIVERY,
+        help_text="Chosen payment method for the order.",
+    )
+
+
+class PaymentVerifySerializer(serializers.Serializer):
+    """
+    Validates administrative/staff payment verification.
+    """
+    status = serializers.ChoiceField(
+        choices=[Payment.STATUS_PAID, Payment.STATUS_FAILED],
+        help_text="Target payment status (PAID or FAILED).",
+    )
+    transaction_id = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        max_length=100,
+        help_text="Optional transaction or reference ID from payment provider.",
+    )
+    reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        max_length=500,
+        help_text="Notes or failure justification.",
+    )
+
+
+class RefundCreateSerializer(serializers.Serializer):
+    """
+    Validates administrative/staff refund requests.
+    """
+    amount = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        required=False,
+        min_value=Decimal("0.01"),
+        help_text="Refund amount. Defaults to remaining full refundable amount if omitted.",
+    )
+    reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        max_length=500,
+        help_text="Justification for this refund.",
+    )
+
 
 

@@ -618,6 +618,12 @@ class OrderService:
                     note=note,
                     ip_address=ip_address,
                 )
+                from shop.payment_service import PaymentService
+                PaymentService.handle_order_cancellation(
+                    order=locked_order,
+                    actor=actor,
+                    ip_address=ip_address,
+                )
             elif locked_order.status == Order.STATUS_DELIVERED:
                 InventoryService.finalize_order_delivery(
                     order=locked_order,

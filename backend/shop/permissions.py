@@ -302,3 +302,65 @@ class IsInventoryProductOwner(BasePermission):
         product = getattr(obj, "product", obj)
         return bool(product.shop and product.shop.owner == seller)
 
+
+class CanViewPayment(BasePermission):
+    """
+    Enforces that the user holds the 'payments.view' RBAC permission,
+    or is a superuser / Super Administrator.
+    """
+    message = "You do not have permission to view payment records."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
+            return True
+        return has_user_permission(user, "payments.view")
+
+
+class CanCreatePayment(BasePermission):
+    """
+    Enforces that the user holds the 'payments.create' RBAC permission.
+    """
+    message = "You do not have permission to initiate payments."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
+            return True
+        return has_user_permission(user, "payments.create")
+
+
+class CanVerifyPayment(BasePermission):
+    """
+    Enforces that the user holds the 'payments.verify' or 'payments.process' RBAC permission.
+    """
+    message = "You do not have permission to verify or update payments."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
+            return True
+        return has_user_permission(user, "payments.verify") or has_user_permission(user, "payments.process")
+
+
+class CanRefundPayment(BasePermission):
+    """
+    Enforces that the user holds the 'payments.refund' or 'orders.refund' RBAC permission.
+    """
+    message = "You do not have permission to process refunds."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
+            return True
+        return has_user_permission(user, "payments.refund") or has_user_permission(user, "orders.refund")
+
+

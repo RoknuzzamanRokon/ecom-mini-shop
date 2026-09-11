@@ -49,6 +49,8 @@ PERMISSIONS_DATA = [
     ("orders.seller.update", "Update Seller Orders", "orders", "update", "Can update order progression for seller products"),
     # Payments
     ("payments.view", "View Payments", "payments", "view", "Can inspect transaction ledgers"),
+    ("payments.create", "Initiate Payments", "payments", "create", "Can initiate order payments"),
+    ("payments.process", "Process Payments", "payments", "process", "Can process and update payment states"),
     ("payments.verify", "Verify Payments", "payments", "verify", "Can verify customer payments"),
     ("payments.refund", "Process Refunds", "payments", "refund", "Can process payment refunds"),
     # Points
@@ -124,9 +126,9 @@ ROLE_PERMISSIONS_MAPPING = {
         "products.view", "products.create", "products.update", "products.delete", "products.approve", "products.reject", "products.publish",
         "shops.view", "shops.create", "shops.update", "shops.delete", "shops.approve",
         "sellers.view", "sellers.create", "sellers.update", "sellers.approve", "sellers.suspend",
-        "orders.view", "orders.create", "orders.update", "orders.cancel",
+        "orders.view", "orders.create", "orders.update", "orders.cancel", "orders.refund",
         "orders.seller.view", "orders.seller.update",
-        "payments.view",
+        "payments.view", "payments.create", "payments.process", "payments.verify", "payments.refund",
         "points.view", "points.add", "points.deduct", "points.adjust",
         "reports.view",
         "profile.view", "profile.update",
@@ -159,7 +161,7 @@ ROLE_PERMISSIONS_MAPPING = {
         "inventory.view", "inventory.adjust",
     ],
     Role.ROLE_FINANCE: [
-        "payments.view", "payments.verify", "payments.refund",
+        "payments.view", "payments.create", "payments.process", "payments.verify", "payments.refund",
         "orders.view", "orders.refund",
         "points.view", "points.add", "points.deduct", "points.adjust",
         "reports.view",
@@ -181,6 +183,7 @@ ROLE_PERMISSIONS_MAPPING = {
         "address.view", "address.create", "address.update", "address.delete",
         "cart.view", "cart.update",
         "orders.view", "orders.create", "orders.cancel",
+        "payments.view", "payments.create",
     ],
 }
 
