@@ -58,6 +58,7 @@ INSTALLED_APPS = [
     'sellers',
     'points',
     'shops',
+    'audit',
     'shop',
 ]
 
@@ -198,3 +199,6 @@ SIMPLE_JWT = {
     "BLACKLIST_AFTER_ROTATION": False,
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
+
+# Point Cost Settings
+PRODUCT_CREATION_POINT_COST = 5

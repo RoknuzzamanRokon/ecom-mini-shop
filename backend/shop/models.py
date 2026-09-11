@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.urls import reverse
 from django.utils.text import slugify
@@ -42,6 +44,23 @@ class Category(models.Model):
 
 
 class Product(models.Model):
+    # Lifecycle & Publishing Statuses
+    STATUS_DRAFT = "DRAFT"
+    STATUS_SUBMITTED = "SUBMITTED"
+    STATUS_APPROVED = "APPROVED"
+    STATUS_REJECTED = "REJECTED"
+    STATUS_PUBLISHED = "PUBLISHED"
+    STATUS_UNPUBLISHED = "UNPUBLISHED"
+
+    STATUS_CHOICES = [
+        (STATUS_DRAFT, "Draft"),
+        (STATUS_SUBMITTED, "Submitted"),
+        (STATUS_APPROVED, "Approved"),
+        (STATUS_REJECTED, "Rejected"),
+        (STATUS_PUBLISHED, "Published"),
+        (STATUS_UNPUBLISHED, "Unpublished"),
+    ]
+
     name = models.CharField(max_length=200)
     slug = models.SlugField(max_length=220, unique=True)
     category = models.ForeignKey(
@@ -68,7 +87,25 @@ class Product(models.Model):
     stock = models.PositiveIntegerField(default=0)
     badge = models.CharField(max_length=20, blank=True)
     is_active = models.BooleanField(default=True)
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_DRAFT,
+        db_index=True,
+        help_text="Product approval and publishing lifecycle status.",
+    )
+    rejection_reason = models.TextField(blank=True)
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_products",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["-created_at"]
@@ -76,13 +113,39 @@ class Product(models.Model):
     def __str__(self):
         return self.name
 
-    def save(self, *args, **kwargs):
-        if not self.slug:
+    def clean(self):
+        if not self.slug and self.name:
             self.slug = slugify(self.name)
+        if self.price is not None and self.price <= 0:
+            raise ValidationError({"price": "Price must be strictly greater than 0."})
+        if self.old_price is not None and self.old_price <= 0:
+            raise ValidationError({"old_price": "Old price must be strictly greater than 0."})
+        if self.status == self.STATUS_REJECTED and not self.rejection_reason:
+            raise ValidationError({"rejection_reason": "A rejection reason is required when rejecting a product."})
+
+    def save(self, *args, **kwargs):
+        if not self.slug and self.name:
+            self.slug = slugify(self.name)
+        self.clean()
         super().save(*args, **kwargs)
+
+
+    @property
+    def seller(self):
+        """
+        Derives the product's seller via Product -> Shop -> Seller.
+        Single source of truth for seller ownership.
+        """
+        return self.shop.owner if self.shop else None
+
+    @property
+    def owner(self):
+        """Alias for seller property."""
+        return self.seller
 
     def get_absolute_url(self):
         return reverse("shop:product_detail", args=[self.slug])
+
 
     @property
     def in_stock(self):

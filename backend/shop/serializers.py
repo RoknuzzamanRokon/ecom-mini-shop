@@ -1,5 +1,13 @@
+from decimal import Decimal
 from rest_framework import serializers
+from shops.models import Shop
 from .models import Category, Product, ProductImage, Order, OrderItem
+
+
+class ShopSummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Shop
+        fields = ["id", "name", "slug", "status"]
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -69,6 +77,7 @@ class ProductImageSerializer(serializers.ModelSerializer):
 
 class ProductListSerializer(serializers.ModelSerializer):
     category = CategorySerializer(read_only=True)
+    shop = ShopSummarySerializer(read_only=True)
     image_url = serializers.SerializerMethodField()
     discount_percent = serializers.ReadOnlyField()
     savings_amount = serializers.ReadOnlyField()
@@ -81,6 +90,7 @@ class ProductListSerializer(serializers.ModelSerializer):
             "name",
             "slug",
             "category",
+            "shop",
             "description",
             "price",
             "old_price",
@@ -89,6 +99,7 @@ class ProductListSerializer(serializers.ModelSerializer):
             "stock",
             "badge",
             "is_active",
+            "status",
             "discount_percent",
             "savings_amount",
             "in_stock",
@@ -123,6 +134,178 @@ class ProductDetailSerializer(ProductListSerializer):
                     request.build_absolute_uri(img.url) if request else img.url
                 )
         return urls
+
+
+class SellerProductSerializer(serializers.ModelSerializer):
+    """
+    Detailed serializer for seller self-service product operations.
+    Exposes shop details, lifecycle status, review data, and pricing analytics.
+    """
+    category = CategorySerializer(read_only=True)
+    shop = ShopSummarySerializer(read_only=True)
+    image_url = serializers.SerializerMethodField()
+    discount_percent = serializers.ReadOnlyField()
+    savings_amount = serializers.ReadOnlyField()
+    in_stock = serializers.ReadOnlyField()
+    owner_business_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Product
+        fields = [
+            "id",
+            "name",
+            "slug",
+            "category",
+            "shop",
+            "owner_business_name",
+            "description",
+            "price",
+            "old_price",
+            "stock",
+            "badge",
+            "is_active",
+            "status",
+            "rejection_reason",
+            "image",
+            "image_url",
+            "discount_percent",
+            "savings_amount",
+            "in_stock",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_image_url(self, obj):
+        request = self.context.get("request")
+        if obj.image and hasattr(obj.image, "url"):
+            if request:
+                return request.build_absolute_uri(obj.image.url)
+            return obj.image.url
+        return None
+
+    def get_owner_business_name(self, obj):
+        return obj.shop.owner.business_name if obj.shop and obj.shop.owner else None
+
+
+class SellerProductCreateSerializer(serializers.Serializer):
+    """
+    Input validation serializer for seller product creation.
+    Validates category, seller-owned shop, pricing, and product attributes.
+    """
+    name = serializers.CharField(max_length=200)
+    category_id = serializers.IntegerField()
+    shop_id = serializers.IntegerField()
+    description = serializers.CharField()
+    price = serializers.DecimalField(max_digits=10, decimal_places=2)
+    old_price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
+    stock = serializers.IntegerField(min_value=0, default=0, required=False)
+    badge = serializers.CharField(max_length=20, required=False, allow_blank=True, default="")
+    image = serializers.ImageField(required=False, allow_null=True)
+    is_active = serializers.BooleanField(default=True, required=False)
+
+    def validate_name(self, value):
+        name = value.strip()
+        if not name:
+            raise serializers.ValidationError("Product name cannot be empty.")
+        return name
+
+    def validate_price(self, value):
+        if value <= Decimal("0.00"):
+            raise serializers.ValidationError("Price must be strictly greater than 0.")
+        return value
+
+    def validate_old_price(self, value):
+        if value is not None and value <= Decimal("0.00"):
+            raise serializers.ValidationError("Old price must be strictly greater than 0.")
+        return value
+
+    def validate_category_id(self, value):
+        try:
+            return Category.objects.get(id=value, is_active=True)
+        except Category.DoesNotExist:
+            raise serializers.ValidationError(f"Active category with ID {value} does not exist.")
+
+    def validate_shop_id(self, value):
+        request = self.context.get("request")
+        if not request or not hasattr(request.user, "seller_profile"):
+            raise serializers.ValidationError("Authenticated seller profile is required.")
+
+        seller = request.user.seller_profile
+        try:
+            shop = Shop.objects.get(id=value)
+        except Shop.DoesNotExist:
+            raise serializers.ValidationError(f"Shop with ID {value} does not exist.")
+
+        if shop.owner != seller:
+            raise serializers.ValidationError("You can only create products for shops that you own.")
+
+        if shop.status not in (Shop.STATUS_APPROVED, Shop.STATUS_ACTIVE):
+            raise serializers.ValidationError(
+                f"Shop '{shop.name}' is currently '{shop.status}'. Products can only be created for active/approved shops."
+            )
+
+        return shop
+
+
+class SellerProductUpdateSerializer(serializers.Serializer):
+    """
+    Input validation serializer for seller product updates.
+    Enforces shop ownership constraints and validates updated values.
+    """
+    name = serializers.CharField(max_length=200, required=False)
+    category_id = serializers.IntegerField(required=False)
+    shop_id = serializers.IntegerField(required=False)
+    description = serializers.CharField(required=False)
+    price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
+    old_price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
+    stock = serializers.IntegerField(min_value=0, required=False)
+    badge = serializers.CharField(max_length=20, required=False, allow_blank=True)
+    image = serializers.ImageField(required=False, allow_null=True)
+    is_active = serializers.BooleanField(required=False)
+
+    def validate_name(self, value):
+        name = value.strip()
+        if not name:
+            raise serializers.ValidationError("Product name cannot be empty.")
+        return name
+
+    def validate_price(self, value):
+        if value <= Decimal("0.00"):
+            raise serializers.ValidationError("Price must be strictly greater than 0.")
+        return value
+
+    def validate_old_price(self, value):
+        if value is not None and value <= Decimal("0.00"):
+            raise serializers.ValidationError("Old price must be strictly greater than 0.")
+        return value
+
+    def validate_category_id(self, value):
+        try:
+            return Category.objects.get(id=value, is_active=True)
+        except Category.DoesNotExist:
+            raise serializers.ValidationError(f"Active category with ID {value} does not exist.")
+
+    def validate_shop_id(self, value):
+        request = self.context.get("request")
+        if not request or not hasattr(request.user, "seller_profile"):
+            raise serializers.ValidationError("Authenticated seller profile is required.")
+
+        seller = request.user.seller_profile
+        try:
+            shop = Shop.objects.get(id=value)
+        except Shop.DoesNotExist:
+            raise serializers.ValidationError(f"Shop with ID {value} does not exist.")
+
+        if shop.owner != seller:
+            raise serializers.ValidationError("You can only assign products to shops that you own.")
+
+        if shop.status not in (Shop.STATUS_APPROVED, Shop.STATUS_ACTIVE):
+            raise serializers.ValidationError(
+                f"Shop '{shop.name}' is currently '{shop.status}'. Products can only belong to active/approved shops."
+            )
+
+        return shop
+
 
 
 class OrderItemInputSerializer(serializers.Serializer):

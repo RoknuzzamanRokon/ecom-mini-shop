@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import PointTransaction, SellerWallet
+from .models import PointTransaction, ProductCreationCost, SellerWallet
 
 
 @admin.register(SellerWallet)
@@ -54,3 +54,15 @@ class PointTransactionAdmin(admin.ModelAdmin):
     def has_delete_permission(self, request, obj=None):
         # Prevent manual tampering with immutable financial ledger entries
         return False
+
+
+@admin.register(ProductCreationCost)
+class ProductCreationCostAdmin(admin.ModelAdmin):
+    list_display = ("required_points", "updated_at")
+
+    def has_add_permission(self, request):
+        return not ProductCreationCost.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+

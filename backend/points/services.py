@@ -1,6 +1,6 @@
 import logging
 from django.db import transaction
-from .models import PointTransaction, SellerWallet
+from .models import PointTransaction, ProductCreationCost, SellerWallet
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +53,14 @@ class PointService:
         if amount <= 0:
             return True
         return cls.get_balance(seller) >= amount
+
+    @classmethod
+    def get_product_creation_cost(cls) -> int:
+        """
+        Returns the authoritative number of points required to create a new product.
+        Centralized source retrieved from ProductCreationCost model / settings fallback.
+        """
+        return ProductCreationCost.get_cost()
 
     @classmethod
     def credit(

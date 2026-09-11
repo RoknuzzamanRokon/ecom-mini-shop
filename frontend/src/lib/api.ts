@@ -310,3 +310,65 @@ export async function getOrderDetail(orderNumber: string): Promise<Order | null>
     return null;
   }
 }
+
+export async function getSellerProducts(
+  token: string,
+  params?: { shop_id?: number; status?: string; category?: string; q?: string; page?: number }
+): Promise<PaginatedResponse<Product>> {
+  const query = new URLSearchParams();
+  if (params?.shop_id) query.set("shop_id", params.shop_id.toString());
+  if (params?.status) query.set("status", params.status);
+  if (params?.category) query.set("category", params.category);
+  if (params?.q) query.set("q", params.q);
+  if (params?.page) query.set("page", params.page.toString());
+
+  const res = await fetch(`${API_BASE_URL}/api/products/mine/?${query.toString()}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || "Failed to fetch seller products");
+  }
+
+  return await res.json();
+}
+
+export async function createSellerProduct(
+  token: string,
+  data: {
+    name: string;
+    category_id: number;
+    shop_id: number;
+    description: string;
+    price: string | number;
+    old_price?: string | number | null;
+    stock?: number;
+    badge?: string;
+  }
+): Promise<Product> {
+  const res = await fetch(`${API_BASE_URL}/api/products/mine/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    if (res.status === 400 && errorData.required_points) {
+      throw new Error(
+        `Insufficient points: required ${errorData.required_points}, available ${errorData.available_points}`
+      );
+    }
+    throw new Error(errorData.error || "Failed to create product");
+  }
+
+  return await res.json();
+}
+

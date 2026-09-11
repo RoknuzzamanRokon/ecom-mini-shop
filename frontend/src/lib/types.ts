@@ -29,6 +29,14 @@ export interface Product {
   stock: number;
   badge?: string;
   is_active: boolean;
+  status?: string;
+  rejection_reason?: string;
+  shop?: {
+    id: number;
+    name: string;
+    slug: string;
+    status?: string;
+  } | null;
   discount_percent?: number;
   savings_amount?: string | number | null;
   in_stock: boolean;

@@ -35,6 +35,9 @@ class ProductAdmin(admin.ModelAdmin):
     list_display = (
         "name",
         "category",
+        "shop",
+        "seller_display",
+        "status",
         "price",
         "old_price",
         "stock",
@@ -42,11 +45,16 @@ class ProductAdmin(admin.ModelAdmin):
         "is_active",
         "image_preview",
     )
-    list_editable = ("price", "old_price", "stock", "badge", "is_active")
-    list_filter = ("category", "is_active", "badge")
-    search_fields = ("name", "description")
+    list_editable = ("status", "price", "old_price", "stock", "badge", "is_active")
+    list_filter = ("status", "category", "shop", "is_active", "badge")
+    search_fields = ("name", "description", "shop__name", "shop__owner__business_name")
     prepopulated_fields = {"slug": ("name",)}
     inlines = [ProductImageInline]
+
+    def seller_display(self, obj):
+        seller = obj.seller
+        return seller.business_name if seller else "-"
+    seller_display.short_description = "Seller"
 
     def image_preview(self, obj):
         if obj.image:
@@ -54,6 +62,7 @@ class ProductAdmin(admin.ModelAdmin):
         return "-"
 
     image_preview.short_description = "Image"
+
 
 
 class OrderItemInline(admin.TabularInline):

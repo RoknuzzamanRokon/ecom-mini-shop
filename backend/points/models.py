@@ -136,3 +136,38 @@ class PointTransaction(models.Model):
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
+
+
+class ProductCreationCost(models.Model):
+    """
+    Authoritative configuration for points required to create a new product.
+    Implements a singleton pattern (pk=1) so administrators can adjust the cost dynamically.
+    """
+    required_points = models.PositiveIntegerField(
+        default=5,
+        validators=[MinValueValidator(0)],
+        help_text="Number of points debited from seller wallet for each new product creation.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Product Creation Cost"
+        verbose_name_plural = "Product Creation Cost"
+
+    def __str__(self):
+        return f"Product Creation Cost: {self.required_points} points"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_cost(cls) -> int:
+        try:
+            config = cls.objects.filter(pk=1).first()
+            if config:
+                return config.required_points
+        except Exception:
+            pass
+        return getattr(settings, "PRODUCT_CREATION_POINT_COST", 5)
+
