@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Header from "@/components/layout/Header";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
@@ -15,6 +15,7 @@ import { useCart } from "@/context/CartContext";
 
 export default function ProductDetailPage() {
   const params = useParams();
+  const router = useRouter();
   const slug = params?.slug as string;
 
   const [product, setProduct] = useState<Product | null>(null);
@@ -22,6 +23,12 @@ export default function ProductDetailPage() {
   const [selectedImage, setSelectedImage] = useState<string>("/placeholder.svg");
   const [quantity, setQuantity] = useState(1);
   const { addToCart } = useCart();
+
+  const handleBuyNow = () => {
+    if (!product || !product.in_stock) return;
+    addToCart(product, quantity);
+    router.push("/checkout");
+  };
 
   useEffect(() => {
     async function load() {
@@ -188,27 +195,55 @@ export default function ProductDetailPage() {
               </span>
             </div>
 
+            {/* Shop Information & Visit Shop */}
+            {product.shop && (
+              <div className="mt-4 p-3.5 rounded-lg bg-surface-alt/40 border border-line flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                    <span className="material-symbols-outlined text-[20px]">storefront</span>
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[11px] text-ink-muted">Sold by:</span>
+                      <span className="font-bold text-xs text-ink truncate">{product.shop.name}</span>
+                      <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-bold bg-success/10 text-success border border-success/30 uppercase">
+                        Active
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-ink-muted mt-0.5">Verified seller store on MiniShop</p>
+                  </div>
+                </div>
+                <Link
+                  href={`/shop/${product.shop.slug}`}
+                  className="shrink-0 text-xs font-semibold text-primary hover:text-primary-hover flex items-center gap-1 transition-colors border border-primary/20 hover:border-primary/50 bg-surface px-3 py-1.5 rounded-md shadow-2xs hover:shadow-xs"
+                >
+                  <span>Visit Shop</span>
+                  <span className="material-symbols-outlined text-[14px]">arrow_forward</span>
+                </Link>
+              </div>
+            )}
+
             {/* Description */}
             <p className="text-sm text-ink-body mt-4 leading-relaxed">
               {product.description}
             </p>
 
-            {/* Quantity and Add to Cart */}
-            <div className="mt-6 pt-6 border-t border-line flex flex-col sm:flex-row items-stretch sm:items-center gap-4">
+            {/* Quantity and Actions (Add to Cart & Buy Now) */}
+            <div className="mt-6 pt-6 border-t border-line flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
               <div className="flex items-center border border-line rounded-lg bg-surface overflow-hidden w-fit">
                 <button
                   onClick={() => setQuantity(Math.max(1, quantity - 1))}
-                  className="px-3.5 py-2 text-sm text-ink hover:bg-surface-sunken transition-colors cursor-pointer"
+                  className="px-3.5 py-2.5 text-sm text-ink hover:bg-surface-sunken transition-colors cursor-pointer"
                   type="button"
                 >
                   -
                 </button>
-                <span className="px-4 py-2 text-sm font-bold text-ink min-w-[3rem] text-center">
+                <span className="px-4 py-2.5 text-sm font-bold text-ink min-w-[3rem] text-center">
                   {quantity}
                 </span>
                 <button
                   onClick={() => setQuantity(quantity + 1)}
-                  className="px-3.5 py-2 text-sm text-ink hover:bg-surface-sunken transition-colors cursor-pointer"
+                  className="px-3.5 py-2.5 text-sm text-ink hover:bg-surface-sunken transition-colors cursor-pointer"
                   type="button"
                 >
                   +
@@ -218,11 +253,21 @@ export default function ProductDetailPage() {
               <button
                 onClick={() => addToCart(product, quantity)}
                 disabled={!product.in_stock}
-                className="flex-1 bg-primary hover:bg-primary-hover disabled:opacity-50 text-on-primary font-bold text-xs uppercase tracking-wider py-3 px-6 rounded-lg shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
+                className="flex-1 bg-surface-alt hover:bg-surface-sunken border border-line disabled:opacity-50 text-ink font-bold text-xs uppercase tracking-wider py-3 px-4 rounded-lg shadow-2xs transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
                 type="button"
               >
                 <span className="material-symbols-outlined text-[18px]">add_shopping_cart</span>
                 <span>Add to Cart</span>
+              </button>
+
+              <button
+                onClick={handleBuyNow}
+                disabled={!product.in_stock}
+                className="flex-1 bg-primary hover:bg-primary-hover disabled:opacity-50 text-on-primary font-bold text-xs uppercase tracking-wider py-3 px-4 rounded-lg shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+                type="button"
+              >
+                <span className="material-symbols-outlined text-[18px]">bolt</span>
+                <span>Buy Now</span>
               </button>
             </div>
 

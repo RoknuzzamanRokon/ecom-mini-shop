@@ -1,1289 +1,1014 @@
-You are a senior software architect and full-stack developer.
+# MINISHOP — MASTER PROJECT PROMPT
 
-I am building a multi-vendor e-commerce platform called **MiniShop**.
+## Django REST Framework + Next.js Ecommerce Platform
 
-The project has already been started.
+You are working on the ongoing **MiniShop** project.
 
-### Current Technology Stack
+This document is the primary source of truth for the project's architecture, business rules, security model, frontend structure, backend integration, and implementation workflow.
 
-Backend:
+Before implementing any task:
 
-* Django
-* Django REST Framework
-* PostgreSQL
-* PostGIS
-* REST API
-* JWT Authentication
-
-Frontend:
-
-* Next.js
-* TypeScript
-
-Do NOT rebuild the project from scratch.
-
-First understand the existing project and then extend it step by step.
+1. Read this Master Prompt.
+2. Inspect the actual existing codebase.
+3. Inspect previously implemented features.
+4. Reuse existing architecture wherever possible.
+5. Do not invent APIs, models, permissions, roles, or business rules.
+6. Do not rebuild an existing feature unless the task explicitly requires it.
+7. Keep backend authorization as the final security authority.
+8. If the required backend capability does not exist, clearly identify the backend gap instead of creating fake/mock frontend functionality.
 
 ---
 
-# 1. Main Goal
+# 1. PROJECT ARCHITECTURE
 
-I want to turn my current MiniShop project into a fully functional, scalable and production-ready multi-vendor e-commerce platform.
+MiniShop consists of:
 
-The platform will have:
+```text
+MiniShop
+│
+├── Backend
+│   └── Django + Django REST Framework
+│
+└── Frontend
+    └── Next.js
+```
 
-* Multiple staff roles
-* Role-based permissions
-* Multiple seller types
-* Seller dashboards
-* Shop management
-* Product management
-* Product approval workflow
-* Point/credit system
-* Customer accounts
-* Guest checkout
-* Order management
-* Shop-based product browsing
-* Location-based shop search
-* Location-based product search
-* Nearby shop/product discovery
-* Payment and finance management
-* Customer support
-* Notifications
-* Audit logs
-* Reporting
+The backend is the source of truth for:
 
-The system should be designed so that more features can be added later without rewriting the core architecture.
+* Authentication
+* Authorization
+* Users
+* RBAC
+* Sellers
+* Shops
+* Products
+* Categories
+* Cart
+* Orders
+* Payments
+* Refunds
+* Inventory
+* Customer profiles
+* Addresses
+* Wallet / Points
+* Audit
+* Platform governance
+
+The Next.js frontend is responsible for:
+
+* Storefront UI
+* Customer experience
+* Seller experience
+* Staff/Admin management experience
+* API integration
+* Route protection
+* Permission-based UI visibility
+* Responsive UX
+
+Frontend must NEVER become the final authorization authority.
 
 ---
 
-# 2. Important Development Rule
+# 2. IMPLEMENTATION WORKFLOW
 
-Do NOT try to build the entire system at once.
+MiniShop development follows this workflow:
 
-The system must be developed **incrementally**.
+```text
+Master Prompt
+     ↓
+Existing Code Audit
+     ↓
+Architecture Verification
+     ↓
+Task Scope
+     ↓
+Implementation
+     ↓
+Tests
+     ↓
+Regression Tests
+     ↓
+Django Check
+     ↓
+Frontend Build
+     ↓
+Git Commit
+     ↓
+Task Walkthrough
+```
 
 For every task:
 
-1. Analyze the existing project.
-2. Understand the existing architecture.
-3. Identify what already exists.
-4. Reuse existing code where possible.
-5. Design the required changes.
-6. Implement only the current task.
-7. Add required database migrations.
-8. Add/update API endpoints.
-9. Add frontend changes only when required.
-10. Add tests.
-11. Explain how to verify the implementation.
-
-Do not implement future tasks unless they are required dependencies for the current task.
-
-Do not unnecessarily rewrite existing functionality.
+* First inspect existing implementation.
+* Do not assume missing functionality.
+* Do not duplicate existing code.
+* Do not introduce unnecessary architectural changes.
+* Preserve backward compatibility.
+* Run appropriate tests.
+* Run regression tests for affected existing features.
+* Verify frontend build when frontend code changes.
+* Provide a final implementation walkthrough.
 
 ---
 
-# 3. User Types
+# 3. USER AND RBAC MODEL
 
-MiniShop will have three major user categories.
+## 3.1 Formal RBAC Roles
 
-## A. Staff Users
+MiniShop has exactly **8 formal RBAC roles**:
 
-The platform will have these staff roles:
-
-1. Super Administrator
-2. Administrator
-3. Operation Manager
-4. Sales Manager
-5. Sales Team
-6. Finance
-7. Support Team
-
-Each role will have different responsibilities and permissions.
-
----
-
-# 4. Role and Permission System
-
-Do NOT implement authorization only with hardcoded role checks such as:
-
-```python
-if user.role == "admin":
+```text
+1. SUPER_ADMINISTRATOR
+2. ADMINISTRATOR
+3. OPERATION_MANAGER
+4. SALES_MANAGER
+5. SALES_TEAM
+6. FINANCE
+7. SUPPORT_TEAM
+8. CUSTOMER
 ```
 
-Instead, implement a proper RBAC system:
+These are system roles managed by the RBAC system.
+
+---
+
+# 4. SELLER IS NOT AN RBAC ROLE
+
+IMPORTANT:
+
+**Seller is NOT a formal RBAC role.**
+
+A Seller is represented through the business/domain model:
 
 ```text
 User
   ↓
-Role
-  ↓
-Permissions
+SellerProfile
 ```
 
-Permissions should be granular.
+SellerProfile represents the seller/business relationship of a user.
 
-For example:
+Seller types are:
 
 ```text
-users.view
-users.create
-users.update
-users.delete
-
-products.view
-products.create
-products.update
-products.delete
-products.approve
-products.reject
-products.publish
-
-shops.view
-shops.create
-shops.update
-shops.delete
-shops.approve
-
-sellers.view
-sellers.create
-sellers.update
-sellers.approve
-sellers.suspend
-
-orders.view
-orders.create
-orders.update
-orders.cancel
-orders.refund
-
-payments.view
-payments.verify
-payments.refund
-
-points.view
-points.add
-points.deduct
-
-reports.view
+FULL_SHOP_OWNER
+LIMITED_SHOP_OWNER
+PRODUCT_OWNER
 ```
 
-Roles should be collections of permissions.
+Seller type must NOT be confused with:
 
-For example:
+* RBAC role
+* permission
+* management role
 
-```text
-Super Administrator
-    → all permissions
-
-Administrator
-    → administrative permissions
-
-Operation Manager
-    → operation-related permissions
-
-Sales Manager
-    → sales and seller management permissions
-
-Sales Team
-    → assigned sales/product permissions
-
-Finance
-    → payment, transaction and payout permissions
-
-Support Team
-    → customer/order/support permissions
-```
-
-The exact permission mapping should be designed based on responsibilities.
+Seller type controls seller-specific business capabilities.
 
 ---
 
-# 5. Authorization Rules
+# 5. PLATFORM USER DOMAINS
 
-A permission alone should not always be enough.
-
-The backend must also check business rules.
-
-For example:
+MiniShop should be understood as four major user/application domains:
 
 ```text
-Authentication
-      ↓
-Permission
-      ↓
-User/Seller status
-      ↓
-Seller type
-      ↓
-Point balance
-      ↓
-Ownership
-      ↓
-Business rules
-      ↓
-Action allowed
+MiniShop
+│
+├── Public Storefront
+│
+├── Customer Panel
+│
+├── Seller Panel
+│
+└── Staff / Admin Management Console
 ```
 
-The frontend may hide unauthorized buttons for better UX, but **frontend restrictions must never be considered security**.
+The 8 RBAC roles do NOT mean that MiniShop must have 8 completely separate frontend dashboards.
 
-Every sensitive action must be validated by the backend.
+Management roles should share a common management shell.
+
+UI visibility and actions should be driven primarily by:
+
+```text
+permissions[]
+```
+
+and secondarily by role/domain context.
 
 ---
 
-# 6. Seller System
+# 6. CUSTOMER SHOPPING MODEL
 
-MiniShop will support three types of sellers.
+MiniShop supports both:
 
-## Seller Type 1 — Full Shop Owner
+## 6.1 Guest Customer
 
-A Full Shop Owner can:
+A guest customer must be able to browse and purchase without first creating an account.
 
-* Create/manage their shop
-* Add products
-* Update products
-* Manage their products
-* View their orders
-* Manage their shop information
-
-## Seller Type 2 — Limited Shop Owner
-
-A Limited Shop Owner has a shop but cannot necessarily upload/manage every type of product.
-
-Their available product capabilities should be controlled by business rules and permissions.
-
-## Seller Type 3 — Product Owner
-
-A Product Owner can upload/manage products but does not necessarily own a complete shop.
-
-The architecture must support sellers without forcing every seller type to have the same capabilities.
-
----
-
-# 7. Seller Dashboard
-
-Each seller should have a separate authenticated dashboard.
-
-Example:
-
-```text
-Seller Dashboard
-
-Overview
-Products
-Add Product
-My Shop
-Orders
-Points
-Point History
-Profile
-Notifications
-Settings
-```
-
-The dashboard should only show features that the seller is authorized to use.
-
-Example:
-
-If a seller does not have enough points to create a product, the frontend should show the restriction clearly.
-
----
-
-# 8. Point/Credit System
-
-Product creation requires points.
-
-For example:
-
-```text
-Product creation cost = 5 points
-```
-
-If a seller has:
-
-```text
-10 points
-```
-
-they can create a product.
-
-If a seller has:
-
-```text
-3 points
-```
-
-they cannot create the product.
-
-However, this must NOT be implemented as a simple hardcoded check inside the API view.
-
-Create a proper point/credit system.
-
-The system should maintain:
-
-```text
-Point Balance
-Point Transactions
-Transaction Type
-Amount
-Balance After Transaction
-Reason
-Reference
-Created At
-```
-
-Example transactions:
-
-```text
-BONUS
-ADMIN_CREDIT
-ADMIN_DEBIT
-PRODUCT_CREATION
-REFUND
-ADJUSTMENT
-```
-
-Never change a seller's balance without creating an auditable transaction.
-
-Point deduction and product creation must be atomic.
-
-If product creation fails, the point deduction must also be rolled back.
-
-The required product creation cost should preferably be configurable.
-
----
-
-# 9. Shop Feature
-
-A new major feature will be called:
-
-**Shop**
-
-A seller can have a shop.
-
-When a seller adds or updates a product, the product should be associated with the seller's shop when applicable.
-
-Expected relationship:
-
-```text
-Seller
-   ↓
-Shop
-   ↓
-Products
-```
-
-A Shop should contain information such as:
-
-```text
-Shop
- ├── Owner
- ├── Name
- ├── Slug
- ├── Description
- ├── Logo
- ├── Cover Image
- ├── Phone
- ├── Address
- ├── Location
- ├── Status
- ├── Created At
- └── Updated At
-```
-
----
-
-# 10. Shop Public Page
-
-Customers should be able to browse shops.
-
-Example flow:
+Expected flow:
 
 ```text
 Home
-   ↓
-Shop Category
-   ↓
-Shop List
-   ↓
-Click Shop
-   ↓
-Shop Details
-   ↓
-Shop Products
+ ↓
+Product Listing
+ ↓
+Product Detail
+ ↓
+Add to Cart / Buy Now
+ ↓
+Checkout
+ ↓
+Place Order
 ```
 
-Example URL:
+Customer account/profile must NOT be mandatory merely for browsing or purchasing.
 
-```text
-/shops
-/shops/[slug]
-```
+However, the actual implementation must follow the capabilities of the backend.
 
-Shop page should show:
+If backend guest checkout is unavailable, do not fake it in the frontend.
 
-* Shop name
-* Logo
-* Cover image
-* Description
-* Address
-* Location
-* Contact information
-* Products
-* Product categories
-* Shop status
-* Distance from customer when location is available
+Clearly report the backend blocker.
 
 ---
 
-# 11. Product and Shop Relationship
+# 7. REGISTERED CUSTOMER
 
-Products should be connected to the appropriate seller/shop.
+Customers may optionally register/login to access account-specific functionality.
 
-Expected relationship:
+The storefront should provide customer authentication access from the top/right area of the UI.
+
+Conceptual flow:
 
 ```text
-Product
+Storefront
    ↓
-Shop
+Login / Register
    ↓
-Seller
-```
-
-This relationship must enforce ownership.
-
-For example:
-
-Seller A must NOT be able to assign a product to Seller B's shop.
-
-Seller A must NOT be able to update Seller B's products unless explicitly authorized by a staff permission.
-
----
-
-# 12. Product Workflow
-
-Products should not necessarily become public immediately.
-
-Use a product lifecycle such as:
-
-```text
-DRAFT
-   ↓
-SUBMITTED
-   ↓
-UNDER REVIEW
-   ↓
-APPROVED
-   ↓
-PUBLISHED
-```
-
-If rejected:
-
-```text
-REJECTED
-   ↓
-Seller edits product
-   ↓
-SUBMITTED again
-```
-
-Authorized staff should be able to:
-
-* Review product
-* Approve product
-* Reject product
-* Publish product
-* Unpublish product
-
----
-
-# 13. Seller Location
-
-When a seller/shop adds or updates their product/shop information, location information should be supported.
-
-Use:
-
-```text
-Latitude
-Longitude
-```
-
-For shop-based products, preferably store the primary location at the Shop level:
-
-```text
-Product
-   ↓
-Shop
-   ↓
-Location
-```
-
-This avoids storing duplicate location data for every product.
-
-If a specific product needs a different location, the architecture may support an optional product-level location.
-
----
-
-# 14. Geographic Search
-
-Use:
-
-```text
-PostgreSQL + PostGIS
-```
-
-for geographic search.
-
-Customers should be able to provide/select:
-
-```text
-Latitude
-Longitude
-Radius
-```
-
-For example:
-
-```text
-Latitude: 23.8103
-Longitude: 90.4125
-Radius: 2 KM
-```
-
-The system should return shops within 2 kilometers.
-
-Example API:
-
-```text
-GET /api/shops/nearby/?lat=23.8103&lng=90.4125&radius=2
-```
-
-The response should include:
-
-```text
-Shop
-Distance
-```
-
-and results should be sorted by nearest distance.
-
----
-
-# 15. Nearby Product Search
-
-The same location system should later support nearby products.
-
-Example:
-
-```text
-Customer Location
-      ↓
-Select Radius
-      ↓
-2 KM
-      ↓
-Nearby Shops
-      +
-Nearby Products
-```
-
-Customers should eventually be able to filter nearby results by:
-
-* Category
-* Product
-* Shop
-* Price
-* Availability
-* Distance
-
-Design the API so these filters can be added without major restructuring.
-
----
-
-# 16. Customer System
-
-There will be two types of customers.
-
-## A. Registered Customer
-
-A registered customer can:
-
-* Login
-* Manage profile
-* Manage addresses
-* Browse products
-* Browse shops
-* Add products to cart
-* Place orders
-* View previous orders
-* Track order status
-* Manage wishlist
-* Receive notifications
-
-## B. Guest Customer
-
-A guest user can:
-
-* Browse products
-* Browse shops
-* Add products to cart
-* Checkout
-* Place an order without creating an account
-
-Guest checkout should not require account registration.
-
-Guest order information may include:
-
-```text
-Name
-Phone
-Email
-Shipping Address
-```
-
----
-
-# 17. Order System
-
-Order lifecycle should support states such as:
-
-```text
-PENDING
-CONFIRMED
-PROCESSING
-PACKED
-SHIPPED
-OUT_FOR_DELIVERY
-DELIVERED
-CANCELLED
-RETURNED
-REFUNDED
-```
-
-Orders should contain:
-
-```text
-Customer
-Guest Information (if applicable)
-Order Items
-Products
-Shop
-Shipping Address
-Payment
-Status
-Status History
-Created At
-Updated At
-```
-
-Important order status changes should be recorded.
-
----
-
-# 18. Staff Responsibilities
-
-The system should be designed around clear responsibilities.
-
-### Super Administrator
-
-Responsible for:
-
-* Complete system control
-* User management
-* Role management
-* Permission management
-* System settings
-* Seller management
-* Shop management
-* Product management
-* Order management
-* Finance oversight
-* Reports
-
-### Administrator
-
-Responsible for:
-
-* General administration
-* User management
-* Seller management
-* Product/shop management
-* Operational administration
-
-### Operation Manager
-
-Responsible for:
-
-* Product review
-* Product approval
-* Shop review
-* Order operations
-* Seller operations
-* Fulfillment workflow
-
-### Sales Manager
-
-Responsible for:
-
-* Seller management
-* Sales team management
-* Sales monitoring
-* Seller performance
-* Product/sales operations
-
-### Sales Team
-
-Responsible for:
-
-* Seller assistance
-* Product assistance
-* Sales-related activities
-* Assigned seller/product operations
-
-### Finance
-
-Responsible for:
-
-* Payments
-* Transactions
-* Refunds
-* Seller payouts
-* Financial records
-* Finance reports
-
-### Support Team
-
-Responsible for:
-
-* Customer support
-* Order issues
-* Complaints
-* Returns
-* Support tickets
-
-These responsibilities must be implemented through permissions and business rules rather than only role-name checks.
-
----
-
-# 19. Audit Log
-
-Important system actions must be auditable.
-
-Create an audit system that can track:
-
-```text
-Who performed the action
-What action was performed
-Which object was affected
-Old value
-New value
-Timestamp
-IP address when appropriate
-```
-
-Examples:
-
-```text
-Admin approved seller
-Sales Manager approved product
-Finance verified payment
-Admin added seller points
-Seller created product
-Support changed order status
-```
-
-This is especially important for:
-
-* Points
-* Orders
-* Payments
-* Seller status
-* Product approval
-* Shop approval
-* User permissions
-
----
-
-# 20. Security Requirements
-
-The application must enforce:
-
-* Authentication
-* Role-based permissions
-* Object-level permissions
-* Seller ownership
-* Staff permissions
-* Point validation
-* Input validation
-* API security
-* Rate limiting where appropriate
-* Secure authentication
-* Secure file uploads
-* Proper error handling
-* Database transaction safety
-
-Never trust data sent by the frontend.
-
-The backend must validate all important business rules.
-
----
-
-# 21. Backend Architecture
-
-Prefer a clean Django architecture.
-
-For example:
-
-```text
-apps/
-    users/
-    authentication/
-    sellers/
-    shops/
-    products/
-    categories/
-    cart/
-    orders/
-    payments/
-    finance/
-    points/
-    support/
-    notifications/
-    audit/
-```
-
-Use appropriate separation between:
-
-```text
-Models
-Serializers
-Views/ViewSets
-Permissions
-Services
-Selectors/Queries
-Utilities
-```
-
-Complex business logic should preferably live in service/domain logic instead of becoming tightly coupled to API views.
-
----
-
-# 22. Frontend Architecture
-
-Use Next.js + TypeScript.
-
-The frontend should have separate areas for:
-
-```text
-Public Store
 Customer Account
-Seller Dashboard
-Staff/Admin Dashboard
+   ├── Profile
+   ├── Orders
+   ├── Order Details
+   ├── Purchase History
+   ├── Addresses
+   └── Other backend-supported customer features
 ```
 
+Do not invent customer features that are not supported by the backend.
+
+---
+
+# 8. CUSTOMER AUTHENTICATION
+
+Existing backend authentication APIs include:
+
+```text
+POST /api/auth/token/
+POST /api/auth/token/refresh/
+GET  /api/auth/me/
+```
+
+Current user information includes:
+
+```text
+id
+username
+email
+first_name
+last_name
+is_staff
+is_superuser
+roles[]
+permissions[]
+```
+
+The frontend should use the existing JWT authentication system.
+
+Do NOT create a second authentication system.
+
+---
+
+# 9. CUSTOMER REGISTRATION GAP
+
+Currently, the backend does not provide a dedicated public customer signup endpoint.
+
+Therefore:
+
+* Do not pretend `/register` is already backend-supported.
+* Do not implement fake registration.
+* If customer registration is required by a task, identify the backend requirement first.
+
+---
+
+# 10. CUSTOMER LOGOUT
+
+The backend currently does not provide server-side token revocation/logout.
+
+Therefore:
+
+* Do not claim that server-side logout exists.
+* Do not invent a token blacklist.
+* Frontend logout behavior must be designed according to the actual backend capability.
+* If server-side logout is required, treat it as a backend feature requirement.
+
+---
+
+# 11. MANAGEMENT LOGIN
+
+Management users use a separate frontend entry point:
+
+```text
+/admin/login
+```
+
+This is NOT the customer login page.
+
+It is intended for MiniShop management users.
+
+Management users include:
+
+```text
+SUPER_ADMINISTRATOR
+ADMINISTRATOR
+OPERATION_MANAGER
+SALES_MANAGER
+SALES_TEAM
+FINANCE
+SUPPORT_TEAM
+```
+
+`CUSTOMER` must not be treated as a management user.
+
+The management console must use the existing backend JWT/RBAC system.
+
+Do NOT create a second authentication backend.
+
+---
+
+# 12. MANAGEMENT CONSOLE
+
+Management users should share one common application shell:
+
+```text
+/admin
+```
+
+Conceptually:
+
+```text
+/admin
+├── dashboard
+├── orders
+├── products
+├── shops
+├── sellers
+├── customers
+├── categories
+├── users
+└── roles
+```
+
+Actual routes must be determined from the existing project and task requirements.
+
+Do not blindly create routes just because they appear in this example.
+
+---
+
+# 13. PERMISSION-DRIVEN MANAGEMENT UI
+
+The frontend must not simply say:
+
+```text
+if role == ADMINISTRATOR
+```
+
+for every feature.
+
+Prefer:
+
+```text
+permissions[]
+```
+
+for:
+
+* menu visibility
+* page access
+* action buttons
+* edit/delete controls
+* management operations
+
+Backend remains the final authority.
+
 Example:
+
+```text
+User has:
+products.view
+products.update
+```
+
+Then frontend may show product management and edit controls.
+
+But backend must independently enforce those permissions.
+
+---
+
+# 14. EXISTING STOREFRONT
+
+The existing Next.js storefront already contains pages including:
 
 ```text
 /
- /products
- /products/[slug]
-
- /shops
- /shops/[slug]
-
- /cart
+ /product/*
  /checkout
-
- /login
- /register
-
- /account
- /account/orders
- /account/profile
-
- /seller
- /seller/products
- /seller/products/create
- /seller/shop
- /seller/orders
- /seller/points
-
- /admin
- /admin/users
- /admin/sellers
- /admin/shops
- /admin/products
- /admin/orders
- /admin/finance
- /admin/support
- /admin/reports
 ```
 
-Actual route structure should be adapted to the existing project.
+These pages MUST be preserved.
+
+Do not rebuild the storefront from scratch.
+
+Any future frontend task must first inspect the current implementation and extend it.
 
 ---
 
-# 23. API Design
+# 15. PRODUCT-CENTRIC STOREFRONT
 
-Use RESTful APIs.
+The storefront must support:
+
+```text
+Home
+ ↓
+Product Listing
+ ↓
+Product Detail
+```
+
+Customers can:
+
+```text
+Add to Cart
+Buy Now
+```
+
+from the product experience where backend support exists.
+
+---
+
+# 16. SHOP AS A FIRST-CLASS STOREFRONT ENTITY
+
+Shop is a first-class browsing dimension of MiniShop.
+
+The storefront should expose:
+
+* Categories
+* Shops
+* Products
+
+Conceptually:
+
+```text
+Home
+│
+├── Categories
+│
+├── Shops
+│
+└── Products
+```
+
+Shop navigation/filtering must use actual backend data.
+
+Do not create mock shops.
+
+---
+
+# 17. PRODUCT → SHOP RELATIONSHIP
+
+Every publicly available product should expose its associated shop where supported by the backend API.
+
+Conceptual product UI:
+
+```text
+Product Name
+Price
+Stock
+
+Shop: ABC Electronics
+
+[Visit Shop]
+
+[Add to Cart]
+[Buy Now]
+```
+
+The exact UI must match the actual backend response and existing product implementation.
+
+---
+
+# 18. SHOP PAGE
+
+The storefront should support a shop browsing page conceptually like:
+
+```text
+/shop/[slug]
+```
+
+A shop page should contain:
+
+```text
+Shop Information
+      ↓
+Products belonging to this Shop
+```
 
 Example:
 
 ```text
-/api/auth/
-/api/users/
-/api/sellers/
-/api/shops/
-/api/products/
-/api/categories/
-/api/cart/
-/api/orders/
-/api/payments/
-/api/points/
-/api/support/
-/api/notifications/
-/api/reports/
+ABC Electronics
+----------------------
+
+Products
+
+iPhone
+MacBook
+AirPods
+Samsung Phone
 ```
 
-Use:
+Products from other shops must NOT appear on this page.
 
-* Proper HTTP methods
-* Proper status codes
-* Pagination
-* Filtering
-* Searching
-* Ordering
-* Validation
-* Consistent error responses
+The frontend must use the actual backend shop/product relationship.
+
+Do not create fake filtering logic that merely hides unrelated products if the backend does not provide the necessary data.
 
 ---
 
-# 24. Important Business Rule Example
+# 19. PRODUCT → SHOP CUSTOMER JOURNEY
 
-Product creation should work approximately like this:
+Target customer journey:
 
 ```text
-Seller clicks "Add Product"
-          ↓
-Is user authenticated?
-          ↓
-Does user have products.create permission?
-          ↓
-Is seller active?
-          ↓
-Does seller type allow product creation?
-          ↓
-Is required shop information available?
-          ↓
-Does seller have enough points?
-          ↓
-Does selected shop belong to seller?
-          ↓
-Validate product
-          ↓
-Create product
-          ↓
-Deduct points
-          ↓
-Create point transaction
-          ↓
-Create audit log
-          ↓
-Return success
+Home
+ ↓
+Product Card
+ ↓
+Product Detail
+ ↓
+Shop Information
+ ↓
+Visit Shop
+ ↓
+Shop Page
+ ↓
+Shop's Products
+ ↓
+Product Detail
+ ↓
+Add to Cart / Buy Now
 ```
 
-If any step fails:
+When implementing this flow:
+
+* Preserve existing product pages.
+* Reuse existing API client.
+* Reuse existing types where possible.
+* Add only the missing pieces.
+* Verify actual backend API support first.
+
+---
+
+# 20. CATEGORY + SHOP DISCOVERY
+
+Home/storefront should allow customers to discover products through:
 
 ```text
-No product
-+
-No point deduction
+Category
+Shop
+Product
 ```
 
----
+Category and Shop are separate concepts.
 
-# 25. Development Phases
-
-Implement the project in the following order.
-
-## Phase 1 — Foundation
-
-1. Existing project architecture audit
-2. Database architecture
-3. Custom User/authentication review
-4. JWT authentication
-5. Base API structure
-6. Error handling
-7. Testing foundation
-
-## Phase 2 — RBAC
-
-8. Permission system
-9. Role system
-10. User-role relationship
-11. Role-permission relationship
-12. Permission classes
-13. Staff role setup
-
-## Phase 3 — Seller
-
-14. Seller profile
-15. Seller types
-16. Seller status
-17. Seller approval workflow
-18. Seller dashboard
-
-## Phase 4 — Points
-
-19. Point wallet
-20. Point transaction ledger
-21. Credit/debit system
-22. Point history
-23. Point permissions
-24. Product creation point requirement
-
-## Phase 5 — Shop
-
-25. Shop model
-26. Shop ownership
-27. Shop CRUD
-28. Shop approval
-29. Shop dashboard
-30. Public shop page
-31. Shop product listing
-
-## Phase 6 — Location
-
-32. PostGIS setup
-33. Shop location
-34. Location update
-35. Nearby shop search
-36. Radius search
-37. Distance calculation
-38. Nearby product search
-
-## Phase 7 — Product
-
-39. Product-Shop integration
-40. Product-Seller ownership
-41. Product approval
-42. Product rejection
-43. Product publishing
-44. Inventory
-45. Product search/filter
-
-## Phase 8 — Customer
-
-46. Customer profile
-47. Customer addresses
-48. Cart
-49. Wishlist
-50. Guest checkout
-51. Registered checkout
-
-## Phase 9 — Orders
-
-52. Order creation
-53. Order items
-54. Order status
-55. Order status history
-56. Seller order management
-57. Customer order tracking
-
-## Phase 10 — Finance
-
-58. Payment
-59. Payment verification
-60. Refund
-61. Seller payout
-62. Finance dashboard
-63. Financial reports
-
-## Phase 11 — Support
-
-64. Support tickets
-65. Customer complaints
-66. Order issues
-67. Return requests
-68. Support dashboard
-
-## Phase 12 — Notifications
-
-69. In-app notifications
-70. Email notifications
-71. Order notifications
-72. Seller notifications
-73. Staff notifications
-
-## Phase 13 — Audit & Reporting
-
-74. Audit logs
-75. Activity logs
-76. Sales reports
-77. Seller reports
-78. Product reports
-79. Shop performance
-80. Finance reports
-
-## Phase 14 — Production
-
-81. Production settings
-82. Docker
-83. Media storage
-84. Background tasks
-85. Caching
-86. Logging
-87. Monitoring
-88. API rate limiting
-89. Security audit
-90. Final testing
-
----
-
-# 26. How You Must Work on Each Task
-
-When I give you a task number, do NOT jump directly into random code.
-
-Follow this exact process:
-
-### Step 1 — Understand
-
-Explain what this task means in the MiniShop architecture.
-
-### Step 2 — Inspect Existing Code
-
-Identify:
-
-* Existing files
-* Existing models
-* Existing APIs
-* Existing components
-* Existing utilities
-
-that are relevant.
-
-### Step 3 — Architecture Decision
-
-Explain what should be added or changed and why.
-
-### Step 4 — Implementation
-
-Provide production-quality code.
-
-### Step 5 — Database
-
-Provide migrations/model changes if required.
-
-### Step 6 — API
-
-Explain:
+Example:
 
 ```text
-Endpoint
-Method
-Authentication
-Permission
-Request
-Response
-Error cases
+Category:
+Electronics
+
+Shop:
+ABC Electronics
 ```
 
-### Step 7 — Frontend
+A product may belong to a category and a shop.
 
-If required, implement the corresponding Next.js/TypeScript changes.
-
-### Step 8 — Security
-
-Explain:
-
-* Authentication
-* Permission
-* Ownership
-* Business-rule validation
-
-### Step 9 — Tests
-
-Add tests for:
-
-* Success
-* Invalid input
-* Unauthorized user
-* Permission failure
-* Ownership violation
-* Business-rule failure
-* Important edge cases
-
-### Step 10 — Verification
-
-Give exact commands and steps to verify the task.
+Do not treat Shop as a Product Category.
 
 ---
 
-# 27. Critical Rule
+# 21. CART
 
-Do not over-engineer unnecessarily.
+The existing cart implementation must be reused.
 
-Do not create unnecessary microservices.
-
-Keep the initial architecture as a well-structured Django monolith with REST APIs and a separate Next.js frontend.
-
-The architecture should be scalable, but it should also remain understandable and maintainable for a small development team.
-
----
-
-# 28. Final Objective
-
-The final MiniShop platform should allow:
+Expected customer flow:
 
 ```text
-Seller
-   ↓
-Own Shop
-   ↓
-Add Products
-   ↓
-Points + Permissions + Business Rules
-   ↓
-Product Approval
-   ↓
-Published Product
-   ↓
-Customer discovers Product/Shop
-   ↓
-Location/Radius Search
-   ↓
+Product
+ ↓
+Add to Cart
+ ↓
 Cart
-   ↓
-Guest or Registered Checkout
-   ↓
-Order
-   ↓
-Operation
-   ↓
-Payment
-   ↓
-Finance
-   ↓
-Delivery
-   ↓
-Completed
+ ↓
+Checkout
 ```
 
-And staff responsibilities should be controlled through:
+Cart behavior must support the backend's actual guest/authenticated behavior.
+
+Do not invent cart persistence rules.
+
+---
+
+# 22. BUY NOW
+
+If supported by the current implementation, Buy Now should provide a direct purchase path:
 
 ```text
-User
+Product
  ↓
-Role
+Buy Now
  ↓
-Permission
+Checkout
  ↓
-Business Rules
- ↓
-Ownership
- ↓
-Action
+Place Order
 ```
 
-Build the system incrementally and preserve the existing MiniShop functionality throughout the development process.
+Do not create a separate order architecture for Buy Now if the existing cart/checkout architecture can safely support it.
+
+---
+
+# 23. CHECKOUT
+
+Existing route:
+
+```text
+/checkout
+```
+
+must be preserved.
+
+Before modifying checkout:
+
+* inspect current implementation
+* inspect backend order creation
+* inspect cart behavior
+* inspect authentication requirements
+* inspect guest/customer behavior
+
+Do not assume checkout requires login.
+
+Do not assume checkout supports guest purchase unless verified.
+
+---
+
+# 24. CUSTOMER PANEL VS MANAGEMENT PANEL
+
+These are different domains.
+
+## Customer
+
+```text
+/login
+/register (only when backend-supported)
+/account
+/account/orders
+/account/profile
+/account/addresses
+```
+
+## Management
+
+```text
+/admin/login
+/admin/*
+```
+
+Customer users must not automatically receive management access.
+
+Management UI must not be shown to ordinary customers.
+
+---
+
+# 25. SELLER PANEL
+
+Seller is a business domain attached to a User through SellerProfile.
+
+Seller Panel must account for:
+
+```text
+FULL_SHOP_OWNER
+LIMITED_SHOP_OWNER
+PRODUCT_OWNER
+```
+
+Seller type must be read from actual backend data.
+
+Do not treat all sellers as having identical permissions/capabilities.
+
+Do not create seller functionality that backend APIs do not support.
+
+---
+
+# 26. ADMIN / DJANGO ADMIN
+
+Django's:
+
+```text
+http://127.0.0.1:8001/admin/
+```
+
+is an internal Django administration interface.
+
+It is NOT the primary MiniShop customer-facing or management-facing application UI.
+
+The actual MiniShop application UI should be provided by Next.js.
+
+Django Admin may remain useful for:
+
+* internal administration
+* development
+* database/model management
+* read-only audit inspection where configured
+
+Do not replace Django Admin unnecessarily.
+
+---
+
+# 27. SECURITY RULE
+
+Frontend is never the final security authority.
+
+Frontend may use:
+
+```text
+roles[]
+permissions[]
+```
+
+to control:
+
+* route visibility
+* navigation
+* buttons
+* UX
+
+Backend must enforce:
+
+* authentication
+* authorization
+* ownership
+* role restrictions
+* permission restrictions
+* business rules
+* state transitions
+
+Never trust frontend-only restrictions.
+
+---
+
+# 28. BACKEND GAPS
+
+Known backend gaps from the architecture audit include:
+
+1. Customer Signup
+2. Logout / Token Revocation
+3. Password Reset / Change
+4. Audit Log API
+5. Support Ticket / Complaint / Return
+6. Reports / Analytics API
+7. Notifications System
+
+These must NOT be faked in the frontend.
+
+If a UI depends on one of these features:
+
+```text
+Backend Missing
+```
+
+must be reported explicitly.
+
+---
+
+# 29. CURRENT BACKEND READINESS
+
+Approximate frontend-readiness from the architecture audit:
+
+```text
+Public Store       → Ready
+Customer           → ~75%
+Seller             → ~85%
+Staff              → ~60%
+Administrator      → ~90%
+Super Admin        → ~90%
+```
+
+These are planning estimates, not guarantees.
+
+Always verify the actual current code before implementation.
+
+---
+
+# 30. API-FIRST FRONTEND RULE
+
+Before creating a frontend feature:
+
+1. Find the backend endpoint.
+2. Inspect serializer.
+3. Inspect permission class.
+4. Inspect URL.
+5. Inspect response shape.
+6. Inspect existing TypeScript types.
+7. Reuse existing API client.
+8. Implement UI.
+9. Verify authorization and error states.
+
+Never invent an endpoint such as:
+
+```text
+/api/shop/products/
+```
+
+unless it actually exists or the task explicitly requires implementing it.
+
+---
+
+# 31. NO MOCK BUSINESS DATA
+
+Do not use fake/mock data for:
+
+* Products
+* Shops
+* Sellers
+* Orders
+* Customers
+* Payments
+* Inventory
+* Roles
+* Permissions
+
+during actual application implementation.
+
+Static placeholder content is acceptable only for purely presentational UI development when clearly isolated and not pretending to be real backend data.
+
+---
+
+# 32. FRONTEND ROUTE PRINCIPLES
+
+Potential conceptual structure:
+
+```text
+/
+├── product/[slug]
+├── category/[slug]
+├── shop/[slug]
+├── checkout
+│
+├── login
+├── register
+└── account
+    ├── orders
+    ├── orders/[orderNumber]
+    ├── profile
+    └── addresses
+
+/admin
+├── login
+├── dashboard
+├── orders
+├── products
+├── shops
+├── sellers
+├── customers
+├── categories
+├── users
+└── roles
+```
+
+This is a conceptual structure only.
+
+Existing routes always take precedence.
+
+Do not create routes without inspecting the existing frontend.
+
+---
+
+# 33. FRONTEND IMPLEMENTATION PRIORITY
+
+When starting frontend work, use this general priority:
+
+```text
+1. Existing storefront audit
+2. Existing API client audit
+3. Authentication foundation
+4. Customer authentication/account
+5. Shop browsing
+6. Product → Shop navigation
+7. Guest checkout verification
+8. Seller panel
+9. Management authentication
+10. Shared management console
+11. Permission-driven management features
+```
+
+Exact task order must always follow the official MiniShop roadmap/Master Prompt.
+
+Do not invent task numbers.
+
+---
+
+# 34. EXISTING FEATURE PRESERVATION
+
+When modifying existing features:
+
+* Do not break `/`
+* Do not break `/product/*`
+* Do not break `/checkout`
+* Do not remove existing cart behavior
+* Do not duplicate API clients
+* Do not duplicate authentication systems
+* Do not duplicate product/shop models
+* Do not duplicate RBAC logic
+
+Prefer incremental extension.
+
+---
+
+# 35. TESTING REQUIREMENTS
+
+Backend changes:
+
+```text
+Django tests
+Regression tests
+python manage.py check
+```
+
+Frontend changes:
+
+```text
+npm build
+```
+
+Run relevant tests for affected domains.
+
+For major architectural changes, run broader regression tests.
+
+Never report a test as passed unless it was actually executed.
+
+---
+
+# 36. TASK IMPLEMENTATION RULE
+
+For every task, report:
+
+```text
+Task
+Goal
+Files Changed
+Backend Changes
+Frontend Changes
+API Changes
+Security Changes
+Tests
+Regression Tests
+Build Result
+Git Commit
+Remaining Issues
+```
+
+If something cannot be implemented because backend support is missing, say so explicitly.
+
+Do not hide gaps.
+
+---
+
+# 37. FINAL PRINCIPLE
+
+MiniShop must remain:
+
+```text
+Backend-authoritative
+API-driven
+Permission-aware
+Role-aware
+Shop-centric
+Customer-friendly
+Guest-purchase capable where backend supports it
+Scalable
+Secure
+Incrementally developed
+```
+
+The frontend should provide a polished ecommerce experience without creating a parallel business/security system.
+
+The backend remains the source of truth.
+
+The Master Prompt and actual codebase must always be checked before implementing any new task.

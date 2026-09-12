@@ -11,6 +11,21 @@ export interface Category {
   updated_at?: string;
 }
 
+export interface Shop {
+  id: number;
+  name: string;
+  slug: string;
+  description?: string;
+  logo?: string | null;
+  cover_image?: string | null;
+  phone?: string;
+  address?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  status: string;
+  created_at: string;
+}
+
 export interface ProductFilterParams {
   category?: string;
   q?: string;

@@ -58,9 +58,25 @@ export default function ProductCard({ product, viewMode = "grid" }: ProductCardP
 
         <div className="flex-1 flex flex-col justify-between w-full">
           <div>
-            <span className="text-[11px] text-ink-muted uppercase tracking-wider font-medium">
-              {product.category?.name || "General"}
-            </span>
+            <div className="flex items-center gap-2 flex-wrap text-[11px]">
+              <span className="text-ink-muted uppercase tracking-wider font-medium">
+                {product.category?.name || "General"}
+              </span>
+              {product.shop && (
+                <>
+                  <span className="text-ink-muted">•</span>
+                  <Link
+                    href={`/shop/${product.shop.slug}`}
+                    onClick={(e) => e.stopPropagation()}
+                    className="inline-flex items-center gap-0.5 text-ink-muted hover:text-primary transition-colors font-medium"
+                    title={`Visit ${product.shop.name}`}
+                  >
+                    <span className="material-symbols-outlined text-[12px]">storefront</span>
+                    <span className="truncate max-w-[140px]">{product.shop.name}</span>
+                  </Link>
+                </>
+              )}
+            </div>
             <Link
               href={`/product/${product.slug}`}
               className="font-semibold text-sm text-ink hover:text-primary line-clamp-1 mt-0.5 block transition-colors"
@@ -127,9 +143,22 @@ export default function ProductCard({ product, viewMode = "grid" }: ProductCardP
 
       {/* Content - Compact padding */}
       <div className="p-3 flex flex-col flex-1">
-        <span className="text-[11px] text-ink-muted uppercase tracking-wider font-medium">
-          {product.category?.name || "General"}
-        </span>
+        <div className="flex items-center justify-between gap-1 text-[11px] mb-0.5">
+          <span className="text-ink-muted uppercase tracking-wider font-medium truncate">
+            {product.category?.name || "General"}
+          </span>
+          {product.shop && (
+            <Link
+              href={`/shop/${product.shop.slug}`}
+              onClick={(e) => e.stopPropagation()}
+              className="inline-flex items-center gap-0.5 text-ink-muted hover:text-primary transition-colors font-medium shrink-0 max-w-[55%]"
+              title={`Visit ${product.shop.name}`}
+            >
+              <span className="material-symbols-outlined text-[12px]">storefront</span>
+              <span className="truncate">{product.shop.name}</span>
+            </Link>
+          )}
+        </div>
         <Link
           href={`/product/${product.slug}`}
           className="font-semibold text-xs text-ink hover:text-primary line-clamp-1 mt-0.5 transition-colors"

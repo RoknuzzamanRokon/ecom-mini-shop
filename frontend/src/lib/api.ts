@@ -1,4 +1,4 @@
-import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams } from "./types";
+import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop } from "./types";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
@@ -276,6 +276,19 @@ export async function getProductById(id: number): Promise<Product | null> {
       ...found,
       related_products: DEMO_PRODUCTS.filter((p) => p.id !== id).slice(0, 4),
     };
+  }
+}
+
+export async function getShopDetail(slug: string): Promise<Shop | null> {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/shops/${slug}/`, {
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error("Shop not found");
+    return await res.json();
+  } catch (err) {
+    console.warn("Failed to fetch shop detail for slug:", slug, err);
+    return null;
   }
 }
 
