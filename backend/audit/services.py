@@ -23,10 +23,14 @@ class AuditService:
         seller: Optional[Any] = None,
         metadata: Optional[Dict[str, Any]] = None,
         ip_address: Optional[str] = None,
+        reason: Optional[str] = None,
+        previous_state: Optional[Any] = None,
+        new_state: Optional[Any] = None,
     ) -> AuditLog:
         """
         Creates and persists an AuditLog entry.
         Automatically resolves target_type, target_id, and target_repr from target object.
+        Supports recording reason, previous_state, and new_state in the immutable audit payload.
         """
         target_type = target.__class__.__name__ if hasattr(target, "__class__") else str(type(target))
         target_id = str(getattr(target, "pk", getattr(target, "id", "")))
@@ -48,6 +52,14 @@ class AuditService:
         if actor and getattr(actor, "is_authenticated", False):
             user_actor = actor
 
+        payload = dict(metadata or {})
+        if reason:
+            payload["reason"] = str(reason)
+        if previous_state is not None:
+            payload["previous_state"] = previous_state
+        if new_state is not None:
+            payload["new_state"] = new_state
+
         audit_entry = AuditLog.objects.create(
             actor=user_actor,
             action=action.upper().strip(),
@@ -56,7 +68,7 @@ class AuditService:
             target_repr=target_repr,
             shop=shop,
             seller=seller,
-            metadata=metadata or {},
+            metadata=payload,
             ip_address=ip_address,
         )
 

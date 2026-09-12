@@ -57,5 +57,24 @@ urlpatterns = [
     path("api/staff/orders/<str:order_number>/", api_views.StaffOrderDetailAPIView.as_view(), name="api_staff_order_detail"),
     path("api/staff/orders/<int:pk>/status/", api_views.StaffOrderStatusAPIView.as_view(), name="api_staff_order_status_pk"),
     path("api/staff/orders/<str:order_number>/status/", api_views.StaffOrderStatusAPIView.as_view(), name="api_staff_order_status"),
+
+    # Admin & Platform Governance APIs (Task 17)
+    path("api/admin/users/", api_views.AdminUserListAPIView.as_view(), name="admin_users_list"),
+    path("api/admin/users/<int:pk>/", api_views.AdminUserDetailAPIView.as_view(), name="admin_users_detail"),
+    path("api/admin/roles/", api_views.AdminRoleListCreateAPIView.as_view(), name="admin_roles_list_create"),
+    path("api/admin/roles/<int:pk>/", api_views.AdminRoleDetailAPIView.as_view(), name="admin_roles_detail"),
+    path("api/admin/sellers/", api_views.AdminSellerListAPIView.as_view(), name="admin_sellers_list"),
+    path("api/admin/sellers/<int:pk>/", api_views.AdminSellerDetailAPIView.as_view(), name="admin_sellers_detail"),
+    path("api/admin/sellers/<int:pk>/status/", api_views.AdminSellerStatusAPIView.as_view(), name="admin_sellers_status"),
+    path("api/admin/shops/", api_views.AdminShopListAPIView.as_view(), name="admin_shops_list"),
+    path("api/admin/shops/<int:pk>/", api_views.AdminShopDetailAPIView.as_view(), name="admin_shops_detail"),
+    path("api/admin/shops/<int:pk>/status/", api_views.AdminShopStatusAPIView.as_view(), name="admin_shops_status"),
+    path("api/admin/products/", api_views.AdminProductListAPIView.as_view(), name="admin_products_list"),
+    path("api/admin/products/<int:pk>/", api_views.AdminProductDetailAPIView.as_view(), name="admin_products_detail"),
+    path("api/admin/products/<int:pk>/status/", api_views.AdminProductStatusAPIView.as_view(), name="admin_products_status"),
+    path("api/admin/categories/", api_views.AdminCategoryListCreateAPIView.as_view(), name="admin_categories_list_create"),
+    path("api/admin/categories/<int:pk>/", api_views.AdminCategoryDetailAPIView.as_view(), name="admin_categories_detail"),
+    path("api/admin/customers/", api_views.AdminCustomerListAPIView.as_view(), name="admin_customers_list"),
+    path("api/admin/customers/<int:pk>/", api_views.AdminCustomerDetailAPIView.as_view(), name="admin_customers_detail"),
 ]
 

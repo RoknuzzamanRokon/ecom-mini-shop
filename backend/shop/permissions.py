@@ -396,3 +396,15 @@ class CanUpdateStaffOrders(BasePermission):
         return has_user_permission(user, "orders.staff.update")
 
 
+# Re-export Admin Governance Permissions (Task 17)
+from .admin_permissions import (
+    CanViewAdminUsers,
+    CanManageAdminUsers,
+    CanViewAdminRoles,
+    CanManageAdminRoles,
+    CanManageAdminSellers,
+    CanManageAdminShops,
+    CanManageAdminProducts,
+    CanManageAdminCategories,
+    CanViewAdminCustomers,
+)

@@ -448,5 +448,118 @@ export interface InventoryTransaction {
   created_at: string;
 }
 
+// ==============================================================================
+// TASK 17: ADMIN & PLATFORM GOVERNANCE TYPES
+// ==============================================================================
 
+export interface AdminUser {
+  id: number;
+  username: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  is_active: boolean;
+  is_staff: boolean;
+  is_superuser: boolean;
+  roles: string[];
+  customer_profile_id?: number | null;
+  seller_profile_id?: number | null;
+  date_joined: string;
+  last_login?: string | null;
+}
 
+export interface AdminRole {
+  id: number;
+  code: string;
+  name: string;
+  description: string;
+  is_active: boolean;
+  is_protected: boolean;
+  permissions: string[];
+  user_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminSeller {
+  id: number;
+  username: string;
+  email: string;
+  business_name: string;
+  business_email: string;
+  business_phone: string;
+  seller_type: string;
+  status: string;
+  tax_id: string;
+  description: string;
+  rejection_reason?: string;
+  suspension_reason?: string;
+  is_operational: boolean;
+  shops_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminShop {
+  id: number;
+  owner_id: number;
+  owner_business_name: string;
+  name: string;
+  slug: string;
+  description: string;
+  phone: string;
+  address: string;
+  status: string;
+  rejection_reason?: string;
+  suspension_reason?: string;
+  products_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminProduct {
+  id: number;
+  name: string;
+  slug: string;
+  category_id: number;
+  category_name: string;
+  shop_id: number;
+  shop_name: string;
+  seller_business_name?: string;
+  price: string;
+  old_price?: string;
+  stock: number;
+  badge?: string;
+  is_active: boolean;
+  status: string;
+  rejection_reason?: string;
+  is_publicly_visible: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminCategory {
+  id: number;
+  name: string;
+  slug: string;
+  icon?: string;
+  image?: string;
+  description?: string;
+  is_active: boolean;
+  products_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminCustomer {
+  id: number;
+  user_id: number;
+  username: string;
+  email: string;
+  display_name: string;
+  phone: string;
+  gender: string;
+  is_active: boolean;
+  orders_count: number;
+  created_at: string;
+}

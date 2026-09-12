@@ -75,6 +75,16 @@ PERMISSIONS_DATA = [
     # Inventory & Stock
     ("inventory.view", "View Inventory", "inventory", "view", "Can view product inventory and stock levels"),
     ("inventory.adjust", "Adjust Inventory", "inventory", "adjust", "Can adjust product inventory and stock levels"),
+    # Admin Governance Permissions
+    ("users.admin.view", "View Admin Users", "users", "admin_view", "Can view admin user accounts"),
+    ("users.admin.manage", "Manage Admin Users", "users", "admin_manage", "Can manage admin users, roles, and statuses"),
+    ("roles.admin.view", "View Admin Roles", "roles", "admin_view", "Can view admin role definitions"),
+    ("roles.admin.manage", "Manage Admin Roles", "roles", "admin_manage", "Can create, update, and delete admin roles"),
+    ("sellers.admin.manage", "Manage Sellers", "sellers", "admin_manage", "Can approve, reject, suspend, reactivate sellers"),
+    ("shops.admin.manage", "Manage Shops", "shops", "admin_manage", "Can approve, reject, suspend, reactivate shops"),
+    ("products.admin.manage", "Manage Products", "products", "admin_manage", "Can approve, reject, publish, unpublish products"),
+    ("categories.admin.manage", "Manage Categories", "categories", "admin_manage", "Can create, update, activate, deactivate categories"),
+    ("customers.admin.view", "View Customers", "customers", "admin_view", "Can view customer profiles (read‑only)"),
 ]
 
 ROLES_DATA = [
@@ -138,6 +148,16 @@ ROLE_PERMISSIONS_MAPPING = {
         "address.view", "address.create", "address.update", "address.delete",
         "cart.view", "cart.update",
         "inventory.view", "inventory.adjust",
+        # Admin Governance Permissions
+        "users.admin.view",
+        "users.admin.manage",
+        "roles.admin.view",
+        "roles.admin.manage",
+        "sellers.admin.manage",
+        "shops.admin.manage",
+        "products.admin.manage",
+        "categories.admin.manage",
+        "customers.admin.view",
     ],
     Role.ROLE_OPERATION_MANAGER: [
         "products.view", "products.approve", "products.reject", "products.publish",

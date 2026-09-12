@@ -66,6 +66,11 @@ class AuditLog(models.Model):
         db_index=True,
     )
 
+    @property
+    def reason(self) -> str:
+        """Convenience property to access reason from metadata."""
+        return self.metadata.get("reason", "N/A") if isinstance(self.metadata, dict) else "N/A"
+
     class Meta:
         ordering = ["-created_at"]
         verbose_name = "Audit Log"
