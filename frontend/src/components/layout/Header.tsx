@@ -200,14 +200,23 @@ export default function Header({ onSearch, searchQuery = "" }: HeaderProps) {
                 )}
               </div>
             ) : (
-              /* Unauthenticated: Login link */
-              <Link
-                href="/login"
-                className="flex items-center gap-1.5 hover:bg-white/10 rounded-lg px-2.5 py-1.5 transition-colors"
-              >
-                <span className="material-symbols-outlined text-[20px]">login</span>
-                <span className="text-sm font-medium">Login</span>
-              </Link>
+              /* Unauthenticated: Login & Register links */
+              <div className="flex items-center gap-1.5">
+                <Link
+                  href="/login"
+                  className="flex items-center gap-1 hover:bg-white/10 rounded-lg px-2.5 py-1.5 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[18px]">login</span>
+                  <span className="text-sm font-medium">Login</span>
+                </Link>
+                <Link
+                  href="/register"
+                  className="hidden sm:flex items-center gap-1 bg-white/15 hover:bg-white/25 rounded-lg px-2.5 py-1.5 transition-colors"
+                >
+                  <span className="material-symbols-outlined text-[18px]">person_add</span>
+                  <span className="text-sm font-medium">Register</span>
+                </Link>
+              </div>
             )}
           </div>
         </div>

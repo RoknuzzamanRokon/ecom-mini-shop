@@ -23,6 +23,24 @@ export interface AuthUser {
   permissions: string[];
 }
 
+export interface RegisterPayload {
+  username: string;
+  email: string;
+  password: string;
+  password_confirm: string;
+  first_name?: string;
+  last_name?: string;
+}
+
+export interface RegisterResponse {
+  id: number;
+  username: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  message?: string;
+}
+
 export interface Shop {
   id: number;
   name: string;

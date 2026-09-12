@@ -1,4 +1,4 @@
-import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser } from "./types";
+import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse } from "./types";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
@@ -992,4 +992,38 @@ export async function getCurrentUser(token: string): Promise<AuthUser> {
 
   return await res.json();
 }
+
+export async function registerCustomer(
+  payload: RegisterPayload
+): Promise<RegisterResponse> {
+  const res = await fetch(`${API_BASE_URL}/api/auth/register/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    if (typeof errorData === "object" && errorData !== null) {
+      // Gather all field errors into a clean string
+      const messages: string[] = [];
+      for (const [key, value] of Object.entries(errorData)) {
+        if (Array.isArray(value)) {
+          messages.push(`${value.join(" ")}`);
+        } else if (typeof value === "string") {
+          messages.push(value);
+        }
+      }
+      if (messages.length > 0) {
+        throw new Error(messages.join(" "));
+      }
+    }
+    throw new Error("Registration failed. Please check your information and try again.");
+  }
+
+  return await res.json();
+}
+
 

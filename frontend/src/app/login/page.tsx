@@ -216,13 +216,30 @@ function LoginPageContent() {
               </button>
             </form>
 
-            {/* Footer */}
-            <div className="mt-6 text-center">
+            {/* Registration Link */}
+            <div className="mt-6 pt-5 border-t border-line text-center">
+              <p className="text-sm text-ink-muted">
+                New to MiniShop?{" "}
+                <Link
+                  href={
+                    searchParams.get("next")
+                      ? `/register?next=${encodeURIComponent(searchParams.get("next")!)}`
+                      : "/register"
+                  }
+                  className="font-semibold text-accent hover:underline"
+                >
+                  Create an account
+                </Link>
+              </p>
+            </div>
+
+            {/* Back to Store */}
+            <div className="mt-4 text-center">
               <Link
                 href="/"
-                className="text-sm text-accent hover:underline inline-flex items-center gap-1"
+                className="text-xs text-ink-muted hover:text-ink inline-flex items-center gap-1 transition-colors"
               >
-                <span className="material-symbols-outlined text-[16px]">
+                <span className="material-symbols-outlined text-[14px]">
                   arrow_back
                 </span>
                 Back to Store

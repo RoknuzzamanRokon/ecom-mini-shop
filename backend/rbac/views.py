@@ -4,7 +4,12 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
 from .permissions import HasPermission, require_permission
-from .serializers import CurrentUserSerializer
+from .permissions import HasPermission, require_permission
+from .serializers import (
+    CurrentUserSerializer,
+    CustomerRegistrationResponseSerializer,
+    CustomerRegistrationSerializer,
+)
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -25,6 +30,22 @@ class CurrentUserView(generics.RetrieveAPIView):
         return self.request.user
 
 
+class CustomerRegistrationView(generics.CreateAPIView):
+    """
+    Public endpoint for customer self-registration.
+    Creates a standard customer account and assigns the default CUSTOMER RBAC role.
+    """
+    permission_classes = [permissions.AllowAny]
+    serializer_class = CustomerRegistrationSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        output = CustomerRegistrationResponseSerializer(user)
+        return Response(output.data, status=status.HTTP_201_CREATED)
+
+
 class RBACPermissionTestView(APIView):
     """
     Verification endpoint enforcing a specific permission (products.approve).
@@ -41,3 +62,4 @@ class RBACPermissionTestView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
