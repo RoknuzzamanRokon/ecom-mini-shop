@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { ThemeProvider } from "@/context/ThemeContext";
+import { AuthProvider } from "@/context/AuthContext";
 import { CartProvider } from "@/context/CartContext";
 import CartDrawer from "@/components/cart/CartDrawer";
 import ThemeSwitcher from "@/components/theme/ThemeSwitcher";
@@ -46,11 +47,13 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen flex flex-col antialiased">
         <ThemeProvider>
-          <CartProvider>
-            {children}
-            <CartDrawer />
-            <ThemeSwitcher />
-          </CartProvider>
+          <AuthProvider>
+            <CartProvider>
+              {children}
+              <CartDrawer />
+              <ThemeSwitcher />
+            </CartProvider>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>

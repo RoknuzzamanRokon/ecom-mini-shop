@@ -11,6 +11,18 @@ export interface Category {
   updated_at?: string;
 }
 
+export interface AuthUser {
+  id: number;
+  username: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  is_staff: boolean;
+  is_superuser: boolean;
+  roles: string[];
+  permissions: string[];
+}
+
 export interface Shop {
   id: number;
   name: string;

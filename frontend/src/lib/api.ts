@@ -1,4 +1,4 @@
-import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop } from "./types";
+import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser } from "./types";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
@@ -931,7 +931,65 @@ export async function updateStaffOrderStatus(
   return await res.json();
 }
 
+/**
+ * Authentication API Methods (Task 19)
+ */
 
+export async function loginUser(
+  username: string,
+  password: string
+): Promise<{ access: string; refresh: string }> {
+  const res = await fetch(`${API_BASE_URL}/api/auth/token/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ username, password }),
+  });
 
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(
+      errorData.detail || "Invalid credentials. Please try again."
+    );
+  }
 
+  return await res.json();
+}
+
+export async function refreshAccessToken(
+  refreshToken: string
+): Promise<{ access: string; refresh: string }> {
+  const res = await fetch(`${API_BASE_URL}/api/auth/token/refresh/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ refresh: refreshToken }),
+  });
+
+  if (!res.ok) {
+    throw new Error("Token refresh failed");
+  }
+
+  return await res.json();
+}
+
+export async function getCurrentUser(token: string): Promise<AuthUser> {
+  const res = await fetch(`${API_BASE_URL}/api/auth/me/`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(
+      errorData.detail || "Failed to fetch current user"
+    );
+  }
+
+  return await res.json();
+}
 
