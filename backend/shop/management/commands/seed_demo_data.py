@@ -1,25 +1,74 @@
+from decimal import Decimal
 import io
 import urllib.request
 
+from django.conf import settings
 from django.core.files.base import ContentFile
 from django.core.management.base import BaseCommand
+from django.db.models import Q
 from django.utils.text import slugify
 from PIL import Image, ImageDraw, ImageFont
 
 from shop.models import Category, Product, ProductImage
+from shops.models import Shop
 
 DEMO_PHOTO_URL = "https://picsum.photos/seed/{seed}/{size}/{size}"
 
 CATEGORIES = [
-    {"name": "Clothing", "icon": "checkroom"},
-    {"name": "Electronics", "icon": "devices"},
-    {"name": "Shoes", "icon": "roller_skating"},
-    {"name": "Watches", "icon": "watch"},
-    {"name": "Jewellery", "icon": "diamond"},
-    {"name": "Health and Beauty", "icon": "spa"},
-    {"name": "Kids and Babies", "icon": "child_friendly"},
-    {"name": "Sports", "icon": "sports_soccer"},
-    {"name": "Home and Garden", "icon": "yard"},
+    {
+        "name": "Clothing",
+        "icon": "checkroom",
+        "image": "clothing.jpg",
+        "description": "Carefully curated essentials designed for everyday comfort, timeless modern silhouettes, and architectural elegance.",
+    },
+    {
+        "name": "Electronics",
+        "icon": "devices",
+        "image": "electronics.jpg",
+        "description": "Cutting-edge audio, custom mechanical keyboards, smart wearable fitness trackers, and modern everyday workspace gear.",
+    },
+    {
+        "name": "Shoes",
+        "icon": "roller_skating",
+        "image": "shoes.jpg",
+        "description": "Everyday cushioned canvas sneakers, lightweight trail runners, and versatile footwear built for modern motion.",
+    },
+    {
+        "name": "Watches",
+        "icon": "watch",
+        "image": "watches.jpg",
+        "description": "Precision timepieces featuring genuine leather straps, scratch-resistant sapphire crystals, and chronograph detailing.",
+    },
+    {
+        "name": "Jewellery",
+        "icon": "diamond",
+        "image": "jewellery.jpg",
+        "description": "Delicate sterling silver necklaces, hand-finished pendants, and natural stone beaded bracelet sets for all occasions.",
+    },
+    {
+        "name": "Health and Beauty",
+        "icon": "spa",
+        "image": "health-and-beauty.jpg",
+        "description": "Clean botanical face serums, natural bamboo grooming essentials, and restorative wellness care for everyday vitality.",
+    },
+    {
+        "name": "Kids and Babies",
+        "icon": "child_friendly",
+        "image": "kids-and-babies.jpg",
+        "description": "Ultra-soft gentle cotton essentials, playful educational puzzle sets, and cuddly plush toys made for curious minds.",
+    },
+    {
+        "name": "Sports",
+        "icon": "sports_soccer",
+        "image": "sports.jpg",
+        "description": "High-performance workout equipment, premium studio yoga mats, and durable athletic gear built for an active lifestyle.",
+    },
+    {
+        "name": "Home and Garden",
+        "icon": "yard",
+        "image": "home-and-garden.jpg",
+        "description": "Elevate your indoor spaces with artisan ceramic mugs, modern planters, cozy desk lamps, and architectural decor.",
+    },
 ]
 
 # (name, category, price, old_price, badge, stock, description, color)
@@ -183,12 +232,48 @@ class Command(BaseCommand):
         force = options["force"]
         categories_by_name = {}
         for entry in CATEGORIES:
+            slug = slugify(entry["name"])
             category, created = Category.objects.get_or_create(
-                slug=slugify(entry["name"]),
-                defaults={"name": entry["name"], "icon": entry["icon"]},
+                slug=slug,
+                defaults={
+                    "name": entry["name"],
+                    "icon": entry["icon"],
+                    "description": entry["description"],
+                },
             )
+            # Ensure icon and description are updated
+            if not category.icon:
+                category.icon = entry["icon"]
+            if not category.description or force:
+                category.description = entry["description"]
+
+            # Set category demo image from media directory
+            cat_img_path = settings.MEDIA_ROOT / "categories" / entry["image"]
+            if cat_img_path.exists() and (force or not category.image):
+                category.image = f"categories/{entry['image']}"
+
+            category.save()
             categories_by_name[entry["name"]] = category
-            self.stdout.write(f"{'Created' if created else 'Exists'} category: {category.name}")
+            img_status = category.image.name if category.image else "none"
+            self.stdout.write(f"{'Created' if created else 'Updated'} category: {category.name} (image: {img_status})")
+
+        # Fallback for ANY other existing categories in the database lacking an image
+        available_images = [entry["image"] for entry in CATEGORIES]
+        no_image_cats = Category.objects.filter(Q(image__isnull=True) | Q(image=""))
+        for idx, cat in enumerate(no_image_cats):
+            assigned_img = available_images[idx % len(available_images)]
+            cat_img_path = settings.MEDIA_ROOT / "categories" / assigned_img
+            if cat_img_path.exists():
+                cat.image = f"categories/{assigned_img}"
+            if not cat.description:
+                cat.description = "Explore our curated collection of quality products."
+            cat.save()
+            self.stdout.write(f"Assigned demo image to existing category: {cat.name} -> {cat.image.name}")
+
+        active_shop = Shop.objects.filter(
+            status__in=["ACTIVE", "APPROVED"],
+            owner__status__in=["ACTIVE", "APPROVED"],
+        ).first()
 
         for name, cat_name, price, old_price, badge, stock, description, color in PRODUCTS:
             slug = slugify(name)
@@ -199,9 +284,12 @@ class Command(BaseCommand):
                     name=name,
                     slug=slug,
                     category=categories_by_name[cat_name],
+                    shop=active_shop,
+                    status=Product.STATUS_PUBLISHED,
+                    is_active=True,
                     description=description,
-                    price=price,
-                    old_price=old_price or None,
+                    price=Decimal(price),
+                    old_price=Decimal(old_price) if old_price else None,
                     stock=stock,
                     badge=badge,
                 )
@@ -210,6 +298,11 @@ class Command(BaseCommand):
                 self.stdout.write(f"Created product: {name}")
             else:
                 self.stdout.write(f"Exists product: {name}")
+                if active_shop and (not product.shop or product.status != Product.STATUS_PUBLISHED):
+                    product.shop = active_shop
+                    product.status = Product.STATUS_PUBLISHED
+                    product.is_active = True
+                    product.save()
                 if force:
                     product.image.delete(save=False)
                     self.set_cover_image(product, name, color, slug)
