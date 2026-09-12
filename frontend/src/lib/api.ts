@@ -292,6 +292,28 @@ export async function getShopDetail(slug: string): Promise<Shop | null> {
   }
 }
 
+export async function getShops(params?: {
+  page?: number;
+  page_size?: number;
+  search?: string;
+}): Promise<PaginatedResponse<Shop>> {
+  const query = new URLSearchParams();
+  if (params?.search) query.set("search", params.search);
+  if (params?.page) query.set("page", params.page.toString());
+  if (params?.page_size) query.set("page_size", params.page_size.toString());
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/shops/?${query.toString()}`, {
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error("Failed to fetch shops");
+    return await res.json();
+  } catch (err) {
+    console.warn("Failed to fetch shops list:", err);
+    return { count: 0, next: null, previous: null, results: [] };
+  }
+}
+
 export async function getHotDeal(): Promise<Product | null> {
   try {
     const res = await fetch(`${API_BASE_URL}/api/hot-deals/`, {

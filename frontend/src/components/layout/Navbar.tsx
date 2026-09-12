@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { Category } from "@/lib/types";
 
 interface NavbarProps {
@@ -16,8 +16,10 @@ export default function Navbar({
   onSelectCategory,
 }: NavbarProps) {
   const router = useRouter();
+  const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const isShopsDirectoryActive = pathname === "/shops";
 
   const defaultNavItems = [
     { name: "Home", slug: "all" },
@@ -43,6 +45,13 @@ export default function Navbar({
     } else {
       router.push(slug === "all" ? "/" : `/?category=${slug}`);
     }
+  };
+
+  // "Shop" is a real page link (the all-shops directory), not a category
+  // filter, so it always navigates regardless of onSelectCategory.
+  const handleShopsDirectorySelect = () => {
+    setIsOpen(false);
+    router.push("/shops");
   };
 
   // Close dropdown on click outside
@@ -95,6 +104,21 @@ export default function Navbar({
             </span>
           </button>
 
+          {/* Pinned "Shop" directory link — visually distinct (accent color), not a category filter */}
+          <button
+            type="button"
+            onClick={handleShopsDirectorySelect}
+            aria-current={isShopsDirectoryActive ? "page" : undefined}
+            className={`flex items-center gap-1 px-2.5 py-1 rounded transition-all shrink-0 cursor-pointer text-[11px] font-bold border ${
+              isShopsDirectoryActive
+                ? "bg-accent text-on-accent border-accent shadow-xs"
+                : "bg-accent/15 text-accent border-accent/40 hover:bg-accent/25"
+            }`}
+          >
+            <span className="material-symbols-outlined text-[14px]">storefront</span>
+            Shop
+          </button>
+
           {/* Quick swipeable category pills on mobile */}
           <div className="flex items-center space-x-1.5 overflow-x-auto whitespace-nowrap flex-1 py-0.5" style={{ scrollbarWidth: "none" }}>
             {items.map((item) => {
@@ -119,6 +143,21 @@ export default function Navbar({
 
         {/* Desktop View: Full Category Navigation Strip */}
         <div className="hidden md:flex items-center space-x-1 sm:space-x-2 py-2 whitespace-nowrap overflow-x-auto">
+          {/* Pinned "Shop" directory link — visually distinct (accent color), not a category filter */}
+          <button
+            type="button"
+            onClick={handleShopsDirectorySelect}
+            aria-current={isShopsDirectoryActive ? "page" : undefined}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded transition-all cursor-pointer font-bold border ${
+              isShopsDirectoryActive
+                ? "bg-accent text-on-accent border-accent shadow-sm"
+                : "bg-accent/15 text-accent border-accent/40 hover:bg-accent/25"
+            }`}
+          >
+            <span className="material-symbols-outlined text-[16px]">storefront</span>
+            Shop
+          </button>
+
           {items.map((item) => {
             const isActive = activeCategory === item.slug;
             return (
@@ -148,6 +187,27 @@ export default function Navbar({
               Active: <strong className="uppercase font-bold text-nav-text">{activeItem.name}</strong>
             </span>
           </div>
+
+          {/* Pinned "Shop" directory link — visually distinct (accent color), not a category filter */}
+          <button
+            type="button"
+            onClick={handleShopsDirectorySelect}
+            aria-current={isShopsDirectoryActive ? "page" : undefined}
+            className={`w-full flex items-center justify-between px-3 py-2 rounded text-xs font-bold tracking-wide transition-all text-left cursor-pointer mb-1.5 border ${
+              isShopsDirectoryActive
+                ? "bg-accent text-on-accent border-accent shadow-xs"
+                : "bg-accent/15 text-accent border-accent/40 hover:bg-accent/25"
+            }`}
+          >
+            <span className="flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[16px]">storefront</span>
+              Shop — Browse All Shops
+            </span>
+            {isShopsDirectoryActive && (
+              <span className="material-symbols-outlined text-[16px] shrink-0 ml-1">check</span>
+            )}
+          </button>
+
           <div className="grid grid-cols-2 gap-1.5 max-h-72 overflow-y-auto pr-1">
             {items.map((item) => {
               const isActive = activeCategory === item.slug;
