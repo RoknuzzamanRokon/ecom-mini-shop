@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCart } from "@/context/CartContext";
@@ -58,40 +59,18 @@ export default function Header({ onSearch, searchQuery = "" }: HeaderProps) {
         <div className="flex items-center gap-3 shrink-0">
           <Link
             href="/"
-            className="flex items-center bg-surface px-3 py-1.5 rounded-lg shadow-sm border border-line/40 transition-transform active:scale-98"
+            // The wordmark is dark navy, so the chip stays light in every theme
+            // rather than following --c-surface into dark mode.
+            className="flex items-center bg-[#FBF9F4] px-3 py-1.5 rounded-lg shadow-sm border border-line/40 transition-transform active:scale-98"
           >
-            <svg
-              fill="none"
-              height="32"
-              viewBox="0 0 160 40"
-              width="130"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <rect fill="var(--c-primary)" height="28" rx="8" width="28" x="2" y="6" />
-              <path
-                d="M10 14h12l-1.5 11h-9L10 14z"
-                stroke="var(--c-on-primary)"
-                strokeLinejoin="round"
-                strokeWidth="2"
-              />
-              <path
-                d="M13 14v-2a3 3 0 0 1 6 0v2"
-                stroke="var(--c-on-primary)"
-                strokeLinecap="round"
-                strokeWidth="2"
-              />
-              <text
-                fill="var(--c-text-strong)"
-                fontFamily="Inter, -apple-system, sans-serif"
-                fontSize="18"
-                fontWeight="800"
-                letterSpacing="-0.5px"
-                x="38"
-                y="26"
-              >
-                MINISHOP
-              </text>
-            </svg>
+            <Image
+              src="/logo.png"
+              alt="MiniShop"
+              width={440}
+              height={149}
+              priority
+              className="h-8 w-auto"
+            />
           </Link>
         </div>
 
