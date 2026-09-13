@@ -42,6 +42,11 @@ python manage.py migrate
 # 4. Seed demo categories and products (with placeholder images)
 python manage.py seed_demo_data
 
+# 4b. Or seed the full showcase storefront: 4 demo shops, 9 categories and
+#     24 products with real product photography downloaded from Unsplash.
+#     Add --force to re-download images, --password to enable demo seller login.
+python manage.py seed_showcase
+
 # 5. Create an admin user
 python manage.py createsuperuser
 
@@ -65,7 +70,7 @@ python manage.py test shop
 ```
 config/                Django project settings, root URLs
 shop/                  Main app: models, views, urls, cart, admin
-  management/commands/  seed_demo_data command
+  management/commands/  seed_demo_data, seed_showcase commands
   migrations/
 templates/
   base.html            Base layout (header, footer, messages)
