@@ -1,68 +1,57 @@
 from django.contrib import admin
-from .models import PointTransaction, ProductCreationCost, SellerWallet
-
+from django.utils.html import format_html
+from .models import SellerWallet, PointTransaction, ProductCreationCost
 
 @admin.register(SellerWallet)
 class SellerWalletAdmin(admin.ModelAdmin):
-    list_display = ("seller", "balance", "created_at", "updated_at")
-    search_fields = (
-        "seller__business_name",
-        "seller__user__username",
-        "seller__user__email",
-    )
-    readonly_fields = ("created_at", "updated_at")
+    list_display = ('seller', 'balance_display', 'created_at', 'updated_at')
+    search_fields = ('seller__user__username', 'seller__business_name')
+    list_filter = ('created_at', 'updated_at')
+    readonly_fields = ('created_at', 'updated_at')
 
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('seller', 'seller__user')
+
+    def balance_display(self, obj):
+        return f"৳{obj.balance}"
+    balance_display.short_description = 'Balance'
 
 @admin.register(PointTransaction)
 class PointTransactionAdmin(admin.ModelAdmin):
-    list_display = (
-        "id",
-        "seller",
-        "transaction_type",
-        "amount",
-        "balance_before",
-        "balance_after",
-        "actor",
-        "created_at",
-    )
-    list_filter = ("transaction_type", "created_at")
-    search_fields = (
-        "seller__business_name",
-        "reason",
-        "reference_type",
-        "reference_id",
-        "actor__username",
-    )
+    list_display = ('wallet', 'transaction_type', 'amount_display', 'balance_after_display', 'reason', 'created_at')
+    search_fields = ('wallet__seller__user__username', 'reason', 'reference_id')
+    list_filter = ('transaction_type', 'created_at')
     readonly_fields = (
-        "wallet",
-        "seller",
-        "transaction_type",
-        "amount",
-        "balance_before",
-        "balance_after",
-        "reason",
-        "reference_type",
-        "reference_id",
-        "actor",
-        "created_at",
+        'wallet', 'seller', 'transaction_type', 'amount',
+        'balance_before', 'balance_after', 'reason',
+        'reference_type', 'reference_id', 'actor', 'created_at'
     )
 
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('wallet', 'seller', 'seller__user', 'actor')
+
+    def amount_display(self, obj):
+        color = '#10B981' if obj.transaction_type == 'CREDIT' else '#EF4444'
+        return format_html(
+            '<span style="color: {}; font-weight: bold;">৳{}</span>',
+            color, obj.amount
+        )
+    amount_display.short_description = 'Amount'
+
+    def balance_after_display(self, obj):
+        return f"৳{obj.balance_after}"
+    balance_after_display.short_description = 'Balance After'
+
     def has_add_permission(self, request):
-        # Ledger records should only be created via PointService, not manually through admin form
+        return False
+
+    def has_change_permission(self, request, obj=None):
         return False
 
     def has_delete_permission(self, request, obj=None):
-        # Prevent manual tampering with immutable financial ledger entries
         return False
-
 
 @admin.register(ProductCreationCost)
 class ProductCreationCostAdmin(admin.ModelAdmin):
-    list_display = ("required_points", "updated_at")
-
-    def has_add_permission(self, request):
-        return not ProductCreationCost.objects.exists()
-
-    def has_delete_permission(self, request, obj=None):
-        return False
-
+    list_display = ('cost_amount', 'is_active', 'effective_from', 'created_at')
+    list_filter = ('is_active', 'effective_from')
