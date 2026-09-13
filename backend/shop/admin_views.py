@@ -9,7 +9,7 @@ concurrency control, and comprehensive audit logging.
 import logging
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Q, Sum
 from django.utils import timezone
 from rest_framework import status
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError as DRFValidationError
@@ -21,7 +21,7 @@ from rest_framework.views import APIView
 from audit.services import AuditService
 from customers.models import CustomerProfile
 from rbac.models import Permission, Role, RolePermission, UserRole
-from rbac.services import assign_user_role, get_user_permissions, get_user_role_codes, remove_user_role
+from rbac.services import assign_user_role, get_user_permissions, get_user_role_codes, has_user_permission, remove_user_role
 from sellers.models import SellerProfile
 from sellers.services import approve_seller, reactivate_seller, reject_seller, suspend_seller
 from shop.admin_permissions import (
@@ -53,7 +53,7 @@ from shop.admin_serializers import (
     AdminUserListSerializer,
     AdminUserUpdateSerializer,
 )
-from shop.models import Category, Product
+from shop.models import Category, Order, Payment, Product
 from shops.models import Shop
 
 logger = logging.getLogger(__name__)
@@ -927,3 +927,65 @@ class AdminCustomerDetailAPIView(APIView):
             raise NotFound("Customer profile not found.")
         serializer = AdminCustomerDetailSerializer(customer)
         return Response(serializer.data, status=status.HTTP_200_OK)
+
+
+class AdminMetricsAPIView(APIView):
+    """
+    GET /api/admin/metrics/
+    Returns aggregated platform metrics for the Next.js management console:
+    - total_orders: platform-wide order count
+    - total_revenue: platform-wide revenue from completed/paid transactions (৳)
+    - pending_shops: shops awaiting approval
+    - pending_sellers: seller applications awaiting verification
+    - total_shops: total registered shops
+    - total_sellers: total registered sellers
+    - total_products: total active product catalog
+    Enforces strict management role or admin:access permission.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        role_codes = get_user_role_codes(user)
+        is_management = (
+            user.is_superuser
+            or user.is_staff
+            or bool(
+                role_codes.intersection(
+                    {
+                        Role.ROLE_SUPER_ADMINISTRATOR,
+                        Role.ROLE_ADMINISTRATOR,
+                        Role.ROLE_OPERATION_MANAGER,
+                        Role.ROLE_SALES_MANAGER,
+                        Role.ROLE_SALES_TEAM,
+                        Role.ROLE_FINANCE,
+                        Role.ROLE_SUPPORT_TEAM,
+                    }
+                )
+            )
+            or has_user_permission(user, "admin:access")
+        )
+        if not is_management:
+            raise PermissionDenied("You do not have management portal permissions.")
+
+        total_orders = Order.objects.count()
+        revenue_data = Payment.objects.filter(status__in=["PAID", "COMPLETED"]).aggregate(
+            total=Sum("amount")
+        )
+        total_revenue = float(revenue_data["total"] or 0)
+        pending_shops = Shop.objects.filter(status="PENDING").count()
+        pending_sellers = SellerProfile.objects.filter(status="PENDING").count()
+
+        return Response(
+            {
+                "total_orders": total_orders,
+                "total_revenue": total_revenue,
+                "pending_shops": pending_shops,
+                "pending_sellers": pending_sellers,
+                "total_shops": Shop.objects.count(),
+                "total_sellers": SellerProfile.objects.count(),
+                "total_products": Product.objects.count(),
+            },
+            status=status.HTTP_200_OK,
+        )
+

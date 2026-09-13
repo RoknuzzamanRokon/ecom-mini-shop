@@ -1322,4 +1322,5 @@ from .admin_views import (
     AdminCategoryDetailAPIView,
     AdminCustomerListAPIView,
     AdminCustomerDetailAPIView,
+    AdminMetricsAPIView,
 )

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
+import { isManagementUser } from "@/lib/admin-auth";
 
 interface HeaderProps {
   onSearch?: (query: string) => void;
@@ -205,6 +206,19 @@ export default function Header({ onSearch, searchQuery = "" }: HeaderProps) {
                         </span>
                         Seller Center
                       </Link>
+
+                      {isManagementUser(user) && (
+                        <Link
+                          href="/admin"
+                          onClick={() => setIsUserMenuOpen(false)}
+                          className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-accent hover:bg-accent/10 transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">
+                            admin_panel_settings
+                          </span>
+                          Management Portal
+                        </Link>
+                      )}
 
                       <div className="my-1 border-t border-line" />
 

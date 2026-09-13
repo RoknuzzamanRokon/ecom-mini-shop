@@ -76,5 +76,6 @@ urlpatterns = [
     path("api/admin/categories/<int:pk>/", api_views.AdminCategoryDetailAPIView.as_view(), name="admin_categories_detail"),
     path("api/admin/customers/", api_views.AdminCustomerListAPIView.as_view(), name="admin_customers_list"),
     path("api/admin/customers/<int:pk>/", api_views.AdminCustomerDetailAPIView.as_view(), name="admin_customers_detail"),
+    path("api/admin/metrics/", api_views.AdminMetricsAPIView.as_view(), name="admin_metrics"),
 ]
 
