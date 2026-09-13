@@ -130,7 +130,7 @@ export default function ShopsDirectoryPage() {
                 </div>
 
                 {/* Identity */}
-                <div className="px-4 pb-4 pt-0 -mt-8 flex flex-col gap-2">
+                <div className="relative z-10 px-4 pb-4 pt-0 -mt-8 flex flex-col gap-2">
                   <div className="w-16 h-16 rounded-xl border-4 border-surface bg-surface-alt shadow-md overflow-hidden flex items-center justify-center shrink-0">
                     {shop.logo ? (
                       <Image
