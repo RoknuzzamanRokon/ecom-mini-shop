@@ -152,3 +152,37 @@ class Address(models.Model):
     def __str__(self):
         prefix = "[DEFAULT] " if self.is_default else ""
         return f"{prefix}{self.label}: {self.recipient_name}, {self.city}"
+
+
+class Favorite(models.Model):
+    """
+    Wishlist entry linking a customer to a product they want to revisit.
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="favorites",
+    )
+    product = models.ForeignKey(
+        "shop.Product",
+        on_delete=models.CASCADE,
+        related_name="favorited_by",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "Favorite"
+        verbose_name_plural = "Favorites"
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "product"],
+                name="unique_favorite_per_user_product",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["user", "-created_at"], name="cust_fav_user_created_idx"),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} -> {self.product.name}"

@@ -9,6 +9,7 @@ from .serializers import (
     CurrentUserSerializer,
     CustomerRegistrationResponseSerializer,
     CustomerRegistrationSerializer,
+    PasswordChangeSerializer,
 )
 
 
@@ -63,3 +64,21 @@ class RBACPermissionTestView(APIView):
             status=status.HTTP_200_OK,
         )
 
+
+
+class PasswordChangeView(APIView):
+    """
+    Authenticated self-service password change.
+    POST /api/auth/change-password/
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = PasswordChangeSerializer(
+            data=request.data, context={"request": request}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(
+            {"detail": "Password updated successfully."}, status=status.HTTP_200_OK
+        )

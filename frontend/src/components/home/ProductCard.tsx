@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Product } from "@/lib/types";
 import { useCart } from "@/context/CartContext";
 import { formatImageUrl } from "@/lib/api";
+import FavoriteButton from "@/components/product/FavoriteButton";
 
 interface ProductCardProps {
   product: Product;
@@ -139,6 +140,10 @@ export default function ProductCard({ product, viewMode = "grid" }: ProductCardP
             {badgeUpper}
           </span>
         )}
+        <FavoriteButton
+          productId={product.id}
+          className="absolute top-2 left-2 z-10"
+        />
       </div>
 
       {/* Content - Compact padding */}

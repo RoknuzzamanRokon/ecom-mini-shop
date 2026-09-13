@@ -9,6 +9,7 @@ import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import ProductCard from "@/components/home/ProductCard";
 import ProductImageZoom from "@/components/product/ProductImageZoom";
+import FavoriteButton from "@/components/product/FavoriteButton";
 import { Product } from "@/lib/types";
 import { getProductDetail, formatImageUrl } from "@/lib/api";
 import { useCart } from "@/context/CartContext";
@@ -269,6 +270,8 @@ export default function ProductDetailPage() {
                 <span className="material-symbols-outlined text-[18px]">bolt</span>
                 <span>Buy Now</span>
               </button>
+
+              <FavoriteButton productId={product.id} size="md" />
             </div>
 
             {/* Perks breakdown */}

@@ -608,3 +608,15 @@ export interface AdminCustomer {
   orders_count: number;
   created_at: string;
 }
+
+export interface Favorite {
+  id: number;
+  product: Product;
+  created_at: string;
+}
+
+export interface PasswordChangePayload {
+  current_password: string;
+  new_password: string;
+  new_password_confirm: string;
+}

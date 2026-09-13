@@ -185,6 +185,39 @@ export default function Header({ onSearch, searchQuery = "" }: HeaderProps) {
 
                     {/* Menu items */}
                     <div className="py-1">
+                      <Link
+                        href="/profile/settings"
+                        onClick={() => setIsUserMenuOpen(false)}
+                        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-ink hover:bg-surface-alt transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">
+                          account_circle
+                        </span>
+                        My Profile
+                      </Link>
+                      <Link
+                        href="/profile/orders"
+                        onClick={() => setIsUserMenuOpen(false)}
+                        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-ink hover:bg-surface-alt transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">
+                          receipt_long
+                        </span>
+                        My Orders
+                      </Link>
+                      <Link
+                        href="/profile/favorites"
+                        onClick={() => setIsUserMenuOpen(false)}
+                        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-ink hover:bg-surface-alt transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">
+                          favorite
+                        </span>
+                        Favorites
+                      </Link>
+
+                      <div className="my-1 border-t border-line" />
+
                       <button
                         onClick={handleLogout}
                         className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-ink hover:bg-surface-alt transition-colors"

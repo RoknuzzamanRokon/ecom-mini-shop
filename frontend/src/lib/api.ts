@@ -1,4 +1,4 @@
-import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse } from "./types";
+import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse, Favorite, PasswordChangePayload } from "./types";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
@@ -1049,3 +1049,81 @@ export async function registerCustomer(
 }
 
 
+
+/**
+ * Favorites / Wishlist
+ */
+export async function getFavorites(token: string): Promise<Favorite[]> {
+  const res = await fetch(`${API_BASE_URL}/api/favorites/`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error("Failed to fetch favorites");
+  return await res.json();
+}
+
+export async function addFavorite(productId: number, token: string): Promise<Favorite> {
+  const res = await fetch(`${API_BASE_URL}/api/favorites/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ product_id: productId }),
+  });
+  if (!res.ok) throw new Error("Failed to add favorite");
+  return await res.json();
+}
+
+export async function removeFavorite(productId: number, token: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/favorites/${productId}/`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok && res.status !== 404) throw new Error("Failed to remove favorite");
+}
+
+/**
+ * Password change
+ */
+export async function changePassword(
+  payload: PasswordChangePayload,
+  token: string
+): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/auth/change-password/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    const firstError =
+      data.current_password?.[0] ||
+      data.new_password?.[0] ||
+      data.new_password_confirm?.[0] ||
+      data.detail;
+    throw new Error(firstError || "Failed to change password");
+  }
+}
+
+/**
+ * Avatar upload — multipart, so Content-Type is set by the browser with the
+ * boundary rather than declared here.
+ */
+export async function uploadAvatar(
+  file: File,
+  token: string
+): Promise<CustomerProfile> {
+  const formData = new FormData();
+  formData.append("avatar", file);
+  const res = await fetch(`${API_BASE_URL}/api/profile/me/`, {
+    method: "PATCH",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  if (!res.ok) throw new Error("Failed to upload avatar");
+  return await res.json();
+}

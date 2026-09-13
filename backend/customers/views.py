@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Address
+from .models import Address, Favorite
 from .permissions import (
     CanCreateAddress,
     CanDeleteAddress,
@@ -19,6 +19,8 @@ from .serializers import (
     AddressSerializer,
     CustomerProfileSerializer,
     CustomerProfileUpdateSerializer,
+    FavoriteCreateSerializer,
+    FavoriteSerializer,
 )
 from .services import AddressService, CustomerService
 
@@ -157,3 +159,51 @@ class AddressSetDefaultView(APIView):
             ip_address=request.META.get("REMOTE_ADDR"),
         )
         return Response(AddressSerializer(updated_address).data, status=status.HTTP_200_OK)
+
+
+class FavoriteListCreateView(APIView):
+    """
+    Wishlist endpoints for the authenticated customer.
+    GET  /api/favorites/
+    POST /api/favorites/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        favorites = (
+            Favorite.objects.filter(user=request.user)
+            .select_related("product", "product__category", "product__shop")
+            .order_by("-created_at")
+        )
+        serializer = FavoriteSerializer(favorites, many=True, context={"request": request})
+        return Response(serializer.data)
+
+    def post(self, request):
+        serializer = FavoriteCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        favorite, created = Favorite.objects.get_or_create(
+            user=request.user,
+            product_id=serializer.validated_data["product_id"],
+        )
+        return Response(
+            FavoriteSerializer(favorite, context={"request": request}).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+class FavoriteDetailView(APIView):
+    """
+    Removes a product from the authenticated customer's wishlist.
+    DELETE /api/favorites/<product_id>/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def delete(self, request, product_id):
+        deleted, _ = Favorite.objects.filter(
+            user=request.user, product_id=product_id
+        ).delete()
+        if not deleted:
+            return Response(
+                {"detail": "Favorite not found."}, status=status.HTTP_404_NOT_FOUND
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)

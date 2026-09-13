@@ -1,7 +1,9 @@
 from decimal import Decimal
 from rest_framework import serializers
 
-from .models import Address, CustomerProfile
+from shop.models import Product
+from shop.serializers import ProductListSerializer
+from .models import Address, CustomerProfile, Favorite
 
 
 class CustomerProfileSerializer(serializers.ModelSerializer):
@@ -157,3 +159,29 @@ class AddressCreateUpdateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"longitude": "Longitude must be between -180 and 180 degrees."})
 
         return attrs
+
+
+class FavoriteSerializer(serializers.ModelSerializer):
+    """
+    Wishlist entry with the full public product payload so the storefront can
+    render favourites with the same card component used across the catalog.
+    """
+    product = ProductListSerializer(read_only=True)
+
+    class Meta:
+        model = Favorite
+        fields = ["id", "product", "created_at"]
+        read_only_fields = fields
+
+
+class FavoriteCreateSerializer(serializers.Serializer):
+    """
+    Accepts a product id and resolves it against the public catalog only, so
+    unpublished or suspended-shop products can never enter a wishlist.
+    """
+    product_id = serializers.IntegerField()
+
+    def validate_product_id(self, value):
+        if not Product.objects.public().filter(pk=value).exists():
+            raise serializers.ValidationError("Product not found.")
+        return value
