@@ -1,4 +1,4 @@
-import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse, Favorite, PasswordChangePayload } from "./types";
+import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse, Favorite, PasswordChangePayload, SellerProfile, SellerDashboardData, SellerShop, SellerWallet, PointTransaction } from "./types";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
@@ -1127,3 +1127,215 @@ export async function uploadAvatar(
   if (!res.ok) throw new Error("Failed to upload avatar");
   return await res.json();
 }
+
+// ---------------------------------------------------------------------------
+// Seller Self-Service API Client Methods
+// ---------------------------------------------------------------------------
+
+export async function getSellerProfile(token: string): Promise<SellerProfile> {
+  const res = await fetch(`${API_BASE_URL}/api/sellers/me/`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to load seller profile");
+  }
+  return await res.json();
+}
+
+export async function getSellerDashboard(token: string): Promise<SellerDashboardData> {
+  const res = await fetch(`${API_BASE_URL}/api/sellers/dashboard/`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to load seller dashboard");
+  }
+  return await res.json();
+}
+
+export async function updateSellerProfile(
+  token: string,
+  data: {
+    business_name?: string;
+    business_email?: string;
+    business_phone?: string;
+    tax_id?: string;
+    description?: string;
+  }
+): Promise<SellerProfile> {
+  const res = await fetch(`${API_BASE_URL}/api/sellers/me/`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || Object.values(err)[0] as string || "Failed to update seller profile");
+  }
+  return await res.json();
+}
+
+export async function getSellerShops(token: string): Promise<SellerShop[]> {
+  const res = await fetch(`${API_BASE_URL}/api/shops/mine/`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to load shops");
+  }
+  const data = await res.json();
+  return Array.isArray(data) ? data : data.results || [];
+}
+
+export async function getSellerShopDetail(token: string, id: number): Promise<SellerShop> {
+  const res = await fetch(`${API_BASE_URL}/api/shops/mine/${id}/`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to load shop details");
+  }
+  return await res.json();
+}
+
+export async function createSellerShop(token: string, data: FormData | Record<string, any>): Promise<SellerShop> {
+  const isFormData = typeof FormData !== "undefined" && data instanceof FormData;
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+  };
+  if (!isFormData) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  const res = await fetch(`${API_BASE_URL}/api/shops/mine/create/`, {
+    method: "POST",
+    headers,
+    body: isFormData ? data : JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || err.detail || Object.values(err)[0] as string || "Failed to create shop");
+  }
+  return await res.json();
+}
+
+export async function updateSellerShop(
+  token: string,
+  id: number,
+  data: FormData | Record<string, any>
+): Promise<SellerShop> {
+  const isFormData = typeof FormData !== "undefined" && data instanceof FormData;
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+  };
+  if (!isFormData) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  const res = await fetch(`${API_BASE_URL}/api/shops/mine/${id}/update/`, {
+    method: "PATCH",
+    headers,
+    body: isFormData ? data : JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || err.detail || Object.values(err)[0] as string || "Failed to update shop");
+  }
+  return await res.json();
+}
+
+export async function submitSellerShopForReview(
+  token: string,
+  id: number
+): Promise<{ message: string; shop: SellerShop }> {
+  const res = await fetch(`${API_BASE_URL}/api/shops/mine/${id}/submit/`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || err.detail || "Failed to submit shop for review");
+  }
+  return await res.json();
+}
+
+export async function getSellerProductDetail(token: string, id: number): Promise<Product> {
+  const res = await fetch(`${API_BASE_URL}/api/products/mine/${id}/`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || err.detail || "Failed to load product");
+  }
+  return await res.json();
+}
+
+export async function updateSellerProduct(
+  token: string,
+  id: number,
+  data: Record<string, any>
+): Promise<Product> {
+  const res = await fetch(`${API_BASE_URL}/api/products/mine/${id}/`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || err.detail || "Failed to update product");
+  }
+  return await res.json();
+}
+
+export async function deleteSellerProduct(token: string, id: number): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/products/mine/${id}/`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || err.detail || "Failed to delete product");
+  }
+}
+
+export async function getSellerWallet(token: string): Promise<SellerWallet> {
+  const res = await fetch(`${API_BASE_URL}/api/points/wallet/`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to load seller wallet");
+  }
+  return await res.json();
+}
+
+export async function getSellerPointHistory(
+  token: string,
+  type?: string
+): Promise<PointTransaction[]> {
+  const query = type ? `?type=${encodeURIComponent(type)}` : "";
+  const res = await fetch(`${API_BASE_URL}/api/points/history/${query}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail || "Failed to load point transaction history");
+  }
+  const data = await res.json();
+  return Array.isArray(data) ? data : data.results || [];
+}
+

@@ -195,6 +195,17 @@ export default function Header({ onSearch, searchQuery = "" }: HeaderProps) {
                         Favorites
                       </Link>
 
+                      <Link
+                        href="/seller"
+                        onClick={() => setIsUserMenuOpen(false)}
+                        className="w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary/10 transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">
+                          storefront
+                        </span>
+                        Seller Center
+                      </Link>
+
                       <div className="my-1 border-t border-line" />
 
                       <button

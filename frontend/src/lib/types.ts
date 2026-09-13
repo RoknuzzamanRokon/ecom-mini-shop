@@ -621,3 +621,89 @@ export interface PasswordChangePayload {
   new_password: string;
   new_password_confirm: string;
 }
+
+export interface SellerProfile {
+  id: number;
+  user: number;
+  username: string;
+  user_email: string;
+  seller_type: "FULL_SHOP_OWNER" | "LIMITED_SHOP_OWNER" | "PRODUCT_OWNER" | string;
+  seller_type_display: string;
+  status: "PENDING" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "SUSPENDED" | string;
+  status_display: string;
+  business_name: string;
+  business_email: string;
+  business_phone: string;
+  tax_id: string;
+  description: string;
+  is_operational: boolean;
+  is_suspended: boolean;
+  rejection_reason?: string;
+  suspension_reason?: string;
+  reviewed_at?: string | null;
+  approved_at?: string | null;
+  suspended_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SellerCapabilities {
+  can_create_shops: boolean;
+  max_shops: number | null;
+  can_create_products: boolean;
+  can_manage_inventory: boolean;
+  can_manage_orders: boolean;
+}
+
+export interface SellerDashboardData {
+  has_seller_profile: boolean;
+  seller: SellerProfile;
+  capabilities: SellerCapabilities;
+  status: string;
+  is_operational: boolean;
+  is_suspended: boolean;
+  warning?: string;
+  info?: string;
+}
+
+export interface SellerShop {
+  id: number;
+  owner_id: number;
+  owner_name: string;
+  name: string;
+  slug: string;
+  description: string;
+  logo?: string | null;
+  cover_image?: string | null;
+  phone: string;
+  address: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  status: "DRAFT" | "PENDING" | "APPROVED" | "ACTIVE" | "SUSPENDED" | "REJECTED" | string;
+  status_display: string;
+  rejection_reason?: string;
+  suspension_reason?: string;
+  is_publicly_visible: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SellerWallet {
+  id: number;
+  seller_id: number;
+  seller_name: string;
+  balance: number;
+  total_earned: number;
+  total_spent: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PointTransaction {
+  id: number;
+  amount: number;
+  transaction_type: "BONUS" | "ADMIN_CREDIT" | "ADMIN_DEBIT" | "PRODUCT_CREATION" | "REFUND" | "ADJUSTMENT" | string;
+  description: string;
+  created_at: string;
+}
+
