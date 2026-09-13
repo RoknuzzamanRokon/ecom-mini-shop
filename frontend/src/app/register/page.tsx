@@ -89,8 +89,8 @@ function RegisterPageContent() {
       setError("Password is required.");
       return;
     }
-    if (formData.password.length < 8) {
-      setError("Password must be at least 8 characters long.");
+    if (formData.password.length < 4) {
+      setError("Password must be at least 4 characters long.");
       return;
     }
     if (formData.password !== formData.password_confirm) {
@@ -304,7 +304,7 @@ function RegisterPageContent() {
                     required
                     value={formData.password}
                     onChange={handleChange}
-                    placeholder="Minimum 8 characters"
+                    placeholder="Minimum 4 characters"
                     autoComplete="new-password"
                     disabled={isSubmitting}
                     className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-line bg-surface text-ink placeholder-ink-muted text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary disabled:opacity-60 transition-colors"

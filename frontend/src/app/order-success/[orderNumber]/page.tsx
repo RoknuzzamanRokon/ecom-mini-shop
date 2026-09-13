@@ -17,7 +17,13 @@ export default function OrderSuccessPage() {
   useEffect(() => {
     async function load() {
       if (orderNumber) {
-        const data = await getOrderDetail(orderNumber);
+        const token =
+          typeof window !== "undefined"
+            ? localStorage.getItem("minishop_token") ||
+              localStorage.getItem("token") ||
+              localStorage.getItem("access_token")
+            : null;
+        const data = await getOrderDetail(orderNumber, token);
         if (data) setOrder(data);
       }
     }
