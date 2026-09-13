@@ -62,6 +62,19 @@ class CanManageAdminRoles(BasePermission):
         return has_user_permission(user, "roles.admin.manage")
 
 
+class CanViewAdminSellers(BasePermission):
+    """Allows viewing admin seller accounts and details."""
+    message = "You do not have permission to view sellers as admin."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
+            return True
+        return has_user_permission(user, "sellers.admin.manage") or has_user_permission(user, "sellers.view")
+
+
 class CanManageAdminSellers(BasePermission):
     """Allows approving, rejecting, suspending, and reactivating sellers."""
     message = "You do not have permission to manage sellers as admin."
@@ -75,6 +88,19 @@ class CanManageAdminSellers(BasePermission):
         return has_user_permission(user, "sellers.admin.manage")
 
 
+class CanViewAdminShops(BasePermission):
+    """Allows viewing admin shop directories and details."""
+    message = "You do not have permission to view shops as admin."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
+            return True
+        return has_user_permission(user, "shops.admin.manage") or has_user_permission(user, "shops.view")
+
+
 class CanManageAdminShops(BasePermission):
     """Allows approving, rejecting, suspending, and reactivating shops."""
     message = "You do not have permission to manage shops as admin."
@@ -86,6 +112,26 @@ class CanManageAdminShops(BasePermission):
         if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
             return True
         return has_user_permission(user, "shops.admin.manage")
+
+
+class CanChangeAdminShopStatus(BasePermission):
+    """
+    Allows shop status transitions based on granular permissions:
+    - 'approve' requires 'shops.approve' or 'shops.admin.manage'
+    - 'reject', 'suspend', 'reactivate' require 'shops.admin.manage'
+    """
+    message = "You do not have permission to update shop status."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
+            return True
+        return (
+            has_user_permission(user, "shops.admin.manage")
+            or has_user_permission(user, "shops.approve")
+        )
 
 
 class CanManageAdminProducts(BasePermission):
@@ -125,3 +171,26 @@ class CanViewAdminCustomers(BasePermission):
         if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
             return True
         return has_user_permission(user, "customers.admin.view")
+
+
+class CanViewAdminAuditLogs(BasePermission):
+    """
+    Allows viewing platform governance audit logs.
+    Restricted to Super Administrators or management users with platform governance permissions
+    (e.g., users.admin.view, roles.admin.view, or audit.view if seeded).
+    """
+    message = "You do not have permission to view platform audit logs."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
+            return True
+        return (
+            has_user_permission(user, "audit.view")
+            or has_user_permission(user, "audit.admin.view")
+            or has_user_permission(user, "users.admin.view")
+            or has_user_permission(user, "roles.admin.view")
+        )
+

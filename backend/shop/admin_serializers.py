@@ -14,6 +14,7 @@ from sellers.models import SellerProfile
 from shops.models import Shop
 from shop.models import Category, Product, Order
 from customers.models import CustomerProfile, Address
+from audit.models import AuditLog
 
 User = get_user_model()
 
@@ -499,3 +500,85 @@ class AdminCustomerDetailSerializer(serializers.ModelSerializer):
             }
             for o in orders_qs
         ]
+
+
+# ==============================================================================
+# AUDIT LOG ADMIN SERIALIZERS
+# ==============================================================================
+
+class AuditActorSerializer(serializers.ModelSerializer):
+    """
+    Safe read-only representation of user who initiated audit event.
+    Strictly excludes sensitive auth/credential attributes.
+    """
+    full_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "username",
+            "email",
+            "first_name",
+            "last_name",
+            "full_name",
+        ]
+        read_only_fields = fields
+
+    def get_full_name(self, obj):
+        name = f"{obj.first_name} {obj.last_name}".strip()
+        return name if name else obj.username
+
+
+class AdminAuditLogSerializer(serializers.ModelSerializer):
+    """
+    Read-only serializer for platform governance audit inspection.
+    Exposes actor, action, target, metadata payload, IP, and timestamp.
+    Sanitizes and redacts any sensitive credential keys within payload metadata.
+    """
+    actor = AuditActorSerializer(read_only=True)
+    resource_type = serializers.CharField(source="target_type", read_only=True)
+    resource_id = serializers.CharField(source="target_id", read_only=True)
+    changes = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AuditLog
+        fields = [
+            "id",
+            "actor",
+            "action",
+            "target_type",
+            "resource_type",
+            "target_id",
+            "resource_id",
+            "target_repr",
+            "shop",
+            "seller",
+            "metadata",
+            "changes",
+            "ip_address",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_changes(self, obj):
+        return self._sanitize_data(obj.metadata or {})
+
+    def to_representation(self, instance):
+        ret = super().to_representation(instance)
+        ret["metadata"] = self._sanitize_data(ret.get("metadata") or {})
+        return ret
+
+    def _sanitize_data(self, data):
+        if not isinstance(data, dict):
+            return data
+        SENSITIVE_KEYS = {"password", "token", "secret", "card", "cvv", "key", "authorization", "auth"}
+        sanitized = {}
+        for k, v in data.items():
+            if any(s in str(k).lower() for s in SENSITIVE_KEYS):
+                sanitized[k] = "[REDACTED]"
+            elif isinstance(v, dict):
+                sanitized[k] = self._sanitize_data(v)
+            else:
+                sanitized[k] = v
+        return sanitized

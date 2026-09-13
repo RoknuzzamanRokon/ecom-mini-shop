@@ -1323,4 +1323,5 @@ from .admin_views import (
     AdminCustomerListAPIView,
     AdminCustomerDetailAPIView,
     AdminMetricsAPIView,
+    AdminAuditLogListAPIView,
 )

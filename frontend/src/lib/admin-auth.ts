@@ -75,6 +75,91 @@ export function hasManagementPermission(
 }
 
 /**
+ * Checks whether current user has AT LEAST ONE of the specified permissions.
+ */
+export function hasAnyPermission(
+  user: AuthUser | null | undefined,
+  permissions: string[]
+): boolean {
+  if (!user) return false;
+  if (user.is_superuser) return true;
+  if ((user.permissions || []).includes("*")) return true;
+  return permissions.some((perm) => hasManagementPermission(user, perm));
+}
+
+/**
+ * Checks whether current user has ALL of the specified permissions.
+ */
+export function hasAllPermissions(
+  user: AuthUser | null | undefined,
+  permissions: string[]
+): boolean {
+  if (!user) return false;
+  if (user.is_superuser) return true;
+  if ((user.permissions || []).includes("*")) return true;
+  return permissions.every((perm) => hasManagementPermission(user, perm));
+}
+
+// ==============================================================================
+// DOMAIN-SPECIFIC UI PERMISSION HELPERS
+// (Used ONLY for UI visibility/enablement; backend always enforces final auth)
+// ==============================================================================
+
+export function canViewShops(user: AuthUser | null | undefined): boolean {
+  return hasAnyPermission(user, ["shops.admin.manage", "shops.view", "shop:read", "shops:read"]);
+}
+
+export function canManageShops(user: AuthUser | null | undefined): boolean {
+  return hasAnyPermission(user, ["shops.admin.manage", "shop:manage"]);
+}
+
+export function canApproveShops(user: AuthUser | null | undefined): boolean {
+  return hasAnyPermission(user, ["shops.admin.manage", "shops.approve", "shop:approve"]);
+}
+
+export function canViewSellers(user: AuthUser | null | undefined): boolean {
+  return hasAnyPermission(user, ["sellers.admin.manage", "sellers.view", "seller:read", "sellers:read"]);
+}
+
+export function canManageSellers(user: AuthUser | null | undefined): boolean {
+  return hasAnyPermission(user, ["sellers.admin.manage", "seller:manage"]);
+}
+
+export function canViewOrders(user: AuthUser | null | undefined): boolean {
+  return hasAnyPermission(user, ["orders.staff.view", "orders.view", "order:read", "orders:read"]);
+}
+
+export function canUpdateOrders(user: AuthUser | null | undefined): boolean {
+  return hasAnyPermission(user, ["orders.staff.update", "orders.update", "order:update"]);
+}
+
+export function canViewPayments(user: AuthUser | null | undefined): boolean {
+  return hasAnyPermission(user, ["payments.view", "payment:read", "payments:read"]);
+}
+
+export function canVerifyPayments(user: AuthUser | null | undefined): boolean {
+  return hasAnyPermission(user, ["payments.verify", "payments.process", "payment:verify"]);
+}
+
+export function canRefundPayments(user: AuthUser | null | undefined): boolean {
+  return hasAnyPermission(user, ["payments.refund", "orders.refund", "payment:refund"]);
+}
+
+export function canManageCategories(user: AuthUser | null | undefined): boolean {
+  return hasAnyPermission(user, ["categories.admin.manage", "category:manage", "categories:manage"]);
+}
+
+export function canViewAuditLogs(user: AuthUser | null | undefined): boolean {
+  return hasAnyPermission(user, [
+    "audit.view",
+    "audit.admin.view",
+    "users.admin.view",
+    "roles.admin.view",
+    "audit:read",
+  ]);
+}
+
+/**
  * Formats user's primary management role for display in the admin header / badge.
  */
 export function getManagementRoleLabel(user: AuthUser | null | undefined): string {
@@ -98,3 +183,4 @@ export function getManagementRoleLabel(user: AuthUser | null | undefined): strin
 
   return "Management User";
 }
+

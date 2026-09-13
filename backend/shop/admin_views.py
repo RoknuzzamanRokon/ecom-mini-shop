@@ -18,6 +18,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from audit.models import AuditLog
 from audit.services import AuditService
 from customers.models import CustomerProfile
 from rbac.models import Permission, Role, RolePermission, UserRole
@@ -25,18 +26,23 @@ from rbac.services import assign_user_role, get_user_permissions, get_user_role_
 from sellers.models import SellerProfile
 from sellers.services import approve_seller, reactivate_seller, reject_seller, suspend_seller
 from shop.admin_permissions import (
+    CanChangeAdminShopStatus,
     CanManageAdminCategories,
     CanManageAdminProducts,
     CanManageAdminRoles,
     CanManageAdminSellers,
     CanManageAdminShops,
     CanManageAdminUsers,
+    CanViewAdminAuditLogs,
     CanViewAdminCustomers,
     CanViewAdminRoles,
+    CanViewAdminSellers,
+    CanViewAdminShops,
     CanViewAdminUsers,
 )
 from shop.admin_serializers import (
     PROTECTED_ROLE_CODES,
+    AdminAuditLogSerializer,
     AdminCategorySerializer,
     AdminCustomerDetailSerializer,
     AdminCustomerListSerializer,
@@ -438,7 +444,7 @@ class AdminSellerListAPIView(APIView):
     GET /api/admin/sellers/
     Searchable, filterable, paginated seller list for administrators.
     """
-    permission_classes = [IsAuthenticated, CanManageAdminSellers]
+    permission_classes = [IsAuthenticated, CanViewAdminSellers]
 
     def get(self, request):
         qs = SellerProfile.objects.select_related("user").prefetch_related("shops").all().order_by("-created_at")
@@ -471,7 +477,7 @@ class AdminSellerDetailAPIView(APIView):
     GET /api/admin/sellers/<int:pk>/
     Inspect seller application/profile detail.
     """
-    permission_classes = [IsAuthenticated, CanManageAdminSellers]
+    permission_classes = [IsAuthenticated, CanViewAdminSellers]
 
     def get(self, request, pk):
         try:
@@ -542,7 +548,7 @@ class AdminShopListAPIView(APIView):
     GET /api/admin/shops/
     Paginated, searchable list of shops across the platform.
     """
-    permission_classes = [IsAuthenticated, CanManageAdminShops]
+    permission_classes = [IsAuthenticated, CanViewAdminShops]
 
     def get(self, request):
         qs = Shop.objects.select_related("owner", "owner__user").prefetch_related("products").all().order_by("-created_at")
@@ -570,7 +576,7 @@ class AdminShopDetailAPIView(APIView):
     GET /api/admin/shops/<int:pk>/
     Inspect shop detail.
     """
-    permission_classes = [IsAuthenticated, CanManageAdminShops]
+    permission_classes = [IsAuthenticated, CanViewAdminShops]
 
     def get(self, request, pk):
         try:
@@ -586,7 +592,7 @@ class AdminShopStatusAPIView(APIView):
     PATCH /api/admin/shops/<int:pk>/status/
     Transitions shop lifecycle (approve, reject, suspend, reactivate).
     """
-    permission_classes = [IsAuthenticated, CanManageAdminShops]
+    permission_classes = [IsAuthenticated, CanChangeAdminShopStatus]
 
     def post(self, request, pk):
         return self._update_status(request, pk)
@@ -599,6 +605,16 @@ class AdminShopStatusAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         action = serializer.validated_data["action"]
         reason = serializer.validated_data.get("reason", "")
+
+        # Granular RBAC enforcement: users holding only 'shops.approve' can only approve
+        user = request.user
+        actor_role_codes = get_user_role_codes(user)
+        is_super = user.is_superuser or (Role.ROLE_SUPER_ADMINISTRATOR in actor_role_codes)
+        if not is_super and not has_user_permission(user, "shops.admin.manage"):
+            if action != "approve":
+                raise PermissionDenied(
+                    f"You do not have permission to {action} shops. Broader shop management permission ('shops.admin.manage') is required."
+                )
 
         with transaction.atomic():
             try:
@@ -988,4 +1004,83 @@ class AdminMetricsAPIView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+# ==============================================================================
+# 9. AUDIT LOG ADMINISTRATION VIEWS
+# ==============================================================================
+
+class AdminAuditLogListAPIView(APIView):
+    """
+    GET /api/admin/audit-logs/
+    Read-only, paginated, searchable, and filterable audit log stream for platform governance.
+    Strictly forbids mutations (POST, PUT, PATCH, DELETE).
+    Returns real AuditLog database records, newest first.
+    """
+    permission_classes = [IsAuthenticated, CanViewAdminAuditLogs]
+    http_method_names = ["get", "head", "options"]
+
+    def get(self, request):
+        qs = AuditLog.objects.select_related("actor", "shop", "seller").all().order_by("-created_at")
+
+        # 1. Action filter
+        action = request.query_params.get("action", "").strip()
+        if action:
+            qs = qs.filter(action__icontains=action)
+
+        # 2. Resource / Target Type filter
+        resource_type = request.query_params.get("resource_type") or request.query_params.get("target_type")
+        if resource_type:
+            qs = qs.filter(target_type__iexact=resource_type.strip())
+
+        # 3. Resource / Target ID filter
+        resource_id = request.query_params.get("resource_id") or request.query_params.get("target_id")
+        if resource_id:
+            qs = qs.filter(target_id=str(resource_id).strip())
+
+        # 4. Actor filter (by user ID or username/email)
+        actor_param = request.query_params.get("actor", "").strip()
+        if actor_param:
+            if actor_param.isdigit():
+                qs = qs.filter(actor_id=int(actor_param))
+            else:
+                qs = qs.filter(
+                    Q(actor__username__icontains=actor_param)
+                    | Q(actor__email__icontains=actor_param)
+                )
+
+        # 5. Shop / Seller context filters
+        shop_id = request.query_params.get("shop_id")
+        if shop_id and str(shop_id).isdigit():
+            qs = qs.filter(shop_id=int(shop_id))
+
+        seller_id = request.query_params.get("seller_id")
+        if seller_id and str(seller_id).isdigit():
+            qs = qs.filter(seller_id=int(seller_id))
+
+        # 6. General Search
+        search = request.query_params.get("search", "").strip()
+        if search:
+            qs = qs.filter(
+                Q(action__icontains=search)
+                | Q(target_type__icontains=search)
+                | Q(target_repr__icontains=search)
+                | Q(actor__username__icontains=search)
+                | Q(actor__email__icontains=search)
+            )
+
+        # 7. Date range filters
+        start_date = request.query_params.get("start_date", "").strip()
+        if start_date:
+            qs = qs.filter(created_at__date__gte=start_date)
+
+        end_date = request.query_params.get("end_date", "").strip()
+        if end_date:
+            qs = qs.filter(created_at__date__lte=end_date)
+
+        paginator = AdminPagination()
+        page = paginator.paginate_queryset(qs, request)
+        serializer = AdminAuditLogSerializer(page, many=True)
+        return paginator.get_paginated_response(serializer.data)
+
 
