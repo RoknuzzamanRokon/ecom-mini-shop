@@ -43,6 +43,40 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  async redirects() {
+    return [
+      {
+        source: "/account",
+        destination: "/profile",
+        permanent: false,
+      },
+      {
+        source: "/account/orders",
+        destination: "/profile/orders",
+        permanent: false,
+      },
+      {
+        source: "/account/addresses",
+        destination: "/profile/addresses",
+        permanent: false,
+      },
+      {
+        source: "/account/profile",
+        destination: "/profile/settings",
+        permanent: false,
+      },
+      {
+        source: "/account/orders/:orderNumber",
+        destination: "/profile/orders/:orderNumber",
+        permanent: false,
+      },
+      {
+        source: "/account/:path*",
+        destination: "/profile/:path*",
+        permanent: false,
+      },
+    ];
+  },
 };
 
 export default nextConfig;

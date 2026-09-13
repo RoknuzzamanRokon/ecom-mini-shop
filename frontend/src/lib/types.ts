@@ -120,6 +120,7 @@ export interface OrderItem {
   product?: number | null;
   product_name: string;
   product_slug?: string;
+  product_image?: string | null;
   shop?: number | null;
   shop_name?: string;
   seller?: number | null;

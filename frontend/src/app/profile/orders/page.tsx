@@ -86,7 +86,15 @@ export default function OrderHistoryPage() {
         <>
           <div className="flex flex-col gap-4">
             {orders.map((order) => (
-              <OrderCard key={order.id} order={order} />
+              <OrderCard
+                key={order.id}
+                order={order}
+                onOrderUpdated={(updated) =>
+                  setOrders((prev) =>
+                    prev.map((o) => (o.id === updated.id ? updated : o))
+                  )
+                }
+              />
             ))}
           </div>
           {totalPages > 1 && (

@@ -94,7 +94,20 @@ export default function CurrentOrdersPage() {
       ) : (
         <div className="flex flex-col gap-4">
           {orders.map((order) => (
-            <OrderCard key={order.id} order={order} showTracker />
+            <OrderCard
+              key={order.id}
+              order={order}
+              showTracker
+              onOrderUpdated={(updated) =>
+                setOrders((prev) =>
+                  prev.filter((o) =>
+                    o.id === updated.id
+                      ? ACTIVE_STATUSES.includes((updated.status || "").toUpperCase())
+                      : true
+                  )
+                )
+              }
+            />
           ))}
         </div>
       )}

@@ -318,6 +318,7 @@ class OrderItemInputSerializer(serializers.Serializer):
 class OrderItemSerializer(serializers.ModelSerializer):
     unit_price = serializers.DecimalField(max_digits=10, decimal_places=2, read_only=True)
     line_total = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+    product_image = serializers.SerializerMethodField()
 
     class Meta:
         model = OrderItem
@@ -326,6 +327,7 @@ class OrderItemSerializer(serializers.ModelSerializer):
             "product",
             "product_name",
             "product_slug",
+            "product_image",
             "shop",
             "shop_name",
             "seller",
@@ -337,6 +339,11 @@ class OrderItemSerializer(serializers.ModelSerializer):
             "subtotal",
             "created_at",
         ]
+
+    def get_product_image(self, obj):
+        if obj.product and obj.product.image:
+            return obj.product.image.url
+        return None
 
 
 class OrderDetailSerializer(serializers.ModelSerializer):
