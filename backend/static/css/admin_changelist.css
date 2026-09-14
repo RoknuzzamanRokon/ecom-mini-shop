@@ -773,6 +773,88 @@ body.model-refund #result_list th.column-status_badge    { width: 100px !importa
 body.model-refund #result_list th.column-processed_by    { width: 13% !important; }
 body.model-refund #result_list th.column-created_at      { width: 116px !important; }
 
+/* -- Product inventory: 7 columns, four of them quantities -------------
+   A stock ledger: one identity column and four integers that are meant to be
+   compared down the column, so every figure is right-aligned with tabular
+   numerals and the headers align with them.
+
+   The headers are the widest thing here ("AVAILABLE QUANTITY" over a 2-digit
+   value), which is why the numeric columns are budgeted for their labels
+   rather than their data. Two-word labels wrap, so each only needs room for
+   its longest word.
+
+   available_display is the one to read first -- ProductInventoryAdmin colours
+   it inline, red at zero and amber at or below LOW_STOCK_THRESHOLD. Those two
+   hues are mid-tone and stay legible on a dark surface, so unlike the payment
+   method chip they are left exactly as the admin emitted them. */
+body.model-productinventory.change-list #result_list { --cl-grid-min: 780px; }
+
+/* The percentages below sum to 100%, and the checkbox column is one of them.
+   That matters: in a fixed layout a percentage column takes exactly its
+   percentage and ALL the leftover goes to the pixel-width columns. Every other
+   model here has several pixel columns to share that slack (which is what lets
+   their dates and ids stay on one line on a wide screen), but this grid is
+   otherwise all percentages -- so the 34px checkbox column was the only
+   absorber and blew out to 127px at 1920, leaving a gap before the product
+   name. As a percentage it stays 23-39px across the supported range. */
+body.model-productinventory #result_list th.action-checkbox-column    { width: 3% !important; }
+body.model-productinventory #result_list th.column-product            { width: 27% !important; }
+body.model-productinventory #result_list th.column-available_display  { width: 14.5% !important; }
+body.model-productinventory #result_list th.column-reserved_quantity  { width: 13.5% !important; }
+body.model-productinventory #result_list th.column-sold_quantity      { width: 12.5% !important; }
+body.model-productinventory #result_list th.column-total_display      { width: 13.5% !important; }
+body.model-productinventory #result_list th.column-updated_at         { width: 16% !important; }
+
+/* Django marks field-product .nowrap; the generic cell rule supplies the
+   ellipsis. */
+body.model-productinventory #result_list tbody th.field-product {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+/* Every quantity right-aligned, header included, so the digits form a column
+   that can be scanned vertically. */
+body.model-productinventory #result_list th.column-available_display > .text,
+body.model-productinventory #result_list th.column-reserved_quantity > .text,
+body.model-productinventory #result_list th.column-sold_quantity > .text,
+body.model-productinventory #result_list th.column-total_display > .text,
+body.model-productinventory #result_list th.column-updated_at > .text {
+  text-align: right !important;
+}
+
+body.model-productinventory #result_list tbody td.field-available_display,
+body.model-productinventory #result_list tbody td.field-reserved_quantity,
+body.model-productinventory #result_list tbody td.field-sold_quantity,
+body.model-productinventory #result_list tbody td.field-total_display {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums !important;
+}
+
+/* Available is the figure that drives a restock decision; total is the sum
+   that reconciles the row. Reserved and sold are supporting detail. */
+body.model-productinventory #result_list tbody td.field-available_display {
+  font-weight: 700 !important;
+}
+
+body.model-productinventory #result_list tbody td.field-total_display {
+  font-weight: 800 !important;
+  color: var(--jp-text-ink) !important;
+}
+
+body.model-productinventory #result_list tbody td.field-reserved_quantity,
+body.model-productinventory #result_list tbody td.field-sold_quantity {
+  color: var(--jp-text-ink-muted) !important;
+}
+
+/* Timestamp wraps to date + time; Django marks it .nowrap. */
+body.model-productinventory #result_list tbody td.field-updated_at {
+  white-space: normal !important;
+  text-align: right !important;
+  line-height: 1.35 !important;
+  font-size: 10.5px !important;
+  color: var(--jp-text-ink-muted) !important;
+}
+
 /* --------------------------------------------------------------------------
    7. CELLS THAT ARE FORM FIELDS
    Django's list_editable inputs carry no width, so they took their intrinsic
@@ -1083,6 +1165,11 @@ body.change-list #changelist-filter li.selected a {
 @container clmain (min-width: 1000px) {
   body.model-refund #changelist-form .results { overflow-x: visible !important; }
   body.model-refund #result_list { --cl-head-position: sticky; }
+}
+
+@container clmain (min-width: 780px) {
+  body.model-productinventory #changelist-form .results { overflow-x: visible !important; }
+  body.model-productinventory #result_list { --cl-head-position: sticky; }
 }
 
 /* --------------------------------------------------------------------------
