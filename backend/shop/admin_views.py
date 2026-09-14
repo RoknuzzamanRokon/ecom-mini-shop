@@ -18,6 +18,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .metrics import get_console_metrics
 from audit.models import AuditLog
 from audit.services import AuditService
 from customers.models import CustomerProfile
@@ -984,26 +985,7 @@ class AdminMetricsAPIView(APIView):
         if not is_management:
             raise PermissionDenied("You do not have management portal permissions.")
 
-        total_orders = Order.objects.count()
-        revenue_data = Payment.objects.filter(status__in=["PAID", "COMPLETED"]).aggregate(
-            total=Sum("amount")
-        )
-        total_revenue = float(revenue_data["total"] or 0)
-        pending_shops = Shop.objects.filter(status="PENDING").count()
-        pending_sellers = SellerProfile.objects.filter(status="PENDING").count()
-
-        return Response(
-            {
-                "total_orders": total_orders,
-                "total_revenue": total_revenue,
-                "pending_shops": pending_shops,
-                "pending_sellers": pending_sellers,
-                "total_shops": Shop.objects.count(),
-                "total_sellers": SellerProfile.objects.count(),
-                "total_products": Product.objects.count(),
-            },
-            status=status.HTTP_200_OK,
-        )
+        return Response(get_console_metrics(), status=status.HTTP_200_OK)
 
 
 # ==============================================================================

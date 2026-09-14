@@ -65,7 +65,7 @@
     /* KPI Quick Cards Grid */
     .kpi-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
       gap: 16px;
       margin-bottom: 28px;
     }
@@ -138,6 +138,44 @@
       color: #E11D48;
     }
 
+
+    /* Metric value + breakdown pills */
+    .kpi-value {
+      font-size: 24px;
+      font-weight: 900;
+      line-height: 1.1;
+      color: var(--jp-text-ink);
+      margin-bottom: 4px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .kpi-breakdown {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 6px;
+    }
+
+    .kpi-pill {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 10px;
+      white-space: nowrap;
+      background: var(--jp-bg-surface-sunken, rgba(0, 0, 0, 0.04));
+      color: var(--jp-text-ink-muted);
+    }
+
+    .kpi-pill.is-ok { background: rgba(16, 185, 129, 0.12); color: #0F9B76; }
+    .kpi-pill.is-warn { background: rgba(245, 158, 11, 0.14); color: #B45309; }
+    .kpi-pill.is-bad { background: rgba(239, 68, 68, 0.12); color: #DC2626; }
+
+    [data-theme="dark"] .kpi-pill.is-ok { color: #6EE7B7; }
+    [data-theme="dark"] .kpi-pill.is-warn { color: #FCD34D; }
+    [data-theme="dark"] .kpi-pill.is-bad { color: #FCA5A5; }
+
+    .kpi-card .kpi-info { min-width: 0; }
+
     /* Action List in Sidebar */
     .actionlist li {
       padding: 10px 14px !important;
@@ -171,47 +209,133 @@
     </p>
   </div>
 
-  <!-- KPI Quick Navigation Cards -->
+  <!-- Platform Metrics -->
   <div class="kpi-grid">
-    <a href="{% url 'admin:shop_product_changelist' %}" class="kpi-card" title="Manage Products">
+
+    <a href="{% url 'admin:auth_user_changelist' %}" class="kpi-card" title="Manage Users">
       <div class="kpi-info">
-        <h4>Catalog</h4>
-        <div class="kpi-label">Products</div>
+        <h4>People</h4>
+        <div class="kpi-value">{{ metrics.users.total }}</div>
+        <div class="kpi-label">Users</div>
+        <div class="kpi-breakdown">
+          <span class="kpi-pill is-ok">{{ metrics.users.active }} active</span>
+          <span class="kpi-pill">{{ metrics.users.staff }} staff</span>
+        </div>
       </div>
       <div class="kpi-icon-wrap indigo">
-        <span class="material-symbols-outlined">shopping_bag</span>
+        <span class="material-symbols-outlined">group</span>
       </div>
     </a>
 
-    <a href="{% url 'admin:shop_category_changelist' %}" class="kpi-card" title="Manage Categories & Banners">
+    <a href="{% url 'admin:sellers_sellerprofile_changelist' %}" class="kpi-card" title="Manage Sellers">
       <div class="kpi-info">
-        <h4>Organization</h4>
-        <div class="kpi-label">Categories</div>
+        <h4>Merchants</h4>
+        <div class="kpi-value">{{ metrics.sellers.total }}</div>
+        <div class="kpi-label">Sellers</div>
+        <div class="kpi-breakdown">
+          <span class="kpi-pill is-ok">{{ metrics.sellers.active }} active</span>
+          {% if metrics.sellers.pending %}<span class="kpi-pill is-warn">{{ metrics.sellers.pending }} pending</span>{% endif %}
+          {% if metrics.sellers.suspended %}<span class="kpi-pill is-bad">{{ metrics.sellers.suspended }} suspended</span>{% endif %}
+        </div>
       </div>
       <div class="kpi-icon-wrap gold">
-        <span class="material-symbols-outlined">category</span>
+        <span class="material-symbols-outlined">badge</span>
+      </div>
+    </a>
+
+    <a href="{% url 'admin:shops_shop_changelist' %}" class="kpi-card" title="Manage Shops">
+      <div class="kpi-info">
+        <h4>Storefronts</h4>
+        <div class="kpi-value">{{ metrics.shops.total }}</div>
+        <div class="kpi-label">Shops</div>
+        <div class="kpi-breakdown">
+          <span class="kpi-pill is-ok">{{ metrics.shops.active }} active</span>
+          {% if metrics.shops.pending %}<span class="kpi-pill is-warn">{{ metrics.shops.pending }} pending</span>{% endif %}
+          {% if metrics.shops.suspended %}<span class="kpi-pill is-bad">{{ metrics.shops.suspended }} suspended</span>{% endif %}
+        </div>
+      </div>
+      <div class="kpi-icon-wrap indigo">
+        <span class="material-symbols-outlined">storefront</span>
+      </div>
+    </a>
+
+    <a href="{% url 'admin:shop_product_changelist' %}" class="kpi-card" title="Manage Products">
+      <div class="kpi-info">
+        <h4>Catalog</h4>
+        <div class="kpi-value">{{ metrics.products.total }}</div>
+        <div class="kpi-label">Products</div>
+        <div class="kpi-breakdown">
+          <span class="kpi-pill is-ok">{{ metrics.products.published }} published</span>
+          {% if metrics.products.draft %}<span class="kpi-pill">{{ metrics.products.draft }} draft</span>{% endif %}
+          {% if metrics.products.submitted %}<span class="kpi-pill is-warn">{{ metrics.products.submitted }} to review</span>{% endif %}
+        </div>
+      </div>
+      <div class="kpi-icon-wrap gold">
+        <span class="material-symbols-outlined">shopping_bag</span>
       </div>
     </a>
 
     <a href="{% url 'admin:shop_order_changelist' %}" class="kpi-card" title="View Customer Orders">
       <div class="kpi-info">
         <h4>Sales</h4>
+        <div class="kpi-value">{{ metrics.orders.total }}</div>
         <div class="kpi-label">Orders</div>
+        <div class="kpi-breakdown">
+          {% if metrics.orders.pending %}<span class="kpi-pill is-warn">{{ metrics.orders.pending }} pending</span>{% endif %}
+          {% if metrics.orders.in_flight %}<span class="kpi-pill">{{ metrics.orders.in_flight }} in flight</span>{% endif %}
+          <span class="kpi-pill is-ok">{{ metrics.orders.delivered }} delivered</span>
+          {% if metrics.orders.cancelled %}<span class="kpi-pill is-bad">{{ metrics.orders.cancelled }} cancelled</span>{% endif %}
+        </div>
       </div>
       <div class="kpi-icon-wrap green">
         <span class="material-symbols-outlined">receipt_long</span>
       </div>
     </a>
 
-    <a href="http://localhost:3000" target="_blank" rel="noopener noreferrer" class="kpi-card" title="Open Next.js Storefront">
+    <a href="{% url 'admin:shop_payment_changelist' %}" class="kpi-card" title="View Payments">
       <div class="kpi-info">
-        <h4>Next.js App</h4>
-        <div class="kpi-label">Storefront ↗</div>
+        <h4>Revenue</h4>
+        <div class="kpi-value">৳{{ metrics.payments.revenue|floatformat:2 }}</div>
+        <div class="kpi-label">Collected</div>
+        <div class="kpi-breakdown">
+          <span class="kpi-pill is-ok">{{ metrics.payments.paid }} paid</span>
+        </div>
       </div>
-      <div class="kpi-icon-wrap rose">
-        <span class="material-symbols-outlined">storefront</span>
+      <div class="kpi-icon-wrap green">
+        <span class="material-symbols-outlined">payments</span>
       </div>
     </a>
+
+    <a href="{% url 'admin:shop_payment_changelist' %}" class="kpi-card" title="View Payments">
+      <div class="kpi-info">
+        <h4>Finance</h4>
+        <div class="kpi-value">{{ metrics.payments.total }}</div>
+        <div class="kpi-label">Payments</div>
+        <div class="kpi-breakdown">
+          <span class="kpi-pill is-ok">{{ metrics.payments.paid }} paid</span>
+          {% if metrics.payments.pending %}<span class="kpi-pill is-warn">{{ metrics.payments.pending }} pending</span>{% endif %}
+          {% if metrics.payments.failed %}<span class="kpi-pill is-bad">{{ metrics.payments.failed }} failed</span>{% endif %}
+        </div>
+      </div>
+      <div class="kpi-icon-wrap indigo">
+        <span class="material-symbols-outlined">account_balance</span>
+      </div>
+    </a>
+
+    <a href="{% url 'admin:shop_productinventory_changelist' %}" class="kpi-card" title="Review Stock Levels">
+      <div class="kpi-info">
+        <h4>Inventory</h4>
+        <div class="kpi-value">{{ metrics.inventory.low_stock }}</div>
+        <div class="kpi-label">Low stock (&le;{{ metrics.low_stock_threshold }})</div>
+        <div class="kpi-breakdown">
+          {% if metrics.inventory.out_of_stock %}<span class="kpi-pill is-bad">{{ metrics.inventory.out_of_stock }} out of stock</span>{% else %}<span class="kpi-pill is-ok">none out of stock</span>{% endif %}
+        </div>
+      </div>
+      <div class="kpi-icon-wrap rose">
+        <span class="material-symbols-outlined">inventory_2</span>
+      </div>
+    </a>
+
   </div>
 
   <!-- Apps and Models Tables -->

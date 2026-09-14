@@ -45,7 +45,7 @@ ALLOWED_HOSTS = ["127.0.0.1", "localhost", "testserver"]
 # Application definition
 
 INSTALLED_APPS = [
-    'django.contrib.admin',
+    'config.apps.MiniShopAdminConfig',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
@@ -169,6 +169,9 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 PRODUCTS_PER_PAGE = 12
 
 # CORS settings
+# Public Next.js storefront, linked from the admin chrome.
+STOREFRONT_URL = os.environ.get("STOREFRONT_URL", "http://localhost:3000")
+
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
