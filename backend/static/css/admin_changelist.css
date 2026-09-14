@@ -652,54 +652,59 @@ body.model-order #result_list tbody td.field-created_at {
   font-size: 11.5px !important;
 }
 
-/* -- Payment: 8 columns, fully read-only -------------------------------
-   No add/change/delete permission, so Django emits no checkbox column and no
-   actions bar -- just toolbar, grid, paginator.
+/* -- Payment and Refund: read-only financial ledgers --------------------
+   Both set has_add/change/delete_permission False, so Django emits no checkbox
+   column, no actions bar and no add button -- just toolbar, grid, paginator.
+   They share a shape (an id, references to other records, one money figure, a
+   status pill, an actor, timestamps), so the treatment below is shared and
+   only the column budgets differ.
 
-   The hard part is width: two full timestamps (~166px each on one line) plus
-   two long identifiers (PAY-20260911-594EC931, ORD-PAY-E36D8D65 (PENDING))
-   claimed ~600px of a ~1013px grid, which squeezed the order reference down to
-   an unreadable stub. Stacking each timestamp onto two lines gives ~110px
-   back, and then every column fits with nothing clipped. */
-body.model-payment.change-list #result_list { --cl-grid-min: 1000px; }
+   Width is the hard part on both. Payment carries two full timestamps
+   (~166px each on one line); Refund carries Payment.__str__, which renders as
+   "PAY-20260911-594EC931 (REFUNDED) - 2060.00 BDT" -- 47 characters whose tail
+   repeats this page's own Status and Amount columns. Stacking timestamps onto
+   two lines buys ~110px, and the reference columns truncate from the right so
+   the identifier that leads them stays readable. */
 
-body.model-payment #result_list th.column-payment_number       { width: 160px !important; }
-body.model-payment #result_list th.column-order                { width: 19% !important; }
-body.model-payment #result_list th.column-user                 { width: 10.5% !important; }
-body.model-payment #result_list th.column-payment_method_badge { width: 138px !important; }
-body.model-payment #result_list th.column-amount_display       { width: 100px !important; }
-body.model-payment #result_list th.column-status_badge         { width: 100px !important; }
-body.model-payment #result_list th.column-paid_at              { width: 112px !important; }
-body.model-payment #result_list th.column-created_at           { width: 112px !important; }
-
-/* Both identifiers are machine strings, so monospace lets two rows be compared
-   digit by digit. 11px keeps the 21- and 26-character values inside their
-   columns. */
+/* Identifiers and record references: monospace so two rows can be compared
+   digit by digit, at 11px to keep 21- to 47-character values in budget. */
 body.model-payment #result_list tbody th.field-payment_number a,
-body.model-payment #result_list tbody td.field-order {
+body.model-payment #result_list tbody td.field-order,
+body.model-refund #result_list tbody th.field-refund_number a,
+body.model-refund #result_list tbody td.field-order,
+body.model-refund #result_list tbody td.field-payment {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
   font-size: 11px !important;
   letter-spacing: -0.2px !important;
 }
 
 body.model-payment #result_list tbody td.field-order,
-body.model-payment #result_list tbody td.field-user {
+body.model-payment #result_list tbody td.field-user,
+body.model-refund #result_list tbody td.field-order,
+body.model-refund #result_list tbody td.field-payment,
+body.model-refund #result_list tbody td.field-processed_by {
   white-space: nowrap !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
   color: var(--jp-text-ink-body) !important;
 }
 
-body.model-payment #result_list tbody td.field-user {
+/* The account / operator behind the record is secondary to the record. */
+body.model-payment #result_list tbody td.field-user,
+body.model-refund #result_list tbody td.field-processed_by {
   font-size: 11.5px !important;
   color: var(--jp-text-ink-muted) !important;
 }
 
-/* amount_display returns a formatted string, not a number field, so it is
+/* amount_display returns a preformatted string, not a number field, so it is
    right-aligned here rather than by the numeric rules used elsewhere. */
-body.model-payment #result_list th.column-amount_display > .text { text-align: right !important; }
+body.model-payment #result_list th.column-amount_display > .text,
+body.model-refund #result_list th.column-amount_display > .text {
+  text-align: right !important;
+}
 
-body.model-payment #result_list tbody td.field-amount_display {
+body.model-payment #result_list tbody td.field-amount_display,
+body.model-refund #result_list tbody td.field-amount_display {
   text-align: right !important;
   font-variant-numeric: tabular-nums !important;
   font-weight: 800 !important;
@@ -708,9 +713,10 @@ body.model-payment #result_list tbody td.field-amount_display {
 }
 
 /* Timestamps wrap to date + time. Django marks these .nowrap, which is what
-   forced them onto one 166px line. */
+   forced them onto one ~166px line. */
 body.model-payment #result_list tbody td.field-paid_at,
-body.model-payment #result_list tbody td.field-created_at {
+body.model-payment #result_list tbody td.field-created_at,
+body.model-refund #result_list tbody td.field-created_at {
   white-space: normal !important;
   line-height: 1.35 !important;
   font-size: 10.5px !important;
@@ -741,6 +747,31 @@ body.model-payment #result_list tbody td.field-payment_method_badge > span {
 body.model-payment #result_list tbody td.field-payment_method_badge {
   text-overflow: clip !important;
 }
+
+/* Payment: 8 columns. */
+body.model-payment.change-list #result_list { --cl-grid-min: 1000px; }
+
+body.model-payment #result_list th.column-payment_number       { width: 160px !important; }
+body.model-payment #result_list th.column-order                { width: 19% !important; }
+body.model-payment #result_list th.column-user                 { width: 10.5% !important; }
+body.model-payment #result_list th.column-payment_method_badge { width: 138px !important; }
+body.model-payment #result_list th.column-amount_display       { width: 100px !important; }
+body.model-payment #result_list th.column-status_badge         { width: 100px !important; }
+body.model-payment #result_list th.column-paid_at              { width: 112px !important; }
+body.model-payment #result_list th.column-created_at           { width: 112px !important; }
+
+/* Refund: 7 columns. payment gets the largest share because its value is the
+   longest; the percentages let it reveal more of the string on wide screens
+   while the fixed columns stay put. The three shapes sum at a ~1013px grid. */
+body.model-refund.change-list #result_list { --cl-grid-min: 1000px; }
+
+body.model-refund #result_list th.column-refund_number   { width: 160px !important; }
+body.model-refund #result_list th.column-order           { width: 19% !important; }
+body.model-refund #result_list th.column-payment         { width: 21% !important; }
+body.model-refund #result_list th.column-amount_display  { width: 100px !important; }
+body.model-refund #result_list th.column-status_badge    { width: 100px !important; }
+body.model-refund #result_list th.column-processed_by    { width: 13% !important; }
+body.model-refund #result_list th.column-created_at      { width: 116px !important; }
 
 /* --------------------------------------------------------------------------
    7. CELLS THAT ARE FORM FIELDS
@@ -1047,6 +1078,11 @@ body.change-list #changelist-filter li.selected a {
 @container clmain (min-width: 1000px) {
   body.model-payment #changelist-form .results { overflow-x: visible !important; }
   body.model-payment #result_list { --cl-head-position: sticky; }
+}
+
+@container clmain (min-width: 1000px) {
+  body.model-refund #changelist-form .results { overflow-x: visible !important; }
+  body.model-refund #result_list { --cl-head-position: sticky; }
 }
 
 /* --------------------------------------------------------------------------
