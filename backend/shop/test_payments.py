@@ -446,6 +446,68 @@ class PaymentAndRefundManagementTests(APITestCase):
         })
         self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
 
+    # ==========================================================================
+    # PAYMENT DATA ISOLATION: STAFF ENDPOINT AUTHORIZATION (Phase 1A.1)
+    #
+    # 'payments.view' gates the platform-wide staff payment surface
+    # (/api/staff/payments/ and /api/staff/payments/<pk>/, see
+    # StaffPaymentListAPIView / StaffPaymentDetailAPIView). It is no longer
+    # seeded on CUSTOMER: that permission has never gated the customer-facing
+    # payment endpoint below, which is authorized purely by IsAuthenticated
+    # plus per-request order ownership (see
+    # test_customer_payment_ownership_isolation above).
+    # ==========================================================================
+
+    def test_customer_cannot_access_staff_payment_listing(self):
+        """A normal CUSTOMER must receive 403 on the platform-wide staff payment listing."""
+        order = self._create_order(self.customer_a, self.address_a, quantity=1)
+        PaymentService.create_or_get_payment(order=order, payment_method="BKASH")
+
+        self.client.force_authenticate(user=self.customer_a)
+        res = self.client.get("/api/staff/payments/")
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        # No platform payment data may leak into a denied response body.
+        self.assertNotIsInstance(res.data, list)
+        self.assertNotIn("results", res.data if isinstance(res.data, dict) else {})
+
+    def test_customer_cannot_access_staff_payment_detail(self):
+        """A normal CUSTOMER must receive 403 on a staff payment detail record, even their own."""
+        order = self._create_order(self.customer_a, self.address_a, quantity=1)
+        payment = PaymentService.create_or_get_payment(order=order, payment_method="BKASH")
+
+        self.client.force_authenticate(user=self.customer_a)
+        res = self.client.get(f"/api/staff/payments/{payment.id}/")
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_unauthenticated_user_cannot_access_staff_payment_listing(self):
+        """An unauthenticated request must receive 401 (not 403) on the staff payment listing."""
+        res = self.client.get("/api/staff/payments/")
+        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_authorized_finance_staff_can_access_staff_payment_listing(self):
+        """A Finance user holding 'payments.view' can access the platform-wide staff payment listing."""
+        order_a = self._create_order(self.customer_a, self.address_a, quantity=1)
+        PaymentService.create_or_get_payment(order=order_a, payment_method="BKASH")
+        order_b = self._create_order(self.customer_b, self.address_b, quantity=1)
+        PaymentService.create_or_get_payment(order=order_b, payment_method="NAGAD")
+
+        self.client.force_authenticate(user=self.finance_user)
+        res = self.client.get("/api/staff/payments/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        # The staff endpoint is intentionally platform-wide for authorized
+        # staff: it must see payments across BOTH customers, not just one.
+        self.assertGreaterEqual(res.data["count"], 2)
+
+    def test_customer_retains_legitimate_own_payment_access(self):
+        """Removing 'payments.view' from CUSTOMER must not break the customer's own payment retrieval."""
+        order = self._create_order(self.customer_a, self.address_a, quantity=1)
+        PaymentService.create_or_get_payment(order=order, payment_method="BKASH")
+
+        self.client.force_authenticate(user=self.customer_a)
+        res = self.client.get(f"/api/orders/{order.order_number}/payment/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data["payment_method"], "BKASH")
+
     def test_historical_order_immutability(self):
         """Verify order snapshot fields remain untouched throughout payment and refund cycles."""
         order = self._create_order(self.customer_a, self.address_a, quantity=1)

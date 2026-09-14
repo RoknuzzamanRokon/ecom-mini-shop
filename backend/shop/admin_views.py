@@ -27,6 +27,7 @@ from rbac.services import assign_user_role, get_user_permissions, get_user_role_
 from sellers.models import SellerProfile
 from sellers.services import approve_seller, reactivate_seller, reject_seller, suspend_seller
 from shop.admin_permissions import (
+    CanChangeAdminProductStatus,
     CanChangeAdminShopStatus,
     CanManageAdminCategories,
     CanManageAdminProducts,
@@ -36,6 +37,7 @@ from shop.admin_permissions import (
     CanManageAdminUsers,
     CanViewAdminAuditLogs,
     CanViewAdminCustomers,
+    CanViewAdminProducts,
     CanViewAdminRoles,
     CanViewAdminSellers,
     CanViewAdminShops,
@@ -668,8 +670,9 @@ class AdminProductListAPIView(APIView):
     """
     GET /api/admin/products/
     Paginated, searchable list of products across the platform.
+    Viewable by holders of 'products.view' as well as full product managers.
     """
-    permission_classes = [IsAuthenticated, CanManageAdminProducts]
+    permission_classes = [IsAuthenticated, CanViewAdminProducts]
 
     def get(self, request):
         qs = Product.objects.select_related("category", "shop", "shop__owner").all().order_by("-created_at")
@@ -704,8 +707,9 @@ class AdminProductDetailAPIView(APIView):
     """
     GET /api/admin/products/<int:pk>/
     Inspect product detail.
+    Viewable by holders of 'products.view' as well as full product managers.
     """
-    permission_classes = [IsAuthenticated, CanManageAdminProducts]
+    permission_classes = [IsAuthenticated, CanViewAdminProducts]
 
     def get(self, request, pk):
         try:
@@ -722,7 +726,7 @@ class AdminProductStatusAPIView(APIView):
     Transitions product lifecycle (approve, reject, publish, unpublish).
     Enforces business rules (cannot publish unapproved or suspended shop products).
     """
-    permission_classes = [IsAuthenticated, CanManageAdminProducts]
+    permission_classes = [IsAuthenticated, CanChangeAdminProductStatus]
 
     def post(self, request, pk):
         return self._update_status(request, pk)
@@ -735,6 +739,27 @@ class AdminProductStatusAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         action = serializer.validated_data["action"]
         reason = serializer.validated_data.get("reason", "")
+
+        # Granular RBAC enforcement: a user holding only one narrow permission
+        # (products.approve / products.reject / products.publish) may perform
+        # ONLY the matching action. 'unpublish' has no narrower permission of
+        # its own, so it remains restricted to full product management.
+        user = request.user
+        actor_role_codes = get_user_role_codes(user)
+        is_super = user.is_superuser or (Role.ROLE_SUPER_ADMINISTRATOR in actor_role_codes)
+        has_full_manage = is_super or has_user_permission(user, "products.admin.manage")
+
+        if not has_full_manage:
+            action_permission_map = {
+                "approve": "products.approve",
+                "reject": "products.reject",
+                "publish": "products.publish",
+            }
+            required_permission = action_permission_map.get(action)
+            if not required_permission or not has_user_permission(user, required_permission):
+                raise PermissionDenied(
+                    f"You do not have permission to {action} products. Broader product management permission ('products.admin.manage') is required."
+                )
 
         with transaction.atomic():
             try:

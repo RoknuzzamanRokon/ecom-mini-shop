@@ -65,6 +65,15 @@ class AdminGovernanceTests(APITestCase):
         )
         assign_user_role(cls.support_user, Role.ROLE_SUPPORT_TEAM)
 
+        # 4b. Sales Team User (products.view/create/update only — no approve/reject/publish/admin.manage)
+        cls.sales_team_user = User.objects.create_user(
+            username="gov_sales_team",
+            email="sales_team@minishop.com",
+            password="SalesTeamPassword123!",
+            is_staff=True,
+        )
+        assign_user_role(cls.sales_team_user, Role.ROLE_SALES_TEAM)
+
         # 5. Seller User
         cls.seller_user = User.objects.create_user(
             username="gov_seller_user",
@@ -413,6 +422,141 @@ class AdminGovernanceTests(APITestCase):
         self.shop.status = Shop.STATUS_ACTIVE
         self.shop.suspension_reason = ""
         self.shop.save()
+
+    # ==========================================================================
+    # 6b. PRODUCT RBAC PERMISSION SEPARATION (Phase 1A.1)
+    #
+    # Prior to this fix, /api/admin/products/ (list & detail) and the status
+    # transition endpoint were both gated by the single blanket permission
+    # 'products.admin.manage'. OPERATION_MANAGER holds 'products.view',
+    # 'products.approve', 'products.reject' and 'products.publish' but NOT
+    # 'products.admin.manage', so it could not even list products despite
+    # being the role responsible for reviewing them. These tests prove:
+    #   - viewing is unlocked by 'products.view' alone,
+    #   - each status action is unlocked by its own matching permission,
+    #   - holding one narrow permission does NOT grant the others,
+    #   - 'products.admin.manage' remains required for 'unpublish' (which has
+    #     no narrower permission of its own),
+    #   - SALES_TEAM (view/create/update only) can view but not transition.
+    # ==========================================================================
+
+    def test_operation_manager_can_view_product_list(self):
+        """Operation Manager with 'products.view' can GET /api/admin/products/."""
+        self.client.force_authenticate(user=self.op_manager)
+        res = self.client.get("/api/admin/products/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertIn("results", res.data)
+
+    def test_operation_manager_can_view_product_detail(self):
+        """Operation Manager with 'products.view' can GET /api/admin/products/<id>/."""
+        self.client.force_authenticate(user=self.op_manager)
+        res = self.client.get(f"/api/admin/products/{self.product.id}/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data["id"], self.product.id)
+
+    def test_operation_manager_can_approve_product(self):
+        """Operation Manager with 'products.approve' can approve a product."""
+        self.client.force_authenticate(user=self.op_manager)
+        res = self.client.post(
+            f"/api/admin/products/{self.product.id}/status/",
+            data={"action": "approve", "reason": "Meets catalog standards"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.status, Product.STATUS_APPROVED)
+
+    def test_operation_manager_can_reject_product(self):
+        """Operation Manager with 'products.reject' can reject a product."""
+        self.client.force_authenticate(user=self.op_manager)
+        res = self.client.post(
+            f"/api/admin/products/{self.product.id}/status/",
+            data={"action": "reject", "reason": "Listing violates policy"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.status, Product.STATUS_REJECTED)
+        self.assertEqual(self.product.rejection_reason, "Listing violates policy")
+
+    def test_operation_manager_can_publish_product(self):
+        """Operation Manager with 'products.publish' can publish a product."""
+        self.client.force_authenticate(user=self.op_manager)
+        res = self.client.post(
+            f"/api/admin/products/{self.product.id}/status/",
+            data={"action": "publish", "reason": "Approved for storefront"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.status, Product.STATUS_PUBLISHED)
+
+    def test_operation_manager_cannot_unpublish_product(self):
+        """
+        Operation Manager without 'products.admin.manage' CANNOT unpublish (403).
+        'unpublish' has no narrower permission of its own, unlike approve/reject/publish.
+        """
+        self.client.force_authenticate(user=self.op_manager)
+        res = self.client.post(
+            f"/api/admin/products/{self.product.id}/status/",
+            data={"action": "unpublish", "reason": "Attempted unpublish without broader permission"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("Broader product management permission", str(res.data))
+
+    def test_sales_team_can_view_but_not_transition_product_status(self):
+        """
+        Sales Team holds 'products.view' (list/detail allowed) but none of
+        'products.approve' / 'products.reject' / 'products.publish' /
+        'products.admin.manage', so every status transition is 403.
+        """
+        self.client.force_authenticate(user=self.sales_team_user)
+
+        res_list = self.client.get("/api/admin/products/")
+        self.assertEqual(res_list.status_code, status.HTTP_200_OK)
+
+        res_detail = self.client.get(f"/api/admin/products/{self.product.id}/")
+        self.assertEqual(res_detail.status_code, status.HTTP_200_OK)
+
+        for action in ("approve", "reject", "publish", "unpublish"):
+            res = self.client.post(
+                f"/api/admin/products/{self.product.id}/status/",
+                data={"action": action, "reason": "Sales team escalation attempt"},
+                format="json",
+            )
+            self.assertEqual(
+                res.status_code, status.HTTP_403_FORBIDDEN, f"Sales Team unexpectedly allowed to {action}"
+            )
+
+    def test_support_team_without_product_permissions_blocked_403(self):
+        """Support Team holds no products.* permission and is blocked from admin product views."""
+        self.client.force_authenticate(user=self.support_user)
+        res = self.client.get("/api/admin/products/")
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_administrator_retains_full_product_management(self):
+        """Administrator with 'products.admin.manage' can perform every status action, including unpublish."""
+        self.client.force_authenticate(user=self.admin)
+        for action in ("approve", "reject", "publish", "unpublish"):
+            res = self.client.post(
+                f"/api/admin/products/{self.product.id}/status/",
+                data={"action": action, "reason": "Administrator full-access check"},
+                format="json",
+            )
+            self.assertEqual(res.status_code, status.HTTP_200_OK, f"Administrator unexpectedly blocked on {action}")
+
+    def test_super_administrator_retains_full_product_management(self):
+        """Super Administrator (implicit full access) can view and transition products freely."""
+        self.client.force_authenticate(user=self.superadmin)
+        res = self.client.get("/api/admin/products/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        res = self.client.post(
+            f"/api/admin/products/{self.product.id}/status/",
+            data={"action": "approve", "reason": "Super admin check"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
 
     # ==========================================================================
     # 7. CATEGORY ADMINISTRATION & DELETION SAFEGUARD

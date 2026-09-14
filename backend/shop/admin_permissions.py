@@ -134,6 +134,19 @@ class CanChangeAdminShopStatus(BasePermission):
         )
 
 
+class CanViewAdminProducts(BasePermission):
+    """Allows viewing the admin product listing and detail views."""
+    message = "You do not have permission to view products as admin."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
+            return True
+        return has_user_permission(user, "products.admin.manage") or has_user_permission(user, "products.view")
+
+
 class CanManageAdminProducts(BasePermission):
     """Allows approving, rejecting, publishing, and unpublishing products."""
     message = "You do not have permission to manage products as admin."
@@ -145,6 +158,34 @@ class CanManageAdminProducts(BasePermission):
         if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
             return True
         return has_user_permission(user, "products.admin.manage")
+
+
+class CanChangeAdminProductStatus(BasePermission):
+    """
+    Allows entry to the product status-transition endpoint based on granular
+    permissions:
+    - 'approve' requires 'products.approve' or 'products.admin.manage'
+    - 'reject' requires 'products.reject' or 'products.admin.manage'
+    - 'publish' requires 'products.publish' or 'products.admin.manage'
+    - 'unpublish' requires 'products.admin.manage'
+    This class only gates entry to the view (holding ANY one of the above is
+    enough to reach it); the view itself enforces the per-action mapping above,
+    mirroring CanChangeAdminShopStatus.
+    """
+    message = "You do not have permission to update product status."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
+            return True
+        return (
+            has_user_permission(user, "products.admin.manage")
+            or has_user_permission(user, "products.approve")
+            or has_user_permission(user, "products.reject")
+            or has_user_permission(user, "products.publish")
+        )
 
 
 class CanManageAdminCategories(BasePermission):

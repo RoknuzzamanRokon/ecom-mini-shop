@@ -209,8 +209,33 @@ ROLE_PERMISSIONS_MAPPING = {
         "address.view", "address.create", "address.update", "address.delete",
         "cart.view", "cart.update",
         "orders.view", "orders.create", "orders.cancel",
-        "payments.view", "payments.create",
+        "payments.create",
     ],
+}
+
+# ==============================================================================
+# SECURITY GUARDRAIL: permissions a role must NEVER hold
+# ==============================================================================
+# 'payments.view' gates the platform-wide STAFF payment surface
+# (/api/staff/payments/, /api/staff/payments/<pk>/, and the staff refund list):
+# see StaffPaymentListAPIView / StaffPaymentDetailAPIView / StaffRefundListAPIView
+# in shop/api_views.py, all guarded by CanViewPayment. That queryset is
+# intentionally unscoped across every customer's payments, by design (it is a
+# staff operation, not a customer one) — the customer-facing payment endpoint
+# (CustomerOrderPaymentAPIView) never checks this permission at all; it relies
+# solely on IsAuthenticated plus per-request order-ownership scoping. So there
+# is no scope in which CUSTOMER legitimately needs 'payments.view', and a
+# CUSTOMER holding it would read every customer's payment records platform-wide.
+#
+# CUSTOMER is not seeded with this permission above, but this command is
+# idempotent and additive-only (see step 3 below) — it has never revoked a
+# stale grant left over from an earlier bad seed or a manual data change. This
+# denylist makes that specific, known-dangerous combination self-healing on
+# every run, for already-seeded databases, without touching any other
+# role/permission an administrator may have intentionally customized via the
+# Roles admin API.
+FORBIDDEN_ROLE_PERMISSIONS = {
+    Role.ROLE_CUSTOMER: {"payments.view"},
 }
 
 
@@ -230,6 +255,7 @@ class Command(BaseCommand):
         created_perms = 0
         created_roles = 0
         assigned_mappings = 0
+        revoked_forbidden_grants = 0
 
         with transaction.atomic():
             # 1. Seed Permissions
@@ -282,7 +308,29 @@ class Command(BaseCommand):
                     if created:
                         assigned_mappings += 1
 
-            # 4. Optional: Assign SUPER_ADMINISTRATOR to existing superusers
+            # 4. Security guardrail: revoke any forbidden role-permission grant
+            #    (see FORBIDDEN_ROLE_PERMISSIONS above). This never touches a
+            #    role/permission pair outside this explicit denylist, so it
+            #    cannot undo legitimate customizations made via the Roles API.
+            for role_code, forbidden_codes in FORBIDDEN_ROLE_PERMISSIONS.items():
+                role = role_map.get(role_code)
+                if not role:
+                    continue
+                forbidden_perms = [perm_map[c] for c in forbidden_codes if c in perm_map]
+                if not forbidden_perms:
+                    continue
+                removed, _ = RolePermission.objects.filter(
+                    role=role, permission__in=forbidden_perms
+                ).delete()
+                if removed:
+                    revoked_forbidden_grants += removed
+                    self.stdout.write(
+                        self.style.WARNING(
+                            f"  Revoked {removed} forbidden permission grant(s) from {role.code}."
+                        )
+                    )
+
+            # 5. Optional: Assign SUPER_ADMINISTRATOR to existing superusers
             if options.get("assign_superusers"):
                 super_role = role_map[Role.ROLE_SUPER_ADMINISTRATOR]
                 superusers = User.objects.filter(is_superuser=True)
@@ -294,6 +342,7 @@ class Command(BaseCommand):
             self.style.SUCCESS(
                 f"RBAC Seed completed: {created_perms} permissions created (total {Permission.objects.count()}), "
                 f"{created_roles} roles created (total {Role.objects.count()}), "
-                f"{assigned_mappings} new role-permission links created."
+                f"{assigned_mappings} new role-permission links created, "
+                f"{revoked_forbidden_grants} forbidden grant(s) revoked."
             )
         )
