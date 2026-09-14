@@ -1,0 +1,20 @@
+{% extends "admin/change_list.html" %}
+{% load static %}
+
+{% comment %}
+  Global changelist skin. Extending a template of the same name resolves to
+  Django's own admin/change_list.html (ExtendsNode skips the current origin),
+  so this only appends a stylesheet and changes nothing else.
+
+  admin_changelist.css is structural for every changelist (full-bleed page,
+  card, sticky head, filter rail, density), and carries an opt-in column budget
+  per model under body.model-<model_name>. A model without a budget keeps
+  Django's natural table layout -- see --cl-layout in that file.
+
+  Loads after Django's changelists.css and forms.css, which block.super brings
+  in, plus japanese_admin.css from base_site.html.
+{% endcomment %}
+{% block extrastyle %}
+  {{ block.super }}
+  <link rel="stylesheet" href="{% static 'css/admin_changelist.css' %}">
+{% endblock %}
