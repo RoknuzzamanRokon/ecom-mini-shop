@@ -108,15 +108,38 @@ async function adminRequest<T>(
 
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({}));
-    const message =
-      errorBody.detail ||
-      errorBody.message ||
-      errorBody.error ||
-      `Request failed with status ${res.status}`;
+    const message = extractErrorMessage(errorBody, `Request failed with status ${res.status}`);
     throw new AdminApiError(message, res.status, errorBody);
   }
 
   return (await res.json()) as T;
+}
+
+/**
+ * Resolves a human-readable message from a DRF error response body.
+ *
+ * Handles the shapes the admin API actually returns: a top-level `detail`
+ * (permission/not-found errors, e.g. CanChangeAdminShopStatus's message), or
+ * plain field-level validation errors from `serializer.is_valid(raise_exception=True)`
+ * — e.g. `{"reason": ["A reason is required when rejecting a shop."]}` — which
+ * previously fell through to a generic "Request failed with status 400".
+ */
+function extractErrorMessage(errorBody: unknown, fallback: string): string {
+  if (errorBody && typeof errorBody === "object") {
+    const body = errorBody as Record<string, unknown>;
+    if (typeof body.detail === "string") return body.detail;
+    if (typeof body.message === "string") return body.message;
+    if (typeof body.error === "string") return body.error;
+
+    const fieldMessages = Object.entries(body)
+      .filter((entry): entry is [string, string[]] => {
+        const value = entry[1];
+        return Array.isArray(value) && value.every((item) => typeof item === "string");
+      })
+      .map(([field, messages]) => `${field}: ${messages.join(" ")}`);
+    if (fieldMessages.length > 0) return fieldMessages.join(" ");
+  }
+  return fallback;
 }
 
 /**
@@ -156,5 +179,102 @@ export async function getAdminAuditLogs(
   const endpoint = `/api/admin/audit-logs/${queryString ? `?${queryString}` : ""}`;
 
   return adminRequest<PaginatedResponse<AdminAuditLog>>(endpoint, token);
+}
+
+// ==============================================================================
+// SHOP GOVERNANCE (Phase 1B)
+// ==============================================================================
+
+/**
+ * Mirrors AdminShopSerializer in shop/admin_serializers.py field-for-field.
+ * That serializer is entirely read_only — every field below is exactly what
+ * GET /api/admin/shops/ and /api/admin/shops/<id>/ return, nothing more.
+ * Notably absent (and therefore NOT rendered anywhere in the admin UI):
+ * logo, cover_image, location/coordinates, reviewed_by. The serializer does
+ * not expose them, so the admin console cannot either.
+ */
+export interface AdminShop {
+  id: number;
+  owner_id: number;
+  owner_business_name: string;
+  name: string;
+  slug: string;
+  description: string;
+  phone: string;
+  address: string;
+  status: string;
+  rejection_reason: string;
+  suspension_reason: string;
+  products_count: number;
+  reviewed_at: string | null;
+  approved_at: string | null;
+  suspended_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminShopListParams {
+  page?: number;
+  page_size?: number;
+  /** Matches name/slug/owner business name, case-insensitive (see AdminShopListAPIView). */
+  search?: string;
+  /** Exact Shop.STATUS_CHOICES value (DRAFT/PENDING/APPROVED/ACTIVE/SUSPENDED/REJECTED). */
+  status?: string;
+}
+
+/** Exactly the `action` choices accepted by AdminShopStatusUpdateSerializer. */
+export type AdminShopStatusAction = "approve" | "reject" | "suspend" | "reactivate";
+
+export interface AdminShopStatusPayload {
+  action: AdminShopStatusAction;
+  /** Required by the backend for 'reject' and 'suspend'; ignored for the others. */
+  reason?: string;
+}
+
+/**
+ * GET /api/admin/shops/
+ * Requires 'shops.admin.manage' or 'shops.view' (CanViewAdminShops).
+ */
+export async function getAdminShops(
+  token: string,
+  params?: AdminShopListParams
+): Promise<PaginatedResponse<AdminShop>> {
+  const searchParams = new URLSearchParams();
+  if (params) {
+    if (params.page) searchParams.set("page", String(params.page));
+    if (params.page_size) searchParams.set("page_size", String(params.page_size));
+    if (params.search) searchParams.set("search", params.search);
+    if (params.status) searchParams.set("status", params.status);
+  }
+  const queryString = searchParams.toString();
+  return adminRequest<PaginatedResponse<AdminShop>>(
+    `/api/admin/shops/${queryString ? `?${queryString}` : ""}`,
+    token
+  );
+}
+
+/**
+ * GET /api/admin/shops/<id>/
+ * Requires 'shops.admin.manage' or 'shops.view' (CanViewAdminShops).
+ */
+export async function getAdminShopDetail(token: string, id: number | string): Promise<AdminShop> {
+  return adminRequest<AdminShop>(`/api/admin/shops/${id}/`, token);
+}
+
+/**
+ * POST /api/admin/shops/<id>/status/
+ * Entry requires CanChangeAdminShopStatus (shops.admin.manage OR shops.approve).
+ * The view then enforces per-action: only 'approve' is permitted on
+ * shops.approve alone — reject/suspend/reactivate require shops.admin.manage.
+ */
+export async function updateAdminShopStatus(
+  token: string,
+  id: number | string,
+  payload: AdminShopStatusPayload
+): Promise<AdminShop> {
+  return adminRequest<AdminShop>(`/api/admin/shops/${id}/status/`, token, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
