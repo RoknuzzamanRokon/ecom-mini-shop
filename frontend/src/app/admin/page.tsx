@@ -3,8 +3,21 @@
 import React, { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
-import { getAdminMetrics, AdminMetrics } from "@/lib/admin-api";
-import { hasManagementPermission } from "@/lib/admin-auth";
+import { getAuthToken } from "@/lib/auth";
+import { getAdminMetrics, AdminMetrics, AdminApiError } from "@/lib/admin-api";
+import { hasAnyPermission } from "@/lib/admin-auth";
+import { ADMIN_PERMISSIONS, getAccessibleNavItems } from "@/lib/admin-navigation";
+import { AdminStatCard } from "@/components/admin/shared";
+
+/** Small "needs attention" pill used beside backlog counts. */
+function NeedsActionBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span className="text-[10px] uppercase font-extrabold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600">
+      Needs Action
+    </span>
+  );
+}
 
 export default function AdminDashboardPage() {
   const { user } = useAuth();
@@ -13,13 +26,11 @@ export default function AdminDashboardPage() {
   const [error, setError] = useState<string | null>(null);
 
   const fetchMetrics = useCallback(async () => {
-    const token =
-      typeof window !== "undefined"
-        ? localStorage.getItem("minishop_token")
-        : null;
+    const token = getAuthToken();
 
     if (!token) {
       setLoading(false);
+      setError("No active session token was found. Please sign in again.");
       return;
     }
 
@@ -28,9 +39,15 @@ export default function AdminDashboardPage() {
       setError(null);
       const data = await getAdminMetrics(token);
       setMetrics(data);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const message =
+        err instanceof AdminApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : "Failed to load management metrics.";
       console.warn("Failed to fetch admin metrics:", err);
-      setError(err?.message || "Failed to load management metrics.");
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -40,26 +57,41 @@ export default function AdminDashboardPage() {
     fetchMetrics();
   }, [fetchMetrics]);
 
-  const canManageShops = hasManagementPermission(user, [
-    "shops.admin.manage",
-    "shops.view",
-    "shop:read",
-  ]);
-  const canManageSellers = hasManagementPermission(user, [
-    "sellers.admin.manage",
-    "sellers.view",
-    "seller:read",
-  ]);
-  const canManageOrders = hasManagementPermission(user, [
-    "orders.staff.view",
-    "orders.view",
-    "order:read",
-  ]);
-  const canManagePayments = hasManagementPermission(user, [
-    "payments.view",
-    "payments.verify",
-    "payment:read",
-  ]);
+  /**
+   * ==========================================================================
+   * PERMISSION-DRIVEN KPI VISIBILITY
+   * ==========================================================================
+   * There is one dashboard for all seven management roles, not seven dashboards.
+   * What each operator sees is derived from their permissions, never from a
+   * hardcoded role branch. Access to /admin alone reveals no financial data:
+   * revenue requires payments.view or reports.view.
+   *
+   * The metrics endpoint returns the full aggregate payload to any management
+   * user, so this gating is a UI-surface decision. Restricting the payload
+   * per-permission would be a backend change, which is out of scope here.
+   */
+  const showRevenue = hasAnyPermission(user, ADMIN_PERMISSIONS.metricRevenue);
+  const showOrders = hasAnyPermission(user, ADMIN_PERMISSIONS.metricOrders);
+  const showShops = hasAnyPermission(user, ADMIN_PERMISSIONS.metricShops);
+  const showSellers = hasAnyPermission(user, ADMIN_PERMISSIONS.metricSellers);
+  const showProducts = hasAnyPermission(user, ADMIN_PERMISSIONS.metricProducts);
+
+  const showCatalogPanel = showShops || showSellers || showProducts;
+  const visibleKpiCount = [
+    showOrders,
+    showRevenue,
+    showShops,
+    showSellers,
+  ].filter(Boolean).length;
+
+  /**
+   * Quick actions reuse the same permission-filtered navigation model as the
+   * sidebar, so a shortcut can never point at a module the operator cannot open.
+   */
+  const quickActions = React.useMemo(
+    () => getAccessibleNavItems(user).filter((item) => item.href !== "/admin"),
+    [user]
+  );
 
   return (
     <div className="space-y-6">
@@ -77,12 +109,11 @@ export default function AdminDashboardPage() {
           type="button"
           onClick={fetchMetrics}
           disabled={loading}
-          className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-line hover:bg-surface-alt text-xs font-semibold text-ink transition-colors cursor-pointer disabled:opacity-50"
+          className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-line hover:bg-surface-alt text-xs font-semibold text-ink transition-colors cursor-pointer disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         >
           <span
-            className={`material-symbols-outlined text-[16px] ${
-              loading ? "animate-spin" : ""
-            }`}
+            aria-hidden="true"
+            className={`material-symbols-outlined text-[16px] ${loading ? "animate-spin" : ""}`}
           >
             refresh
           </span>
@@ -91,257 +122,182 @@ export default function AdminDashboardPage() {
       </div>
 
       {error && (
-        <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 text-xs flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-[18px]">warning</span>
-            <span>{error}</span>
+        <div
+          role="alert"
+          className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 text-xs flex items-center justify-between gap-3"
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px] shrink-0">
+              warning
+            </span>
+            <span className="truncate">{error}</span>
           </div>
           <button
             type="button"
             onClick={fetchMetrics}
-            className="underline font-bold hover:text-red-700"
+            className="underline font-bold hover:text-red-700 shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
           >
             Try Again
           </button>
         </div>
       )}
 
-      {/* Metric Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Metric 1: Total Platform Orders */}
-        <div className="bg-surface p-5 rounded-2xl border border-line shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-ink-muted">
-              Total Orders
-            </span>
-            <div className="w-9 h-9 rounded-xl bg-blue-500/10 text-blue-600 flex items-center justify-center">
-              <span className="material-symbols-outlined text-[20px]">
-                receipt_long
-              </span>
-            </div>
-          </div>
-          <div className="mt-4">
-            {loading ? (
-              <div className="h-8 w-20 bg-surface-alt animate-pulse rounded-md" />
-            ) : (
-              <div className="text-2xl font-black text-ink">
-                {metrics?.total_orders?.toLocaleString() ?? "0"}
-              </div>
-            )}
-            <p className="text-[11px] text-ink-muted mt-1">Platform-wide customer orders</p>
-          </div>
-        </div>
+      {/* Permission-gated KPI grid */}
+      {visibleKpiCount > 0 && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {showOrders && (
+            <AdminStatCard
+              title="Total Orders"
+              value={metrics?.total_orders}
+              icon="receipt_long"
+              tone="info"
+              loading={loading}
+              description="Platform-wide customer orders"
+            />
+          )}
 
-        {/* Metric 2: Total Platform Revenue */}
-        <div className="bg-surface p-5 rounded-2xl border border-line shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-ink-muted">
-              Total Revenue
-            </span>
-            <div className="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center">
-              <span className="material-symbols-outlined text-[20px]">payments</span>
-            </div>
-          </div>
-          <div className="mt-4">
-            {loading ? (
-              <div className="h-8 w-28 bg-surface-alt animate-pulse rounded-md" />
-            ) : (
-              <div className="text-2xl font-black text-ink">
-                ৳{metrics?.total_revenue?.toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                }) ?? "0.00"}
-              </div>
-            )}
-            <p className="text-[11px] text-ink-muted mt-1">Cleared transactions</p>
-          </div>
-        </div>
+          {showRevenue && (
+            <AdminStatCard
+              title="Total Revenue"
+              value={metrics?.total_revenue}
+              currency
+              icon="payments"
+              tone="success"
+              loading={loading}
+              description="Cleared transactions"
+            />
+          )}
 
-        {/* Metric 3: Pending Shop Approvals */}
-        <div className="bg-surface p-5 rounded-2xl border border-line shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-ink-muted">
-              Pending Shops
+          {showShops && (
+            <AdminStatCard
+              title="Pending Shops"
+              value={metrics?.pending_shops}
+              icon="storefront"
+              tone="warning"
+              loading={loading}
+              description="Awaiting staff review"
+              badge={<NeedsActionBadge count={metrics?.pending_shops ?? 0} />}
+            />
+          )}
+
+          {showSellers && (
+            <AdminStatCard
+              title="Pending Sellers"
+              value={metrics?.pending_sellers}
+              icon="badge"
+              tone="accent"
+              loading={loading}
+              description="KYC applications pending"
+              badge={<NeedsActionBadge count={metrics?.pending_sellers ?? 0} />}
+            />
+          )}
+        </div>
+      )}
+
+      {/* Operator holds no metric permission at all */}
+      {visibleKpiCount === 0 && !showCatalogPanel && (
+        <div className="bg-surface rounded-2xl border border-line shadow-xs p-8 text-center">
+          <div className="w-12 h-12 mx-auto rounded-2xl bg-surface-alt text-ink-muted flex items-center justify-center mb-3">
+            <span aria-hidden="true" className="material-symbols-outlined text-[26px]">
+              query_stats
             </span>
-            <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
-              <span className="material-symbols-outlined text-[20px]">storefront</span>
-            </div>
           </div>
-          <div className="mt-4">
-            {loading ? (
-              <div className="h-8 w-16 bg-surface-alt animate-pulse rounded-md" />
-            ) : (
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-black text-ink">
-                  {metrics?.pending_shops ?? 0}
-                </span>
-                {(metrics?.pending_shops ?? 0) > 0 && (
-                  <span className="text-[10px] uppercase font-extrabold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-700">
-                    Needs Action
-                  </span>
+          <p className="text-sm font-bold text-ink">No metrics available</p>
+          <p className="text-xs text-ink-muted mt-1 max-w-md mx-auto">
+            Your account does not hold any of the permissions required to view platform
+            metrics. Use the navigation to reach the modules assigned to you.
+          </p>
+        </div>
+      )}
+
+      {/* Secondary stats & permission-driven shortcuts */}
+      {(showCatalogPanel || quickActions.length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {showCatalogPanel && (
+            <div className="bg-surface p-6 rounded-2xl border border-line shadow-xs space-y-4">
+              <h2 className="text-sm font-extrabold text-ink uppercase tracking-wider">
+                Catalog Inventory
+              </h2>
+              <dl className="space-y-3">
+                {showShops && (
+                  <div className="flex items-center justify-between py-2 border-b border-line text-xs">
+                    <dt className="text-ink-muted flex items-center gap-2">
+                      <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
+                        store
+                      </span>
+                      Active Shops
+                    </dt>
+                    <dd className="font-bold text-ink">{metrics?.total_shops ?? "—"}</dd>
+                  </div>
                 )}
-              </div>
-            )}
-            <p className="text-[11px] text-ink-muted mt-1">Awaiting staff review</p>
-          </div>
-        </div>
-
-        {/* Metric 4: Pending Seller Verifications */}
-        <div className="bg-surface p-5 rounded-2xl border border-line shadow-xs flex flex-col justify-between">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-bold uppercase tracking-wider text-ink-muted">
-              Pending Sellers
-            </span>
-            <div className="w-9 h-9 rounded-xl bg-purple-500/10 text-purple-600 flex items-center justify-center">
-              <span className="material-symbols-outlined text-[20px]">badge</span>
-            </div>
-          </div>
-          <div className="mt-4">
-            {loading ? (
-              <div className="h-8 w-16 bg-surface-alt animate-pulse rounded-md" />
-            ) : (
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl font-black text-ink">
-                  {metrics?.pending_sellers ?? 0}
-                </span>
-                {(metrics?.pending_sellers ?? 0) > 0 && (
-                  <span className="text-[10px] uppercase font-extrabold px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-700">
-                    Needs Action
-                  </span>
+                {showSellers && (
+                  <div className="flex items-center justify-between py-2 border-b border-line text-xs">
+                    <dt className="text-ink-muted flex items-center gap-2">
+                      <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
+                        groups
+                      </span>
+                      Registered Sellers
+                    </dt>
+                    <dd className="font-bold text-ink">{metrics?.total_sellers ?? "—"}</dd>
+                  </div>
                 )}
+                {showProducts && (
+                  <div className="flex items-center justify-between py-2 text-xs">
+                    <dt className="text-ink-muted flex items-center gap-2">
+                      <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
+                        inventory_2
+                      </span>
+                      Listed Products
+                    </dt>
+                    <dd className="font-bold text-ink">{metrics?.total_products ?? "—"}</dd>
+                  </div>
+                )}
+              </dl>
+            </div>
+          )}
+
+          {quickActions.length > 0 && (
+            <div
+              className={`bg-surface p-6 rounded-2xl border border-line shadow-xs space-y-4 ${
+                showCatalogPanel ? "lg:col-span-2" : "lg:col-span-3"
+              }`}
+            >
+              <h2 className="text-sm font-extrabold text-ink uppercase tracking-wider">
+                Operational Shortcuts
+              </h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {quickActions.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="p-3.5 rounded-xl bg-surface-alt hover:bg-surface-sunken border border-line transition-all flex items-center justify-between gap-3 group focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-8 h-8 shrink-0 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                        <span aria-hidden="true" className="material-symbols-outlined text-[20px]">
+                          {item.icon}
+                        </span>
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-ink truncate">{item.label}</p>
+                        <p className="text-[10px] text-ink-muted line-clamp-1">
+                          {item.description}
+                        </p>
+                      </div>
+                    </div>
+                    <span
+                      aria-hidden="true"
+                      className="material-symbols-outlined text-[18px] text-ink-muted group-hover:text-primary transition-colors shrink-0"
+                    >
+                      arrow_forward
+                    </span>
+                  </Link>
+                ))}
               </div>
-            )}
-            <p className="text-[11px] text-ink-muted mt-1">KYC applications pending</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Secondary Operational Stats & Quick Modules */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* System Catalog Statistics */}
-        <div className="bg-surface p-6 rounded-2xl border border-line shadow-xs space-y-4">
-          <h2 className="text-sm font-extrabold text-ink uppercase tracking-wider">
-            Catalog Inventory
-          </h2>
-          <div className="space-y-3">
-            <div className="flex items-center justify-between py-2 border-b border-line text-xs">
-              <span className="text-ink-muted flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px]">store</span>
-                Active Shops
-              </span>
-              <span className="font-bold text-ink">
-                {metrics?.total_shops ?? "—"}
-              </span>
             </div>
-            <div className="flex items-center justify-between py-2 border-b border-line text-xs">
-              <span className="text-ink-muted flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px]">groups</span>
-                Registered Sellers
-              </span>
-              <span className="font-bold text-ink">
-                {metrics?.total_sellers ?? "—"}
-              </span>
-            </div>
-            <div className="flex items-center justify-between py-2 text-xs">
-              <span className="text-ink-muted flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px]">inventory_2</span>
-                Listed Products
-              </span>
-              <span className="font-bold text-ink">
-                {metrics?.total_products ?? "—"}
-              </span>
-            </div>
-          </div>
+          )}
         </div>
-
-        {/* Quick Operations Module Navigation */}
-        <div className="lg:col-span-2 bg-surface p-6 rounded-2xl border border-line shadow-xs space-y-4">
-          <h2 className="text-sm font-extrabold text-ink uppercase tracking-wider">
-            Operational Shortcuts
-          </h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {canManageShops && (
-              <Link
-                href="/admin/shops"
-                className="p-3.5 rounded-xl bg-surface-alt hover:bg-surface-sunken border border-line transition-all flex items-center justify-between group"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-                    <span className="material-symbols-outlined text-[20px]">storefront</span>
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-ink">Shop Governance</p>
-                    <p className="text-[10px] text-ink-muted">Approve and inspect shops</p>
-                  </div>
-                </div>
-                <span className="material-symbols-outlined text-[18px] text-ink-muted group-hover:text-primary transition-colors">
-                  arrow_forward
-                </span>
-              </Link>
-            )}
-
-            {canManageSellers && (
-              <Link
-                href="/admin/sellers"
-                className="p-3.5 rounded-xl bg-surface-alt hover:bg-surface-sunken border border-line transition-all flex items-center justify-between group"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-                    <span className="material-symbols-outlined text-[20px]">badge</span>
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-ink">Seller KYC Verification</p>
-                    <p className="text-[10px] text-ink-muted">Verify merchant accounts</p>
-                  </div>
-                </div>
-                <span className="material-symbols-outlined text-[18px] text-ink-muted group-hover:text-primary transition-colors">
-                  arrow_forward
-                </span>
-              </Link>
-            )}
-
-            {canManageOrders && (
-              <Link
-                href="/admin/orders"
-                className="p-3.5 rounded-xl bg-surface-alt hover:bg-surface-sunken border border-line transition-all flex items-center justify-between group"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-                    <span className="material-symbols-outlined text-[20px]">receipt_long</span>
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-ink">Staff Order Operations</p>
-                    <p className="text-[10px] text-ink-muted">Fulfillment & status updates</p>
-                  </div>
-                </div>
-                <span className="material-symbols-outlined text-[18px] text-ink-muted group-hover:text-primary transition-colors">
-                  arrow_forward
-                </span>
-              </Link>
-            )}
-
-            {canManagePayments && (
-              <Link
-                href="/admin/payments"
-                className="p-3.5 rounded-xl bg-surface-alt hover:bg-surface-sunken border border-line transition-all flex items-center justify-between group"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-                    <span className="material-symbols-outlined text-[20px]">payments</span>
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-ink">Financial Clearance</p>
-                    <p className="text-[10px] text-ink-muted">Verify & refund payments</p>
-                  </div>
-                </div>
-                <span className="material-symbols-outlined text-[18px] text-ink-muted group-hover:text-primary transition-colors">
-                  arrow_forward
-                </span>
-              </Link>
-            )}
-          </div>
-        </div>
-      </div>
+      )}
     </div>
   );
 }
