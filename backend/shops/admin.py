@@ -1,14 +1,13 @@
 from django.contrib import admin
 from django.core.exceptions import ValidationError
 from django.db.models import Count
-from django.contrib import messages
 
-from audit.admin_mixins import StatusBadgeMixin
+from audit.admin_mixins import ReasonRequiredActionMixin, StatusBadgeMixin
 from .models import Shop
-from .services import ShopService, ShopError, InvalidShopTransitionError, IneligibleSellerError, ShopLimitExceededError
+from .services import ShopService, ShopError
 
 @admin.register(Shop)
-class ShopAdmin(StatusBadgeMixin, admin.ModelAdmin):
+class ShopAdmin(ReasonRequiredActionMixin, StatusBadgeMixin, admin.ModelAdmin):
     list_display = (
         'name', 'owner', 'status_badge', 'product_count', 
         'phone', 'created_at'
@@ -59,58 +58,53 @@ class ShopAdmin(StatusBadgeMixin, admin.ModelAdmin):
     location_display.short_description = 'Location (Lat, Lng)'
 
 
+    def audit_context(self, obj):
+        return {'shop': obj, 'seller': obj.owner}
+
     def approve_and_activate(self, request, queryset):
-        success = 0
-        error = 0
-        for shop in queryset:
-            try:
-                ShopService.approve_shop(shop, request.user)
-                success += 1
-            except (ValidationError, ShopError) as e:
-                self.message_user(request, f"Error approving {shop}: {e}", level=messages.ERROR)
-                error += 1
-        if success:
-            self.message_user(request, f"Successfully approved {success} shops.", level=messages.SUCCESS)
+        self.run_simple_action(
+            request, queryset,
+            verb='Approved and activated',
+            perform=lambda shop, user: ShopService.approve_shop(shop, user),
+            audit_action='ADMIN_SHOP_APPROVE',
+            catch=(ValidationError, ShopError),
+        )
     approve_and_activate.short_description = "Approve and activate selected shops"
 
     def suspend_shops(self, request, queryset):
-        success = 0
-        error = 0
-        for shop in queryset:
-            try:
-                ShopService.suspend_shop(shop, request.user, 'Suspended via admin action')
-                success += 1
-            except (ValidationError, ShopError) as e:
-                self.message_user(request, f"Error suspending {shop}: {e}", level=messages.ERROR)
-                error += 1
-        if success:
-            self.message_user(request, f"Successfully suspended {success} shops.", level=messages.SUCCESS)
-    suspend_shops.short_description = "Suspend selected shops"
+        return self.run_reason_action(
+            request, queryset,
+            action_name='suspend_shops',
+            title='Suspend shops',
+            verb='Suspended',
+            reason_label='Suspension reason',
+            help_text='Suspending a shop removes it and its products from the storefront.',
+            perform=lambda shop, user, reason: ShopService.suspend_shop(shop, user, reason),
+            audit_action='ADMIN_SHOP_SUSPEND',
+            catch=(ValidationError, ShopError),
+        )
+    suspend_shops.short_description = "Suspend selected shops (reason required)"
 
     def reject_shops(self, request, queryset):
-        success = 0
-        error = 0
-        for shop in queryset:
-            try:
-                ShopService.reject_shop(shop, request.user, 'Rejected via admin action')
-                success += 1
-            except (ValidationError, ShopError) as e:
-                self.message_user(request, f"Error rejecting {shop}: {e}", level=messages.ERROR)
-                error += 1
-        if success:
-            self.message_user(request, f"Successfully rejected {success} shops.", level=messages.SUCCESS)
-    reject_shops.short_description = "Reject selected shops"
+        return self.run_reason_action(
+            request, queryset,
+            action_name='reject_shops',
+            title='Reject shops',
+            verb='Rejected',
+            reason_label='Rejection reason',
+            help_text='Rejecting a shop application is visible to its owner.',
+            perform=lambda shop, user, reason: ShopService.reject_shop(shop, user, reason),
+            audit_action='ADMIN_SHOP_REJECT',
+            catch=(ValidationError, ShopError),
+        )
+    reject_shops.short_description = "Reject selected shops (reason required)"
 
     def reactivate_shops(self, request, queryset):
-        success = 0
-        error = 0
-        for shop in queryset:
-            try:
-                ShopService.reactivate_shop(shop, request.user)
-                success += 1
-            except (ValidationError, ShopError) as e:
-                self.message_user(request, f"Error reactivating {shop}: {e}", level=messages.ERROR)
-                error += 1
-        if success:
-            self.message_user(request, f"Successfully reactivated {success} shops.", level=messages.SUCCESS)
+        self.run_simple_action(
+            request, queryset,
+            verb='Reactivated',
+            perform=lambda shop, user: ShopService.reactivate_shop(shop, user),
+            audit_action='ADMIN_SHOP_REACTIVATE',
+            catch=(ValidationError, ShopError),
+        )
     reactivate_shops.short_description = "Reactivate selected shops"

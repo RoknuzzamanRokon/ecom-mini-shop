@@ -1,0 +1,180 @@
+{% extends "admin/base_site.html" %}
+{% load i18n l10n admin_urls %}
+
+{% block extrastyle %}{{ block.super }}
+<style>
+  .jp-action-panel {
+    background: var(--jp-bg-surface);
+    border: 1px solid var(--jp-border-line);
+    border-radius: 14px;
+    padding: 24px 26px;
+    box-shadow: var(--jp-card-shadow);
+    max-width: 720px;
+  }
+
+  .jp-action-lead {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--jp-text-ink-body, var(--jp-text-ink));
+    margin: 0 0 16px;
+  }
+
+  .jp-action-errors {
+    list-style: none;
+    margin: 0 0 16px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    background: rgba(239, 68, 68, 0.1);
+    color: #DC2626;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  [data-theme="dark"] .jp-action-errors { color: #FCA5A5; }
+
+  .jp-action-objects {
+    margin: 0 0 20px;
+    padding: 12px 16px 12px 32px;
+    border-radius: 10px;
+    background: var(--jp-bg-surface-sunken, rgba(0, 0, 0, 0.04));
+    font-size: 12.5px;
+    line-height: 1.7;
+    color: var(--jp-text-ink);
+    max-height: 260px;
+    overflow-y: auto;
+  }
+
+  .jp-action-panel label {
+    display: block;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+    color: var(--jp-text-ink);
+    margin-bottom: 6px;
+  }
+
+  .jp-required { color: #DC2626; }
+
+  .jp-action-panel textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--jp-border-line);
+    background: var(--jp-bg-surface);
+    color: var(--jp-text-ink);
+    font-size: 13px;
+    font-family: inherit;
+    line-height: 1.5;
+    resize: vertical;
+  }
+
+  .jp-action-panel textarea:focus {
+    outline: none;
+    border-color: var(--jp-kinari-gold);
+    box-shadow: 0 0 0 3px rgba(186, 134, 48, 0.18);
+  }
+
+  .jp-action-hint {
+    font-size: 11px;
+    color: var(--jp-text-ink-muted);
+    margin-top: 6px;
+  }
+
+  .jp-action-panel .submit-row {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-top: 20px;
+    padding: 0;
+    background: none;
+    border: none;
+  }
+
+  .jp-btn-danger,
+  .jp-btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    padding: 9px 18px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 800;
+    text-decoration: none;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s ease;
+  }
+
+  .jp-btn-danger {
+    background: var(--jp-shu-vermilion, #E11D48);
+    color: #fff;
+  }
+
+  .jp-btn-danger:hover { filter: brightness(1.08); }
+
+  .jp-btn-ghost {
+    background: transparent;
+    border-color: var(--jp-border-line);
+    color: var(--jp-text-ink);
+  }
+
+  .jp-btn-ghost:hover { border-color: var(--jp-kinari-gold); }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">{% translate 'Home' %}</a>
+  &rsaquo; <a href="{% url 'admin:app_list' app_label=opts.app_label %}">{{ opts.app_config.verbose_name }}</a>
+  &rsaquo; <a href="{% url opts|admin_urlname:'changelist' %}">{{ opts.verbose_name_plural|capfirst }}</a>
+  &rsaquo; {{ title }}
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="jp-action-panel">
+
+  {% if errors %}
+  <ul class="jp-action-errors">
+    {% for error in errors %}<li>{{ error }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+
+  <p class="jp-action-lead">
+    {% if help_text %}{{ help_text }}{% endif %}
+    {% blocktranslate count counter=queryset|length %}This will affect <strong>{{ counter }}</strong> record.{% plural %}This will affect <strong>{{ counter }}</strong> records.{% endblocktranslate %}
+    {% translate 'The reason is recorded against each record and written to the immutable audit log.' %}
+  </p>
+
+  <ul class="jp-action-objects">
+    {% for obj in queryset %}<li>{{ obj }}</li>{% endfor %}
+  </ul>
+
+  <form method="post">{% csrf_token %}
+    <label for="id_reason">{{ reason_label }} <span class="jp-required">*</span></label>
+    <textarea id="id_reason"
+              name="{{ reason_field }}"
+              rows="4"
+              minlength="{{ reason_min_length }}"
+              required
+              autofocus>{{ reason }}</textarea>
+    <div class="jp-action-hint">
+      {% blocktranslate %}Minimum {{ reason_min_length }} characters.{% endblocktranslate %}
+    </div>
+
+    {% for obj in queryset %}
+    <input type="hidden" name="{{ action_checkbox_name }}" value="{{ obj.pk|unlocalize }}">
+    {% endfor %}
+    <input type="hidden" name="action" value="{{ action_name }}">
+    <input type="hidden" name="select_across" value="{{ select_across }}">
+    <input type="hidden" name="{{ confirm_flag }}" value="1">
+
+    <div class="submit-row">
+      <button type="submit" class="jp-btn-danger">{{ verb }}</button>
+      <a href="." class="jp-btn-ghost">{% translate 'Cancel' %}</a>
+    </div>
+  </form>
+
+</div>
+{% endblock %}

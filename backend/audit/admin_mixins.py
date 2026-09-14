@@ -91,6 +91,32 @@ class ReasonRequiredActionMixin:
         """Hook for per-model AuditService kwargs (shop=..., seller=...)."""
         return {}
 
+    def run_simple_action(self, request, queryset, *, verb, perform,
+                          audit_action, catch=(ValidationError,)):
+        """Lifecycle action that needs no reason (approve / reactivate)."""
+        done = 0
+        for obj in queryset:
+            previous_state = {'status': obj.status}
+            try:
+                perform(obj, request.user)
+            except catch as exc:
+                self.message_user(
+                    request, f'{verb} failed for {obj}: {exc}', messages.ERROR
+                )
+                continue
+            done += 1
+            AuditService.log(
+                action=audit_action,
+                target=obj,
+                actor=request.user,
+                previous_state=previous_state,
+                new_state={'status': obj.status},
+                ip_address=get_client_ip(request),
+                **self.audit_context(obj),
+            )
+        if done:
+            self.message_user(request, f'{verb} {done} record(s).', messages.SUCCESS)
+
     def run_reason_action(self, request, queryset, *, action_name, title, verb,
                           reason_label, perform, audit_action,
                           catch=(ValidationError,), help_text=''):
