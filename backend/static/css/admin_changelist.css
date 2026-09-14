@@ -287,7 +287,10 @@ body.change-list #result_list thead th {
   border-bottom: none !important;
   border-left: none !important;
   vertical-align: middle !important;
-  white-space: nowrap !important;
+  /* Labels wrap rather than clip: "SHIPPING CITY" over a 92px column becomes
+     two lines instead of "SHIPPING ...". The header row grows once and every
+     column keeps its full label. */
+  white-space: normal !important;
   text-align: left !important;
   /* Sticky only once this model's grid actually fits (see part 10). While the
      .results box is still a horizontal scroller it is the nearest scrollport,
@@ -303,10 +306,14 @@ body.change-list #result_list thead th > .text > a,
 body.change-list #result_list thead th > .text > span {
   display: block !important;
   padding: 10px var(--cl-row-pad-x) !important;
-  font-size: 10.5px !important;
+  line-height: 1.2 !important;
+  /* 10px/0.4 rather than 10.5/0.7: uppercase micro-labels are often wider than
+     the data beneath them, and trimming the type here buys room on every
+     column and every model instead of shaving percentages one at a time. */
+  font-size: 10px !important;
   font-weight: 800 !important;
   text-transform: uppercase !important;
-  letter-spacing: 0.7px !important;
+  letter-spacing: 0.4px !important;
   color: var(--jp-text-ink-muted) !important;
   text-decoration: none !important;
   overflow: hidden !important;
@@ -422,19 +429,6 @@ body.change-list #result_list th.column-stock > .text {
   padding-left: 4px !important;
   padding-right: 4px !important;
   letter-spacing: 0.4px !important;
-}
-
-/* These labels are wider than their columns; wrapping to two lines beats
-   truncating "IS ACTIVE" to "IS ACTI...". */
-body.change-list #result_list th.column-is_active,
-body.change-list #result_list th.column-image_preview {
-  white-space: normal !important;
-}
-
-body.change-list #result_list th.column-is_active > .text,
-body.change-list #result_list th.column-image_preview > .text {
-  white-space: normal !important;
-  line-height: 1.2 !important;
 }
 
 /* The pill is one inline box, not prose: let it truncate itself rather than
@@ -578,6 +572,77 @@ body.change-list #result_list tbody td.field-status_badge,
 body.change-list #result_list tbody td.field-is_active,
 body.change-list #result_list tbody td.field-image_preview {
   text-align: center !important;
+}
+
+/* -- Order: 9 columns, nothing list_editable ----------------------------
+   Money, date and the order id get fixed pixel widths so they never balloon;
+   the three free-text columns carry the percentages and absorb the slack. The
+   two shapes sum exactly at a 1042px table, so nothing is squeezed above that.
+   Django marks user and created_at .nowrap itself. */
+body.model-order.change-list #result_list { --cl-grid-min: 925px; }
+
+body.model-order #result_list th.column-order_number  { width: 150px !important; }
+body.model-order #result_list th.column-user          { width: 13% !important; }
+body.model-order #result_list th.column-customer_name { width: 12.5% !important; }
+body.model-order #result_list th.column-shipping_city { width: 9.5% !important; }
+body.model-order #result_list th.column-subtotal      { width: 86px !important; }
+body.model-order #result_list th.column-total_amount  { width: 112px !important; }
+body.model-order #result_list th.column-status_badge  { width: 106px !important; }
+body.model-order #result_list th.column-created_at    { width: 170px !important; }
+
+body.model-order #result_list tbody td.field-user,
+body.model-order #result_list tbody td.field-customer_name,
+body.model-order #result_list tbody td.field-shipping_city,
+body.model-order #result_list tbody td.field-created_at {
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+/* The order number is an opaque id (ORD-DELIV-30520469): monospace makes the
+   digits line up so two rows can be compared at a glance. */
+body.model-order #result_list tbody th.field-order_number a {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
+  font-size: 11.5px !important;
+  letter-spacing: -0.2px !important;
+}
+
+/* The account behind the order is secondary to the name on it, so it takes
+   the same muted 11.5px treatment as the timestamp. */
+body.model-order #result_list tbody td.field-user {
+  color: var(--jp-text-ink-muted) !important;
+  font-size: 11.5px !important;
+}
+
+body.model-order #result_list tbody td.field-customer_name {
+  font-weight: 600 !important;
+}
+
+/* Money right-aligned and tabular so columns of figures compare vertically.
+   total_amount is the headline figure, subtotal the supporting one. */
+body.model-order #result_list th.column-subtotal > .text,
+body.model-order #result_list th.column-total_amount > .text {
+  text-align: right !important;
+}
+
+body.model-order #result_list tbody td.field-subtotal,
+body.model-order #result_list tbody td.field-total_amount {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums !important;
+}
+
+body.model-order #result_list tbody td.field-subtotal {
+  color: var(--jp-text-ink-muted) !important;
+}
+
+body.model-order #result_list tbody td.field-total_amount {
+  font-weight: 800 !important;
+  color: var(--jp-text-ink) !important;
+}
+
+body.model-order #result_list tbody td.field-created_at {
+  color: var(--jp-text-ink-muted) !important;
+  font-size: 11.5px !important;
 }
 
 /* --------------------------------------------------------------------------
@@ -867,14 +932,19 @@ body.change-list #changelist-filter li.selected a {
    container, because the nav sidebar changes the available width without
    changing the viewport.
    -------------------------------------------------------------------------- */
-@container clmain (min-width: 1010px) {
+@container clmain (min-width: 1000px) {
   body.model-product #changelist-form .results { overflow-x: visible !important; }
   body.model-product #result_list { --cl-head-position: sticky; }
 }
 
-@container clmain (min-width: 730px) {
+@container clmain (min-width: 720px) {
   body.model-category #changelist-form .results { overflow-x: visible !important; }
   body.model-category #result_list { --cl-head-position: sticky; }
+}
+
+@container clmain (min-width: 925px) {
+  body.model-order #changelist-form .results { overflow-x: visible !important; }
+  body.model-order #result_list { --cl-head-position: sticky; }
 }
 
 /* --------------------------------------------------------------------------
