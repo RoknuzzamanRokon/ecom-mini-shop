@@ -53,5 +53,12 @@ class PointTransactionAdmin(admin.ModelAdmin):
 
 @admin.register(ProductCreationCost)
 class ProductCreationCostAdmin(admin.ModelAdmin):
-    list_display = ('cost_amount', 'is_active', 'effective_from', 'created_at')
-    list_filter = ('is_active', 'effective_from')
+    list_display = ('required_points', 'updated_at')
+    readonly_fields = ('updated_at',)
+
+    def has_add_permission(self, request):
+        # Singleton (pk=1) enforced in ProductCreationCost.save().
+        return not ProductCreationCost.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False

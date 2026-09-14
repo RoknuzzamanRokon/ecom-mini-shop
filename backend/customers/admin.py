@@ -29,9 +29,9 @@ class CustomerProfileAdmin(admin.ModelAdmin):
 
 @admin.register(Address)
 class AddressAdmin(admin.ModelAdmin):
-    list_display = ('user', 'title', 'recipient_name', 'phone', 'is_default')
-    search_fields = ('user__username', 'recipient_name', 'phone')
-    list_filter = ('is_default',)
+    list_display = ('user', 'label', 'recipient_name', 'phone', 'city', 'is_default')
+    search_fields = ('user__username', 'recipient_name', 'phone', 'city')
+    list_filter = ('is_default', 'label', 'city')
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('user')
