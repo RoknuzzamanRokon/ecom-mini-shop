@@ -55,6 +55,8 @@ body.change-list #content {
 
 [data-theme="dark"] body.change-list #content { --link-fg: #7FB3F0; }
 
+body.change-list .object-tools:empty { display: none !important; }
+
 body.change-list #content > h1 {
   font-size: 21px !important;
   font-weight: 800 !important;
@@ -316,8 +318,13 @@ body.change-list #result_list thead th > .text > span {
   letter-spacing: 0.4px !important;
   color: var(--jp-text-ink-muted) !important;
   text-decoration: none !important;
-  overflow: hidden !important;
-  text-overflow: ellipsis !important;
+  /* Deliberately NOT overflow:hidden. Django floats .sortoptions inside the
+     sorted th, and `overflow` here would make this label a block formatting
+     context -- which must not overlap the float, so it lost ~48px of width and
+     clipped "CREATED AT" to "CREATE...". Without it the label keeps the full
+     column and its line boxes simply flow around the float; wrapping plus
+     overflow-wrap covers long labels instead. */
+  overflow-wrap: anywhere !important;
 }
 
 body.change-list #result_list thead th > .text > a { padding: 0 !important; }
@@ -341,7 +348,7 @@ body.change-list #result_list thead th .sortoptions {
   display: flex !important;
   align-items: center !important;
   gap: 2px !important;
-  padding: 0 var(--cl-row-pad-x) 7px !important;
+  padding: 9px 8px 0 2px !important;
   margin: 0 !important;
 }
 
@@ -643,6 +650,96 @@ body.model-order #result_list tbody td.field-total_amount {
 body.model-order #result_list tbody td.field-created_at {
   color: var(--jp-text-ink-muted) !important;
   font-size: 11.5px !important;
+}
+
+/* -- Payment: 8 columns, fully read-only -------------------------------
+   No add/change/delete permission, so Django emits no checkbox column and no
+   actions bar -- just toolbar, grid, paginator.
+
+   The hard part is width: two full timestamps (~166px each on one line) plus
+   two long identifiers (PAY-20260911-594EC931, ORD-PAY-E36D8D65 (PENDING))
+   claimed ~600px of a ~1013px grid, which squeezed the order reference down to
+   an unreadable stub. Stacking each timestamp onto two lines gives ~110px
+   back, and then every column fits with nothing clipped. */
+body.model-payment.change-list #result_list { --cl-grid-min: 1000px; }
+
+body.model-payment #result_list th.column-payment_number       { width: 160px !important; }
+body.model-payment #result_list th.column-order                { width: 19% !important; }
+body.model-payment #result_list th.column-user                 { width: 10.5% !important; }
+body.model-payment #result_list th.column-payment_method_badge { width: 138px !important; }
+body.model-payment #result_list th.column-amount_display       { width: 100px !important; }
+body.model-payment #result_list th.column-status_badge         { width: 100px !important; }
+body.model-payment #result_list th.column-paid_at              { width: 112px !important; }
+body.model-payment #result_list th.column-created_at           { width: 112px !important; }
+
+/* Both identifiers are machine strings, so monospace lets two rows be compared
+   digit by digit. 11px keeps the 21- and 26-character values inside their
+   columns. */
+body.model-payment #result_list tbody th.field-payment_number a,
+body.model-payment #result_list tbody td.field-order {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
+  font-size: 11px !important;
+  letter-spacing: -0.2px !important;
+}
+
+body.model-payment #result_list tbody td.field-order,
+body.model-payment #result_list tbody td.field-user {
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  color: var(--jp-text-ink-body) !important;
+}
+
+body.model-payment #result_list tbody td.field-user {
+  font-size: 11.5px !important;
+  color: var(--jp-text-ink-muted) !important;
+}
+
+/* amount_display returns a formatted string, not a number field, so it is
+   right-aligned here rather than by the numeric rules used elsewhere. */
+body.model-payment #result_list th.column-amount_display > .text { text-align: right !important; }
+
+body.model-payment #result_list tbody td.field-amount_display {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums !important;
+  font-weight: 800 !important;
+  color: var(--jp-text-ink) !important;
+  white-space: nowrap !important;
+}
+
+/* Timestamps wrap to date + time. Django marks these .nowrap, which is what
+   forced them onto one 166px line. */
+body.model-payment #result_list tbody td.field-paid_at,
+body.model-payment #result_list tbody td.field-created_at {
+  white-space: normal !important;
+  line-height: 1.35 !important;
+  font-size: 10.5px !important;
+  color: var(--jp-text-ink-muted) !important;
+}
+
+/* PaymentAdmin.payment_method_badge hardcodes background:#E5E7EB and
+   color:#374151 inline. Unlike the status pill that colour carries no meaning
+   -- every method gets the same grey -- so it is safe to replace outright with
+   theme tokens instead of deriving a tint from it, which would have put dark
+   text on a dark chip. */
+body.model-payment #result_list tbody td.field-payment_method_badge > span {
+  display: inline-block !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  padding: 3px 9px !important;
+  border-radius: 9999px !important;
+  background: var(--jp-bg-surface-sunken) !important;
+  box-shadow: inset 0 0 0 1px var(--jp-border-line) !important;
+  color: var(--jp-text-ink-body) !important;
+  font-size: 10.5px !important;
+  font-weight: 700 !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+}
+
+body.model-payment #result_list tbody td.field-payment_method_badge {
+  text-overflow: clip !important;
 }
 
 /* --------------------------------------------------------------------------
@@ -947,6 +1044,11 @@ body.change-list #changelist-filter li.selected a {
   body.model-order #result_list { --cl-head-position: sticky; }
 }
 
+@container clmain (min-width: 1000px) {
+  body.model-payment #changelist-form .results { overflow-x: visible !important; }
+  body.model-payment #result_list { --cl-head-position: sticky; }
+}
+
 /* --------------------------------------------------------------------------
    11. RESPONSIVE
    -------------------------------------------------------------------------- */
@@ -1053,6 +1155,11 @@ body.change-list #changelist-filter li.selected a {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 38%, transparent) !important;
 }
 
+[data-theme="dark"] body.model-payment #result_list tbody td.field-payment_method_badge > span {
+  background: rgba(255, 255, 255, 0.07) !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.11) !important;
+}
+
 [data-theme="dark"] body.change-list .paginator input[type="submit"] {
   background: #2BD39A !important;
   color: #05231A !important;
@@ -1078,6 +1185,10 @@ body.change-list #changelist-filter li.selected a {
        is unavailable the inline light fill simply remains. */
     background: color-mix(in srgb, currentColor 18%, transparent) !important;
     box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 38%, transparent) !important;
+  }
+  :root:not([data-theme="light"]) body.model-payment #result_list tbody td.field-payment_method_badge > span {
+    background: rgba(255, 255, 255, 0.07) !important;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.11) !important;
   }
   :root:not([data-theme="light"]) body.change-list .paginator input[type="submit"] {
     background: #2BD39A !important;
