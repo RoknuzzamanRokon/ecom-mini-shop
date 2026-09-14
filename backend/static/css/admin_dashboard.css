@@ -1,0 +1,1079 @@
+/* ==========================================================================
+   MINISHOP ADMIN - DASHBOARD SKIN  (/admin/ only)
+   --------------------------------------------------------------------------
+   Loaded last by templates/admin/index.html, after:
+     admin/css/base.css -> dark_mode.css -> nav_sidebar.css
+     -> css/japanese_admin.css -> admin/css/dashboard.css
+   Everything here is scoped to `.dashboard` (body class set by index.html)
+   so no other admin screen is affected.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. FULL-BLEED CONSOLE LAYOUT
+   Django's base.css pins `.dashboard #content { width: 600px }` and
+   `.colMS { margin-right: 300px }`, and floats #content-main / #content-related.
+   japanese_admin.css only sets max-width, so the 600px `width` survived and
+   squeezed the whole dashboard into a narrow column. Replace the float layout
+   with a real 2-column grid that spans the viewport.
+   -------------------------------------------------------------------------- */
+.dashboard #content {
+  width: auto !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 24px clamp(16px, 1.6vw, 34px) 48px !important;
+  box-sizing: border-box !important;
+  display: grid !important;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  gap: 26px;
+  align-items: start;
+
+  /* Pin the Django-owned variables the dashboard inherits, so dark_mode.css
+     (which reacts to the OS setting) can never hand us white-on-white text. */
+  --body-fg: var(--jp-text-ink);
+  --body-quiet-color: var(--jp-text-ink-muted);
+  --hairline-color: var(--jp-border-line);
+  --darkened-bg: transparent;
+  --link-fg: var(--jp-kachi-primary);
+  --link-hover-color: var(--jp-kinari-gold);
+}
+
+[data-theme="dark"] .dashboard #content { --link-fg: #7FB3F0; }
+
+.dashboard #content.colMS { margin-right: 0 !important; }
+.dashboard #content > br.clear { display: none !important; }
+
+.dashboard #content-main {
+  grid-column: 1;
+  float: none !important;
+  width: auto !important;
+  min-width: 0 !important;
+  /* Query container for the card grids below. Width here comes from the 1fr
+     grid track, never from content, so inline-size containment is free. */
+  container-type: inline-size;
+  container-name: dashmain;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.dashboard #content-related {
+  grid-column: 2;
+  float: none !important;
+  width: auto !important;
+  min-width: 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+  position: sticky;
+  top: 70px;
+}
+
+/* --------------------------------------------------------------------------
+   2. ACCENT TOKEN SETS
+   One hue family per card. --acc drives the rail + focus ring, --acc-ink the
+   numerals and glyph, --acc-soft the glyph chip, --acc-wash the card wash.
+   -------------------------------------------------------------------------- */
+.acc-indigo { --acc: #2B5C88; --acc-ink: #1E4468; --acc-soft: rgba(43, 92, 136, 0.13); --acc-wash: rgba(43, 92, 136, 0.055); --acc-shadow: rgba(30, 68, 104, 0.26); }
+.acc-gold   { --acc: #BA8630; --acc-ink: #8A6216; --acc-soft: rgba(186, 134, 48, 0.16); --acc-wash: rgba(186, 134, 48, 0.07);  --acc-shadow: rgba(138, 98, 22, 0.26); }
+.acc-teal   { --acc: #0E7490; --acc-ink: #0B5F76; --acc-soft: rgba(14, 116, 144, 0.13); --acc-wash: rgba(14, 116, 144, 0.055); --acc-shadow: rgba(11, 95, 118, 0.26); }
+.acc-violet { --acc: #6D28D9; --acc-ink: #5B21B6; --acc-soft: rgba(109, 40, 217, 0.12); --acc-wash: rgba(109, 40, 217, 0.05);  --acc-shadow: rgba(91, 33, 182, 0.24); }
+.acc-green  { --acc: #10B981; --acc-ink: #047857; --acc-soft: rgba(16, 185, 129, 0.14); --acc-wash: rgba(16, 185, 129, 0.06);  --acc-shadow: rgba(4, 120, 87, 0.24); }
+.acc-blue   { --acc: #2563EB; --acc-ink: #1D4ED8; --acc-soft: rgba(37, 99, 235, 0.12); --acc-wash: rgba(37, 99, 235, 0.05);  --acc-shadow: rgba(29, 78, 216, 0.24); }
+.acc-amber  { --acc: #F59E0B; --acc-ink: #B45309; --acc-soft: rgba(245, 158, 11, 0.16); --acc-wash: rgba(245, 158, 11, 0.07);  --acc-shadow: rgba(180, 83, 9, 0.24); }
+.acc-rose   { --acc: #E11D48; --acc-ink: #BE123C; --acc-soft: rgba(225, 29, 72, 0.12); --acc-wash: rgba(225, 29, 72, 0.05);  --acc-shadow: rgba(190, 18, 60, 0.24); }
+
+[data-theme="dark"] .acc-indigo { --acc: #4E8FC9; --acc-ink: #9CC8F2; --acc-soft: rgba(78, 143, 201, 0.18); --acc-wash: rgba(78, 143, 201, 0.08); --acc-shadow: rgba(0, 0, 0, 0.55); }
+[data-theme="dark"] .acc-gold   { --acc: #D6A04A; --acc-ink: #EFC677; --acc-soft: rgba(214, 160, 74, 0.18); --acc-wash: rgba(214, 160, 74, 0.08); --acc-shadow: rgba(0, 0, 0, 0.55); }
+[data-theme="dark"] .acc-teal   { --acc: #22A5C4; --acc-ink: #7FDBED; --acc-soft: rgba(34, 165, 196, 0.18); --acc-wash: rgba(34, 165, 196, 0.08); --acc-shadow: rgba(0, 0, 0, 0.55); }
+[data-theme="dark"] .acc-violet { --acc: #9A74EE; --acc-ink: #C9B6FD; --acc-soft: rgba(154, 116, 238, 0.18); --acc-wash: rgba(154, 116, 238, 0.08); --acc-shadow: rgba(0, 0, 0, 0.55); }
+[data-theme="dark"] .acc-green  { --acc: #2BD39A; --acc-ink: #7DE9BE; --acc-soft: rgba(43, 211, 154, 0.18); --acc-wash: rgba(43, 211, 154, 0.08); --acc-shadow: rgba(0, 0, 0, 0.55); }
+[data-theme="dark"] .acc-blue   { --acc: #5B8DF5; --acc-ink: #A5C2FB; --acc-soft: rgba(91, 141, 245, 0.18); --acc-wash: rgba(91, 141, 245, 0.08); --acc-shadow: rgba(0, 0, 0, 0.55); }
+[data-theme="dark"] .acc-amber  { --acc: #F6B443; --acc-ink: #FBD07A; --acc-soft: rgba(246, 180, 67, 0.18); --acc-wash: rgba(246, 180, 67, 0.08); --acc-shadow: rgba(0, 0, 0, 0.55); }
+[data-theme="dark"] .acc-rose   { --acc: #F4587C; --acc-ink: #FCA8BC; --acc-soft: rgba(244, 88, 124, 0.18); --acc-wash: rgba(244, 88, 124, 0.08); --acc-shadow: rgba(0, 0, 0, 0.55); }
+
+/* --------------------------------------------------------------------------
+   3. HERO BANNER
+   -------------------------------------------------------------------------- */
+.zen-hero {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--jp-border-line);
+  border-radius: 18px;
+  padding: 26px clamp(20px, 2.4vw, 34px);
+  box-shadow: var(--jp-card-shadow);
+  background:
+    radial-gradient(120% 150% at 0% 0%, rgba(33, 72, 107, 0.14) 0%, rgba(33, 72, 107, 0) 58%),
+    radial-gradient(110% 140% at 100% 0%, rgba(186, 134, 48, 0.15) 0%, rgba(186, 134, 48, 0) 52%),
+    var(--jp-bg-surface);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 22px;
+}
+
+[data-theme="dark"] .zen-hero {
+  background:
+    radial-gradient(120% 150% at 0% 0%, rgba(78, 143, 201, 0.20) 0%, rgba(78, 143, 201, 0) 58%),
+    radial-gradient(110% 140% at 100% 0%, rgba(214, 160, 74, 0.16) 0%, rgba(214, 160, 74, 0) 52%),
+    var(--jp-bg-surface);
+}
+
+/* Top hairline: indigo -> gold, the two brand hues */
+.zen-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(90deg, #21486B 0%, #2B5C88 34%, #BA8630 78%, #E2B35B 100%);
+}
+
+/* Oversized brand watermark */
+.zen-hero::after {
+  content: "MINISHOP";
+  position: absolute;
+  right: 18px;
+  bottom: -22px;
+  font-size: clamp(56px, 6vw, 96px);
+  font-weight: 900;
+  letter-spacing: 12px;
+  line-height: 1;
+  color: var(--jp-text-ink);
+  opacity: 0.035;
+  pointer-events: none;
+  user-select: none;
+}
+
+.hero-copy { position: relative; z-index: 1; min-width: 0; }
+
+.hero-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px 4px 8px;
+  border-radius: 9999px;
+  background: var(--jp-kinari-gold-bg);
+  border: 1px solid rgba(186, 134, 48, 0.32);
+  color: #8A6216;
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 12px;
+}
+
+[data-theme="dark"] .hero-eyebrow { color: #EFC677; }
+
+.hero-eyebrow .material-symbols-outlined { font-size: 15px; }
+
+.dashboard .hero-title {
+  margin: 0 0 8px !important;
+  padding: 0 !important;
+  font-size: clamp(21px, 2vw, 27px) !important;
+  font-weight: 800 !important;
+  line-height: 1.15 !important;
+  letter-spacing: -0.6px !important;
+  color: var(--jp-text-ink) !important;
+  text-transform: none !important;
+}
+
+.dashboard .hero-title .hero-name { color: var(--jp-kinari-gold); }
+
+.hero-subtitle {
+  margin: 0;
+  max-width: 62ch;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--jp-text-ink-body);
+}
+
+.hero-side {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.hero-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: var(--jp-text-ink-muted);
+}
+
+.hero-date .material-symbols-outlined { font-size: 16px; }
+
+.hero-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+
+.hero-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.hero-btn .material-symbols-outlined { font-size: 17px; }
+
+.hero-btn.is-primary {
+  background: var(--jp-kachi-primary);
+  color: #FFFFFF;
+  box-shadow: 0 6px 18px -6px rgba(33, 72, 107, 0.65);
+}
+
+.hero-btn.is-primary:hover {
+  background: var(--jp-kachi-hover);
+  transform: translateY(-2px);
+}
+
+[data-theme="dark"] .hero-btn.is-primary { background: #2F6FA8; }
+[data-theme="dark"] .hero-btn.is-primary:hover { background: #3D82BF; }
+
+.hero-btn.is-ghost {
+  background: var(--jp-bg-surface-sunken);
+  border: 1px solid var(--jp-border-line);
+  color: var(--jp-text-ink);
+}
+
+.hero-btn.is-ghost:hover {
+  border-color: var(--jp-kinari-gold);
+  color: var(--jp-kinari-gold);
+  transform: translateY(-2px);
+}
+
+/* Stack the hero once the main column itself gets narrow (the right rail eats
+   into it long before the viewport gets small). */
+@container dashmain (max-width: 720px) {
+  .zen-hero { align-items: flex-start; }
+  .zen-hero::after { display: none; }
+  .hero-side { align-items: flex-start; width: 100%; }
+  .hero-subtitle { max-width: none; }
+}
+
+@container dashmain (max-width: 420px) {
+  .hero-btn { flex: 1 1 auto; justify-content: center; }
+}
+
+/* --------------------------------------------------------------------------
+   4. SECTION SCAFFOLD
+   -------------------------------------------------------------------------- */
+.dash-section { min-width: 0; }
+
+.dash-section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.dashboard .dash-section-head h2 {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: none !important;
+  border: none !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 1.1px !important;
+  color: var(--jp-text-ink) !important;
+  display: block !important;
+}
+
+.dash-section-note {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--jp-text-ink-muted);
+}
+
+.dash-section-rule {
+  flex: 1 1 auto;
+  height: 1px;
+  background: linear-gradient(90deg, var(--jp-border-line), transparent);
+}
+
+/* --------------------------------------------------------------------------
+   5. SPOTLIGHT ROW  (revenue + order mix)
+   -------------------------------------------------------------------------- */
+.spot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 18px;
+}
+
+.spot-card {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 22px 24px;
+  border-radius: 16px;
+  text-decoration: none;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.spot-card:hover { transform: translateY(-3px); }
+
+/* -- Revenue: the one deliberately dark, highest-contrast tile on the page. */
+.spot-revenue {
+  border: 1px solid rgba(186, 134, 48, 0.34);
+  background:
+    radial-gradient(120% 130% at 100% 0%, rgba(186, 134, 48, 0.30) 0%, rgba(186, 134, 48, 0) 55%),
+    linear-gradient(135deg, #0F2437 0%, #1B3E5C 48%, #21486B 100%);
+  box-shadow: 0 14px 34px -16px rgba(15, 36, 55, 0.75);
+  color: #F5F7FA;
+}
+
+.spot-revenue:hover {
+  border-color: rgba(226, 179, 91, 0.6);
+  box-shadow: 0 20px 44px -16px rgba(15, 36, 55, 0.85);
+}
+
+.spot-revenue::after {
+  content: "";
+  position: absolute;
+  right: -52px;
+  bottom: -72px;
+  width: 210px;
+  height: 210px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(226, 179, 91, 0.22) 0%, rgba(226, 179, 91, 0) 70%);
+  pointer-events: none;
+}
+
+.spot-revenue .spot-eyebrow { color: #E2B35B; }
+.spot-revenue .spot-value { color: #FFFFFF; }
+.spot-revenue .spot-meta { color: rgba(226, 232, 240, 0.78); }
+.spot-revenue .spot-tag {
+  background: rgba(226, 179, 91, 0.16);
+  border-color: rgba(226, 179, 91, 0.34);
+  color: #E2B35B;
+}
+.spot-revenue .seg-track { background: rgba(255, 255, 255, 0.10); }
+.spot-revenue .seg-legend { color: rgba(226, 232, 240, 0.82); }
+.spot-revenue .spot-cta { color: #E2B35B; }
+
+/* -- Orders: light surface, tinted to pair with the revenue tile. */
+.spot-orders {
+  border: 1px solid var(--jp-border-line);
+  background: linear-gradient(150deg, var(--acc-wash) 0%, transparent 58%), var(--jp-bg-surface);
+  box-shadow: var(--jp-card-shadow);
+}
+
+.spot-orders::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--acc), transparent 92%);
+}
+
+.spot-orders:hover {
+  border-color: var(--acc);
+  box-shadow: 0 16px 34px -18px var(--acc-shadow);
+}
+
+.spot-orders .spot-eyebrow { color: var(--acc-ink); }
+.spot-orders .spot-value { color: var(--jp-text-ink); }
+.spot-orders .spot-meta { color: var(--jp-text-ink-body); }
+.spot-orders .spot-cta { color: var(--acc-ink); }
+
+.spot-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.spot-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
+}
+
+.spot-eyebrow .material-symbols-outlined { font-size: 18px; }
+
+.spot-tag {
+  padding: 3px 9px;
+  border-radius: 9999px;
+  border: 1px solid var(--jp-border-line);
+  background: var(--jp-bg-surface-sunken);
+  color: var(--jp-text-ink-muted);
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  white-space: nowrap;
+}
+
+.spot-figure { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+
+.spot-value {
+  font-size: clamp(30px, 3.1vw, 42px);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -1.4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.spot-meta { font-size: 12.5px; font-weight: 600; line-height: 1.5; }
+
+.spot-cta {
+  margin-top: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+}
+
+.spot-cta .material-symbols-outlined { font-size: 15px; transition: transform 0.2s ease; }
+.spot-card:hover .spot-cta .material-symbols-outlined { transform: translateX(3px); }
+
+/* --------------------------------------------------------------------------
+   6. SEGMENTED DISTRIBUTION BAR
+   Segment widths come from an inline flex-grow set to the raw count, so the
+   bar stays proportional with no arithmetic in the template. A zero count
+   collapses to nothing by itself.
+   -------------------------------------------------------------------------- */
+.seg-track {
+  display: flex;
+  height: 9px;
+  border-radius: 9999px;
+  overflow: hidden;
+  background: var(--jp-bg-surface-sunken);
+  gap: 2px;
+}
+
+.seg {
+  flex-basis: 0;
+  min-width: 0;
+  border-radius: 9999px;
+}
+
+.seg-ok   { background: #10B981; }
+.seg-info { background: #2B5C88; }
+.seg-warn { background: #F59E0B; }
+.seg-bad  { background: #E11D48; }
+
+.spot-revenue .seg-info { background: #6FA8DC; }
+
+.seg-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--jp-text-ink-body);
+}
+
+.seg-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.seg-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 8px;
+}
+
+.seg-legend b { font-weight: 800; font-variant-numeric: tabular-nums; }
+
+/* --------------------------------------------------------------------------
+   7. KPI CARDS
+   -------------------------------------------------------------------------- */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+/* 4 across once the main column can hold ~206px cards; 2x2 below that.
+   Never 3+1. The 2-column rule above is the no-container-query fallback. */
+@container dashmain (min-width: 880px) {
+  .kpi-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@container dashmain (max-width: 380px) {
+  .kpi-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+.kpi-card {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px 16px;
+  border: 1px solid var(--jp-border-line);
+  border-radius: 16px;
+  background: linear-gradient(155deg, var(--acc-wash) 0%, transparent 62%), var(--jp-bg-surface);
+  box-shadow: var(--jp-card-shadow);
+  text-decoration: none;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* Accent rail across the top, thickened on hover */
+.kpi-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--acc), transparent 90%);
+  transition: height 0.2s ease;
+}
+
+.kpi-card:hover {
+  transform: translateY(-3px);
+  border-color: var(--acc);
+  box-shadow: 0 16px 32px -18px var(--acc-shadow);
+}
+
+.kpi-card:hover::before { height: 5px; }
+
+.kpi-card:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 2px;
+}
+
+.kpi-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.kpi-eyebrow {
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--jp-text-ink-muted);
+  padding-top: 3px;
+}
+
+.kpi-icon {
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  background: var(--acc-soft);
+  color: var(--acc-ink);
+  box-shadow: inset 0 0 0 1px var(--acc-soft);
+}
+
+.kpi-icon .material-symbols-outlined { font-size: 23px; }
+
+.kpi-figure { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+
+.kpi-value {
+  font-size: 30px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -1px;
+  color: var(--jp-text-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi-unit {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--jp-text-ink-body);
+}
+
+.kpi-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+
+.kpi-pill {
+  padding: 3px 9px;
+  border-radius: 9999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  background: var(--jp-bg-surface-sunken);
+  color: var(--jp-text-ink-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.kpi-pill.is-ok   { background: rgba(16, 185, 129, 0.14); color: #047857; }
+.kpi-pill.is-warn { background: rgba(245, 158, 11, 0.18); color: #B45309; }
+.kpi-pill.is-bad  { background: rgba(225, 29, 72, 0.13); color: #BE123C; }
+
+[data-theme="dark"] .kpi-pill.is-ok   { background: rgba(43, 211, 154, 0.16); color: #7DE9BE; }
+[data-theme="dark"] .kpi-pill.is-warn { background: rgba(246, 180, 67, 0.16); color: #FBD07A; }
+[data-theme="dark"] .kpi-pill.is-bad  { background: rgba(244, 88, 124, 0.16); color: #FCA8BC; }
+
+.kpi-cta {
+  margin-top: auto;
+  padding-top: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  color: var(--jp-text-ink-muted);
+  transition: color 0.2s ease;
+}
+
+.kpi-card:hover .kpi-cta { color: var(--acc-ink); }
+.kpi-cta .material-symbols-outlined { font-size: 14px; transition: transform 0.2s ease; }
+.kpi-card:hover .kpi-cta .material-symbols-outlined { transform: translateX(3px); }
+
+/* --------------------------------------------------------------------------
+   8. NEEDS-ATTENTION CARDS
+   -------------------------------------------------------------------------- */
+.attn-grid {
+  display: grid;
+  /* auto-fill, not auto-fit: with only one or two open queues the cards keep
+     their natural size instead of stretching across the whole row. */
+  grid-template-columns: repeat(auto-fill, minmax(262px, 1fr));
+  gap: 14px;
+}
+
+.attn-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 13px;
+  padding: 14px 16px;
+  border: 1px solid var(--jp-border-line);
+  border-left: 3px solid var(--acc);
+  border-radius: 13px;
+  background: linear-gradient(100deg, var(--acc-wash) 0%, transparent 70%), var(--jp-bg-surface);
+  box-shadow: var(--jp-card-shadow);
+  text-decoration: none;
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.attn-card:hover {
+  transform: translateX(3px);
+  box-shadow: 0 14px 28px -18px var(--acc-shadow);
+}
+
+.attn-icon {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  background: var(--acc-soft);
+  color: var(--acc-ink);
+}
+
+.attn-icon .material-symbols-outlined { font-size: 20px; }
+
+.attn-text { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+
+.attn-count {
+  font-size: 19px;
+  font-weight: 900;
+  line-height: 1.1;
+  letter-spacing: -0.5px;
+  color: var(--acc-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.attn-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--jp-text-ink-body);
+}
+
+.attn-arrow {
+  margin-left: auto;
+  color: var(--jp-text-ink-muted);
+  display: grid;
+  place-items: center;
+  transition: transform 0.18s ease, color 0.18s ease;
+}
+
+.attn-arrow .material-symbols-outlined { font-size: 19px; }
+
+.attn-card:hover .attn-arrow { color: var(--acc-ink); transform: translateX(3px); }
+
+/* Empty state when every queue is clear */
+.attn-clear {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 13px;
+  background: rgba(16, 185, 129, 0.07);
+}
+
+.attn-clear .material-symbols-outlined { font-size: 24px; color: #047857; }
+[data-theme="dark"] .attn-clear .material-symbols-outlined { color: #7DE9BE; }
+
+.attn-clear-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--jp-text-ink);
+  display: block;
+}
+
+.attn-clear-note {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--jp-text-ink-body);
+}
+
+/* --------------------------------------------------------------------------
+   9. APP / MODEL MODULES  (admin/app_list.html)
+   Django emits one `.module` per app. Lay them out as a responsive grid so
+   they fill the reclaimed width instead of stacking in one narrow column.
+   -------------------------------------------------------------------------- */
+.app-modules {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.dashboard .app-modules > .module {
+  margin-bottom: 0 !important;
+  border-radius: 14px !important;
+  overflow: hidden !important;
+}
+
+.dashboard .app-modules > .module:hover {
+  border-color: rgba(186, 134, 48, 0.4) !important;
+}
+
+.dashboard .app-modules .module caption {
+  /* Must stay a table-caption: any other display value makes the browser wrap
+     it in an anonymous cell, so it spans only column 1 and the table collapses
+     to that column's width. */
+  display: table-caption !important;
+  caption-side: top !important;
+  text-align: left !important;
+  padding: 13px 18px !important;
+  background: var(--jp-bg-surface-sunken) !important;
+  border-bottom: 1px solid var(--jp-border-line) !important;
+  font-size: 11.5px !important;
+  font-weight: 800 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.9px !important;
+}
+
+.dashboard .app-modules .module caption a.section {
+  color: var(--jp-text-ink) !important;
+  text-decoration: none !important;
+}
+
+.dashboard .app-modules .module caption a.section:hover {
+  color: var(--jp-kinari-gold) !important;
+}
+
+.dashboard .app-modules .module th,
+.dashboard .app-modules .module td {
+  padding: 10px 18px !important;
+  vertical-align: middle !important;
+}
+
+/* Model names must be allowed to wrap; only the action cells stay on one line. */
+.dashboard .app-modules .module th {
+  white-space: normal !important;
+  overflow-wrap: anywhere !important;
+}
+
+.dashboard .app-modules .module td { white-space: nowrap !important; }
+
+.dashboard .app-modules .module th[scope="row"] { width: 100% !important; }
+
+.dashboard .app-modules .module th a {
+  display: block !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  color: var(--jp-text-ink) !important;
+  text-decoration: none !important;
+}
+
+.dashboard .app-modules .module th a:hover { color: var(--jp-kinari-gold) !important; }
+
+.dashboard .app-modules .module td { text-align: right !important; }
+
+.dashboard .app-modules .module td a {
+  display: inline-flex !important;
+  padding: 4px 10px !important;
+  border-radius: 7px !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+}
+
+.dashboard .app-modules .module td a.viewlink {
+  padding-left: 10px !important;
+  background: rgba(33, 72, 107, 0.09) !important;
+  color: var(--jp-kachi-primary) !important;
+}
+
+[data-theme="dark"] .dashboard .app-modules .module td a.viewlink {
+  background: rgba(147, 197, 253, 0.12) !important;
+  color: #93C5FD !important;
+}
+
+.dashboard .app-modules .module tbody tr:hover {
+  background: var(--acc-wash, rgba(33, 72, 107, 0.04)) !important;
+}
+
+/* --------------------------------------------------------------------------
+   10. RIGHT RAIL
+   -------------------------------------------------------------------------- */
+.dashboard #content-related .module {
+  background: var(--jp-bg-surface) !important;
+  border: 1px solid var(--jp-border-line) !important;
+  border-radius: 16px !important;
+  box-shadow: var(--jp-card-shadow) !important;
+  margin-bottom: 18px !important;
+  overflow: hidden !important;
+}
+
+.dashboard #content-related .module:last-child { margin-bottom: 0 !important; }
+
+.dashboard #content-related .module h2 {
+  background: var(--jp-bg-surface-sunken) !important;
+  border-bottom: 1px solid var(--jp-border-line) !important;
+  padding: 13px 16px !important;
+  margin: 0 !important;
+  font-size: 11.5px !important;
+  font-weight: 800 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.9px !important;
+  color: var(--jp-text-ink) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+
+.dashboard #content-related .module h3 {
+  margin: 0 !important;
+  padding: 12px 16px 8px !important;
+  font-size: 10.5px !important;
+  font-weight: 800 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.9px !important;
+  color: var(--jp-text-ink-muted) !important;
+}
+
+.dashboard #content-related p {
+  padding: 4px 16px 16px !important;
+  margin: 0 !important;
+  font-size: 12px !important;
+  color: var(--jp-text-ink-muted) !important;
+}
+
+/* Recent-actions timeline.
+   japanese_admin.css styles `.addlink`/`.changelink`/`.deletelink` as inline
+   pills, and Django puts those same classes on each <li>. Reclaim the li as a
+   block row and keep the class only as a colour signal on the leading dot. */
+.dashboard #content-related .actionlist {
+  margin: 0 !important;
+  padding: 4px 0 8px !important;
+  list-style: none !important;
+}
+
+.dashboard #content-related .actionlist li {
+  display: grid !important;
+  grid-template-columns: 16px minmax(0, 1fr);
+  column-gap: 10px;
+  align-items: start;
+  margin: 0 !important;
+  padding: 10px 16px !important;
+  border-radius: 0 !important;
+  border-bottom: 1px solid var(--jp-border-line-subtle) !important;
+  background: none !important;
+  font-size: 12px !important;
+  line-height: 1.45 !important;
+  overflow: visible !important;
+  text-overflow: clip !important;
+}
+
+.dashboard #content-related .actionlist li:last-child { border-bottom: none !important; }
+.dashboard #content-related .actionlist li:hover { background: var(--jp-bg-surface-sunken) !important; }
+
+/* Leading dot, colour-coded by action type */
+.dashboard #content-related .actionlist li::before {
+  content: "";
+  grid-column: 1;
+  width: 8px;
+  height: 8px;
+  margin-top: 5px;
+  border-radius: 50%;
+  background: var(--jp-text-ink-muted);
+  box-shadow: 0 0 0 3px var(--jp-bg-surface-sunken);
+}
+
+.dashboard #content-related .actionlist li.addlink::before    { background: #10B981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.16); }
+.dashboard #content-related .actionlist li.changelink::before { background: #BA8630; box-shadow: 0 0 0 3px rgba(186, 134, 48, 0.18); }
+.dashboard #content-related .actionlist li.deletelink::before { background: #E11D48; box-shadow: 0 0 0 3px rgba(225, 29, 72, 0.16); }
+
+
+.dashboard #content-related .actionlist li a,
+.dashboard #content-related .actionlist li strong {
+  grid-column: 2;
+  display: block !important;
+  padding: 0 !important;
+  background: none !important;
+  border-radius: 0 !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  color: var(--jp-text-ink) !important;
+  text-decoration: none !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard #content-related .actionlist li a:hover { color: var(--jp-kinari-gold) !important; }
+
+.dashboard #content-related .actionlist li br { display: none !important; }
+
+.dashboard #content-related .actionlist li .mini {
+  grid-column: 2;
+  display: block !important;
+  font-size: 10.5px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+  color: var(--jp-text-ink-muted) !important;
+  opacity: 1 !important;
+}
+
+/* Quick-create shortcut list */
+.quick-list { padding: 8px !important; display: flex; flex-direction: column; gap: 4px; }
+
+.quick-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  text-decoration: none;
+  color: var(--jp-text-ink);
+  transition: background 0.16s ease, color 0.16s ease;
+}
+
+.quick-item:hover { background: var(--acc-soft); color: var(--acc-ink); }
+
+.quick-item .material-symbols-outlined {
+  font-size: 19px;
+  color: var(--acc-ink);
+  flex: 0 0 auto;
+}
+
+.quick-item span.quick-label { font-size: 12.5px; font-weight: 700; }
+
+.quick-item .quick-plus {
+  margin-left: auto;
+  font-size: 16px !important;
+  color: var(--jp-text-ink-muted);
+}
+
+.quick-item:hover .quick-plus { color: var(--acc-ink); }
+
+/* --------------------------------------------------------------------------
+   11. RESPONSIVE
+   -------------------------------------------------------------------------- */
+@media (max-width: 1400px) {
+  .dashboard #content { grid-template-columns: minmax(0, 1fr) 300px; gap: 20px; }
+}
+
+/* Below this the right rail drops under the main column */
+@media (max-width: 1150px) {
+  .dashboard #content {
+    grid-template-columns: minmax(0, 1fr) !important;
+  }
+  .dashboard #content-main,
+  .dashboard #content-related { grid-column: 1; }
+  .dashboard #content-related {
+    position: static;
+    top: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 18px;
+    align-items: start;
+  }
+  .dashboard #content-related .module { margin-bottom: 0 !important; }
+}
+
+@media (max-width: 760px) {
+  .dashboard #content { padding: 16px 16px 36px !important; gap: 18px; }
+  .zen-hero { padding: 20px 18px; }
+  .spot-grid { grid-template-columns: minmax(0, 1fr); }
+  .kpi-grid { gap: 12px; }
+  .kpi-card { padding: 15px 14px 13px; }
+  .kpi-value { font-size: 25px; }
+  .app-modules { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kpi-card, .spot-card, .attn-card, .hero-btn,
+  .kpi-cta .material-symbols-outlined,
+  .spot-cta .material-symbols-outlined,
+  .attn-arrow { transition: none !important; }
+  .kpi-card:hover, .spot-card:hover { transform: none !important; }
+  .attn-card:hover { transform: none !important; }
+}
+
+/* --------------------------------------------------------------------------
+   12. DARK SCHEME VIA OS PREFERENCE
+   japanese_admin.css flips the --jp-* palette both for an explicit
+   data-theme="dark" and for data-theme="auto" under a dark OS. The rules
+   above only match the explicit attribute, which left these accent tokens
+   at their light values on a dark surface (navy ink on a navy card).
+   Every rule below is the mechanical twin of a [data-theme="dark"] rule
+   above, in the same order -- change one, change its twin.
+   -------------------------------------------------------------------------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .dashboard #content { --link-fg: #7FB3F0; }
+  :root:not([data-theme="light"]) .acc-indigo { --acc: #4E8FC9; --acc-ink: #9CC8F2; --acc-soft: rgba(78, 143, 201, 0.18); --acc-wash: rgba(78, 143, 201, 0.08); --acc-shadow: rgba(0, 0, 0, 0.55); }
+  :root:not([data-theme="light"]) .acc-gold { --acc: #D6A04A; --acc-ink: #EFC677; --acc-soft: rgba(214, 160, 74, 0.18); --acc-wash: rgba(214, 160, 74, 0.08); --acc-shadow: rgba(0, 0, 0, 0.55); }
+  :root:not([data-theme="light"]) .acc-teal { --acc: #22A5C4; --acc-ink: #7FDBED; --acc-soft: rgba(34, 165, 196, 0.18); --acc-wash: rgba(34, 165, 196, 0.08); --acc-shadow: rgba(0, 0, 0, 0.55); }
+  :root:not([data-theme="light"]) .acc-violet { --acc: #9A74EE; --acc-ink: #C9B6FD; --acc-soft: rgba(154, 116, 238, 0.18); --acc-wash: rgba(154, 116, 238, 0.08); --acc-shadow: rgba(0, 0, 0, 0.55); }
+  :root:not([data-theme="light"]) .acc-green { --acc: #2BD39A; --acc-ink: #7DE9BE; --acc-soft: rgba(43, 211, 154, 0.18); --acc-wash: rgba(43, 211, 154, 0.08); --acc-shadow: rgba(0, 0, 0, 0.55); }
+  :root:not([data-theme="light"]) .acc-blue { --acc: #5B8DF5; --acc-ink: #A5C2FB; --acc-soft: rgba(91, 141, 245, 0.18); --acc-wash: rgba(91, 141, 245, 0.08); --acc-shadow: rgba(0, 0, 0, 0.55); }
+  :root:not([data-theme="light"]) .acc-amber { --acc: #F6B443; --acc-ink: #FBD07A; --acc-soft: rgba(246, 180, 67, 0.18); --acc-wash: rgba(246, 180, 67, 0.08); --acc-shadow: rgba(0, 0, 0, 0.55); }
+  :root:not([data-theme="light"]) .acc-rose { --acc: #F4587C; --acc-ink: #FCA8BC; --acc-soft: rgba(244, 88, 124, 0.18); --acc-wash: rgba(244, 88, 124, 0.08); --acc-shadow: rgba(0, 0, 0, 0.55); }
+  :root:not([data-theme="light"]) .zen-hero {
+    background:
+    radial-gradient(120% 150% at 0% 0%, rgba(78, 143, 201, 0.20) 0%, rgba(78, 143, 201, 0) 58%),
+    radial-gradient(110% 140% at 100% 0%, rgba(214, 160, 74, 0.16) 0%, rgba(214, 160, 74, 0) 52%),
+    var(--jp-bg-surface);
+  }
+  :root:not([data-theme="light"]) .hero-eyebrow { color: #EFC677; }
+  :root:not([data-theme="light"]) .hero-btn.is-primary { background: #2F6FA8; }
+  :root:not([data-theme="light"]) .hero-btn.is-primary:hover { background: #3D82BF; }
+  :root:not([data-theme="light"]) .kpi-pill.is-ok { background: rgba(43, 211, 154, 0.16); color: #7DE9BE; }
+  :root:not([data-theme="light"]) .kpi-pill.is-warn { background: rgba(246, 180, 67, 0.16); color: #FBD07A; }
+  :root:not([data-theme="light"]) .kpi-pill.is-bad { background: rgba(244, 88, 124, 0.16); color: #FCA8BC; }
+  :root:not([data-theme="light"]) .attn-clear .material-symbols-outlined { color: #7DE9BE; }
+  :root:not([data-theme="light"]) .dashboard .app-modules .module td a.viewlink {
+    background: rgba(147, 197, 253, 0.12) !important;
+    color: #93C5FD !important;
+  }
+}

@@ -30,7 +30,8 @@
   --jp-header-text: #FFFFFF;
 }
 
-/* Dark Mode Overrides */
+/* Dark Mode Overrides -- explicit choice. Django's theme toggle writes
+   data-theme="light" | "dark" | "auto" onto <html>; "dark" lands here. */
 [data-theme="dark"],
 body.theme-dark {
   --jp-bg-canvas: #091019;
@@ -44,6 +45,28 @@ body.theme-dark {
   --jp-card-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
   --jp-header-bg: rgba(10, 20, 31, 0.94);
   --jp-header-text: #F8FAFC;
+}
+
+/* Same palette for the default data-theme="auto" when the OS asks for dark.
+   Without this, an OS-dark user got the light palette from :root while
+   Django's own dark_mode.css flipped its variables, so anything painted
+   from a Django variable turned near-white on white. Guarded on
+   :not([data-theme="light"]) so forcing light in the toggle still wins.
+   Keep these declarations identical to the block above. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --jp-bg-canvas: #091019;
+    --jp-bg-surface: #101B26;
+    --jp-bg-surface-sunken: #0C1520;
+    --jp-border-line: rgba(255, 255, 255, 0.09);
+    --jp-border-line-subtle: rgba(255, 255, 255, 0.05);
+    --jp-text-ink: #F1F5F9;
+    --jp-text-ink-body: #CBD5E1;
+    --jp-text-ink-muted: #8E9FB0;
+    --jp-card-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
+    --jp-header-bg: rgba(10, 20, 31, 0.94);
+    --jp-header-text: #F8FAFC;
+  }
 }
 
 /* Global resets & typography */
@@ -155,7 +178,15 @@ body {
 #user-tools {
   display: flex !important;
   align-items: center !important;
+  /* Must wrap: the welcome text plus View site / Change password / Log out /
+     theme toggle measure ~465px, which overflowed the viewport on phones and
+     gave every admin page a horizontal scrollbar. */
+  flex-wrap: wrap !important;
+  justify-content: flex-end !important;
+  row-gap: 6px !important;
   gap: 12px !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
   font-size: 13px !important;
   color: rgba(255, 255, 255, 0.8) !important;
 }
@@ -1152,3 +1183,36 @@ input:focus, textarea:focus, select:focus {
   }
 }
 
+/* --------------------------------------------------------------------------
+   DARK SCHEME VIA OS PREFERENCE -- COMPONENT RULES
+   The palette block near the top of this file is activated both by an
+   explicit data-theme="dark" and by a dark OS under data-theme="auto".
+   These component overrides had only the attribute form, so under a dark
+   OS the surfaces went dark while links, badges and sidebar states kept
+   their light-mode colours. Each rule below is the mechanical twin of a
+   [data-theme="dark"] rule above, in the same order -- change one, change
+   its twin.
+   -------------------------------------------------------------------------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .breadcrumbs a { color: #60A5FA !important; }
+  :root:not([data-theme="light"]) .messagelist li.success { color: #34D399 !important; }
+  :root:not([data-theme="light"]) .module:hover { border-color: rgba(255, 255, 255, 0.16) !important; }
+  :root:not([data-theme="light"]) .addlink { color: #34D399 !important; }
+  :root:not([data-theme="light"]) .changelink {
+    color: #93C5FD !important;
+    background: rgba(147, 197, 253, 0.1) !important;
+  }
+  :root:not([data-theme="light"]) #result_list tbody tr:hover { background-color: rgba(255, 255, 255, 0.04) !important; }
+  :root:not([data-theme="light"]) fieldset h2 { color: #93C5FD !important; }
+  :root:not([data-theme="light"]) .toggle-nav-sidebar:hover { color: #93C5FD !important; }
+  :root:not([data-theme="light"]) .sidebar-add-btn { color: #34D399; }
+  :root:not([data-theme="light"]) .sidebar-link:hover .material-symbols-outlined { color: #93C5FD; }
+  :root:not([data-theme="light"]) .sidebar-link.active {
+    background: rgba(96, 165, 250, 0.15) !important;
+    color: #93C5FD !important;
+  }
+  :root:not([data-theme="light"]) .sidebar-link.active .material-symbols-outlined { color: #93C5FD !important; }
+  :root:not([data-theme="light"]) .cat-product-count { background: rgba(255, 255, 255, 0.08); }
+  :root:not([data-theme="light"]) .cat-quick-edit:hover { color: #93C5FD; }
+  :root:not([data-theme="light"]) .sidebar-store-button { color: #34D399; }
+}

@@ -4,377 +4,414 @@
 {% block extrastyle %}
   {{ block.super }}
   <link rel="stylesheet" href="{% static 'admin/css/dashboard.css' %}">
-  <style>
-    /* Dashboard Zen Hero Banner */
-    .zen-dashboard-hero {
-      background: linear-gradient(135deg, rgba(33, 72, 107, 0.15) 0%, rgba(186, 134, 48, 0.08) 100%);
-      border: 1px solid var(--jp-border-line);
-      border-radius: 16px;
-      padding: 24px 28px;
-      margin-bottom: 28px;
-      position: relative;
-      overflow: hidden;
-      backdrop-filter: blur(8px);
-    }
-
-    [data-theme="dark"] .zen-dashboard-hero {
-      background: linear-gradient(135deg, rgba(33, 72, 107, 0.3) 0%, rgba(186, 134, 48, 0.12) 100%);
-      border-color: rgba(255, 255, 255, 0.08);
-    }
-
-    .zen-dashboard-hero::after {
-      content: "MINISHOP";
-      position: absolute;
-      right: 20px;
-      bottom: -15px;
-      font-size: 80px;
-      font-weight: 900;
-      color: var(--jp-text-ink);
-      opacity: 0.04;
-      pointer-events: none;
-      letter-spacing: 10px;
-    }
-
-    .hero-top-badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      color: var(--jp-kinari-gold);
-      margin-bottom: 6px;
-    }
-
-    .hero-title {
-      font-size: 22px;
-      font-weight: 800;
-      color: var(--jp-text-ink);
-      letter-spacing: -0.5px;
-      margin-bottom: 6px;
-    }
-
-    .hero-subtitle {
-      font-size: 13px;
-      color: var(--jp-text-ink-body);
-      max-width: 600px;
-      line-height: 1.5;
-    }
-
-    /* KPI Quick Cards Grid */
-    .kpi-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-      gap: 16px;
-      margin-bottom: 28px;
-    }
-
-    .kpi-card {
-      background: var(--jp-bg-surface);
-      border: 1px solid var(--jp-border-line);
-      border-radius: 14px;
-      padding: 18px 20px;
-      box-shadow: var(--jp-card-shadow);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      text-decoration: none;
-      transition: all 0.2s ease;
-    }
-
-    .kpi-card:hover {
-      transform: translateY(-2px);
-      border-color: var(--jp-kinari-gold);
-      box-shadow: 0 8px 25px -4px rgba(0, 0, 0, 0.1);
-    }
-
-    .kpi-info h4 {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.6px;
-      color: var(--jp-text-ink-muted);
-      margin-bottom: 4px;
-    }
-
-    .kpi-info .kpi-label {
-      font-size: 15px;
-      font-weight: 800;
-      color: var(--jp-text-ink);
-    }
-
-    .kpi-icon-wrap {
-      width: 44px;
-      height: 44px;
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .kpi-icon-wrap.indigo {
-      background: rgba(33, 72, 107, 0.12);
-      color: #21486B;
-    }
-
-    [data-theme="dark"] .kpi-icon-wrap.indigo {
-      background: rgba(96, 165, 250, 0.15);
-      color: #93C5FD;
-    }
-
-    .kpi-icon-wrap.gold {
-      background: rgba(186, 134, 48, 0.12);
-      color: #BA8630;
-    }
-
-    .kpi-icon-wrap.green {
-      background: rgba(16, 185, 129, 0.12);
-      color: #10B981;
-    }
-
-    .kpi-icon-wrap.rose {
-      background: rgba(225, 29, 72, 0.12);
-      color: #E11D48;
-    }
-
-
-    /* Metric value + breakdown pills */
-    .kpi-value {
-      font-size: 24px;
-      font-weight: 900;
-      line-height: 1.1;
-      color: var(--jp-text-ink);
-      margin-bottom: 4px;
-      font-variant-numeric: tabular-nums;
-    }
-
-    .kpi-breakdown {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 4px;
-      margin-top: 6px;
-    }
-
-    .kpi-pill {
-      font-size: 10px;
-      font-weight: 700;
-      padding: 2px 7px;
-      border-radius: 10px;
-      white-space: nowrap;
-      background: var(--jp-bg-surface-sunken, rgba(0, 0, 0, 0.04));
-      color: var(--jp-text-ink-muted);
-    }
-
-    .kpi-pill.is-ok { background: rgba(16, 185, 129, 0.12); color: #0F9B76; }
-    .kpi-pill.is-warn { background: rgba(245, 158, 11, 0.14); color: #B45309; }
-    .kpi-pill.is-bad { background: rgba(239, 68, 68, 0.12); color: #DC2626; }
-
-    [data-theme="dark"] .kpi-pill.is-ok { color: #6EE7B7; }
-    [data-theme="dark"] .kpi-pill.is-warn { color: #FCD34D; }
-    [data-theme="dark"] .kpi-pill.is-bad { color: #FCA5A5; }
-
-    .kpi-card .kpi-info { min-width: 0; }
-
-    /* Action List in Sidebar */
-    .actionlist li {
-      padding: 10px 14px !important;
-      border-bottom: 1px solid var(--jp-border-line-subtle) !important;
-      font-size: 12px !important;
-      line-height: 1.4 !important;
-    }
-
-    .actionlist li:last-child {
-      border-bottom: none !important;
-    }
-  </style>
+  {% comment %}
+    Loaded last: it undoes Django's 600px `.dashboard #content` clamp and the
+    float-based colMS layout, then skins the console.
+  {% endcomment %}
+  <link rel="stylesheet" href="{% static 'css/admin_dashboard.css' %}">
 {% endblock %}
 
 {% block coltype %}colMS{% endblock %}
 {% block bodyclass %}{{ block.super }} dashboard{% endblock %}
 {% block nav-breadcrumbs %}{% endblock %}
 
+{# The hero carries the page's <h1>, so suppress the stock heading pair. #}
+{% block content_title %}{% endblock %}
+{% block content_subtitle %}{% endblock %}
+
 {% block content %}
 <div id="content-main">
 
-  <!-- Zen Japanese Hero Banner -->
-  <div class="zen-dashboard-hero">
-    <div class="hero-top-badge">
-      <span class="material-symbols-outlined" style="font-size: 16px;">dashboard_customize</span>
-      <span>Store Management Console • Overview</span>
+  <!-- ==================== HERO ==================== -->
+  <section class="zen-hero">
+    <div class="hero-copy">
+      <span class="hero-eyebrow">
+        <span class="material-symbols-outlined">dashboard_customize</span>
+        Store management console
+      </span>
+      <h1 class="hero-title">
+        {% blocktranslate with name=user.get_username %}Welcome back, <span class="hero-name">{{ name }}</span>{% endblocktranslate %}
+      </h1>
+      <p class="hero-subtitle">
+        Catalog, merchants, orders and payouts in one place. Every change here is mirrored
+        to the Next.js storefront in real time.
+      </p>
     </div>
-    <h2 class="hero-title">Welcome, {{ user.get_username }}</h2>
-    <p class="hero-subtitle">
-      Control catalog items, categories, customer orders, and media assets. Real-time changes are dynamically mirrored to the Next.js storefront.
-    </p>
-  </div>
 
-  <!-- Platform Metrics -->
-  <div class="kpi-grid">
+    <div class="hero-side">
+      <span class="hero-date">
+        <span class="material-symbols-outlined">event</span>
+        {% now "l, j F Y" %}
+      </span>
+      <div class="hero-actions">
+        <a href="{% url 'admin:shop_product_add' %}" class="hero-btn is-primary">
+          <span class="material-symbols-outlined">add_circle</span>
+          New product
+        </a>
+        <a href="{{ storefront_url }}" target="_blank" rel="noopener noreferrer" class="hero-btn is-ghost">
+          <span class="material-symbols-outlined">open_in_new</span>
+          View storefront
+        </a>
+      </div>
+    </div>
+  </section>
 
-    <a href="{% url 'admin:auth_user_changelist' %}" class="kpi-card" title="Manage Users">
-      <div class="kpi-info">
-        <h4>People</h4>
-        <div class="kpi-value">{{ metrics.users.total }}</div>
-        <div class="kpi-label">Users</div>
-        <div class="kpi-breakdown">
+  <!-- ==================== SPOTLIGHT: MONEY & ORDERS ==================== -->
+  <section class="dash-section">
+    <div class="dash-section-head">
+      <h2>{% translate "Trading activity" %}</h2>
+      <span class="dash-section-rule"></span>
+      <span class="dash-section-note">All time</span>
+    </div>
+
+    <div class="spot-grid">
+
+      <!-- Revenue: deliberately the darkest, highest-contrast tile on the page -->
+      <a href="{% url 'admin:shop_payment_changelist' %}" class="spot-card spot-revenue">
+        <div class="spot-top">
+          <span class="spot-eyebrow">
+            <span class="material-symbols-outlined">payments</span>
+            Revenue collected
+          </span>
+          <span class="spot-tag">{{ metrics.payments.total }} payment{{ metrics.payments.total|pluralize }}</span>
+        </div>
+
+        <div class="spot-figure">
+          <span class="spot-value">&#2547;{{ metrics.payments.revenue|floatformat:2 }}</span>
+        </div>
+
+        <p class="spot-meta">
+          {{ metrics.payments.paid }} settled{% if metrics.payments.pending %} &middot; {{ metrics.payments.pending }} in progress{% endif %}{% if metrics.payments.failed %} &middot; {{ metrics.payments.failed }} failed{% endif %}
+        </p>
+
+        <div class="seg-track" role="img"
+             aria-label="Payment mix: {{ metrics.payments.paid }} settled, {{ metrics.payments.pending }} in progress, {{ metrics.payments.failed }} failed">
+          <span class="seg seg-ok"   style="flex-grow: {{ metrics.payments.paid }}"></span>
+          <span class="seg seg-warn" style="flex-grow: {{ metrics.payments.pending }}"></span>
+          <span class="seg seg-bad"  style="flex-grow: {{ metrics.payments.failed }}"></span>
+        </div>
+
+        <div class="seg-legend">
+          <span><i class="seg-ok"></i>Settled <b>{{ metrics.payments.paid }}</b></span>
+          <span><i class="seg-warn"></i>Pending <b>{{ metrics.payments.pending }}</b></span>
+          <span><i class="seg-bad"></i>Failed <b>{{ metrics.payments.failed }}</b></span>
+        </div>
+
+        <span class="spot-cta">
+          Open payments
+          <span class="material-symbols-outlined">arrow_forward</span>
+        </span>
+      </a>
+
+      <!-- Order mix -->
+      <a href="{% url 'admin:shop_order_changelist' %}" class="spot-card spot-orders acc-indigo">
+        <div class="spot-top">
+          <span class="spot-eyebrow">
+            <span class="material-symbols-outlined">receipt_long</span>
+            Order pipeline
+          </span>
+          <span class="spot-tag">{{ metrics.orders.delivered }} delivered</span>
+        </div>
+
+        <div class="spot-figure">
+          <span class="spot-value">{{ metrics.orders.total }}</span>
+          <span class="spot-meta">orders placed</span>
+        </div>
+
+        <p class="spot-meta">
+          {% if metrics.orders.pending or metrics.orders.in_flight %}
+            {{ metrics.orders.pending }} awaiting confirmation, {{ metrics.orders.in_flight }} moving through fulfilment.
+          {% else %}
+            Nothing waiting in the queue right now.
+          {% endif %}
+        </p>
+
+        <div class="seg-track" role="img"
+             aria-label="Order mix: {{ metrics.orders.pending }} pending, {{ metrics.orders.in_flight }} in fulfilment, {{ metrics.orders.delivered }} delivered, {{ metrics.orders.cancelled }} cancelled">
+          <span class="seg seg-warn" style="flex-grow: {{ metrics.orders.pending }}"></span>
+          <span class="seg seg-info" style="flex-grow: {{ metrics.orders.in_flight }}"></span>
+          <span class="seg seg-ok"   style="flex-grow: {{ metrics.orders.delivered }}"></span>
+          <span class="seg seg-bad"  style="flex-grow: {{ metrics.orders.cancelled }}"></span>
+        </div>
+
+        <div class="seg-legend">
+          <span><i class="seg-warn"></i>Pending <b>{{ metrics.orders.pending }}</b></span>
+          <span><i class="seg-info"></i>In flight <b>{{ metrics.orders.in_flight }}</b></span>
+          <span><i class="seg-ok"></i>Delivered <b>{{ metrics.orders.delivered }}</b></span>
+          <span><i class="seg-bad"></i>Cancelled <b>{{ metrics.orders.cancelled }}</b></span>
+        </div>
+
+        <span class="spot-cta">
+          Open orders
+          <span class="material-symbols-outlined">arrow_forward</span>
+        </span>
+      </a>
+
+    </div>
+  </section>
+
+  <!-- ==================== PLATFORM KPIs ==================== -->
+  <section class="dash-section">
+    <div class="dash-section-head">
+      <h2>{% translate "Platform" %}</h2>
+      <span class="dash-section-rule"></span>
+      <span class="dash-section-note">People, merchants &amp; catalog</span>
+    </div>
+
+    <div class="kpi-grid">
+
+      <a href="{% url 'admin:auth_user_changelist' %}" class="kpi-card acc-blue">
+        <div class="kpi-head">
+          <span class="kpi-eyebrow">People</span>
+          <span class="kpi-icon"><span class="material-symbols-outlined">group</span></span>
+        </div>
+        <div class="kpi-figure">
+          <span class="kpi-value">{{ metrics.users.total }}</span>
+          <span class="kpi-unit">users</span>
+        </div>
+        <div class="kpi-pills">
           <span class="kpi-pill is-ok">{{ metrics.users.active }} active</span>
           <span class="kpi-pill">{{ metrics.users.staff }} staff</span>
+          {% if metrics.users.new_recently %}<span class="kpi-pill">+{{ metrics.users.new_recently }} in {{ metrics.new_user_window_days }}d</span>{% endif %}
         </div>
-      </div>
-      <div class="kpi-icon-wrap indigo">
-        <span class="material-symbols-outlined">group</span>
-      </div>
-    </a>
+        <span class="kpi-cta">Manage <span class="material-symbols-outlined">arrow_forward</span></span>
+      </a>
 
-    <a href="{% url 'admin:sellers_sellerprofile_changelist' %}" class="kpi-card" title="Manage Sellers">
-      <div class="kpi-info">
-        <h4>Merchants</h4>
-        <div class="kpi-value">{{ metrics.sellers.total }}</div>
-        <div class="kpi-label">Sellers</div>
-        <div class="kpi-breakdown">
+      <a href="{% url 'admin:sellers_sellerprofile_changelist' %}" class="kpi-card acc-gold">
+        <div class="kpi-head">
+          <span class="kpi-eyebrow">Merchants</span>
+          <span class="kpi-icon"><span class="material-symbols-outlined">badge</span></span>
+        </div>
+        <div class="kpi-figure">
+          <span class="kpi-value">{{ metrics.sellers.total }}</span>
+          <span class="kpi-unit">sellers</span>
+        </div>
+        <div class="kpi-pills">
           <span class="kpi-pill is-ok">{{ metrics.sellers.active }} active</span>
           {% if metrics.sellers.pending %}<span class="kpi-pill is-warn">{{ metrics.sellers.pending }} pending</span>{% endif %}
+          {% if metrics.sellers.under_review %}<span class="kpi-pill is-warn">{{ metrics.sellers.under_review }} in review</span>{% endif %}
           {% if metrics.sellers.suspended %}<span class="kpi-pill is-bad">{{ metrics.sellers.suspended }} suspended</span>{% endif %}
         </div>
-      </div>
-      <div class="kpi-icon-wrap gold">
-        <span class="material-symbols-outlined">badge</span>
-      </div>
-    </a>
+        <span class="kpi-cta">Manage <span class="material-symbols-outlined">arrow_forward</span></span>
+      </a>
 
-    <a href="{% url 'admin:shops_shop_changelist' %}" class="kpi-card" title="Manage Shops">
-      <div class="kpi-info">
-        <h4>Storefronts</h4>
-        <div class="kpi-value">{{ metrics.shops.total }}</div>
-        <div class="kpi-label">Shops</div>
-        <div class="kpi-breakdown">
+      <a href="{% url 'admin:shops_shop_changelist' %}" class="kpi-card acc-teal">
+        <div class="kpi-head">
+          <span class="kpi-eyebrow">Storefronts</span>
+          <span class="kpi-icon"><span class="material-symbols-outlined">storefront</span></span>
+        </div>
+        <div class="kpi-figure">
+          <span class="kpi-value">{{ metrics.shops.total }}</span>
+          <span class="kpi-unit">shops</span>
+        </div>
+        <div class="kpi-pills">
           <span class="kpi-pill is-ok">{{ metrics.shops.active }} active</span>
           {% if metrics.shops.pending %}<span class="kpi-pill is-warn">{{ metrics.shops.pending }} pending</span>{% endif %}
+          {% if metrics.shops.draft %}<span class="kpi-pill">{{ metrics.shops.draft }} draft</span>{% endif %}
           {% if metrics.shops.suspended %}<span class="kpi-pill is-bad">{{ metrics.shops.suspended }} suspended</span>{% endif %}
         </div>
-      </div>
-      <div class="kpi-icon-wrap indigo">
-        <span class="material-symbols-outlined">storefront</span>
-      </div>
-    </a>
+        <span class="kpi-cta">Manage <span class="material-symbols-outlined">arrow_forward</span></span>
+      </a>
 
-    <a href="{% url 'admin:shop_product_changelist' %}" class="kpi-card" title="Manage Products">
-      <div class="kpi-info">
-        <h4>Catalog</h4>
-        <div class="kpi-value">{{ metrics.products.total }}</div>
-        <div class="kpi-label">Products</div>
-        <div class="kpi-breakdown">
-          <span class="kpi-pill is-ok">{{ metrics.products.published }} published</span>
+      <a href="{% url 'admin:shop_product_changelist' %}" class="kpi-card acc-violet">
+        <div class="kpi-head">
+          <span class="kpi-eyebrow">Catalog</span>
+          <span class="kpi-icon"><span class="material-symbols-outlined">shopping_bag</span></span>
+        </div>
+        <div class="kpi-figure">
+          <span class="kpi-value">{{ metrics.products.total }}</span>
+          <span class="kpi-unit">products</span>
+        </div>
+        <div class="kpi-pills">
+          <span class="kpi-pill is-ok">{{ metrics.products.published }} live</span>
           {% if metrics.products.draft %}<span class="kpi-pill">{{ metrics.products.draft }} draft</span>{% endif %}
           {% if metrics.products.submitted %}<span class="kpi-pill is-warn">{{ metrics.products.submitted }} to review</span>{% endif %}
+          {% if metrics.products.rejected %}<span class="kpi-pill is-bad">{{ metrics.products.rejected }} rejected</span>{% endif %}
         </div>
-      </div>
-      <div class="kpi-icon-wrap gold">
-        <span class="material-symbols-outlined">shopping_bag</span>
-      </div>
-    </a>
+        <span class="kpi-cta">Manage <span class="material-symbols-outlined">arrow_forward</span></span>
+      </a>
 
-    <a href="{% url 'admin:shop_order_changelist' %}" class="kpi-card" title="View Customer Orders">
-      <div class="kpi-info">
-        <h4>Sales</h4>
-        <div class="kpi-value">{{ metrics.orders.total }}</div>
-        <div class="kpi-label">Orders</div>
-        <div class="kpi-breakdown">
-          {% if metrics.orders.pending %}<span class="kpi-pill is-warn">{{ metrics.orders.pending }} pending</span>{% endif %}
-          {% if metrics.orders.in_flight %}<span class="kpi-pill">{{ metrics.orders.in_flight }} in flight</span>{% endif %}
-          <span class="kpi-pill is-ok">{{ metrics.orders.delivered }} delivered</span>
-          {% if metrics.orders.cancelled %}<span class="kpi-pill is-bad">{{ metrics.orders.cancelled }} cancelled</span>{% endif %}
-        </div>
-      </div>
-      <div class="kpi-icon-wrap green">
-        <span class="material-symbols-outlined">receipt_long</span>
-      </div>
-    </a>
+    </div>
+  </section>
 
-    <a href="{% url 'admin:shop_payment_changelist' %}" class="kpi-card" title="View Payments">
-      <div class="kpi-info">
-        <h4>Revenue</h4>
-        <div class="kpi-value">৳{{ metrics.payments.revenue|floatformat:2 }}</div>
-        <div class="kpi-label">Collected</div>
-        <div class="kpi-breakdown">
-          <span class="kpi-pill is-ok">{{ metrics.payments.paid }} paid</span>
-        </div>
-      </div>
-      <div class="kpi-icon-wrap green">
-        <span class="material-symbols-outlined">payments</span>
-      </div>
-    </a>
+  <!-- ==================== NEEDS ATTENTION ==================== -->
+  <section class="dash-section">
+    <div class="dash-section-head">
+      <h2>{% translate "Needs attention" %}</h2>
+      <span class="dash-section-rule"></span>
+      <span class="dash-section-note">Queues waiting on a decision</span>
+    </div>
 
-    <a href="{% url 'admin:shop_payment_changelist' %}" class="kpi-card" title="View Payments">
-      <div class="kpi-info">
-        <h4>Finance</h4>
-        <div class="kpi-value">{{ metrics.payments.total }}</div>
-        <div class="kpi-label">Payments</div>
-        <div class="kpi-breakdown">
-          <span class="kpi-pill is-ok">{{ metrics.payments.paid }} paid</span>
-          {% if metrics.payments.pending %}<span class="kpi-pill is-warn">{{ metrics.payments.pending }} pending</span>{% endif %}
-          {% if metrics.payments.failed %}<span class="kpi-pill is-bad">{{ metrics.payments.failed }} failed</span>{% endif %}
-        </div>
-      </div>
-      <div class="kpi-icon-wrap indigo">
-        <span class="material-symbols-outlined">account_balance</span>
-      </div>
-    </a>
+    {% if metrics.sellers.pending or metrics.sellers.under_review or metrics.shops.pending or metrics.products.submitted or metrics.orders.pending or metrics.inventory.low_stock or metrics.inventory.out_of_stock or metrics.payments.failed %}
+    <div class="attn-grid">
 
-    <a href="{% url 'admin:shop_productinventory_changelist' %}" class="kpi-card" title="Review Stock Levels">
-      <div class="kpi-info">
-        <h4>Inventory</h4>
-        <div class="kpi-value">{{ metrics.inventory.low_stock }}</div>
-        <div class="kpi-label">Low stock (&le;{{ metrics.low_stock_threshold }})</div>
-        <div class="kpi-breakdown">
-          {% if metrics.inventory.out_of_stock %}<span class="kpi-pill is-bad">{{ metrics.inventory.out_of_stock }} out of stock</span>{% else %}<span class="kpi-pill is-ok">none out of stock</span>{% endif %}
-        </div>
-      </div>
-      <div class="kpi-icon-wrap rose">
-        <span class="material-symbols-outlined">inventory_2</span>
-      </div>
-    </a>
+      {% if metrics.sellers.pending or metrics.sellers.under_review %}
+      <a href="{% url 'admin:sellers_sellerprofile_changelist' %}" class="attn-card acc-amber">
+        <span class="attn-icon"><span class="material-symbols-outlined">how_to_reg</span></span>
+        <span class="attn-text">
+          <span class="attn-count">{{ metrics.sellers.pending }}{% if metrics.sellers.under_review %} + {{ metrics.sellers.under_review }}{% endif %}</span>
+          <span class="attn-label">Seller applications pending{% if metrics.sellers.under_review %} / in review{% endif %}</span>
+        </span>
+        <span class="attn-arrow"><span class="material-symbols-outlined">chevron_right</span></span>
+      </a>
+      {% endif %}
 
-  </div>
+      {% if metrics.shops.pending %}
+      <a href="{% url 'admin:shops_shop_changelist' %}" class="attn-card acc-amber">
+        <span class="attn-icon"><span class="material-symbols-outlined">add_business</span></span>
+        <span class="attn-text">
+          <span class="attn-count">{{ metrics.shops.pending }}</span>
+          <span class="attn-label">Shops awaiting approval</span>
+        </span>
+        <span class="attn-arrow"><span class="material-symbols-outlined">chevron_right</span></span>
+      </a>
+      {% endif %}
 
-  <!-- Apps and Models Tables -->
-  {% include "admin/app_list.html" with app_list=app_list show_changelinks=True %}
+      {% if metrics.products.submitted %}
+      <a href="{% url 'admin:shop_product_changelist' %}" class="attn-card acc-violet">
+        <span class="attn-icon"><span class="material-symbols-outlined">rate_review</span></span>
+        <span class="attn-text">
+          <span class="attn-count">{{ metrics.products.submitted }}</span>
+          <span class="attn-label">Products submitted for review</span>
+        </span>
+        <span class="attn-arrow"><span class="material-symbols-outlined">chevron_right</span></span>
+      </a>
+      {% endif %}
+
+      {% if metrics.orders.pending %}
+      <a href="{% url 'admin:shop_order_changelist' %}" class="attn-card acc-indigo">
+        <span class="attn-icon"><span class="material-symbols-outlined">pending_actions</span></span>
+        <span class="attn-text">
+          <span class="attn-count">{{ metrics.orders.pending }}</span>
+          <span class="attn-label">Orders to confirm</span>
+        </span>
+        <span class="attn-arrow"><span class="material-symbols-outlined">chevron_right</span></span>
+      </a>
+      {% endif %}
+
+      {% if metrics.inventory.out_of_stock %}
+      <a href="{% url 'admin:shop_productinventory_changelist' %}" class="attn-card acc-rose">
+        <span class="attn-icon"><span class="material-symbols-outlined">remove_shopping_cart</span></span>
+        <span class="attn-text">
+          <span class="attn-count">{{ metrics.inventory.out_of_stock }}</span>
+          <span class="attn-label">Variants out of stock</span>
+        </span>
+        <span class="attn-arrow"><span class="material-symbols-outlined">chevron_right</span></span>
+      </a>
+      {% endif %}
+
+      {% if metrics.inventory.low_stock %}
+      <a href="{% url 'admin:shop_productinventory_changelist' %}" class="attn-card acc-amber">
+        <span class="attn-icon"><span class="material-symbols-outlined">inventory_2</span></span>
+        <span class="attn-text">
+          <span class="attn-count">{{ metrics.inventory.low_stock }}</span>
+          <span class="attn-label">Low stock (&le; {{ metrics.low_stock_threshold }} left)</span>
+        </span>
+        <span class="attn-arrow"><span class="material-symbols-outlined">chevron_right</span></span>
+      </a>
+      {% endif %}
+
+      {% if metrics.payments.failed %}
+      <a href="{% url 'admin:shop_payment_changelist' %}" class="attn-card acc-rose">
+        <span class="attn-icon"><span class="material-symbols-outlined">credit_card_off</span></span>
+        <span class="attn-text">
+          <span class="attn-count">{{ metrics.payments.failed }}</span>
+          <span class="attn-label">Failed or cancelled payments</span>
+        </span>
+        <span class="attn-arrow"><span class="material-symbols-outlined">chevron_right</span></span>
+      </a>
+      {% endif %}
+
+    </div>
+    {% else %}
+    <div class="attn-clear">
+      <span class="material-symbols-outlined">task_alt</span>
+      <span>
+        <strong class="attn-clear-title">{% translate "Every queue is clear" %}</strong>
+        <span class="attn-clear-note">No pending approvals, unconfirmed orders, stock warnings or failed payments.</span>
+      </span>
+    </div>
+    {% endif %}
+  </section>
+
+  <!-- ==================== APPS & MODELS ==================== -->
+  <section class="dash-section">
+    <div class="dash-section-head">
+      <h2>{% translate "All data models" %}</h2>
+      <span class="dash-section-rule"></span>
+      <span class="dash-section-note">Grouped by application</span>
+    </div>
+
+    <div class="app-modules">
+      {% include "admin/app_list.html" with app_list=app_list show_changelinks=True %}
+    </div>
+  </section>
 
 </div>
 {% endblock %}
 
 {% block sidebar %}
 <div id="content-related">
-    <div class="module" id="recent-actions-module">
-        <h2>
-          <span>{% translate 'Recent actions' %}</span>
-          <span class="material-symbols-outlined" style="font-size: 18px; color: var(--jp-kinari-gold);">history</span>
-        </h2>
-        <h3>{% translate 'My actions' %}</h3>
-        {% get_admin_log 10 as admin_log for_user user %}
-        {% if not admin_log %}
-        <p style="padding: 16px; color: var(--jp-text-ink-muted); font-size: 12px;">{% translate 'None available' %}</p>
-        {% else %}
-        <ul class="actionlist">
-        {% for entry in admin_log %}
-        <li class="{% if entry.is_addition %}addlink{% endif %}{% if entry.is_change %}changelink{% endif %}{% if entry.is_deletion %}deletelink{% endif %}">
-            <span class="visually-hidden">{% if entry.is_addition %}{% translate 'Added:' %}{% elif entry.is_change %}{% translate 'Changed:' %}{% elif entry.is_deletion %}{% translate 'Deleted:' %}{% endif %}</span>
-            {% if entry.is_deletion or not entry.get_admin_url %}
-                <strong style="color: var(--jp-text-ink);">{{ entry.object_repr }}</strong>
-            {% else %}
-                <a href="{{ entry.get_admin_url }}" style="font-weight: 600;">{{ entry.object_repr }}</a>
-            {% endif %}
-            <br>
-            {% if entry.content_type %}
-                <span class="mini quiet" style="font-size: 11px; opacity: 0.75;">{{ entry.content_type.name|capfirst }}</span>
-            {% else %}
-                <span class="mini quiet">{% translate 'Unknown content' %}</span>
-            {% endif %}
-        </li>
-        {% endfor %}
-        </ul>
-        {% endif %}
+
+  <div class="module" id="quick-create-module">
+    <h2>
+      <span>{% translate "Quick create" %}</span>
+      <span class="material-symbols-outlined" style="font-size: 18px; color: var(--jp-kinari-gold);">bolt</span>
+    </h2>
+    <div class="quick-list">
+      <a href="{% url 'admin:shop_product_add' %}" class="quick-item acc-violet">
+        <span class="material-symbols-outlined">shopping_bag</span>
+        <span class="quick-label">{% translate "Product" %}</span>
+        <span class="material-symbols-outlined quick-plus">add</span>
+      </a>
+      <a href="{% url 'admin:shop_category_add' %}" class="quick-item acc-gold">
+        <span class="material-symbols-outlined">category</span>
+        <span class="quick-label">{% translate "Category" %}</span>
+        <span class="material-symbols-outlined quick-plus">add</span>
+      </a>
+      <a href="{% url 'admin:shops_shop_add' %}" class="quick-item acc-teal">
+        <span class="material-symbols-outlined">storefront</span>
+        <span class="quick-label">{% translate "Shop" %}</span>
+        <span class="material-symbols-outlined quick-plus">add</span>
+      </a>
+      <a href="{% url 'admin:sellers_sellerprofile_add' %}" class="quick-item acc-blue">
+        <span class="material-symbols-outlined">badge</span>
+        <span class="quick-label">{% translate "Seller" %}</span>
+        <span class="material-symbols-outlined quick-plus">add</span>
+      </a>
     </div>
+  </div>
+
+  <div class="module" id="recent-actions-module">
+    <h2>
+      <span>{% translate 'Recent actions' %}</span>
+      <span class="material-symbols-outlined" style="font-size: 18px; color: var(--jp-kinari-gold);">history</span>
+    </h2>
+    <h3>{% translate 'My actions' %}</h3>
+    {% get_admin_log 10 as admin_log for_user user %}
+    {% if not admin_log %}
+      <p>{% translate 'None available' %}</p>
+    {% else %}
+      <ul class="actionlist">
+      {% for entry in admin_log %}
+        <li class="{% if entry.is_addition %}addlink{% endif %}{% if entry.is_change %}changelink{% endif %}{% if entry.is_deletion %}deletelink{% endif %}">
+          <span class="visually-hidden">{% if entry.is_addition %}{% translate 'Added:' %}{% elif entry.is_change %}{% translate 'Changed:' %}{% elif entry.is_deletion %}{% translate 'Deleted:' %}{% endif %}</span>
+          {% if entry.is_deletion or not entry.get_admin_url %}
+            <strong title="{{ entry.object_repr }}">{{ entry.object_repr }}</strong>
+          {% else %}
+            <a href="{{ entry.get_admin_url }}" title="{{ entry.object_repr }}">{{ entry.object_repr }}</a>
+          {% endif %}
+          <br>
+          {% if entry.content_type %}
+            <span class="mini quiet">{{ entry.content_type.name|capfirst }}</span>
+          {% else %}
+            <span class="mini quiet">{% translate 'Unknown content' %}</span>
+          {% endif %}
+        </li>
+      {% endfor %}
+      </ul>
+    {% endif %}
+  </div>
+
 </div>
 {% endblock %}
