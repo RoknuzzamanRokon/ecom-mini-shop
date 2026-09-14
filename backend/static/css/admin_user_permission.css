@@ -1,0 +1,1335 @@
+/* ==========================================================================
+   MINISHOP ADMIN - USER ACCESS CONSOLE  (/admin/auth/user/<id>/change/ only)
+   --------------------------------------------------------------------------
+   Loaded last by templates/admin/auth/user/change_form.html, after:
+     admin/css/base.css -> dark_mode.css -> nav_sidebar.css
+     -> css/japanese_admin.css -> admin/css/forms.css
+   Everything is scoped to body.mp-userform (set by that template's bodyclass
+   block), so no other change form is affected.
+
+   What this replaces: the stock page stacked five fieldsets in a 1400px column
+   with two FilteredSelectMultiple panes in the middle -- 120 permissions and 0
+   groups, read as dotted codenames. The board below turns the same 120 inputs
+   into 12 rail sections x 30 resource rows x 4 action columns.
+
+   Colour language:
+     grant  = green   -> a capability this account has
+     accent = indigo  -> structure and navigation
+     gold   = focus, superuser, and anything that needs a second look
+   ========================================================================== */
+
+body.mp-userform {
+  /* Height of the sticky #header, measured; tabs and rail pin below it. */
+  --mp-head-offset: 53px;
+  --mp-tabs-height: 50px;
+
+  --mp-grant: #0E7C4A;
+  --mp-grant-soft: rgba(14, 124, 74, 0.10);
+  --mp-grant-line: rgba(14, 124, 74, 0.35);
+  --mp-radius: 14px;
+  --mp-radius-sm: 9px;
+}
+
+[data-theme="dark"] body.mp-userform,
+body.mp-userform.theme-dark {
+  --mp-grant: #10B981;
+  --mp-grant-soft: rgba(16, 185, 129, 0.14);
+  --mp-grant-line: rgba(16, 185, 129, 0.40);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) body.mp-userform {
+    --mp-grant: #10B981;
+    --mp-grant-soft: rgba(16, 185, 129, 0.14);
+    --mp-grant-line: rgba(16, 185, 129, 0.40);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   1. PAGE SHELL
+   japanese_admin.css caps #content at 1400px; the board wants the room the nav
+   sidebar leaves, so the cap moves onto .mp-shell where it can be wider.
+   -------------------------------------------------------------------------- */
+body.mp-userform #content {
+  width: auto !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 18px clamp(14px, 1.5vw, 30px) 30px !important;
+  box-sizing: border-box !important;
+
+  /* Pin the Django-owned variables this page inherits, so dark_mode.css
+     reacting to the OS setting cannot produce washed-out text. */
+  --body-fg: var(--jp-text-ink);
+  --body-quiet-color: var(--jp-text-ink-muted);
+  --hairline-color: var(--jp-border-line);
+  --darkened-bg: transparent;
+  --link-fg: var(--jp-kachi-primary);
+  --link-hover-color: var(--jp-kinari-gold);
+}
+
+[data-theme="dark"] body.mp-userform #content { --link-fg: #7FB3F0; }
+
+body.mp-userform .mp-shell {
+  max-width: 1560px;
+  margin: 0 auto;
+
+  /* The real constraint is the nav sidebar (294px when open), which no viewport
+     media query can observe -- so every responsive rule below stacks off this
+     container instead. */
+  container-type: inline-size;
+  container-name: mpshell;
+}
+
+body.mp-userform .mp-shell > form { margin: 0; }
+
+/* Native controls Django renders for itself (inline "Is active"/"Delete?", any
+   checkbox in the Account tab) pick up the grant colour instead of browser blue,
+   so the page reads as one system. The board's own boxes are painted by .pm-box
+   and are unaffected. */
+body.mp-userform { accent-color: var(--mp-grant); }
+
+/* --------------------------------------------------------------------------
+   2. IDENTITY HERO
+   -------------------------------------------------------------------------- */
+.mp-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px 24px;
+  align-items: start;
+  background:
+    linear-gradient(135deg, rgba(33, 72, 107, 0.07), transparent 46%),
+    var(--jp-bg-surface);
+  border: 1px solid var(--jp-border-line);
+  border-radius: var(--mp-radius);
+  box-shadow: var(--jp-card-shadow);
+  padding: 20px 24px;
+  margin-bottom: 16px;
+}
+
+.mp-hero-id {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  min-width: 0;
+}
+
+.mp-avatar {
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  font-size: 23px;
+  font-weight: 800;
+  color: #FFFFFF;
+  background: linear-gradient(140deg, var(--jp-kachi-primary), var(--jp-kachi-deep));
+  box-shadow: 0 6px 16px rgba(33, 72, 107, 0.30);
+  user-select: none;
+}
+
+.mp-hero-text { min-width: 0; }
+
+.mp-hero-name {
+  margin: 0 0 5px !important;
+  font-size: 22px !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.5px !important;
+  color: var(--jp-text-ink) !important;
+  line-height: 1.2 !important;
+  word-break: break-word;
+}
+
+.mp-hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--jp-text-ink-muted);
+}
+
+.mp-hero-handle { font-weight: 600; }
+
+.mp-hero-mail {
+  color: var(--jp-text-ink-body) !important;
+  text-decoration: none !important;
+}
+
+.mp-hero-mail:hover { color: var(--jp-kinari-gold) !important; }
+
+.mp-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--jp-text-ink-muted);
+  opacity: 0.6;
+}
+
+.mp-access {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px 3px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+
+.mp-access .material-symbols-outlined { font-size: 15px; }
+
+.mp-access.is-super {
+  background: var(--jp-kinari-gold-bg);
+  border-color: rgba(186, 134, 48, 0.42);
+  color: var(--jp-kinari-gold);
+}
+
+.mp-access.is-staff {
+  background: rgba(33, 72, 107, 0.12);
+  border-color: rgba(33, 72, 107, 0.32);
+  color: var(--jp-kachi-primary);
+}
+
+[data-theme="dark"] .mp-access.is-staff { color: #7FB3F0; }
+
+.mp-access.is-basic {
+  background: var(--jp-bg-surface-sunken);
+  border-color: var(--jp-border-line);
+  color: var(--jp-text-ink-muted);
+}
+
+.mp-rolechips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.mp-rolechip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px 4px 7px;
+  border-radius: 8px;
+  font-size: 11.5px;
+  font-weight: 700;
+  background: var(--mp-grant-soft);
+  border: 1px solid var(--mp-grant-line);
+  color: var(--mp-grant);
+}
+
+.mp-rolechip .material-symbols-outlined { font-size: 15px; }
+
+.mp-rolechip.is-off {
+  background: var(--jp-bg-surface-sunken);
+  border-color: var(--jp-border-line);
+  color: var(--jp-text-ink-muted);
+  text-decoration: line-through;
+}
+
+.mp-rolechip.is-none {
+  background: transparent;
+  border-style: dashed;
+  border-color: var(--jp-border-line);
+  color: var(--jp-text-ink-muted);
+}
+
+/* Hero right column: the permission gauge + object tools */
+.mp-hero-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.mp-gauge {
+  display: grid;
+  gap: 4px;
+  justify-items: end;
+  min-width: 168px;
+}
+
+.mp-gauge-value {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--jp-text-ink);
+  letter-spacing: -0.4px;
+}
+
+.mp-gauge-value b { color: var(--mp-grant); font-weight: 800; }
+.mp-gauge-value i { font-style: normal; color: var(--jp-text-ink-muted); margin: 0 3px; font-weight: 500; }
+.mp-gauge-value span { color: var(--jp-text-ink-muted); font-weight: 600; }
+
+.mp-gauge-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--jp-text-ink-muted);
+}
+
+.mp-gauge-track {
+  width: 100%;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--jp-bg-surface-sunken);
+  overflow: hidden;
+  border: 1px solid var(--jp-border-line-subtle);
+}
+
+.mp-gauge-fill {
+  display: block;
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--mp-grant), var(--jp-tokiwa-green));
+  transition: width 0.25s ease;
+}
+
+.mp-hero-links { display: flex; gap: 8px; }
+
+.mp-ghostbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 13px;
+  border-radius: var(--mp-radius-sm);
+  border: 1px solid var(--jp-border-line);
+  background: var(--jp-bg-surface);
+  color: var(--jp-text-ink-body) !important;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none !important;
+  transition: all 0.15s ease;
+}
+
+.mp-ghostbtn .material-symbols-outlined { font-size: 17px; }
+
+.mp-ghostbtn:hover {
+  border-color: var(--jp-kinari-gold);
+  color: var(--jp-kinari-gold) !important;
+}
+
+/* Status switches, full width under both hero columns */
+.mp-switches {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--jp-border-line);
+}
+
+.mp-switch {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 14px 8px 11px;
+  border-radius: var(--mp-radius-sm);
+  border: 1px solid var(--jp-border-line);
+  background: var(--jp-bg-surface-sunken);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mp-switch:hover { border-color: var(--jp-kinari-gold); }
+.mp-switch.is-readonly { cursor: default; opacity: 0.75; }
+
+.mp-switch input[type="checkbox"] {
+  position: absolute;
+  opacity: 0;
+  width: 34px;
+  height: 20px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.mp-switch-track {
+  flex: 0 0 auto;
+  position: relative;
+  width: 34px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--jp-border-line);
+  border: 1px solid var(--jp-border-line);
+  transition: background 0.18s ease;
+}
+
+.mp-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.18s ease;
+}
+
+.mp-switch-label {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--jp-text-ink-body);
+  white-space: nowrap;
+}
+
+.mp-switch input:checked ~ .mp-switch-track { background: var(--mp-grant); border-color: var(--mp-grant); }
+.mp-switch input:checked ~ .mp-switch-track .mp-switch-thumb { transform: translateX(14px); }
+.mp-switch input:checked ~ .mp-switch-label { color: var(--jp-text-ink); }
+.mp-switch input:focus-visible ~ .mp-switch-track { box-shadow: 0 0 0 3px rgba(186, 134, 48, 0.35); }
+
+/* Superuser is the one switch that should never be flipped absent-mindedly. */
+.mp-switch input#id_is_superuser:checked ~ .mp-switch-track {
+  background: var(--jp-kinari-gold);
+  border-color: var(--jp-kinari-gold);
+}
+
+.mp-switch:has(input#id_is_superuser:checked) {
+  background: var(--jp-kinari-gold-bg);
+  border-color: rgba(186, 134, 48, 0.45);
+}
+
+/* --------------------------------------------------------------------------
+   3. TABS
+   -------------------------------------------------------------------------- */
+.mp-tabs {
+  position: sticky;
+  top: var(--mp-head-offset);
+  z-index: 30;
+  display: flex;
+  gap: 4px;
+  padding: 6px;
+  margin-bottom: 16px;
+  border-radius: var(--mp-radius);
+  border: 1px solid var(--jp-border-line);
+  background: var(--jp-bg-surface);
+  box-shadow: var(--jp-card-shadow);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.mp-tabs::-webkit-scrollbar { display: none; }
+
+.mp-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 18px;
+  border: 1px solid transparent;
+  border-radius: var(--mp-radius-sm);
+  background: transparent;
+  color: var(--jp-text-ink-muted);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mp-tab .material-symbols-outlined { font-size: 18px; }
+
+.mp-tab:hover { color: var(--jp-text-ink); background: var(--jp-bg-surface-sunken); }
+
+.mp-tab.is-active {
+  background: var(--jp-kachi-primary);
+  color: #FFFFFF;
+  box-shadow: 0 3px 10px rgba(33, 72, 107, 0.28);
+}
+
+.mp-tab:focus-visible { outline: none; border-color: var(--jp-kinari-gold); }
+
+.mp-pane[hidden] { display: none !important; }
+
+/* --------------------------------------------------------------------------
+   4. SHARED: CHECKBOX BOX
+   The real <input> stays in the DOM and stays focusable; .pm-box is what gets
+   painted, so the tick renders identically in every browser and both themes.
+   -------------------------------------------------------------------------- */
+.pm-box {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1.5px solid var(--jp-border-line);
+  background: var(--jp-bg-surface);
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+
+[data-theme="dark"] .pm-box { border-color: rgba(255, 255, 255, 0.22); }
+
+.pm-box::after {
+  content: "";
+  width: 4.5px;
+  height: 8.5px;
+  border: 2px solid #FFFFFF;
+  border-top: 0;
+  border-left: 0;
+  transform: rotate(42deg) translateY(-1px) scale(0.55);
+  opacity: 0;
+  transition: transform 0.14s ease, opacity 0.14s ease;
+}
+
+.pm-input,
+.gc-input,
+.pm-check input[type="checkbox"],
+.pm-selectall input[type="checkbox"] {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* Checked */
+.pm-input:checked + label .pm-box,
+.gc-input:checked + label .pm-box,
+.pm-check input:checked + .pm-box,
+.pm-selectall input:checked + .pm-box {
+  background: var(--mp-grant);
+  border-color: var(--mp-grant);
+}
+
+.pm-input:checked + label .pm-box::after,
+.gc-input:checked + label .pm-box::after,
+.pm-check input:checked + .pm-box::after,
+.pm-selectall input:checked + .pm-box::after {
+  opacity: 1;
+  transform: rotate(42deg) translateY(-1px) scale(1);
+}
+
+/* Indeterminate: some but not all children granted -> a dash, not a tick. */
+.pm-check input:indeterminate + .pm-box,
+.pm-selectall input:indeterminate + .pm-box {
+  background: var(--mp-grant);
+  border-color: var(--mp-grant);
+}
+
+.pm-check input:indeterminate + .pm-box::after,
+.pm-selectall input:indeterminate + .pm-box::after {
+  width: 9px;
+  height: 0;
+  border: 0;
+  border-top: 2px solid #FFFFFF;
+  transform: none;
+  opacity: 1;
+}
+
+/* Focus */
+.pm-input:focus-visible + label .pm-box,
+.gc-input:focus-visible + label .pm-box,
+.pm-check input:focus-visible + .pm-box,
+.pm-selectall input:focus-visible + .pm-box {
+  box-shadow: 0 0 0 3px rgba(186, 134, 48, 0.38);
+  border-color: var(--jp-kinari-gold);
+}
+
+.pm-check {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+/* --------------------------------------------------------------------------
+   5. PERMISSION BOARD
+   -------------------------------------------------------------------------- */
+.pm-board {
+  background: var(--jp-bg-surface);
+  border: 1px solid var(--jp-border-line);
+  border-radius: var(--mp-radius);
+  box-shadow: var(--jp-card-shadow);
+  overflow: hidden;
+}
+
+/* Toolbar: search + counter + select all */
+.pm-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--jp-border-line);
+  background: var(--jp-bg-surface-sunken);
+}
+
+.pm-search {
+  position: relative;
+  flex: 1 1 260px;
+  min-width: 200px;
+  display: flex;
+  align-items: center;
+}
+
+.pm-search .material-symbols-outlined {
+  position: absolute;
+  left: 11px;
+  font-size: 18px;
+  color: var(--jp-text-ink-muted);
+  pointer-events: none;
+}
+
+.pm-search input[type="search"] {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 12px 9px 35px !important;
+  border-radius: var(--mp-radius-sm) !important;
+  border: 1px solid var(--jp-border-line) !important;
+  background: var(--jp-bg-surface) !important;
+  font-size: 13px !important;
+  color: var(--jp-text-ink) !important;
+}
+
+.pm-toolbar-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-left: auto;
+}
+
+.pm-counter {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--jp-text-ink-muted);
+  white-space: nowrap;
+}
+
+.pm-counter b { font-size: 14px; font-weight: 800; color: var(--mp-grant); }
+.pm-counter-sep { margin: 0 2px; opacity: 0.5; }
+
+.pm-selectall {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px 7px 11px;
+  border-radius: var(--mp-radius-sm);
+  border: 1px solid var(--jp-border-line);
+  background: var(--jp-bg-surface);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--jp-text-ink);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s ease;
+}
+
+.pm-selectall:hover { border-color: var(--jp-kinari-gold); }
+
+/* Body: rail + grid */
+.pm-board-body {
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr);
+  align-items: stretch;
+}
+
+/* Stretches to the board's full height so the sunken column is painted all the
+   way down; the sticky <nav> travels inside it.
+
+   min-width:0 matters in the stacked layout below, where this and .pm-grid
+   share one 1fr column: a grid item defaults to min-width:auto, so the rail's
+   12 links laid out in a row (~1860px of max-content) would size the column and
+   push the last two action cells off the right edge. Zero lets the column take
+   the container's width and the nav's own overflow-x handle the rest. */
+.pm-rail-col {
+  min-width: 0;
+  border-right: 1px solid var(--jp-border-line);
+  background: var(--jp-bg-surface-sunken);
+}
+
+.pm-rail {
+  position: sticky;
+  top: calc(var(--mp-head-offset) + var(--mp-tabs-height) + 16px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px;
+  max-height: calc(100vh - var(--mp-head-offset) - var(--mp-tabs-height) - 40px);
+  overflow-y: auto;
+}
+
+.pm-rail-link {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: var(--mp-radius-sm);
+  border-left: 3px solid transparent;
+  color: var(--jp-text-ink-body) !important;
+  font-size: 12.5px;
+  font-weight: 600;
+  text-decoration: none !important;
+  transition: all 0.14s ease;
+}
+
+.pm-rail-link .material-symbols-outlined {
+  font-size: 18px;
+  color: var(--jp-text-ink-muted);
+  transition: color 0.14s ease;
+}
+
+.pm-rail-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pm-rail-count {
+  flex: 0 0 auto;
+  min-width: 22px;
+  text-align: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  background: var(--jp-bg-surface);
+  border: 1px solid var(--jp-border-line);
+  color: var(--jp-text-ink-muted);
+}
+
+.pm-rail-link:hover {
+  background: var(--jp-bg-surface);
+  color: var(--jp-text-ink) !important;
+}
+
+.pm-rail-link.is-current {
+  background: var(--jp-bg-surface);
+  border-left-color: var(--jp-kinari-gold);
+  color: var(--jp-text-ink) !important;
+  font-weight: 800;
+}
+
+.pm-rail-link.is-current .material-symbols-outlined { color: var(--jp-kinari-gold); }
+
+/* display:flex above out-ranks the UA sheet's [hidden]{display:none}, so the
+   filter's link.hidden = true would otherwise have no effect. */
+.pm-rail-link[hidden] { display: none !important; }
+
+.pm-rail-link.has-grants .pm-rail-count {
+  background: var(--mp-grant-soft);
+  border-color: var(--mp-grant-line);
+  color: var(--mp-grant);
+}
+
+.pm-grid { padding: 6px 18px 18px; min-width: 0; }
+
+/* Section */
+.pm-section {
+  padding: 12px 0 2px;
+  border-bottom: 1px solid var(--jp-border-line-subtle);
+  scroll-margin-top: calc(var(--mp-head-offset) + var(--mp-tabs-height) + 20px);
+}
+
+.pm-section:last-of-type { border-bottom: 0; }
+.pm-section[hidden] { display: none !important; }
+
+/* padding-left matches .pm-row so the section box lines up with the row boxes */
+.pm-section-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px 8px;
+}
+
+.pm-section-icon { font-size: 19px; color: var(--jp-kinari-gold); }
+
+.pm-section-title {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.5px !important;
+  text-transform: uppercase !important;
+  color: var(--jp-text-ink) !important;
+}
+
+.pm-chip {
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 800;
+  background: var(--jp-bg-surface-sunken);
+  border: 1px solid var(--jp-border-line);
+  color: var(--jp-text-ink-muted);
+}
+
+.pm-section.has-grants .pm-chip {
+  background: var(--mp-grant-soft);
+  border-color: var(--mp-grant-line);
+  color: var(--mp-grant);
+}
+
+/* Rows */
+.pm-rows { display: flex; flex-direction: column; }
+
+/* A checkbox gains nothing from extra width, and on a 1600px screen a stretched
+   grid leaves 300px of dead space between a resource name and the box it
+   governs. So the name and the four actions are capped and a trailing spacer
+   column soaks up the rest -- the row still spans the card (for the hover band
+   and the full-width extras strip) while the matrix itself stays compact. */
+.pm-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 360px) repeat(4, minmax(84px, 118px)) minmax(0, 1fr);
+  align-items: center;
+  gap: 4px 6px;
+  padding: 2px 8px;
+  border-radius: var(--mp-radius-sm);
+  transition: background 0.12s ease;
+}
+
+.pm-row[hidden] { display: none !important; }
+.pm-row:not(.pm-row-head):hover { background: rgba(186, 134, 48, 0.07); }
+
+.pm-row-head {
+  padding-bottom: 7px;
+  margin-bottom: 3px;
+  border-bottom: 1px solid var(--jp-border-line-subtle);
+  border-radius: 0;
+}
+
+.pm-row-head .pm-row-name {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--jp-text-ink-muted);
+  padding-left: 2px;
+}
+
+.pm-colbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  padding: 5px 6px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--jp-text-ink-muted);
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+.pm-colbtn .material-symbols-outlined { font-size: 15px; }
+
+.pm-colbtn:hover {
+  background: var(--jp-bg-surface-sunken);
+  border-color: var(--jp-border-line);
+  color: var(--jp-text-ink);
+}
+
+.pm-colbtn:focus-visible { outline: none; border-color: var(--jp-kinari-gold); }
+
+.pm-row-name {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 5px 0;
+}
+
+.pm-row-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--jp-text-ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pm-row.is-granted .pm-row-text { font-weight: 700; }
+
+/* Info hint -> the real dotted codename, on demand rather than always */
+.pm-info {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  color: var(--jp-text-ink-muted);
+  cursor: help;
+  opacity: 0.55;
+  transition: opacity 0.14s ease, color 0.14s ease;
+}
+
+.pm-info .material-symbols-outlined { font-size: 15px; }
+.pm-info:hover, .pm-info:focus-visible { opacity: 1; color: var(--jp-kinari-gold); outline: none; }
+
+.pm-info::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: calc(100% + 7px);
+  left: 50%;
+  transform: translateX(-50%) translateY(3px);
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: var(--jp-kachi-deep);
+  color: #FFFFFF;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.14s ease, transform 0.14s ease;
+  z-index: 20;
+}
+
+.pm-info:hover::after,
+.pm-info:focus-visible::after { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+/* Action cells */
+.pm-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+}
+
+.pm-cell > label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.pm-cell > label:hover { background: var(--jp-bg-surface-sunken); border-color: var(--jp-border-line); }
+
+.pm-input:checked + label { background: var(--mp-grant-soft); border-color: var(--mp-grant-line); }
+
+/* The column header already names the action on a wide board; the per-cell
+   label only earns its space once the grid stacks (see 8. RESPONSIVE). */
+.pm-cell-label {
+  display: none;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--jp-text-ink-body);
+}
+
+.pm-cell.is-empty {
+  color: var(--jp-text-ink-muted);
+  opacity: 0.35;
+  font-size: 13px;
+  user-select: none;
+}
+
+/* Non-CRUD permissions, e.g. a hand-written approve_product */
+.pm-extras {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 0 8px 30px;
+}
+
+.pm-extras-tag {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--jp-text-ink-muted);
+}
+
+.pm-extra { position: relative; display: inline-flex; }
+
+.pm-extra > label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 11px 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--jp-border-line);
+  background: var(--jp-bg-surface-sunken);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--jp-text-ink-body);
+  cursor: pointer;
+  transition: all 0.14s ease;
+}
+
+.pm-extra > label:hover { border-color: var(--jp-kinari-gold); }
+.pm-extra .pm-input:checked + label { background: var(--mp-grant-soft); border-color: var(--mp-grant-line); color: var(--mp-grant); }
+
+/* Empty / no-match state */
+.pm-blank {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 38px 20px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--jp-text-ink-muted);
+  text-align: center;
+}
+
+.pm-blank .material-symbols-outlined { font-size: 20px; }
+.pm-blank[hidden] { display: none !important; }
+
+/* Superuser dims the board: the checkboxes still save, they just stop meaning
+   anything while the switch is on, and the page should say so. */
+.mp-superbanner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  border-radius: var(--mp-radius-sm);
+  background: var(--jp-kinari-gold-bg);
+  border: 1px solid rgba(186, 134, 48, 0.4);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--jp-text-ink-body);
+}
+
+.mp-superbanner[hidden] { display: none !important; }
+.mp-superbanner .material-symbols-outlined { font-size: 19px; color: var(--jp-kinari-gold); flex: 0 0 auto; }
+.mp-superbanner b { color: var(--jp-text-ink); }
+
+.mp-pane.is-superuser .pm-board { opacity: 0.62; }
+.mp-pane.is-superuser .pm-board:focus-within,
+.mp-pane.is-superuser .pm-board:hover { opacity: 1; }
+
+/* --------------------------------------------------------------------------
+   6. ROLES & GROUPS PANE
+   -------------------------------------------------------------------------- */
+.mp-card {
+  background: var(--jp-bg-surface);
+  border: 1px solid var(--jp-border-line);
+  border-radius: var(--mp-radius);
+  box-shadow: var(--jp-card-shadow);
+  padding: 18px 22px 20px;
+  margin-bottom: 16px;
+}
+
+.mp-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 4px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.6px !important;
+  text-transform: uppercase !important;
+  color: var(--jp-text-ink) !important;
+}
+
+.mp-card-title .material-symbols-outlined { font-size: 19px; color: var(--jp-kinari-gold); }
+
+.mp-card-hint {
+  margin: 0 0 16px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--jp-text-ink-muted);
+}
+
+.gc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px;
+}
+
+.gc-card { position: relative; }
+
+.gc-card > label {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 14px;
+  border-radius: var(--mp-radius-sm);
+  border: 1px solid var(--jp-border-line);
+  background: var(--jp-bg-surface-sunken);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.gc-card > label:hover { border-color: var(--jp-kinari-gold); }
+.gc-input:checked + label { background: var(--mp-grant-soft); border-color: var(--mp-grant-line); }
+
+.gc-body { display: grid; gap: 2px; min-width: 0; }
+.gc-name { font-size: 13px; font-weight: 700; color: var(--jp-text-ink); }
+.gc-meta { font-size: 11px; color: var(--jp-text-ink-muted); }
+
+/* The role-assignment inline, inside the card.
+   Cosmetics ONLY. Django's tabular inline is a real layout: td.original is a
+   zero-width cell whose <p> is absolutely positioned into the 2em of padding-top
+   that `tr.has_original td` adds. Overriding cell padding, border-collapse or
+   table overflow collapses the whole row -- so nothing below touches geometry. */
+.mp-inlines .inline-group {
+  border: 1px solid var(--jp-border-line);
+  border-radius: var(--mp-radius-sm);
+  overflow: hidden;
+}
+
+.mp-inlines .inline-group fieldset {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  margin: 0 !important;
+}
+
+/* The card already carries this heading. It stays in the a11y tree because the
+   inline's <table> is aria-labelledby it -- hence clipped, not display:none. */
+.mp-inlines .inline-related h2.inline-heading {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
+}
+
+.mp-inlines thead th {
+  background: var(--jp-bg-surface-sunken) !important;
+  font-size: 10.5px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.6px !important;
+  text-transform: uppercase !important;
+  color: var(--jp-text-ink-muted) !important;
+  border-bottom: 1px solid var(--jp-border-line) !important;
+}
+
+.mp-inlines tbody td,
+.mp-inlines tbody th {
+  font-size: 12.5px !important;
+  border-bottom: 1px solid var(--jp-border-line-subtle) !important;
+}
+
+.mp-inlines td.original p {
+  color: var(--jp-text-ink-muted) !important;
+  font-weight: 600 !important;
+}
+
+.mp-inlines .add-row td {
+  background: var(--jp-bg-surface-sunken) !important;
+  border-bottom: 0 !important;
+}
+
+.mp-inlines .add-row a {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 7px 14px !important;
+  border-radius: var(--mp-radius-sm) !important;
+  background: var(--jp-bg-surface-sunken) !important;
+  border: 1px dashed var(--jp-border-line) !important;
+  color: var(--jp-text-ink-body) !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  text-decoration: none !important;
+}
+
+.mp-inlines .add-row a:hover { border-color: var(--jp-kinari-gold) !important; color: var(--jp-kinari-gold) !important; }
+
+/* --------------------------------------------------------------------------
+   7. ACCOUNT PANE
+   Django's own fieldset markup, tightened into two columns.
+   -------------------------------------------------------------------------- */
+body.mp-userform .mp-pane fieldset.module {
+  margin-bottom: 16px !important;
+  padding: 18px 22px 6px !important;
+}
+
+body.mp-userform .mp-pane fieldset.module > h2 {
+  font-size: 13px !important;
+  letter-spacing: 0.6px !important;
+}
+
+/* Django 5.2 already aligns these rows: label+widget sit in a .flex-container
+   with `.aligned label {width:160px}`, and `div.help` is a sibling offset by a
+   matching margin-left. Re-gridding .form-row breaks that pairing, so this is
+   typography and rhythm only -- the 160px column is left to Django. */
+body.mp-userform .mp-pane div.form-row {
+  padding: 11px 0 !important;
+  border-bottom: 1px solid var(--jp-border-line-subtle) !important;
+}
+
+body.mp-userform .mp-pane div.form-row:last-child { border-bottom: 0 !important; }
+
+body.mp-userform .mp-pane .aligned label {
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  color: var(--jp-text-ink-body) !important;
+}
+
+body.mp-userform .mp-pane div.form-row input[type="text"],
+body.mp-userform .mp-pane div.form-row input[type="email"],
+body.mp-userform .mp-pane div.form-row input[type="password"],
+body.mp-userform .mp-pane div.form-row input[type="url"],
+body.mp-userform .mp-pane div.form-row input[type="number"] {
+  width: min(100%, 430px) !important;
+  box-sizing: border-box !important;
+}
+
+body.mp-userform .mp-pane div.help,
+body.mp-userform .mp-pane p.help {
+  font-size: 11.5px !important;
+  color: var(--jp-text-ink-muted) !important;
+}
+
+/* --------------------------------------------------------------------------
+   8. STICKY SAVE BAR
+   -------------------------------------------------------------------------- */
+.mp-savebar {
+  position: sticky;
+  bottom: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 10px 16px;
+  border-radius: var(--mp-radius);
+  border: 1px solid var(--jp-border-line);
+  background: var(--jp-bg-surface);
+  background: color-mix(in srgb, var(--jp-bg-surface) 92%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: 0 -4px 20px -6px rgba(0, 0, 0, 0.18), var(--jp-card-shadow);
+}
+
+.mp-savebar .submit-row {
+  flex: 1 1 auto;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  border-radius: 0 !important;
+  justify-content: flex-end !important;
+}
+
+/* Delete is destructive and sits in a bar that follows the viewport, so it is
+   pushed to the far edge, away from the three save buttons. Django emits it as
+   the LAST child of .submit-row, so reordering is what moves it; the selector
+   has to out-specify `.submit-row a.deletelink` in japanese_admin.css. */
+body.mp-userform .mp-savebar .submit-row a.deletelink {
+  order: -1;
+  margin-right: auto !important;
+}
+
+.mp-savebar-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 999px;
+  background: var(--jp-kinari-gold-bg);
+  border: 1px solid rgba(186, 134, 48, 0.4);
+  color: var(--jp-kinari-gold);
+  font-size: 11.5px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.mp-savebar-note[hidden] { display: none !important; }
+.mp-savebar-note .material-symbols-outlined { font-size: 16px; }
+
+body.mp-userform .errornote {
+  border-radius: var(--mp-radius-sm) !important;
+  margin-bottom: 14px !important;
+}
+
+/* --------------------------------------------------------------------------
+   9. RESPONSIVE
+   Stacked off .mp-shell, because the nav sidebar -- not the viewport -- is what
+   actually takes the width away.
+   -------------------------------------------------------------------------- */
+@container mpshell (max-width: 1080px) {
+  .pm-board-body { grid-template-columns: 1fr; }
+
+  .pm-rail-col {
+    border-right: 0;
+    border-bottom: 1px solid var(--jp-border-line);
+  }
+
+  .pm-rail {
+    position: static;
+    flex-direction: row;
+    overflow-x: auto;
+    max-height: none;
+    padding: 10px 12px;
+  }
+
+  .pm-rail-link {
+    border-left: 0;
+    border-bottom: 3px solid transparent;
+    border-radius: var(--mp-radius-sm) var(--mp-radius-sm) 0 0;
+    white-space: nowrap;
+  }
+
+  .pm-rail-link.is-current { border-bottom-color: var(--jp-kinari-gold); }
+  .pm-rail-label { overflow: visible; }
+}
+
+@container mpshell (max-width: 820px) {
+  .mp-hero { grid-template-columns: 1fr; }
+  .mp-hero-side { align-items: flex-start; }
+  .mp-gauge { justify-items: start; width: 100%; }
+
+  .pm-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+  .pm-row-name {
+    grid-column: 1 / -1;
+    padding-bottom: 0;
+  }
+
+  .pm-row-head { display: none; }
+
+  .pm-cell > label { justify-content: flex-start; }
+  .pm-cell-label { display: inline; }
+
+  .pm-cell.is-empty { display: none; }
+
+  .pm-extras { padding-left: 0; }
+
+  /* Django's responsive.css already stacks .flex-container below 767px, but the
+     nav sidebar can squeeze this container long before the viewport gets there. */
+  body.mp-userform .mp-pane .flex-container { flex-direction: column; align-items: stretch; }
+  body.mp-userform .mp-pane .aligned label { width: auto !important; min-width: 0 !important; }
+  body.mp-userform .mp-pane form .aligned div.help,
+  body.mp-userform .mp-pane form .aligned p.help { margin-left: 0 !important; padding-left: 0 !important; }
+}
+
+@container mpshell (max-width: 520px) {
+  .pm-row { grid-template-columns: 1fr; }
+  .mp-savebar { flex-wrap: wrap; }
+}
+
+/* Respect reduced-motion: the board has a lot of small transitions. */
+@media (prefers-reduced-motion: reduce) {
+  body.mp-userform * { transition: none !important; }
+}

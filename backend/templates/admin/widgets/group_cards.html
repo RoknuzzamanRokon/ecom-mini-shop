@@ -1,0 +1,36 @@
+{% load i18n %}
+{% comment %}
+  Card markup for rbac.widgets.GroupCardsWidget. Same contract as the permission
+  board: each input is a plain name="groups" value="<group pk>" checkbox, so the
+  field round-trips through Django unchanged.
+{% endcomment %}
+<div class="gc-board">
+  {% if widget.groups %}
+    <div class="gc-grid">
+      {% for group in widget.groups %}
+        <div class="gc-card">
+          <input type="checkbox"
+                 class="gc-input"
+                 name="{{ group.name }}"
+                 value="{{ group.value }}"
+                 id="{{ group.id }}"
+                 {% if group.checked %}checked{% endif %}>
+          <label for="{{ group.id }}">
+            <span class="pm-box" aria-hidden="true"></span>
+            <span class="gc-body">
+              <span class="gc-name">{{ group.label }}</span>
+              <span class="gc-meta">
+                {% blocktranslate count counter=group.count %}{{ counter }} permission{% plural %}{{ counter }} permissions{% endblocktranslate %}
+              </span>
+            </span>
+          </label>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="pm-blank">
+      <span class="material-symbols-outlined" aria-hidden="true">group_off</span>
+      {% translate 'No permission groups exist yet. Roles below are the primary access model for this console.' %}
+    </p>
+  {% endif %}
+</div>

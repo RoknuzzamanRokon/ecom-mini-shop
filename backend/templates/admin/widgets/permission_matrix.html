@@ -1,0 +1,167 @@
+{% load i18n %}
+{% comment %}
+  Board markup for rbac.widgets.PermissionMatrixWidget.
+
+  Every checkbox keeps Django's own name/value pair (name="user_permissions",
+  value="<permission pk>"), so this renders as a plain CheckboxSelectMultiple as
+  far as the POST and the form field are concerned. The rail, the section heads,
+  the column buttons and the row checkbox are all JS-only affordances that drive
+  those inputs -- none of them are submitted.
+
+  Behaviour lives in static/js/admin_user_permission.js, keyed off the data-pm-*
+  attributes below.
+{% endcomment %}
+<div class="pm-board" data-pm-board data-total="{{ widget.total }}">
+
+  <div class="pm-toolbar">
+    <div class="pm-search">
+      <span class="material-symbols-outlined" aria-hidden="true">search</span>
+      <input type="search"
+             data-pm-search
+             placeholder="{% translate 'Filter modules and resources…' %}"
+             aria-label="{% translate 'Filter permissions' %}"
+             autocomplete="off">
+    </div>
+
+    <div class="pm-toolbar-meta">
+      <span class="pm-counter">
+        <b data-pm-count>{{ widget.granted }}</b>
+        <span class="pm-counter-sep">/</span>
+        <span class="pm-counter-total">{{ widget.total }}</span>
+        {% translate 'granted' %}
+      </span>
+      <label class="pm-selectall">
+        <input type="checkbox" data-pm-all>
+        <span class="pm-box" aria-hidden="true"></span>
+        <span>{% translate 'Select all' %}</span>
+      </label>
+    </div>
+  </div>
+
+  <div class="pm-board-body">
+
+    {% comment %}
+      The column wrapper is what paints the rail's full-height background: the
+      <nav> inside it has to stay short enough for position:sticky to have
+      somewhere to travel.
+    {% endcomment %}
+    <div class="pm-rail-col">
+    <nav class="pm-rail" aria-label="{% translate 'Permission modules' %}">
+      {% for section in widget.sections %}
+        <a class="pm-rail-link"
+           href="#pm-sec-{{ section.key }}"
+           data-pm-rail="{{ section.key }}"
+           data-search="{{ section.label|lower }} {{ section.key }}">
+          <span class="material-symbols-outlined" aria-hidden="true">{{ section.icon }}</span>
+          <span class="pm-rail-label">{{ section.label }}</span>
+          <span class="pm-rail-count" data-pm-rail-count>{{ section.granted }}</span>
+        </a>
+      {% endfor %}
+    </nav>
+    </div>
+
+    <div class="pm-grid">
+      {% for section in widget.sections %}
+        <section class="pm-section"
+                 id="pm-sec-{{ section.key }}"
+                 data-pm-section="{{ section.key }}"
+                 data-search="{{ section.label|lower }} {{ section.key }}">
+
+          <header class="pm-section-head">
+            <label class="pm-check" title="{% blocktranslate with name=section.label %}Toggle every {{ name }} permission{% endblocktranslate %}">
+              <input type="checkbox" data-pm-section-all
+                     aria-label="{% blocktranslate with name=section.label %}Toggle every {{ name }} permission{% endblocktranslate %}">
+              <span class="pm-box" aria-hidden="true"></span>
+            </label>
+            <span class="material-symbols-outlined pm-section-icon" aria-hidden="true">{{ section.icon }}</span>
+            <h3 class="pm-section-title">{{ section.label }}</h3>
+            <span class="pm-chip" data-pm-section-count>{{ section.granted }}/{{ section.total }}</span>
+          </header>
+
+          <div class="pm-rows">
+            <div class="pm-row pm-row-head">
+              <span class="pm-row-name">{% translate 'Resource' %}</span>
+              {% for action in widget.actions %}
+                <span class="pm-cell">
+                  <button type="button"
+                          class="pm-colbtn"
+                          data-pm-col="{{ action.action }}"
+                          title="{% blocktranslate with label=action.label name=section.label %}Toggle {{ label }} across {{ name }}{% endblocktranslate %}">
+                    <span class="material-symbols-outlined" aria-hidden="true">{{ action.icon }}</span>
+                    <span>{{ action.label }}</span>
+                  </button>
+                </span>
+              {% endfor %}
+            </div>
+
+            {% for row in section.rows %}
+              <div class="pm-row" data-pm-row data-search="{{ row.label|lower }} {{ row.hint }}">
+                <span class="pm-row-name">
+                  <label class="pm-check" title="{% blocktranslate with name=row.label %}Toggle every {{ name }} permission{% endblocktranslate %}">
+                    <input type="checkbox" data-pm-row-all
+                           aria-label="{% blocktranslate with name=row.label %}Toggle every {{ name }} permission{% endblocktranslate %}">
+                    <span class="pm-box" aria-hidden="true"></span>
+                  </label>
+                  <span class="pm-row-text">{{ row.label }}</span>
+                  <span class="pm-info" tabindex="0" role="note" aria-label="{{ row.hint }}" data-tip="{{ row.hint }}">
+                    <span class="material-symbols-outlined" aria-hidden="true">info</span>
+                  </span>
+                </span>
+
+                {% for cell in row.cells %}
+                  {% if cell.empty %}
+                    <span class="pm-cell is-empty" title="{% translate 'Not available for this resource' %}">&mdash;</span>
+                  {% else %}
+                    <span class="pm-cell">
+                      <input type="checkbox"
+                             class="pm-input"
+                             name="{{ cell.name }}"
+                             value="{{ cell.value }}"
+                             id="{{ cell.id }}"
+                             data-pm-perm
+                             data-action="{{ cell.action }}"
+                             {% if cell.checked %}checked{% endif %}>
+                      <label for="{{ cell.id }}" title="{{ cell.codename }}">
+                        <span class="pm-box" aria-hidden="true"></span>
+                        <span class="pm-cell-label">{{ cell.action_label }}</span>
+                      </label>
+                    </span>
+                  {% endif %}
+                {% endfor %}
+
+                {% if row.extras %}
+                  <div class="pm-extras">
+                    <span class="pm-extras-tag">{% translate 'Custom' %}</span>
+                    {% for cell in row.extras %}
+                      <span class="pm-extra">
+                        <input type="checkbox"
+                               class="pm-input"
+                               name="{{ cell.name }}"
+                               value="{{ cell.value }}"
+                               id="{{ cell.id }}"
+                               data-pm-perm
+                               data-action="custom"
+                               {% if cell.checked %}checked{% endif %}>
+                        <label for="{{ cell.id }}" title="{{ cell.codename }}">
+                          <span class="pm-box" aria-hidden="true"></span>
+                          <span>{{ cell.action_label }}</span>
+                        </label>
+                      </span>
+                    {% endfor %}
+                  </div>
+                {% endif %}
+              </div>
+            {% endfor %}
+          </div>
+        </section>
+      {% empty %}
+        <p class="pm-blank">{% translate 'No permissions are defined yet.' %}</p>
+      {% endfor %}
+
+      <p class="pm-blank" data-pm-empty hidden>
+        <span class="material-symbols-outlined" aria-hidden="true">search_off</span>
+        {% translate 'Nothing matches that filter.' %}
+      </p>
+    </div>
+  </div>
+</div>

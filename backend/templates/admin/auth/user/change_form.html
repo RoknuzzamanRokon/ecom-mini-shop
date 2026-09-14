@@ -1,0 +1,246 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls static admin_modify %}
+
+{% comment %}
+  Resolves for auth.User only (admin/<app_label>/<model_name>/change_form.html),
+  so no other change form is touched. Django's own auth/user/ directory ships
+  add_form.html and change_password.html but no change_form.html, so there is
+  nothing here to collide with -- and `add` still goes through
+  BaseUserAdmin.add_form_template, never this file.
+
+  The whole {% block content %} is replaced because the stock layout stacks five
+  fieldsets vertically and drops a 120-row FilteredSelectMultiple in the middle
+  of them. Everything Django needs is still emitted: the same <form> element and
+  id, the CSRF token, the popup/to_field hidden inputs, every fieldset (routed
+  into a tab rather than dropped), the inline formsets, {% submit_row %} and the
+  change_form.js constants block.
+{% endcomment %}
+
+{% block extrahead %}{{ block.super }}
+  <script src="{% static 'js/admin_user_permission.js' %}" defer></script>
+{% endblock %}
+
+{% block extrastyle %}{{ block.super }}
+  <link rel="stylesheet" href="{% static 'css/admin_user_permission.css' %}">
+{% endblock %}
+
+{% block bodyclass %}{{ block.super }} mp-userform{% endblock %}
+
+{# The identity hero carries the page heading. #}
+{% block content_title %}{% endblock %}
+{% block content_subtitle %}{% endblock %}
+
+{% block content %}
+<div id="content-main" class="mp-shell">
+<form {% if has_file_field %}enctype="multipart/form-data" {% endif %}{% if form_url %}action="{{ form_url }}" {% endif %}method="post" id="{{ opts.model_name }}_form" novalidate>{% csrf_token %}{% block form_top %}{% endblock %}
+  {% if is_popup %}<input type="hidden" name="{{ is_popup_var }}" value="1">{% endif %}
+  {% if to_field %}<input type="hidden" name="{{ to_field_var }}" value="{{ to_field }}">{% endif %}
+
+  <!-- ==================== IDENTITY HERO ==================== -->
+  <header class="mp-hero">
+    <div class="mp-hero-id">
+      <span class="mp-avatar" aria-hidden="true">{{ original.get_username|first|upper|default:"?" }}</span>
+      <div class="mp-hero-text">
+        <h1 class="mp-hero-name">
+          {% firstof original.get_full_name original.get_username title %}
+        </h1>
+        <div class="mp-hero-meta">
+          <span class="mp-hero-handle">&#64;{{ original.get_username }}</span>
+          {% if original.email %}
+            <span class="mp-dot" aria-hidden="true"></span>
+            <a class="mp-hero-mail" href="mailto:{{ original.email }}">{{ original.email }}</a>
+          {% endif %}
+          <span class="mp-dot" aria-hidden="true"></span>
+          <span class="mp-access {% if original.is_superuser %}is-super{% elif original.is_staff %}is-staff{% else %}is-basic{% endif %}">
+            <span class="material-symbols-outlined" aria-hidden="true">
+              {% if original.is_superuser %}shield_person{% elif original.is_staff %}badge{% else %}person{% endif %}
+            </span>
+            {% if original.is_superuser %}{% translate 'Superuser' %}
+            {% elif original.is_staff %}{% translate 'Staff' %}
+            {% else %}{% translate 'Standard account' %}{% endif %}
+          </span>
+        </div>
+
+        {% if original.pk %}
+          <div class="mp-rolechips">
+            {% for assignment in original.user_roles.all %}
+              <span class="mp-rolechip {% if not assignment.is_active %}is-off{% endif %}"
+                    title="{{ assignment.role.description|default:assignment.role.name }}">
+                <span class="material-symbols-outlined" aria-hidden="true">workspace_premium</span>
+                {{ assignment.role.name }}
+              </span>
+            {% empty %}
+              <span class="mp-rolechip is-none">{% translate 'No role assigned' %}</span>
+            {% endfor %}
+          </div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="mp-hero-side">
+      <div class="mp-gauge">
+        <span class="mp-gauge-value"><b data-mp-granted>0</b><i>/</i><span data-mp-total>0</span></span>
+        <span class="mp-gauge-label">{% translate 'panel permissions' %}</span>
+        <span class="mp-gauge-track"><span class="mp-gauge-fill" data-mp-gauge></span></span>
+      </div>
+
+      {% if not is_popup and change %}
+        <div class="mp-hero-links">
+          {% url opts|admin_urlname:'history' original.pk|admin_urlquote as history_url %}
+          <a class="mp-ghostbtn" href="{{ history_url }}">
+            <span class="material-symbols-outlined" aria-hidden="true">history</span>
+            {% translate 'History' %}
+          </a>
+          <a class="mp-ghostbtn" href="{% url opts|admin_urlname:'changelist' %}">
+            <span class="material-symbols-outlined" aria-hidden="true">group</span>
+            {% translate 'All users' %}
+          </a>
+        </div>
+      {% endif %}
+    </div>
+
+    <!-- Account status lives in the hero, not a fieldset: it is the frame the
+         permission board has to be read inside. Still the same form inputs. -->
+    <div class="mp-switches">
+      {% for fieldset in adminform %}
+        {% if 'mp-pane-status' in fieldset.classes %}
+          {% for line in fieldset %}
+            {% for field in line %}
+              {% if field.is_readonly %}
+                <span class="mp-switch is-readonly">
+                  <span class="mp-switch-track" aria-hidden="true"><span class="mp-switch-thumb"></span></span>
+                  <span class="mp-switch-label">{{ field.field.label }}: {{ field.contents }}</span>
+                </span>
+              {% else %}
+                <label class="mp-switch" for="{{ field.field.id_for_label }}"
+                       {% if field.field.help_text %}title="{{ field.field.help_text|striptags }}"{% endif %}>
+                  {{ field.field }}
+                  <span class="mp-switch-track" aria-hidden="true"><span class="mp-switch-thumb"></span></span>
+                  <span class="mp-switch-label">{{ field.field.label }}</span>
+                </label>
+              {% endif %}
+            {% endfor %}
+          {% endfor %}
+        {% endif %}
+      {% endfor %}
+    </div>
+  </header>
+
+  {% if errors %}
+    <p class="errornote">
+      {% blocktranslate count counter=errors|length %}Please correct the error below.{% plural %}Please correct the errors below.{% endblocktranslate %}
+    </p>
+    {{ adminform.form.non_field_errors }}
+  {% endif %}
+
+  <!-- ==================== TABS ==================== -->
+  <div class="mp-tabs" role="tablist" aria-label="{% translate 'User settings' %}">
+    <button type="button" class="mp-tab is-active" role="tab" aria-selected="true"
+            aria-controls="mp-pane-permissions" data-mp-tab="permissions">
+      <span class="material-symbols-outlined" aria-hidden="true">tune</span>
+      {% translate 'Manage panel' %}
+    </button>
+    <button type="button" class="mp-tab" role="tab" aria-selected="false"
+            aria-controls="mp-pane-roles" data-mp-tab="roles">
+      <span class="material-symbols-outlined" aria-hidden="true">workspace_premium</span>
+      {% translate 'Roles & groups' %}
+    </button>
+    <button type="button" class="mp-tab" role="tab" aria-selected="false"
+            aria-controls="mp-pane-account" data-mp-tab="account">
+      <span class="material-symbols-outlined" aria-hidden="true">manage_accounts</span>
+      {% translate 'Account' %}
+    </button>
+  </div>
+
+  <!-- ==================== PANE: MANAGE PANEL ==================== -->
+  <section class="mp-pane is-active" id="mp-pane-permissions" role="tabpanel" data-mp-pane="permissions">
+    <div class="mp-superbanner" data-mp-superbanner hidden>
+      <span class="material-symbols-outlined" aria-hidden="true">shield_person</span>
+      <span>
+        <b>{% translate 'Superuser is on.' %}</b>
+        {% translate 'This account already bypasses every check below. The selections are kept, but they change nothing while the switch is on.' %}
+      </span>
+    </div>
+
+    {% for fieldset in adminform %}
+      {% if 'mp-pane-permissions' in fieldset.classes %}
+        {% for line in fieldset %}
+          {% for field in line %}
+            {% if field.is_readonly %}{{ field.contents }}{% else %}{{ field.field.errors }}{{ field.field }}{% endif %}
+          {% endfor %}
+        {% endfor %}
+      {% endif %}
+    {% endfor %}
+  </section>
+
+  <!-- ==================== PANE: ROLES & GROUPS ==================== -->
+  <section class="mp-pane" id="mp-pane-roles" role="tabpanel" data-mp-pane="roles" hidden>
+    {% for fieldset in adminform %}
+      {% if 'mp-pane-roles' in fieldset.classes %}
+        <div class="mp-card">
+          <h2 class="mp-card-title">
+            <span class="material-symbols-outlined" aria-hidden="true">folder_shared</span>
+            {{ fieldset.name }}
+          </h2>
+          {% if fieldset.description %}<p class="mp-card-hint">{{ fieldset.description }}</p>{% endif %}
+          {% for line in fieldset %}
+            {% for field in line %}
+              {% if field.is_readonly %}{{ field.contents }}{% else %}{{ field.field.errors }}{{ field.field }}{% endif %}
+            {% endfor %}
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endfor %}
+
+    {% block inline_field_sets %}
+      <div class="mp-card mp-inlines">
+        <h2 class="mp-card-title">
+          <span class="material-symbols-outlined" aria-hidden="true">workspace_premium</span>
+          {% translate 'Assigned roles' %}
+        </h2>
+        <p class="mp-card-hint">
+          {% translate 'Roles grant permissions through the API layer. They are evaluated independently of the admin-panel checkboxes.' %}
+        </p>
+        {% for inline_admin_formset in inline_admin_formsets %}
+          {% include inline_admin_formset.opts.template %}
+        {% endfor %}
+      </div>
+    {% endblock %}
+  </section>
+
+  <!-- ==================== PANE: ACCOUNT ==================== -->
+  <section class="mp-pane" id="mp-pane-account" role="tabpanel" data-mp-pane="account" hidden>
+    {% block field_sets %}
+      {% for fieldset in adminform %}
+        {% if 'mp-pane-permissions' in fieldset.classes or 'mp-pane-roles' in fieldset.classes or 'mp-pane-status' in fieldset.classes %}
+          {# Already rendered in its own pane or in the hero. #}
+        {% else %}
+          {% include "admin/includes/fieldset.html" with heading_level=2 prefix="fieldset" id_prefix=0 id_suffix=forloop.counter0 %}
+        {% endif %}
+      {% endfor %}
+    {% endblock %}
+  </section>
+
+  {% block after_related_objects %}{% endblock %}
+
+  <!-- ==================== STICKY SAVE BAR ==================== -->
+  <div class="mp-savebar">
+    <span class="mp-savebar-note" data-mp-dirty hidden>
+      <span class="material-symbols-outlined" aria-hidden="true">edit_note</span>
+      {% translate 'Unsaved changes' %}
+    </span>
+    {% block submit_buttons_bottom %}{% submit_row %}{% endblock %}
+  </div>
+
+  {% block admin_change_form_document_ready %}
+    <script id="django-admin-form-add-constants"
+            src="{% static 'admin/js/change_form.js' %}"
+            {% if adminform and add %}data-model-name="{{ opts.model_name }}"{% endif %}
+            async>
+    </script>
+  {% endblock %}
+
+  {% prepopulated_fields_js %}
+</form>
+</div>
+{% endblock %}

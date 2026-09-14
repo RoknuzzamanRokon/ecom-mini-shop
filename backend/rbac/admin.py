@@ -1,8 +1,11 @@
 from django.contrib import admin
+from django.contrib.admin.widgets import RelatedFieldWidgetWrapper
 from django.db.models import Count
-from django.contrib.auth.models import User
+from django.contrib.auth.models import Permission as AuthPermission, User
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.utils.translation import gettext_lazy as _
 from .models import Permission, Role, RolePermission, UserRole
+from .widgets import GroupCardsWidget, PermissionMatrixWidget
 
 
 class RolePermissionInline(admin.TabularInline):
@@ -76,6 +79,8 @@ class UserRoleInline(admin.TabularInline):
     extra = 0
     autocomplete_fields = ["role"]
     fk_name = "user"
+    verbose_name = _("role assignment")
+    verbose_name_plural = _("Role assignments")
 
 
 admin.site.unregister(User)
@@ -103,6 +108,65 @@ class UserAdmin(BaseUserAdmin):
     )
     search_fields = ("username", "email", "first_name", "last_name")
     inlines = [UserRoleInline]
+
+    # The two-pane FilteredSelectMultiple is replaced by the permission board in
+    # templates/admin/auth/user/change_form.html, so the horizontal filter that
+    # BaseUserAdmin declares would only load selector.js for nothing.
+    filter_horizontal = ()
+
+    # `classes` is the routing key the change form reads: each fieldset is placed
+    # in the tab (or, for the status switches, the identity hero) named here.
+    # Unclassified fieldsets fall through to the Account tab, which is what keeps
+    # BaseUserAdmin.add_fieldsets working untouched on the add view.
+    fieldsets = (
+        (_("Sign-in"), {
+            "fields": ("username", "password"),
+            "classes": ("mp-pane-account",),
+        }),
+        (_("Personal information"), {
+            "fields": ("first_name", "last_name", "email"),
+            "classes": ("mp-pane-account",),
+        }),
+        (_("Activity"), {
+            "fields": ("last_login", "date_joined"),
+            "classes": ("mp-pane-account",),
+        }),
+        (_("Account status"), {
+            "fields": ("is_active", "is_staff", "is_superuser"),
+            "classes": ("mp-pane-status",),
+        }),
+        (_("Admin panel permissions"), {
+            "fields": ("user_permissions",),
+            "classes": ("mp-pane-permissions",),
+        }),
+        (_("Permission groups"), {
+            "fields": ("groups",),
+            "classes": ("mp-pane-roles",),
+        }),
+    )
+
+    def formfield_for_manytomany(self, db_field, request, **kwargs):
+        if db_field.name == "user_permissions":
+            kwargs["widget"] = PermissionMatrixWidget()
+            # The widget groups on content_type, so fetch it in the same query
+            # and hand the rows over already sorted the way the board reads.
+            kwargs["queryset"] = AuthPermission.objects.select_related(
+                "content_type"
+            ).order_by("content_type__app_label", "content_type__model", "codename")
+        elif db_field.name == "groups":
+            kwargs["widget"] = GroupCardsWidget()
+        return super().formfield_for_manytomany(db_field, request, **kwargs)
+
+    def formfield_for_dbfield(self, db_field, request, **kwargs):
+        formfield = super().formfield_for_dbfield(db_field, request, **kwargs)
+        # ModelAdmin wraps every related field in RelatedFieldWidgetWrapper for
+        # the "add another" affordances. On a board of 120 checkboxes those links
+        # have nothing to point at, and the wrapper's <div> breaks the grid.
+        if db_field.name in ("user_permissions", "groups") and isinstance(
+            getattr(formfield, "widget", None), RelatedFieldWidgetWrapper
+        ):
+            formfield.widget = formfield.widget.widget
+        return formfield
 
     def role_list(self, obj):
         roles = obj.user_roles.all()
