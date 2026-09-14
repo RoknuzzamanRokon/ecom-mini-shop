@@ -24,6 +24,7 @@ body.change-list {
   --cl-zebra: rgba(33, 72, 107, 0.045);
   --cl-hover: rgba(186, 134, 48, 0.075);
   --cl-grid-line: var(--jp-border-line-subtle);
+  --cl-col-line: rgba(0, 0, 0, 0.045);
 }
 
 /* --------------------------------------------------------------------------
@@ -266,9 +267,11 @@ body.change-list #changelist-form .results {
 body.change-list #result_list {
   width: 100% !important;
   /* The whole point: without a fixed layout the editable inputs set their own
-     intrinsic widths and the table grows to ~2019px. */
+     intrinsic widths and the table grows to ~2019px on Product. */
   table-layout: fixed !important;
-  min-width: 1000px !important;
+  /* Narrowest width at which this model's column budget stays legible; each
+     per-model section in part 6 sets its own. */
+  min-width: var(--cl-grid-min, 960px) !important;
   border-collapse: separate !important;
   border-spacing: 0 !important;
 }
@@ -277,11 +280,22 @@ body.change-list #result_list {
 body.change-list #result_list thead th {
   padding: 0 !important;
   background: var(--jp-bg-surface-sunken) !important;
-  border-bottom: 1px solid var(--jp-border-line) !important;
+  /* A box-shadow rather than a border-bottom: the rule has to stay painted
+     while the head is stuck and rows scroll under it. */
+  box-shadow: 0 1px 0 0 var(--jp-border-line) !important;
   border-top: none !important;
+  border-bottom: none !important;
+  border-left: none !important;
   vertical-align: middle !important;
   white-space: nowrap !important;
   text-align: left !important;
+  /* Sticky only once this model's grid actually fits (see part 10). While the
+     .results box is still a horizontal scroller it is the nearest scrollport,
+     so `sticky` would pin to that instead of the viewport and look broken.
+     top/z-index are simply ignored while this resolves to static. */
+  position: var(--cl-head-position, static) !important;
+  top: var(--cl-head-offset) !important;
+  z-index: 3 !important;
 }
 
 body.change-list #result_list thead th > .text,
@@ -309,7 +323,7 @@ body.change-list #result_list thead th.sortable > .text > a:hover {
 /* Sorted column: gold label plus a gold cap above it. */
 body.change-list #result_list thead th.sorted {
   background: var(--jp-kinari-gold-bg) !important;
-  box-shadow: inset 0 2px 0 0 var(--jp-kinari-gold) !important;
+  box-shadow: inset 0 2px 0 0 var(--jp-kinari-gold), 0 1px 0 0 var(--jp-border-line) !important;
 }
 
 body.change-list #result_list thead th.sorted > .text > a {
@@ -354,6 +368,23 @@ body.change-list #result_list tbody td {
 body.change-list #result_list tbody tr:last-child th,
 body.change-list #result_list tbody tr:last-child td {
   border-bottom: none !important;
+}
+
+/* Column rules. Low contrast on purpose: enough to track a row across a wide
+   sparse table, not enough to read as a grid of boxes. */
+body.change-list #result_list tbody th,
+body.change-list #result_list tbody td {
+  border-right: 1px solid var(--cl-col-line) !important;
+}
+
+body.change-list #result_list thead th {
+  border-right: 1px solid var(--cl-col-line) !important;
+}
+
+body.change-list #result_list thead th:last-child,
+body.change-list #result_list tbody th:last-child,
+body.change-list #result_list tbody td:last-child {
+  border-right: none !important;
 }
 
 body.change-list #result_list tbody tr:nth-child(even) {
@@ -421,46 +452,40 @@ body.change-list #result_list tbody td.field-status_badge > span {
   white-space: nowrap !important;
 }
 
-body.change-list #result_list th.column-name            { width: 16% !important; }
-body.change-list #result_list th.column-category        { width: 8.5% !important; }
-body.change-list #result_list th.column-shop            { width: 11% !important; }
-body.change-list #result_list th.column-seller_display  { width: 9.5% !important; }
-body.change-list #result_list th.column-status_badge    { width: 9% !important; }
-body.change-list #result_list th.column-price           { width: 8.5% !important; }
-body.change-list #result_list th.column-old_price       { width: 8.5% !important; }
-body.change-list #result_list th.column-stock           { width: 5.5% !important; }
-body.change-list #result_list th.column-badge           { width: 8% !important; }
-body.change-list #result_list th.column-is_active       { width: 6.5% !important; }
-body.change-list #result_list th.column-image_preview   { width: 6% !important; }
+/* -- Product: 11 columns, 5 of them list_editable ------------------------ */
+body.model-product.change-list #result_list { --cl-grid-min: 1000px; }
 
-/* Name: the row's identity, so it may use two lines before clipping. */
-body.change-list #result_list tbody th.field-name {
+body.model-product #result_list th.column-name            { width: 16% !important; }
+body.model-product #result_list th.column-category        { width: 8.5% !important; }
+body.model-product #result_list th.column-shop            { width: 11% !important; }
+body.model-product #result_list th.column-seller_display  { width: 9.5% !important; }
+body.model-product #result_list th.column-status_badge    { width: 9% !important; }
+body.model-product #result_list th.column-price           { width: 8.5% !important; }
+body.model-product #result_list th.column-old_price       { width: 8.5% !important; }
+body.model-product #result_list th.column-stock           { width: 5.5% !important; }
+body.model-product #result_list th.column-badge           { width: 8% !important; }
+body.model-product #result_list th.column-is_active       { width: 6.5% !important; }
+body.model-product #result_list th.column-image_preview   { width: 6% !important; }
+
+/* Name is the row identity here, so it may take two lines before clipping. */
+body.model-product #result_list tbody th.field-name {
   white-space: normal !important;
   overflow: hidden !important;
 }
 
-body.change-list #result_list tbody th.field-name a {
+body.model-product #result_list tbody th.field-name a {
   display: -webkit-box !important;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden !important;
-  font-size: 12.5px !important;
-  font-weight: 700 !important;
-  color: var(--jp-text-ink) !important;
-  text-decoration: none !important;
 }
 
-body.change-list #result_list tbody th.field-name a:hover {
-  color: var(--jp-kinari-gold) !important;
-  text-decoration: underline !important;
-}
-
-/* Single-line, clipped. `Shop.__str__` is very long ("Name (ACTIVE) - Owner:
-   ...") and repeats the Seller column, so it truncates from the right and
-   keeps the shop name that leads it. */
-body.change-list #result_list tbody td.field-shop,
-body.change-list #result_list tbody td.field-category,
-body.change-list #result_list tbody td.field-seller_display {
+/* Single-line, clipped. Shop.__str__ is long ("Name (ACTIVE) - Owner: ...")
+   and repeats the Seller column, so it truncates from the right and keeps the
+   shop name that leads it. */
+body.model-product #result_list tbody td.field-shop,
+body.model-product #result_list tbody td.field-category,
+body.model-product #result_list tbody td.field-seller_display {
   white-space: nowrap !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
@@ -468,17 +493,78 @@ body.change-list #result_list tbody td.field-seller_display {
 }
 
 /* Money and counts read as numbers: right-aligned, tabular. */
-body.change-list #result_list th.column-price > .text,
-body.change-list #result_list th.column-old_price > .text,
-body.change-list #result_list th.column-stock > .text {
+body.model-product #result_list th.column-price > .text,
+body.model-product #result_list th.column-old_price > .text,
+body.model-product #result_list th.column-stock > .text {
   text-align: right !important;
 }
 
-body.change-list #result_list tbody td.field-price input,
-body.change-list #result_list tbody td.field-old_price input,
-body.change-list #result_list tbody td.field-stock input {
+body.model-product #result_list tbody td.field-price input,
+body.model-product #result_list tbody td.field-old_price input,
+body.model-product #result_list tbody td.field-stock input {
   text-align: right !important;
   font-variant-numeric: tabular-nums !important;
+}
+
+/* -- Category: 6 columns, only is_active editable ------------------------
+   Far fewer columns, so the two identity strings (name, slug) absorb the
+   slack as percentages while the rest hold fixed pixel widths. Django makes
+   image_preview the row link because it leads list_display. */
+body.model-category.change-list #result_list { --cl-grid-min: 720px; }
+
+body.model-category.change-list #result_list { --cl-thumb-w: 58px; --cl-thumb-h: 40px; }
+
+body.model-category #result_list th.column-image_preview  { width: 92px !important; }
+body.model-category #result_list th.column-name           { width: 31% !important; }
+body.model-category #result_list th.column-slug           { width: 31% !important; }
+body.model-category #result_list th.column-icon           { width: 150px !important; }
+body.model-category #result_list th.column-is_active      { width: 92px !important; }
+body.model-category #result_list th.column-product_count  { width: 104px !important; }
+
+body.model-category #result_list tbody td.field-name,
+body.model-category #result_list tbody td.field-slug,
+body.model-category #result_list tbody td.field-icon {
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+body.model-category #result_list tbody td.field-name {
+  font-weight: 700 !important;
+  color: var(--jp-text-ink) !important;
+}
+
+/* Slug and icon are machine strings: monospace makes them scannable and
+   visibly distinct from the human-facing name. */
+body.model-category #result_list tbody td.field-slug,
+body.model-category #result_list tbody td.field-icon {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace !important;
+  font-size: 11.5px !important;
+  color: var(--jp-text-ink-muted) !important;
+}
+
+/* The product tally is a number and links nowhere, so right-align it. */
+body.model-category #result_list th.column-product_count > .text { text-align: right !important; }
+
+body.model-category #result_list tbody td.field-product_count {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums !important;
+  font-weight: 700 !important;
+}
+
+/* The row-header cell. Django puts the <th> on whichever column leads
+   list_display_links -- `name` on Product but `image_preview` on Category --
+   so link styling stays model-agnostic here. */
+body.change-list #result_list tbody th a {
+  font-size: 12.5px !important;
+  font-weight: 700 !important;
+  color: var(--jp-text-ink) !important;
+  text-decoration: none !important;
+}
+
+body.change-list #result_list tbody th a:hover {
+  color: var(--jp-kinari-gold) !important;
+  text-decoration: underline !important;
 }
 
 /* Centred columns */
@@ -552,14 +638,29 @@ body.change-list #result_list tbody td .errorlist {
   color: #DC2626 !important;
 }
 
-/* Thumbnails: normalise whatever inline height the admin method emitted. */
+/* Thumbnails: normalise whatever inline size and border the admin method
+   emitted, in a th (Category, where the image is the row link) or a td
+   (Product). The inline rules hardcode a #ddd border that reads wrong on a
+   dark surface, so replace it with a token ring. */
+body.change-list #result_list tbody th.field-image_preview img,
 body.change-list #result_list tbody td.field-image_preview img {
-  width: 34px !important;
-  height: 34px !important;
+  width: var(--cl-thumb-w, 34px) !important;
+  height: var(--cl-thumb-h, 34px) !important;
   object-fit: cover !important;
-  border-radius: 8px !important;
+  border: none !important;
+  border-radius: 7px !important;
   box-shadow: 0 0 0 1px var(--jp-border-line) !important;
   vertical-align: middle !important;
+}
+
+/* "No image" placeholder, also inline-styled by the admin method. */
+body.change-list #result_list tbody th.field-image_preview span,
+body.change-list #result_list tbody td.field-image_preview span {
+  font-size: 10.5px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.4px !important;
+  color: var(--jp-text-ink-muted) !important;
 }
 
 /* --------------------------------------------------------------------------
@@ -759,28 +860,21 @@ body.change-list #changelist-filter li.selected a {
 }
 
 /* --------------------------------------------------------------------------
-   10. STICKY HEAD
-   Only once the column budget actually fits: below that .results is a
-   horizontal scroller, and a scrollport ancestor makes `sticky` pin to the
-   scroller rather than the viewport, which looks broken. Queried on the
+   10. WHEN THE GRID FITS
+   Each model declares the container width at which its column budget stops
+   needing a horizontal scroller. Past that the .results box goes back to
+   visible overflow and the head can pin to the viewport. Queried on the
    container, because the nav sidebar changes the available width without
    changing the viewport.
    -------------------------------------------------------------------------- */
 @container clmain (min-width: 1010px) {
-  body.change-list #changelist-form .results { overflow-x: visible !important; }
+  body.model-product #changelist-form .results { overflow-x: visible !important; }
+  body.model-product #result_list { --cl-head-position: sticky; }
+}
 
-  body.change-list #result_list thead th {
-    position: sticky !important;
-    top: var(--cl-head-offset) !important;
-    z-index: 3 !important;
-    /* Opaque: rows scroll underneath. */
-    background: var(--jp-bg-surface-sunken) !important;
-    box-shadow: 0 1px 0 0 var(--jp-border-line) !important;
-  }
-
-  body.change-list #result_list thead th.sorted {
-    box-shadow: inset 0 2px 0 0 var(--jp-kinari-gold), 0 1px 0 0 var(--jp-border-line) !important;
-  }
+@container clmain (min-width: 730px) {
+  body.model-category #changelist-form .results { overflow-x: visible !important; }
+  body.model-category #result_list { --cl-head-position: sticky; }
 }
 
 /* --------------------------------------------------------------------------
@@ -790,29 +884,29 @@ body.change-list #changelist-filter li.selected a {
    land on a DESCENDANT of the container -- setting them on body.change-list
    never matched, because the body is an ancestor of clmain. */
 @container clmain (max-width: 1320px) {
-  body.change-list #result_list {
+  body.model-product #result_list {
     --cl-row-pad-x: 8px;
     --cl-row-pad-y: 6px;
   }
-  body.change-list #result_list tbody th,
-  body.change-list #result_list tbody td { font-size: 12px !important; }
+  body.model-product #result_list tbody th,
+  body.model-product #result_list tbody td { font-size: 12px !important; }
 }
 
 @container clmain (max-width: 1120px) {
-  body.change-list #result_list {
+  body.model-product #result_list {
     --cl-row-pad-x: 6px;
     --cl-row-pad-y: 5px;
   }
-  body.change-list #result_list thead th > .text { letter-spacing: 0.2px !important; }
-  body.change-list #result_list tbody td input[type="text"],
-  body.change-list #result_list tbody td input[type="number"] {
+  body.model-product #result_list thead th > .text { letter-spacing: 0.2px !important; }
+  body.model-product #result_list tbody td input[type="text"],
+  body.model-product #result_list tbody td input[type="number"] {
     padding: 4px 5px !important;
     font-size: 11.5px !important;
   }
   /* 8 characters ("13400.00") must not lose their last digit. */
-  body.change-list #result_list tbody td.field-price,
-  body.change-list #result_list tbody td.field-old_price,
-  body.change-list #result_list tbody td.field-stock {
+  body.model-product #result_list tbody td.field-price,
+  body.model-product #result_list tbody td.field-old_price,
+  body.model-product #result_list tbody td.field-stock {
     padding-left: 4px !important;
     padding-right: 4px !important;
   }
@@ -871,6 +965,7 @@ body.change-list #changelist-filter li.selected a {
 [data-theme="dark"] body.change-list {
   --cl-zebra: rgba(255, 255, 255, 0.032);
   --cl-hover: rgba(214, 160, 74, 0.085);
+  --cl-col-line: rgba(255, 255, 255, 0.05);
 }
 
 [data-theme="dark"] body.change-list #result_list tbody tr:has(.action-select:checked) {
@@ -897,6 +992,7 @@ body.change-list #changelist-filter li.selected a {
   :root:not([data-theme="light"]) body.change-list {
     --cl-zebra: rgba(255, 255, 255, 0.032);
     --cl-hover: rgba(214, 160, 74, 0.085);
+    --cl-col-line: rgba(255, 255, 255, 0.05);
   }
   :root:not([data-theme="light"]) body.change-list #content { --link-fg: #7FB3F0; }
   :root:not([data-theme="light"]) body.change-list #changelist-filter a.viewlink { color: #93C5FD !important; }
