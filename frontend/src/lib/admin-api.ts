@@ -278,3 +278,124 @@ export async function updateAdminShopStatus(
   });
 }
 
+
+// ==============================================================================
+// SELLER GOVERNANCE (Phase 1C)
+// ==============================================================================
+
+/**
+ * Mirrors AdminSellerSerializer in shop/admin_serializers.py field-for-field.
+ * That serializer declares `read_only_fields = fields`, so this is exactly what
+ * GET /api/admin/sellers/ and /api/admin/sellers/<id>/ return, nothing more.
+ *
+ * Notably absent from the admin serializer (and therefore NOT rendered anywhere
+ * in the admin UI): the SellerProfile.user id, `reviewed_by`, and any KYC
+ * document/identity fields — SellerProfile has none. `tax_id`, `business_email`
+ * and `business_phone` are the only verification-style attributes the backend
+ * actually stores.
+ */
+export interface AdminSeller {
+  id: number;
+  /** Account username of the SellerProfile owner (source="user.username"). */
+  username: string;
+  /** Account email of the SellerProfile owner (source="user.email"). */
+  email: string;
+  business_name: string;
+  business_email: string;
+  business_phone: string;
+  /** Exact SellerProfile.SELLER_TYPE_CHOICES value. */
+  seller_type: string;
+  /** Exact SellerProfile.STATUS_CHOICES value. */
+  status: string;
+  tax_id: string;
+  description: string;
+  rejection_reason: string;
+  suspension_reason: string;
+  /** SellerProfile.is_operational property: status is APPROVED or ACTIVE. */
+  is_operational: boolean;
+  shops_count: number;
+  reviewed_at: string | null;
+  approved_at: string | null;
+  suspended_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminSellerListParams {
+  page?: number;
+  page_size?: number;
+  /**
+   * Matches business_name / business_email / business_phone / account username,
+   * case-insensitive (see AdminSellerListAPIView).
+   */
+  search?: string;
+  /** Exact SellerProfile.STATUS_CHOICES value (the backend upper-cases it). */
+  status?: string;
+  /** Exact SellerProfile.SELLER_TYPE_CHOICES value (the backend upper-cases it). */
+  seller_type?: string;
+}
+
+/** Exactly the `action` choices accepted by AdminSellerStatusUpdateSerializer. */
+export type AdminSellerStatusAction = "approve" | "reject" | "suspend" | "reactivate";
+
+export interface AdminSellerStatusPayload {
+  action: AdminSellerStatusAction;
+  /** Required by the backend for 'reject' and 'suspend'; ignored for the others. */
+  reason?: string;
+}
+
+/**
+ * GET /api/admin/sellers/
+ * Requires 'sellers.admin.manage' or 'sellers.view' (CanViewAdminSellers).
+ */
+export async function getAdminSellers(
+  token: string,
+  params?: AdminSellerListParams
+): Promise<PaginatedResponse<AdminSeller>> {
+  const searchParams = new URLSearchParams();
+  if (params) {
+    if (params.page) searchParams.set("page", String(params.page));
+    if (params.page_size) searchParams.set("page_size", String(params.page_size));
+    if (params.search) searchParams.set("search", params.search);
+    if (params.status) searchParams.set("status", params.status);
+    if (params.seller_type) searchParams.set("seller_type", params.seller_type);
+  }
+  const queryString = searchParams.toString();
+  return adminRequest<PaginatedResponse<AdminSeller>>(
+    `/api/admin/sellers/${queryString ? `?${queryString}` : ""}`,
+    token
+  );
+}
+
+/**
+ * GET /api/admin/sellers/<id>/
+ * Requires 'sellers.admin.manage' or 'sellers.view' (CanViewAdminSellers).
+ */
+export async function getAdminSellerDetail(
+  token: string,
+  id: number | string
+): Promise<AdminSeller> {
+  return adminRequest<AdminSeller>(`/api/admin/sellers/${id}/`, token);
+}
+
+/**
+ * POST /api/admin/sellers/<id>/status/
+ * Requires CanManageAdminSellers — i.e. 'sellers.admin.manage' (or superuser /
+ * SUPER_ADMINISTRATOR). Unlike the shop status endpoint there is NO granular
+ * approve-only path here: 'sellers.approve' and 'sellers.suspend' gate the
+ * legacy /api/sellers/<id>/approve|suspend/ endpoints, not this one.
+ *
+ * The response body is the updated AdminSellerSerializer payload, which the
+ * caller should treat as authoritative rather than optimistically guessing the
+ * resulting status.
+ */
+export async function updateAdminSellerStatus(
+  token: string,
+  id: number | string,
+  payload: AdminSellerStatusPayload
+): Promise<AdminSeller> {
+  return adminRequest<AdminSeller>(`/api/admin/sellers/${id}/status/`, token, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
