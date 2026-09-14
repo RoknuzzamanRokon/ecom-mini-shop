@@ -1,13 +1,14 @@
 from django.contrib import admin
 from django.core.exceptions import ValidationError
 from django.db.models import Count
-from django.utils.html import format_html
 from django.contrib import messages
+
+from audit.admin_mixins import StatusBadgeMixin
 from .models import SellerProfile
 from .services import approve_seller, suspend_seller, reject_seller, reactivate_seller
 
 @admin.register(SellerProfile)
-class SellerProfileAdmin(admin.ModelAdmin):
+class SellerProfileAdmin(StatusBadgeMixin, admin.ModelAdmin):
     list_display = (
         'user', 'business_name', 'seller_type', 'status_badge', 
         'shop_count', 'product_count', 'created_at'
@@ -56,21 +57,6 @@ class SellerProfileAdmin(admin.ModelAdmin):
     product_count.short_description = 'Products'
     product_count.admin_order_field = 'product_count'
 
-    def status_badge(self, obj):
-        colors = {
-            'ACTIVE': ('#10B981', '#ECFDF5'), 'APPROVED': ('#10B981', '#ECFDF5'),
-            'PENDING': ('#3B82F6', '#EFF6FF'), 'UNDER_REVIEW': ('#3B82F6', '#EFF6FF'),
-            'DRAFT': ('#F59E0B', '#FFFBEB'), 'SUBMITTED': ('#F59E0B', '#FFFBEB'),
-            'SUSPENDED': ('#EF4444', '#FEF2F2'), 'REJECTED': ('#EF4444', '#FEF2F2'),
-            'CANCELLED': ('#EF4444', '#FEF2F2'),
-        }
-        status = obj.status.upper() if obj.status else ''
-        color, bg = colors.get(status, ('#6B7280', '#F3F4F6'))
-        return format_html(
-            '<span style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;color:{};background:{};">{}</span>',
-            color, bg, obj.get_status_display()
-        )
-    status_badge.short_description = 'Status'
 
     def approve_and_activate(self, request, queryset):
         success = 0

@@ -13,7 +13,7 @@ class SellerWalletAdmin(admin.ModelAdmin):
         return super().get_queryset(request).select_related('seller', 'seller__user')
 
     def balance_display(self, obj):
-        return f"৳{obj.balance}"
+        return f"{obj.balance} pts"
     balance_display.short_description = 'Balance'
 
 @admin.register(PointTransaction)
@@ -31,16 +31,22 @@ class PointTransactionAdmin(admin.ModelAdmin):
         return super().get_queryset(request).select_related('wallet', 'seller', 'seller__user', 'actor')
 
     def amount_display(self, obj):
-        color = '#10B981' if obj.transaction_type == 'CREDIT' else '#EF4444'
+        # `amount` is a PositiveIntegerField, so direction lives in the balance
+        # delta -- authoritative even for ADJUSTMENT, which goes either way.
+        credited = obj.balance_after >= obj.balance_before
+        color = '#10B981' if credited else '#EF4444'
+        sign = '+' if credited else '-'
         return format_html(
-            '<span style="color: {}; font-weight: bold;">৳{}</span>',
-            color, obj.amount
+            '<span style="color: {}; font-weight: bold;">{}{} pts</span>',
+            color, sign, obj.amount
         )
     amount_display.short_description = 'Amount'
+    amount_display.admin_order_field = 'amount'
 
     def balance_after_display(self, obj):
-        return f"৳{obj.balance_after}"
+        return f"{obj.balance_after} pts"
     balance_after_display.short_description = 'Balance After'
+    balance_after_display.admin_order_field = 'balance_after'
 
     def has_add_permission(self, request):
         return False

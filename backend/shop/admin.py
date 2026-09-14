@@ -8,38 +8,7 @@ from .models import (
     ProductInventory, InventoryTransaction, Payment, Refund
 )
 from shop.services import OrderService
-
-
-class StatusBadgeMixin:
-    def status_badge(self, obj):
-        colors = {
-            'ACTIVE': ('#10B981', '#ECFDF5'),
-            'APPROVED': ('#10B981', '#ECFDF5'),
-            'PUBLISHED': ('#10B981', '#ECFDF5'),
-            'PAID': ('#10B981', '#ECFDF5'),
-            'COMPLETED': ('#10B981', '#ECFDF5'),
-            'DELIVERED': ('#10B981', '#ECFDF5'),
-            'PENDING': ('#3B82F6', '#EFF6FF'),
-            'PROCESSING': ('#3B82F6', '#EFF6FF'),
-            'UNDER_REVIEW': ('#3B82F6', '#EFF6FF'),
-            'CONFIRMED': ('#3B82F6', '#EFF6FF'),
-            'DRAFT': ('#F59E0B', '#FFFBEB'),
-            'SUBMITTED': ('#F59E0B', '#FFFBEB'),
-            'PARTIALLY_REFUNDED': ('#F59E0B', '#FFFBEB'),
-            'SUSPENDED': ('#EF4444', '#FEF2F2'),
-            'REJECTED': ('#EF4444', '#FEF2F2'),
-            'FAILED': ('#EF4444', '#FEF2F2'),
-            'CANCELLED': ('#EF4444', '#FEF2F2'),
-            'UNPUBLISHED': ('#EF4444', '#FEF2F2'),
-        }
-        status = obj.status.upper() if getattr(obj, 'status', None) else ''
-        color, bg = colors.get(status, ('#6B7280', '#F3F4F6'))
-        return format_html(
-            '<span style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;color:{};background:{};">{}</span>',
-            color, bg, obj.get_status_display() if hasattr(obj, 'get_status_display') else status
-        )
-    status_badge.short_description = 'Status'
-    status_badge.admin_order_field = 'status'
+from audit.admin_mixins import StatusBadgeMixin
 
 
 @admin.register(Category)
@@ -47,6 +16,7 @@ class CategoryAdmin(admin.ModelAdmin):
     list_display = ("image_preview", "name", "slug", "icon", "is_active", "product_count")
     list_editable = ("is_active",)
     prepopulated_fields = {"slug": ("name",)}
+    list_filter = ("is_active",)
     search_fields = ("name", "description")
     fields = ("name", "slug", "icon", "image", "image_preview", "description", "is_active")
     readonly_fields = ("image_preview",)
@@ -226,10 +196,45 @@ class OrderItemAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('order', 'product', 'shop', 'seller')
 
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+LOW_STOCK_THRESHOLD = 10
+
+
+class StockLevelFilter(admin.SimpleListFilter):
+    """Filter inventory rows by how much sellable stock is left."""
+    title = "stock level"
+    parameter_name = "stock_level"
+
+    def lookups(self, request, model_admin):
+        return (
+            ("out", "Out of stock (0)"),
+            ("low", f"Low stock (1-{LOW_STOCK_THRESHOLD})"),
+            ("ok", f"In stock (>{LOW_STOCK_THRESHOLD})"),
+        )
+
+    def queryset(self, request, queryset):
+        value = self.value()
+        if value == "out":
+            return queryset.filter(available_quantity=0)
+        if value == "low":
+            return queryset.filter(
+                available_quantity__gt=0, available_quantity__lte=LOW_STOCK_THRESHOLD
+            )
+        if value == "ok":
+            return queryset.filter(available_quantity__gt=LOW_STOCK_THRESHOLD)
+        return queryset
+
 
 @admin.register(ProductInventory)
 class ProductInventoryAdmin(admin.ModelAdmin):
     list_display = ("product", "available_display", "reserved_quantity", "sold_quantity", "total_display", "updated_at")
+    list_filter = (StockLevelFilter, "updated_at")
     search_fields = ("product__name", "product__slug")
     readonly_fields = ("created_at", "updated_at")
 
@@ -240,7 +245,7 @@ class ProductInventoryAdmin(admin.ModelAdmin):
         val = obj.available_quantity
         if val == 0:
             return format_html('<span style="color:#EF4444;font-weight:bold;">{}</span>', val)
-        elif val < 10:
+        elif val <= LOW_STOCK_THRESHOLD:
             return format_html('<span style="color:#F59E0B;font-weight:bold;">{}</span>', val)
         return val
     available_display.short_description = "Available Quantity"
@@ -273,14 +278,36 @@ class InventoryTransactionAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('product', 'inventory', 'order', 'actor')
 
+    # Stock-increasing vs stock-decreasing transaction types, per
+    # InventoryTransaction.TRANSACTION_TYPE_CHOICES.
+    _INBOUND = (
+        InventoryTransaction.TYPE_INITIAL_STOCK,
+        InventoryTransaction.TYPE_STOCK_IN,
+        InventoryTransaction.TYPE_RELEASE,
+    )
+    _OUTBOUND = (
+        InventoryTransaction.TYPE_STOCK_OUT,
+        InventoryTransaction.TYPE_RESERVATION,
+        InventoryTransaction.TYPE_SALE,
+    )
+
     def quantity_display(self, obj):
         val = getattr(obj, 'quantity', 0)
         t_type = getattr(obj, 'transaction_type', '')
-        if t_type in ['RESTOCK', 'RETURN', 'ADJUST_UP']:
-            return format_html('<span style="color:#10B981;font-weight:bold;">+{}</span>', val)
-        elif t_type in ['RESERVE', 'SALE', 'ADJUST_DOWN']:
-            return format_html('<span style="color:#EF4444;font-weight:bold;">-{}</span>', val)
-        return val
+        if t_type in self._INBOUND:
+            sign, color = '+', '#10B981'
+        elif t_type in self._OUTBOUND:
+            sign, color = '-', '#EF4444'
+        else:
+            # ADJUSTMENT can go either way -- let the stored sign speak.
+            if not val:
+                return val
+            sign = '+' if val > 0 else '-'
+            color = '#10B981' if val > 0 else '#EF4444'
+            val = abs(val)
+        return format_html(
+            '<span style="color:{};font-weight:bold;">{}{}</span>', color, sign, val
+        )
     quantity_display.short_description = "Quantity"
 
 
@@ -294,6 +321,9 @@ class PaymentAdmin(StatusBadgeMixin, admin.ModelAdmin):
         return [f.name for f in self.model._meta.fields]
 
     def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
         return False
 
     def has_delete_permission(self, request, obj=None):
@@ -316,6 +346,7 @@ class PaymentAdmin(StatusBadgeMixin, admin.ModelAdmin):
 class RefundAdmin(StatusBadgeMixin, admin.ModelAdmin):
     list_display = ("refund_number", "order", "payment", "amount_display", "status_badge", "processed_by", "created_at")
     search_fields = ("refund_number", "order__order_number", "payment__payment_number", "transaction_id")
+    list_filter = ('status', 'created_at')
     
     def get_readonly_fields(self, request, obj=None):
         return [f.name for f in self.model._meta.fields]

@@ -1,13 +1,14 @@
 from django.contrib import admin
 from django.core.exceptions import ValidationError
 from django.db.models import Count
-from django.utils.html import format_html
 from django.contrib import messages
+
+from audit.admin_mixins import StatusBadgeMixin
 from .models import Shop
 from .services import ShopService, ShopError, InvalidShopTransitionError, IneligibleSellerError, ShopLimitExceededError
 
 @admin.register(Shop)
-class ShopAdmin(admin.ModelAdmin):
+class ShopAdmin(StatusBadgeMixin, admin.ModelAdmin):
     list_display = (
         'name', 'owner', 'status_badge', 'product_count', 
         'phone', 'created_at'
@@ -57,21 +58,6 @@ class ShopAdmin(admin.ModelAdmin):
         return "N/A"
     location_display.short_description = 'Location (Lat, Lng)'
 
-    def status_badge(self, obj):
-        colors = {
-            'ACTIVE': ('#10B981', '#ECFDF5'), 'APPROVED': ('#10B981', '#ECFDF5'),
-            'PENDING': ('#3B82F6', '#EFF6FF'), 'PROCESSING': ('#3B82F6', '#EFF6FF'),
-            'DRAFT': ('#F59E0B', '#FFFBEB'), 'SUBMITTED': ('#F59E0B', '#FFFBEB'),
-            'SUSPENDED': ('#EF4444', '#FEF2F2'), 'REJECTED': ('#EF4444', '#FEF2F2'),
-            'CANCELLED': ('#EF4444', '#FEF2F2'),
-        }
-        status = obj.status.upper() if obj.status else ''
-        color, bg = colors.get(status, ('#6B7280', '#F3F4F6'))
-        return format_html(
-            '<span style="display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;color:{};background:{};">{}</span>',
-            color, bg, obj.get_status_display()
-        )
-    status_badge.short_description = 'Status'
 
     def approve_and_activate(self, request, queryset):
         success = 0
