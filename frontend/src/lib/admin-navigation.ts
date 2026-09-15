@@ -32,10 +32,21 @@ export const ADMIN_PERMISSIONS = {
   sellersManage: ["sellers.admin.manage"],
 
   /**
-   * GET /api/admin/products/ -> CanManageAdminProducts.
-   * NOTE: the admin product LIST endpoint requires the *manage* permission;
-   * there is no read-only admin product permission. See KNOWN CONTRACT GAPS.
+   * GET /api/admin/products/ and /api/admin/products/<pk>/ -> CanViewAdminProducts.
+   * Phase 1A.1 widened the admin product read endpoints from the manage-only
+   * gate to 'products.admin.manage' OR 'products.view', so a read-only holder
+   * (SALES_MANAGER, SALES_TEAM) can legitimately open the module.
    */
+  productsView: ["products.admin.manage", "products.view"],
+  /**
+   * POST /api/admin/products/<pk>/status/ -> CanChangeAdminProductStatus gates
+   * entry to the endpoint, then AdminProductStatusAPIView._update_status
+   * enforces one permission per action. These four sets mirror that mapping
+   * exactly; 'unpublish' deliberately has no narrow permission of its own.
+   */
+  productsApprove: ["products.admin.manage", "products.approve"],
+  productsReject: ["products.admin.manage", "products.reject"],
+  productsPublish: ["products.admin.manage", "products.publish"],
   productsManage: ["products.admin.manage"],
 
   /** GET /api/staff/orders/ -> CanViewStaffOrders */
@@ -165,7 +176,7 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     label: "Products",
     icon: "inventory_2",
     section: "Marketplace",
-    requiredPermissions: ADMIN_PERMISSIONS.productsManage,
+    requiredPermissions: ADMIN_PERMISSIONS.productsView,
     description: "Review, approve, and publish catalog listings.",
   },
   {

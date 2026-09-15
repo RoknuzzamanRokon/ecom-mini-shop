@@ -399,3 +399,131 @@ export async function updateAdminSellerStatus(
     body: JSON.stringify(payload),
   });
 }
+
+// ==============================================================================
+// PRODUCT GOVERNANCE (Phase 1D)
+// ==============================================================================
+
+/**
+ * Mirrors AdminProductSerializer in shop/admin_serializers.py field-for-field.
+ * That serializer declares `read_only_fields = fields`, so this is exactly what
+ * GET /api/admin/products/ and /api/admin/products/<id>/ return, nothing more.
+ *
+ * Deliberately absent, because the admin serializer does not expose them:
+ * `description`, `image`, and — importantly for governance — `reviewed_by` and
+ * the owning shop's / seller's own status. The console therefore cannot
+ * pre-validate the publish preconditions and relies on the backend's 400.
+ */
+export interface AdminProduct {
+  id: number;
+  name: string;
+  slug: string;
+  /** Null only if the relation is missing; the model requires a category. */
+  category_id: number | null;
+  category_name: string | null;
+  /** Product.shop is nullable (on_delete=SET_NULL), so these can be null. */
+  shop_id: number | null;
+  shop_name: string | null;
+  /** SerializerMethodField: shop.owner.business_name, or null when unowned. */
+  seller_business_name: string | null;
+  /** DecimalField -> DRF returns these as strings. */
+  price: string;
+  old_price: string | null;
+  stock: number;
+  badge: string;
+  is_active: boolean;
+  /** Exact Product.STATUS_CHOICES value. */
+  status: string;
+  rejection_reason: string;
+  /** Product.is_publicly_visible property — the full public-catalog predicate. */
+  is_publicly_visible: boolean;
+  submitted_at: string | null;
+  reviewed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminProductListParams {
+  page?: number;
+  page_size?: number;
+  /** Matches name / slug / shop name, case-insensitive (AdminProductListAPIView). */
+  search?: string;
+  /** Exact Product.STATUS_CHOICES value (the backend upper-cases it). */
+  status?: string;
+  /** Category primary key — the backend filters `category_id`, not a slug. */
+  category?: number | string;
+  /** Shop primary key — the backend filters `shop_id`, not a slug. */
+  shop?: number | string;
+}
+
+/** Exactly the `action` choices accepted by AdminProductStatusUpdateSerializer. */
+export type AdminProductStatusAction = "approve" | "reject" | "publish" | "unpublish";
+
+export interface AdminProductStatusPayload {
+  action: AdminProductStatusAction;
+  /** Required by the backend for 'reject' only; ignored for the others. */
+  reason?: string;
+}
+
+/**
+ * GET /api/admin/products/
+ * Requires 'products.admin.manage' or 'products.view' (CanViewAdminProducts).
+ */
+export async function getAdminProducts(
+  token: string,
+  params?: AdminProductListParams
+): Promise<PaginatedResponse<AdminProduct>> {
+  const searchParams = new URLSearchParams();
+  if (params) {
+    if (params.page) searchParams.set("page", String(params.page));
+    if (params.page_size) searchParams.set("page_size", String(params.page_size));
+    if (params.search) searchParams.set("search", params.search);
+    if (params.status) searchParams.set("status", params.status);
+    if (params.category) searchParams.set("category", String(params.category));
+    if (params.shop) searchParams.set("shop", String(params.shop));
+  }
+  const queryString = searchParams.toString();
+  return adminRequest<PaginatedResponse<AdminProduct>>(
+    `/api/admin/products/${queryString ? `?${queryString}` : ""}`,
+    token
+  );
+}
+
+/**
+ * GET /api/admin/products/<id>/
+ * Requires 'products.admin.manage' or 'products.view' (CanViewAdminProducts).
+ */
+export async function getAdminProductDetail(
+  token: string,
+  id: number | string
+): Promise<AdminProduct> {
+  return adminRequest<AdminProduct>(`/api/admin/products/${id}/`, token);
+}
+
+/**
+ * POST /api/admin/products/<id>/status/
+ *
+ * CanChangeAdminProductStatus only gates ENTRY to the endpoint (holding any one
+ * of products.admin.manage / .approve / .reject / .publish is enough to reach
+ * it). AdminProductStatusAPIView._update_status then enforces the real per-action
+ * mapping and raises PermissionDenied for an action the caller cannot perform —
+ * so a 403 here is action-specific, not module-wide.
+ *
+ * 'publish' additionally validates that the owning shop is APPROVED/ACTIVE and
+ * the seller is operational, returning 400 when it is not. Those fields are not
+ * in AdminProductSerializer, so that error can only be surfaced, never predicted.
+ *
+ * The response body is the updated AdminProductSerializer payload, which the
+ * caller should treat as authoritative rather than optimistically guessing the
+ * resulting status.
+ */
+export async function updateAdminProductStatus(
+  token: string,
+  id: number | string,
+  payload: AdminProductStatusPayload
+): Promise<AdminProduct> {
+  return adminRequest<AdminProduct>(`/api/admin/products/${id}/status/`, token, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
