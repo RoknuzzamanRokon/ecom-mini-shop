@@ -672,3 +672,127 @@ export async function deleteAdminCategory(
     method: "DELETE",
   });
 }
+
+// ==============================================================================
+// CUSTOMER DIRECTORY (Phase 1F) — STRICTLY READ-ONLY
+// ==============================================================================
+//
+// The backend exposes GET only: AdminCustomerListAPIView and
+// AdminCustomerDetailAPIView define no post/patch/delete handler, so there is
+// no customer mutation endpoint to call and none is modelled here.
+//
+// Both serializers declare `read_only_fields = fields` and neither includes a
+// password, hash, token or any other credential — verified by enumerating
+// their bound fields, and covered by the existing backend test
+// `test_user_and_customer_apis_exclude_passwords_and_tokens`.
+
+/** Mirrors AdminCustomerListSerializer field-for-field. */
+export interface AdminCustomerListItem {
+  /** CustomerProfile primary key — the id the detail route takes. */
+  id: number;
+  /** The underlying auth user's id (source="user.id"). */
+  user_id: number;
+  username: string;
+  email: string;
+  /** CustomerProfile.display_name; blank when the customer never set one. */
+  display_name: string;
+  phone: string;
+  /** Exact CustomerProfile.GENDER_CHOICES value, or "" (the field is blank=True). */
+  gender: string;
+  /** source="user.is_active" — the auth account flag, not a profile field. */
+  is_active: boolean;
+  /** SerializerMethodField: Order.objects.filter(user=...).count(). */
+  orders_count: number;
+  created_at: string;
+}
+
+/** One entry of AdminCustomerDetailSerializer.get_addresses (a hand-built dict). */
+export interface AdminCustomerAddress {
+  id: number;
+  label: string;
+  recipient_name: string;
+  phone: string;
+  address_line_1: string;
+  city: string;
+  is_default: boolean;
+}
+
+/**
+ * One entry of AdminCustomerDetailSerializer.get_recent_orders — the five most
+ * recent orders, already trimmed by the backend. Deliberately not a full order
+ * model: these five fields are everything that method returns.
+ */
+export interface AdminCustomerRecentOrder {
+  id: number;
+  order_number: string;
+  /** Exact Order.STATUS_CHOICES value. */
+  status: string;
+  /** DecimalField serialized with str() by the backend. */
+  total_amount: string;
+  created_at: string;
+}
+
+/** Mirrors AdminCustomerDetailSerializer field-for-field. */
+export interface AdminCustomerDetail {
+  id: number;
+  user_id: number;
+  username: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  display_name: string;
+  phone: string;
+  gender: string;
+  date_of_birth: string | null;
+  is_active: boolean;
+  date_joined: string;
+  addresses: AdminCustomerAddress[];
+  orders_count: number;
+  recent_orders: AdminCustomerRecentOrder[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminCustomerListParams {
+  page?: number;
+  page_size?: number;
+  /**
+   * Matches username / email / display_name / phone, case-insensitive
+   * (AdminCustomerListAPIView). It is the ONLY filter the endpoint supports —
+   * there is no status or date filter to expose.
+   */
+  search?: string;
+}
+
+/**
+ * GET /api/admin/customers/
+ * Requires 'customers.admin.view' (CanViewAdminCustomers).
+ */
+export async function getAdminCustomers(
+  token: string,
+  params?: AdminCustomerListParams
+): Promise<PaginatedResponse<AdminCustomerListItem>> {
+  const searchParams = new URLSearchParams();
+  if (params) {
+    if (params.page) searchParams.set("page", String(params.page));
+    if (params.page_size) searchParams.set("page_size", String(params.page_size));
+    if (params.search) searchParams.set("search", params.search);
+  }
+  const queryString = searchParams.toString();
+  return adminRequest<PaginatedResponse<AdminCustomerListItem>>(
+    `/api/admin/customers/${queryString ? `?${queryString}` : ""}`,
+    token
+  );
+}
+
+/**
+ * GET /api/admin/customers/<id>/
+ * Requires 'customers.admin.view' (CanViewAdminCustomers).
+ * `id` is the CustomerProfile pk, not the auth user id.
+ */
+export async function getAdminCustomerDetail(
+  token: string,
+  id: number | string
+): Promise<AdminCustomerDetail> {
+  return adminRequest<AdminCustomerDetail>(`/api/admin/customers/${id}/`, token);
+}
