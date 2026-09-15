@@ -378,6 +378,42 @@
     form.addEventListener("submit", function () { note.hidden = true; });
   }
 
+  /**
+   * Move the role formset's "add another" control up into the section header.
+   *
+   * inlines.js builds that link itself and appends it after the last form, and
+   * it only accepts a pre-existing button through a JS option Django never
+   * passes from the server. Relocating the node afterwards keeps the click
+   * handler inlines.js bound to it, so no behaviour is reimplemented here.
+   *
+   * A MutationObserver is used rather than running once: both this file and
+   * inlines.js act on DOM-ready and their order is not guaranteed, so the link
+   * may not exist yet when this runs.
+   */
+  function initRoleAddButton(root) {
+    var slot = root.querySelector("[data-mp-addrole-slot]");
+    var group = root.querySelector(".mp-roles");
+    if (!slot || !group) return;
+
+    function relocate() {
+      var addRow = group.querySelector(".add-row");
+      if (!addRow || addRow.parentNode === slot) return false;
+      slot.appendChild(addRow);
+      return true;
+    }
+
+    if (relocate()) return;
+
+    var observer = new MutationObserver(function () {
+      if (relocate()) observer.disconnect();
+    });
+    observer.observe(group, { childList: true, subtree: true });
+
+    // inlines.js hides the control once max_num is reached; stop watching
+    // regardless so the observer cannot outlive the page's settling.
+    window.setTimeout(function () { observer.disconnect(); }, 5000);
+  }
+
   ready(function () {
     var root = document.querySelector(".mp-shell");
     if (!root) return;
@@ -385,6 +421,7 @@
     initTabs(root);
     initSuperuser(root);
     initDirty(root);
+    initRoleAddButton(root);
 
     root.querySelectorAll("[data-pm-board]").forEach(function (board) {
       initBoard(board, root);

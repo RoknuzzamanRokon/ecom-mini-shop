@@ -166,9 +166,9 @@ class UserRoleInline(admin.TabularInline):
     audit fact, not an operator choice. Leaving it editable also meant rendering
     an unfiltered <select> of every user in the system on this page.
 
-    `permission_summary` ties the row to the permission board above it -- the
-    question an operator actually has here is "what does this role give them",
-    and the answer was previously nowhere on the page.
+    Each card shows what the role actually grants -- the question an operator
+    has here is "what does this role give them", and the answer was previously
+    nowhere on the page.
     """
 
     model = UserRole
@@ -177,19 +177,17 @@ class UserRoleInline(admin.TabularInline):
     # has to be named explicitly.
     fk_name = "user"
     autocomplete_fields = ["role"]
-    fields = ("role", "permission_summary", "is_active", "assigned_by", "assigned_at")
-    readonly_fields = ("permission_summary", "assigned_by", "assigned_at")
+    # Only the genuinely editable fields. The card reads the permission count,
+    # assigner and timestamp straight off the instance, so they need no
+    # readonly_fields plumbing and no admin-rendered labels.
+    fields = ("role", "is_active")
     verbose_name = _("role assignment")
     verbose_name_plural = _("Role assignments")
     template = "admin/edit_inline/mp_role.html"
 
-    @admin.display(description=_("Grants"))
-    def permission_summary(self, obj=None):
-        # Called with an unsaved instance for the empty "add another" row.
-        if obj is None or obj.pk is None or obj.role_id is None:
-            return "—"
-        count = obj.role.role_permissions.count()
-        return f"{count} permission{'' if count == 1 else 's'}"
+    def get_queryset(self, request):
+        # The card shows the role's code, name and permission count per row.
+        return super().get_queryset(request).select_related("role", "assigned_by")
 
 
 admin.site.unregister(User)

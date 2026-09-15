@@ -194,12 +194,20 @@
 
     {% block inline_field_sets %}
       <div class="mp-card mp-inlines">
-        <h2 class="mp-card-title">
-          <span class="material-symbols-outlined" aria-hidden="true">workspace_premium</span>
-          {% translate 'Assigned roles' %}
-        </h2>
+        <div class="mp-roles-header">
+          <h2 class="mp-card-title mp-roles-heading">
+            <span class="material-symbols-outlined" aria-hidden="true">shield_person</span>
+            {% translate 'Assigned roles' %}
+          </h2>
+          {% comment %}
+            inlines.js appends its "add another" link at the bottom of the
+            formset; admin_user_permission.js relocates it into this slot so the
+            control sits with the heading it belongs to.
+          {% endcomment %}
+          <span class="mp-roles-add-slot" data-mp-addrole-slot></span>
+        </div>
         <p class="mp-card-hint">
-          {% translate 'Roles grant permissions through the API layer. They are evaluated independently of the admin-panel checkboxes.' %}
+          {% translate 'Roles grant permissions through the API layer.' %}
         </p>
         {% for inline_admin_formset in inline_admin_formsets %}
           {% include inline_admin_formset.opts.template %}

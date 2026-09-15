@@ -454,5 +454,69 @@ class RoleAssignmentInlineTests(TestCase):
         )
         html = self.client.get(self.url).content.decode("utf-8", "replace")
         expected = self.role.role_permissions.count()
-        self.assertIn(f"{expected} permissions", html)
+        self.assertIn(f"<b>{expected}</b>&nbsp;Permissions", html)
         self.assertIn(self.role.code, html)
+        self.assertIn(self.role.name, html)
+        # The card links to where the role's permissions can actually be edited.
+        self.assertIn(f"/admin/rbac/role/{self.role.pk}/change/", html)
+
+    def test_status_and_remove_controls_keep_their_inputs(self):
+        """
+        The pill and the remove controls are labels over the real checkboxes.
+        If the inputs ever stop rendering, the form silently stops round-tripping
+        is_active and deletion, so both are pinned here.
+        """
+        UserRole.objects.create(
+            user=self.target, role=self.role, assigned_by=self.superadmin
+        )
+        html = self.client.get(self.url).content.decode("utf-8", "replace")
+
+        self.assertIn('name="user_roles-0-is_active"', html)
+        self.assertIn('name="user_roles-0-DELETE"', html)
+        self.assertIn("mp-role-status-pill", html)
+        self.assertIn("mp-role-remove", html)
+        # Both the header x and the footer link drive the same DELETE input.
+        self.assertEqual(html.count('for="id_user_roles-0-DELETE"'), 2)
+
+    def test_no_unrendered_template_syntax(self):
+        """A multi-line {# #} comment renders as literal text; guard against it."""
+        html = self.client.get(self.url).content.decode("utf-8", "replace")
+        self.assertNotIn("{#", html)
+        self.assertNotIn("{%", html)
+
+    def test_deactivating_via_the_pill_round_trips(self):
+        """Unticking the pill's checkbox must deactivate the assignment."""
+        UserRole.objects.create(
+            user=self.target, role=self.role, assigned_by=self.superadmin
+        )
+        response = self.client.post(
+            self.url,
+            {
+                "username": self.target.username,
+                "password": self.target.password,
+                "first_name": "",
+                "last_name": "",
+                "email": "",
+                "last_login_0": "",
+                "last_login_1": "",
+                "date_joined_0": self.target.date_joined.strftime("%Y-%m-%d"),
+                "date_joined_1": self.target.date_joined.strftime("%H:%M:%S"),
+                "user_roles-TOTAL_FORMS": "1",
+                "user_roles-INITIAL_FORMS": "1",
+                "user_roles-MIN_NUM_FORMS": "0",
+                "user_roles-MAX_NUM_FORMS": "1000",
+                "user_roles-0-id": str(
+                    UserRole.objects.get(user=self.target, role=self.role).pk
+                ),
+                "user_roles-0-user": str(self.target.pk),
+                "user_roles-0-role": str(self.role.pk),
+                # is_active omitted == unchecked
+                "_save": "Save",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(
+            UserRole.objects.get(user=self.target, role=self.role).is_active
+        )
+        # A deactivated role stops granting.
+        self.assertNotIn("orders.staff.view", get_user_permissions(self.target))

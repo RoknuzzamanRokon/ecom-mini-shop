@@ -2,20 +2,24 @@
 {% comment %}
   Role assignments as cards, for rbac.admin.UserRoleInline.
 
-  Django's stock tabular inline renders a <table> with a "Delete?" column and an
-  "original" cell repeating "<user> has role <CODE>" — fine for a generic admin,
-  out of place next to the permission boards on this page.
+  Fields are rendered explicitly rather than by looping the fieldset, because
+  the card is a designed layout rather than a label/value grid: the role's name,
+  code, permission count, assigner and timestamp are read straight off the
+  instance, and only `role` and `is_active` are real form inputs.
 
-  This uses data-inline-type="stacked", not "tabular". That is the supported
-  path for non-<tr> rows: inlines.js dispatches stacked on
-  "#<prefix>-group .inline-related" (any element), inserts the "add another"
-  control as a <div> after the last form, and appends the JS remove link to each
-  row's FIRST child — which is why the card header is first in the markup.
+  data-inline-type="stacked", not "tabular": that is the supported dispatch path
+  in inlines.js for non-<tr> rows. It selects "#<prefix>-group .inline-related"
+  (any element), clones "#<prefix>-empty" to add a row, and appends its JS remove
+  link to each new row's FIRST child -- hence the card header comes first.
 
-  Everything Django's formset machinery needs is still emitted: the
-  js-inline-admin-formset wrapper with data-inline-formset, the management form,
-  the pk/fk hidden inputs, the empty-form template at id "<prefix>-empty", the
-  DELETE checkbox for saved rows, and every error list.
+  Everything the formset machinery needs is still emitted: the
+  js-inline-admin-formset wrapper with its data-inline-formset payload, the
+  management form, pk/fk hidden inputs, the empty-form template, the DELETE
+  checkbox for saved rows, and every error list.
+
+  On a saved row the role <select> is kept but visually hidden: the formset
+  still needs the value posted back, while the card presents the role as text
+  (swapping an existing assignment's role is a remove-and-add, not an edit).
 {% endcomment %}
 <div class="js-inline-admin-formset inline-group mp-roles"
      id="{{ inline_admin_formset.formset.prefix }}-group"
@@ -27,20 +31,45 @@
 
   <div class="mp-roles-list">
     {% for inline_admin_form in inline_admin_formset %}
-      <div class="inline-related mp-role-card{% if forloop.last and inline_admin_formset.has_add_permission %} empty-form{% endif %}{% if inline_admin_form.form.DELETE.value %} is-removing{% endif %}"
+      {% with original=inline_admin_form.original %}
+      <div class="inline-related mp-role-card{% if forloop.last and inline_admin_formset.has_add_permission %} empty-form{% endif %}"
            id="{{ inline_admin_formset.formset.prefix }}-{% if forloop.last and inline_admin_formset.has_add_permission %}empty{% else %}{{ forloop.counter0 }}{% endif %}">
 
-        {# First child: inlines.js appends its remove link here on new rows. #}
+        {# First child: inlines.js appends its remove link here on unsaved rows. #}
         <div class="mp-role-head">
           <span class="mp-role-badge" aria-hidden="true">
-            <span class="material-symbols-outlined">workspace_premium</span>
+            <span class="material-symbols-outlined">shield_person</span>
           </span>
-          <span class="mp-role-title">
-            {% if inline_admin_form.original %}
-              {{ inline_admin_form.original.role.name }}
-              <code class="mp-role-code">{{ inline_admin_form.original.role.code }}</code>
+
+          <span class="mp-role-ident">
+            {% if original %}
+              <span class="mp-role-name">{{ original.role.name }}</span>
+              <code class="mp-role-code">{{ original.role.code }}</code>
             {% else %}
-              <span class="inline_label">{% translate 'New role assignment' %}</span>
+              <span class="mp-role-name inline_label">{% translate 'New role assignment' %}</span>
+            {% endif %}
+          </span>
+
+          <span class="mp-role-head-actions">
+            {# The is_active checkbox, drawn as a status pill. #}
+            <span class="mp-role-status">
+              {{ inline_admin_form.form.is_active }}
+              <label for="{{ inline_admin_form.form.is_active.id_for_label }}"
+                     class="mp-role-status-pill">
+                <span class="mp-role-dot" aria-hidden="true"></span>
+                <span class="mp-role-status-on">{% translate 'Active' %}</span>
+                <span class="mp-role-status-off">{% translate 'Inactive' %}</span>
+              </label>
+            </span>
+
+            {% if inline_admin_formset.formset.can_delete and inline_admin_formset.has_delete_permission and original %}
+              {# Same DELETE checkbox as "Remove role" below; two labels, one input. #}
+              <label for="{{ inline_admin_form.deletion_field.field.id_for_label }}"
+                     class="mp-role-x"
+                     title="{% translate 'Remove this role' %}">
+                <span class="material-symbols-outlined" aria-hidden="true">close</span>
+                <span class="mp-role-sr">{% translate 'Remove this role' %}</span>
+              </label>
             {% endif %}
           </span>
         </div>
@@ -49,39 +78,60 @@
           <div class="mp-role-errors">{{ inline_admin_form.form.non_field_errors }}</div>
         {% endif %}
 
-        <div class="mp-role-fields">
-          {% for fieldset in inline_admin_form %}
-            {% for line in fieldset %}
-              {% for field in line %}
-                <div class="mp-role-field{% if field.field.name %} field-{{ field.field.name }}{% endif %}{% if field.field.is_hidden %} hidden{% endif %}">
-                  {# Works for both: AdminReadonlyField.field is a dict with a
-                     "label" key, and a BoundField has a .label attribute. #}
-                  <span class="mp-role-label">{{ field.field.label|capfirst }}</span>
-                  {% if field.is_readonly %}
-                    <span class="mp-role-value">{{ field.contents }}</span>
-                  {% else %}
-                    {{ field.field.errors.as_ul }}
-                    <span class="mp-role-control">{{ field.field }}</span>
-                  {% endif %}
-                </div>
-              {% endfor %}
-            {% endfor %}
-          {% endfor %}
+        <div class="mp-role-body">
+          {% if original %}
+            <p class="mp-role-fact">
+              <span class="material-symbols-outlined" aria-hidden="true">key</span>
+              <b>{{ original.role.role_permissions.count }}</b>&nbsp;{% translate 'Permissions' %}
+            </p>
+            <p class="mp-role-fact mp-role-meta">
+              <span class="material-symbols-outlined" aria-hidden="true">person</span>
+              {% if original.assigned_by %}
+                {% blocktranslate trimmed with who=original.assigned_by %}
+                  Assigned by {{ who }}
+                {% endblocktranslate %}
+              {% else %}
+                {% translate 'Assigner not recorded' %}
+              {% endif %}
+            </p>
+            <p class="mp-role-fact mp-role-meta">
+              <span class="material-symbols-outlined" aria-hidden="true">calendar_month</span>
+              {{ original.assigned_at|date:"M j, Y" }} &middot; {{ original.assigned_at|date:"g:i A" }}
+            </p>
+          {% endif %}
+
+          {# Editable on a new row; posted but hidden once saved. #}
+          <div class="mp-role-select{% if original %} mp-role-select-locked{% endif %}">
+            {% if not original %}
+              <span class="mp-role-select-label">{{ inline_admin_form.form.role.label }}</span>
+            {% endif %}
+            {{ inline_admin_form.form.role.errors.as_ul }}
+            {{ inline_admin_form.form.role }}
+          </div>
         </div>
 
-        <div class="mp-role-foot">
-          {% if inline_admin_formset.formset.can_delete and inline_admin_formset.has_delete_permission and inline_admin_form.original %}
-            <label class="mp-role-remove">
-              {{ inline_admin_form.deletion_field.field }}
-              <span class="material-symbols-outlined" aria-hidden="true">delete</span>
-              {% translate 'Remove this assignment' %}
-            </label>
-          {% endif %}
-        </div>
+        {% if original %}
+          <div class="mp-role-foot">
+            <a class="mp-role-link"
+               href="{% url 'admin:rbac_role_change' original.role_id %}">
+              <span class="material-symbols-outlined" aria-hidden="true">visibility</span>
+              {% translate 'View permissions' %}
+            </a>
+
+            {% if inline_admin_formset.formset.can_delete and inline_admin_formset.has_delete_permission %}
+              <label for="{{ inline_admin_form.deletion_field.field.id_for_label }}"
+                     class="mp-role-remove">
+                {{ inline_admin_form.deletion_field.field }}
+                {% translate 'Remove role' %}
+              </label>
+            {% endif %}
+          </div>
+        {% endif %}
 
         {% if inline_admin_form.needs_explicit_pk_field %}{{ inline_admin_form.pk_field.field }}{% endif %}
         {% if inline_admin_form.fk_field %}{{ inline_admin_form.fk_field.field }}{% endif %}
       </div>
+      {% endwith %}
     {% endfor %}
   </div>
 </div>
