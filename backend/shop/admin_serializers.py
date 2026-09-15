@@ -9,7 +9,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 
 from rbac.models import Role, Permission, UserRole
-from rbac.services import get_user_role_codes
+from rbac.services import get_user_permissions, get_user_role_codes
 from sellers.models import SellerProfile
 from shops.models import Shop
 from shop.models import Category, Product, Order
@@ -61,6 +61,8 @@ class AdminUserListSerializer(serializers.ModelSerializer):
 
 class AdminUserDetailSerializer(serializers.ModelSerializer):
     roles = serializers.SerializerMethodField()
+    permissions = serializers.SerializerMethodField()
+    has_full_platform_access = serializers.SerializerMethodField()
     customer_profile = serializers.SerializerMethodField()
     seller_profile = serializers.SerializerMethodField()
 
@@ -76,6 +78,8 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
             "is_staff",
             "is_superuser",
             "roles",
+            "permissions",
+            "has_full_platform_access",
             "customer_profile",
             "seller_profile",
             "date_joined",
@@ -85,6 +89,24 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
 
     def get_roles(self, obj):
         return sorted(list(get_user_role_codes(obj)))
+
+    def get_permissions(self, obj):
+        """
+        The user's EFFECTIVE MiniShop permissions, resolved by the one and only
+        resolver the API authorization layer itself uses
+        (rbac.services.get_user_permissions). The console displays this set; it
+        never recomputes it from roles, which would make the frontend a second
+        source of truth for authorization.
+
+        The "*" wildcard is stripped: it is a full-access marker, not an
+        assignable permission, and is reported separately by
+        has_full_platform_access so a client cannot mistake it for a real grant.
+        """
+        return sorted(code for code in get_user_permissions(obj) if code != "*")
+
+    def get_has_full_platform_access(self, obj):
+        """True when this account resolves to the wildcard ("*") permission."""
+        return "*" in get_user_permissions(obj)
 
     def get_customer_profile(self, obj):
         if not hasattr(obj, "customer_profile"):
@@ -190,6 +212,40 @@ class AdminRoleUpdateSerializer(serializers.Serializer):
         required=False,
     )
     reason = serializers.CharField(required=True, max_length=500)
+
+
+# ==============================================================================
+# PERMISSION CATALOGUE SERIALIZER
+# ==============================================================================
+
+class AdminPermissionSerializer(serializers.ModelSerializer):
+    """
+    Read-only projection of one rbac.Permission for the role permission
+    selector, plus whether the REQUESTING user may delegate it.
+
+    `is_delegatable` is supplied by the view from
+    rbac.services.get_delegatable_permission_codes(request.user) — the same
+    boundary the role create/update endpoints enforce — so it is a property of
+    the (actor, permission) pair, not of the permission itself.
+    """
+
+    is_delegatable = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Permission
+        fields = [
+            "id",
+            "code",
+            "name",
+            "resource",
+            "action",
+            "description",
+            "is_delegatable",
+        ]
+        read_only_fields = fields
+
+    def get_is_delegatable(self, obj):
+        return obj.code in self.context.get("delegatable_codes", set())
 
 
 # ==============================================================================

@@ -13,6 +13,38 @@ export const MANAGEMENT_ROLES = [
 export type ManagementRole = (typeof MANAGEMENT_ROLES)[number];
 
 /**
+ * Mirrors PROTECTED_ROLE_CODES in shop/admin_serializers.py, verbatim.
+ *
+ * The backend refuses to update or delete a role with one of these codes for
+ * EVERY caller, superuser included, and refuses to let a non-Super
+ * Administrator assign one to a user. Both rules are enforced server-side; this
+ * constant only lets the console explain them instead of rendering controls
+ * that are certain to fail.
+ */
+export const PROTECTED_ROLE_CODES = ["SUPER_ADMINISTRATOR", "ADMINISTRATOR"] as const;
+
+export const SUPER_ADMINISTRATOR_CODE = "SUPER_ADMINISTRATOR";
+
+export function isProtectedRoleCode(code: string): boolean {
+  return (PROTECTED_ROLE_CODES as readonly string[]).includes(code);
+}
+
+/**
+ * Whether the SIGNED-IN operator holds wildcard authority.
+ *
+ * rbac.services.get_user_permissions answers "*" for Django superusers and for
+ * SUPER_ADMINISTRATOR role holders, and /api/auth/me/ carries every signal
+ * needed to recognise both, so this matches the backend's own `actor_is_super`
+ * without an extra request. UI only — the backend re-derives it per request.
+ */
+export function isSuperAdministrator(user: AuthUser | null | undefined): boolean {
+  if (!user) return false;
+  if (user.is_superuser) return true;
+  if ((user.permissions || []).includes("*")) return true;
+  return (user.roles || []).includes(SUPER_ADMINISTRATOR_CODE);
+}
+
+/**
  * Checks whether an authenticated user is eligible for management console access.
  * Must possess at least one management role, have is_superuser/is_staff,
  * or possess the 'admin:access' / '*' permission.

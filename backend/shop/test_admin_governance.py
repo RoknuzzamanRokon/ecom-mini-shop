@@ -10,7 +10,7 @@ from rest_framework.test import APITestCase
 from audit.models import AuditLog
 from customers.models import Address, CustomerProfile
 from rbac.models import Permission, Role, RolePermission, UserRole
-from rbac.services import assign_user_role, get_user_role_codes
+from rbac.services import assign_user_role, get_user_permissions, get_user_role_codes
 from sellers.models import SellerProfile
 from shop.models import Category, Product
 from shops.models import Shop
@@ -616,3 +616,282 @@ class AdminGovernanceTests(APITestCase):
         self.assertIn("count", res.data)
         self.assertIn("results", res.data)
         self.assertIsInstance(res.data["results"], list)
+
+
+class AdminPermissionDelegationTests(APITestCase):
+    """
+    Phase 1G-A: the permission-delegation boundary and the catalogue endpoint
+    that lets the Management Console preview it.
+
+    The governance rule under test is "you may only give away what you already
+    hold": a non-wildcard user creating or editing a role may attach a
+    permission only if it is in their own effective permission set.
+
+    NOTE ON FIXTURES: none of these tests alters a seeded role's permissions.
+    The delegator below is an isolated, test-only role built from a controlled
+    subset of the real catalogue, so the suite never has to grant
+    OPERATION_MANAGER (or any other shipped role) an extra permission just to
+    make a scenario reachable.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_rbac")
+
+        cls.superadmin = User.objects.create_superuser(
+            username="deleg_superadmin",
+            email="deleg_super@minishop.com",
+            password="SuperPassword123!",
+        )
+        assign_user_role(cls.superadmin, Role.ROLE_SUPER_ADMINISTRATOR)
+
+        # Isolated test-only role: may administer roles, and holds exactly two
+        # business permissions it is therefore allowed to delegate.
+        cls.DELEGATABLE_BUSINESS_PERMS = ["sellers.view", "sellers.create"]
+        cls.delegator_role = Role.objects.create(
+            code="TEST_DELEGATOR",
+            name="Test Delegator",
+            description="Isolated Phase 1G-A fixture. Not a shipped role.",
+        )
+        for code in ["roles.admin.view", "roles.admin.manage"] + cls.DELEGATABLE_BUSINESS_PERMS:
+            RolePermission.objects.create(
+                role=cls.delegator_role,
+                permission=Permission.objects.get(code=code),
+            )
+
+        cls.delegator = User.objects.create_user(
+            username="deleg_actor",
+            email="deleg_actor@minishop.com",
+            password="DelegatorPassword123!",
+            is_staff=True,
+        )
+        assign_user_role(cls.delegator, "TEST_DELEGATOR")
+
+        # Holds no RBAC governance permission at all.
+        cls.outsider = User.objects.create_user(
+            username="deleg_outsider",
+            email="deleg_outsider@minishop.com",
+            password="OutsiderPassword123!",
+        )
+        assign_user_role(cls.outsider, Role.ROLE_CUSTOMER)
+
+    # ==========================================================================
+    # PERMISSION CATALOGUE ENDPOINT
+    # ==========================================================================
+
+    def test_permission_catalogue_requires_authentication(self):
+        res = self.client.get("/api/admin/permissions/")
+        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_permission_catalogue_requires_roles_admin_view(self):
+        """A user without 'roles.admin.view' cannot read the catalogue."""
+        self.client.force_authenticate(user=self.outsider)
+        res = self.client.get("/api/admin/permissions/")
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_permission_catalogue_returns_full_seeded_catalogue(self):
+        """The catalogue is the database's, never a hardcoded client-side list."""
+        self.client.force_authenticate(user=self.superadmin)
+        res = self.client.get("/api/admin/permissions/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+        expected = set(Permission.objects.values_list("code", flat=True))
+        returned = {row["code"] for row in res.data["results"]}
+        self.assertEqual(returned, expected)
+        self.assertEqual(res.data["count"], len(expected))
+
+        # Every row carries what the selector groups and labels by.
+        for row in res.data["results"]:
+            self.assertIn("resource", row)
+            self.assertIn("action", row)
+            self.assertIn("name", row)
+            self.assertIn("is_delegatable", row)
+
+    def test_super_administrator_may_delegate_everything(self):
+        """Wildcard access is reported as such, not expanded into N grants."""
+        self.client.force_authenticate(user=self.superadmin)
+        res = self.client.get("/api/admin/permissions/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertTrue(res.data["has_full_platform_access"])
+        self.assertEqual(res.data["delegatable_count"], res.data["count"])
+        self.assertTrue(all(row["is_delegatable"] for row in res.data["results"]))
+
+    def test_catalogue_delegatable_flags_match_actor_effective_permissions(self):
+        """
+        For a non-wildcard actor, the delegatable set is exactly their own
+        effective permission set — no more, and nothing silently hidden.
+        """
+        self.client.force_authenticate(user=self.delegator)
+        res = self.client.get("/api/admin/permissions/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertFalse(res.data["has_full_platform_access"])
+
+        delegatable = {row["code"] for row in res.data["results"] if row["is_delegatable"]}
+        self.assertEqual(delegatable, get_user_permissions(self.delegator))
+
+        for code in self.DELEGATABLE_BUSINESS_PERMS:
+            self.assertIn(code, delegatable)
+        self.assertNotIn("users.admin.manage", delegatable)
+
+    # ==========================================================================
+    # DELEGATION ENFORCEMENT ON ROLE CREATION
+    # ==========================================================================
+
+    def test_delegator_can_create_role_with_permissions_it_holds(self):
+        self.client.force_authenticate(user=self.delegator)
+        res = self.client.post(
+            "/api/admin/roles/",
+            data={
+                "code": "MANAGER",
+                "name": "Manager",
+                "permissions": self.DELEGATABLE_BUSINESS_PERMS,
+                "reason": "Phase 1G-A delegation scenario",
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        created = Role.objects.get(code="MANAGER")
+        self.assertEqual(
+            set(created.permissions.values_list("code", flat=True)),
+            set(self.DELEGATABLE_BUSINESS_PERMS),
+        )
+
+    def test_delegator_cannot_create_role_with_permission_it_lacks(self):
+        """The §31 escalation attempt: granting away users.admin.manage."""
+        self.client.force_authenticate(user=self.delegator)
+        res = self.client.post(
+            "/api/admin/roles/",
+            data={
+                "code": "ESCALATED_MANAGER",
+                "name": "Escalated Manager",
+                "permissions": ["sellers.view", "users.admin.manage"],
+                "reason": "Attempting to delegate beyond own authority",
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(Role.objects.filter(code="ESCALATED_MANAGER").exists())
+
+    def test_every_locked_catalogue_row_is_actually_rejected(self):
+        """
+        The console's lock icon must be a faithful preview of a backend refusal.
+        Asserts the two sides agree for a sample of non-delegatable codes rather
+        than trusting that they were derived from the same helper.
+        """
+        self.client.force_authenticate(user=self.delegator)
+        catalogue = self.client.get("/api/admin/permissions/")
+        locked = sorted(
+            row["code"] for row in catalogue.data["results"] if not row["is_delegatable"]
+        )
+        self.assertTrue(locked, "fixture must leave some permissions undelegatable")
+
+        for index, code in enumerate(locked[:5]):
+            res = self.client.post(
+                "/api/admin/roles/",
+                data={
+                    "code": f"LOCKED_PROBE_{index}",
+                    "name": f"Locked Probe {index}",
+                    "permissions": [code],
+                    "reason": "Verifying the locked preview matches enforcement",
+                },
+                format="json",
+            )
+            self.assertEqual(
+                res.status_code,
+                status.HTTP_403_FORBIDDEN,
+                msg=f"catalogue locked '{code}' but the role endpoint accepted it",
+            )
+
+    # ==========================================================================
+    # DELEGATION ENFORCEMENT ON ROLE UPDATE
+    # ==========================================================================
+
+    def test_delegator_cannot_add_undelegatable_permission_to_existing_role(self):
+        self.client.force_authenticate(user=self.delegator)
+        role = Role.objects.create(code="EDIT_TARGET", name="Edit Target")
+        RolePermission.objects.create(
+            role=role, permission=Permission.objects.get(code="sellers.view")
+        )
+
+        res = self.client.patch(
+            f"/api/admin/roles/{role.id}/",
+            data={
+                "permissions": ["sellers.view", "users.admin.manage"],
+                "reason": "Attempting to widen a role beyond own authority",
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(
+            set(role.permissions.values_list("code", flat=True)), {"sellers.view"}
+        )
+
+    def test_delegator_can_update_role_within_its_authority(self):
+        self.client.force_authenticate(user=self.delegator)
+        role = Role.objects.create(code="WIDEN_TARGET", name="Widen Target")
+        RolePermission.objects.create(
+            role=role, permission=Permission.objects.get(code="sellers.view")
+        )
+
+        res = self.client.patch(
+            f"/api/admin/roles/{role.id}/",
+            data={
+                "permissions": self.DELEGATABLE_BUSINESS_PERMS,
+                "reason": "Granting a permission the actor holds",
+            },
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            set(role.permissions.values_list("code", flat=True)),
+            set(self.DELEGATABLE_BUSINESS_PERMS),
+        )
+
+    def test_delegator_cannot_reach_super_administrator_through_role_editing(self):
+        """Protected roles stay protected regardless of delegation authority."""
+        self.client.force_authenticate(user=self.delegator)
+        super_role = Role.objects.get(code=Role.ROLE_SUPER_ADMINISTRATOR)
+        res = self.client.patch(
+            f"/api/admin/roles/{super_role.id}/",
+            data={"permissions": ["sellers.view"], "reason": "Tamper attempt"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(super_role.permissions.count(), Permission.objects.count())
+
+    # ==========================================================================
+    # EFFECTIVE PERMISSIONS ON THE USER DETAIL PAYLOAD
+    # ==========================================================================
+
+    def test_user_detail_exposes_effective_permissions_without_credentials(self):
+        self.client.force_authenticate(user=self.superadmin)
+        res = self.client.get(f"/api/admin/users/{self.delegator.id}/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+        self.assertEqual(set(res.data["permissions"]), get_user_permissions(self.delegator))
+        self.assertFalse(res.data["has_full_platform_access"])
+        self.assertNotIn("*", res.data["permissions"])
+
+        body = json.dumps(res.data)
+        for leaked in ("password", "token", "secret"):
+            self.assertNotIn(leaked, body.lower())
+
+    def test_user_detail_reports_wildcard_for_super_administrator(self):
+        """
+        Full platform access is flagged, and "*" never appears as an assignable
+        code in the permission list.
+        """
+        self.client.force_authenticate(user=self.superadmin)
+        res = self.client.get(f"/api/admin/users/{self.superadmin.id}/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertTrue(res.data["has_full_platform_access"])
+        self.assertNotIn("*", res.data["permissions"])
+        self.assertEqual(
+            set(res.data["permissions"]),
+            set(Permission.objects.values_list("code", flat=True)),
+        )
+
+    def test_user_detail_effective_permissions_require_view_permission(self):
+        self.client.force_authenticate(user=self.outsider)
+        res = self.client.get(f"/api/admin/users/{self.delegator.id}/")
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)

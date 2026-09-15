@@ -124,3 +124,76 @@ def remove_user_role(user, role_code: str) -> bool:
         is_active=False
     )
     return bool(updated)
+
+
+def has_wildcard_delegation(actor) -> bool:
+    """
+    Whether `actor` holds the "*" wildcard and may therefore delegate anything.
+
+    True for Django superusers and SUPER_ADMINISTRATOR role holders — exactly
+    the two cases get_user_permissions() answers with the "*" wildcard. This is
+    the single definition of "full platform access": the delegation helpers
+    below branch on it, and the admin permission catalogue reports it verbatim.
+    """
+    if not actor or not actor.is_authenticated:
+        return False
+    if actor.is_superuser:
+        return True
+    return "*" in get_user_permissions(actor)
+
+
+def get_delegatable_permission_codes(actor) -> Set[str]:
+    """
+    The permission codes `actor` is authorized to grant to a role.
+
+    MiniShop defines the delegation boundary as "you may only give away what you
+    already hold": a user creating or editing a role may attach a permission
+    only if that permission is part of their own effective permission set. A
+    wildcard holder (superuser / SUPER_ADMINISTRATOR) may delegate the entire
+    seeded catalogue.
+
+    This is the DISPLAY projection of the boundary, used by the admin permission
+    catalogue endpoint to mark each permission selectable or locked. The
+    ENFORCEMENT side is get_undelegatable_permission_codes(); both read the same
+    effective permission set, so the console can never offer a permission the
+    role endpoints would then reject.
+
+    Note that this is deliberately not the same question as "what can this user
+    do" — effective permissions are resolved by get_user_permissions() and
+    include the "*" marker, which is not a real, assignable permission and is
+    therefore never returned here.
+    """
+    if not actor or not actor.is_authenticated:
+        return set()
+
+    if has_wildcard_delegation(actor):
+        return set(Permission.objects.values_list("code", flat=True))
+
+    return {code for code in get_user_permissions(actor) if code != "*"}
+
+
+def get_undelegatable_permission_codes(actor, requested_codes) -> Set[str]:
+    """
+    The subset of `requested_codes` that `actor` may NOT grant to a role.
+
+    An empty result means the whole request is authorized. This is the single
+    enforcement point behind the anti-escalation checks in
+    AdminRoleListCreateAPIView.post and AdminRoleDetailAPIView.patch, so the
+    rule cannot drift between role creation and role editing.
+
+    A wildcard holder is unrestricted, including for codes that are not in the
+    catalogue at all — those are silently dropped later by the
+    Permission.objects.filter(code__in=...) lookup that actually attaches the
+    grants, which is the behaviour this endpoint has always had.
+    """
+    requested = set(requested_codes)
+    if not requested:
+        return set()
+
+    if not actor or not actor.is_authenticated:
+        return requested
+
+    if has_wildcard_delegation(actor):
+        return set()
+
+    return requested - get_user_permissions(actor)

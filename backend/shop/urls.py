@@ -63,6 +63,7 @@ urlpatterns = [
     path("api/admin/users/<int:pk>/", api_views.AdminUserDetailAPIView.as_view(), name="admin_users_detail"),
     path("api/admin/roles/", api_views.AdminRoleListCreateAPIView.as_view(), name="admin_roles_list_create"),
     path("api/admin/roles/<int:pk>/", api_views.AdminRoleDetailAPIView.as_view(), name="admin_roles_detail"),
+    path("api/admin/permissions/", api_views.AdminPermissionCatalogAPIView.as_view(), name="admin_permissions_catalog"),
     path("api/admin/sellers/", api_views.AdminSellerListAPIView.as_view(), name="admin_sellers_list"),
     path("api/admin/sellers/<int:pk>/", api_views.AdminSellerDetailAPIView.as_view(), name="admin_sellers_detail"),
     path("api/admin/sellers/<int:pk>/status/", api_views.AdminSellerStatusAPIView.as_view(), name="admin_sellers_status"),

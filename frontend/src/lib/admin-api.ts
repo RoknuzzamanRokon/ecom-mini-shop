@@ -796,3 +796,352 @@ export async function getAdminCustomerDetail(
 ): Promise<AdminCustomerDetail> {
   return adminRequest<AdminCustomerDetail>(`/api/admin/customers/${id}/`, token);
 }
+
+// ==============================================================================
+// USER & ROLE GOVERNANCE (Phase 1G-A)
+// ==============================================================================
+//
+// MiniShop RBAC resolves authorization as:
+//     User -> UserRole -> Role -> RolePermission -> Permission
+// Every type below models that chain as the backend already exposes it. There
+// is no direct user->permission write path in this console: the admin user
+// endpoint accepts `is_active` and `roles` only, so role assignment is the only
+// way this UI can change what a user may do.
+//
+// Django's own auth.Permission / user_permissions system is a SEPARATE
+// mechanism that gates Django Admin. It is not modelled here and is never used
+// as the authority for MiniShop permissions.
+
+/** Mirrors AdminUserListSerializer field-for-field (`read_only_fields = fields`). */
+export interface AdminUserListItem {
+  id: number;
+  username: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  is_active: boolean;
+  /** Django Admin access flag — NOT a MiniShop RBAC permission. */
+  is_staff: boolean;
+  /** Django superuser flag; resolves to full MiniShop access in rbac.services. */
+  is_superuser: boolean;
+  /** Active MiniShop role codes, e.g. ["OPERATION_MANAGER"]. */
+  roles: string[];
+  /** CustomerProfile pk when the account has one, else null. */
+  customer_profile_id: number | null;
+  /** SellerProfile pk when the account has one, else null. */
+  seller_profile_id: number | null;
+  date_joined: string;
+  last_login: string | null;
+}
+
+/** AdminUserDetailSerializer.get_customer_profile — exactly these four keys. */
+export interface AdminUserCustomerProfileSummary {
+  id: number;
+  display_name: string;
+  phone: string;
+  gender: string;
+}
+
+/** AdminUserDetailSerializer.get_seller_profile — exactly these seven keys. */
+export interface AdminUserSellerProfileSummary {
+  id: number;
+  business_name: string;
+  business_email: string;
+  business_phone: string;
+  /** SellerProfile.SELLER_TYPE_CHOICES — a business attribute, not an RBAC role. */
+  seller_type: string;
+  status: string;
+  is_operational: boolean;
+}
+
+/**
+ * Mirrors AdminUserDetailSerializer. Like every admin serializer it declares
+ * `read_only_fields = fields` and exposes no password, hash, token or other
+ * credential — asserted by the backend tests
+ * `test_user_and_customer_apis_exclude_passwords_and_tokens` and
+ * `test_user_detail_exposes_effective_permissions_without_credentials`.
+ */
+export interface AdminUserDetail {
+  id: number;
+  username: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  is_active: boolean;
+  is_staff: boolean;
+  is_superuser: boolean;
+  roles: string[];
+  /**
+   * EFFECTIVE MiniShop permissions, resolved server-side by
+   * rbac.services.get_user_permissions — the same resolver every DRF permission
+   * class calls. The console displays this; it never recomputes it from roles.
+   * The "*" wildcard is stripped by the serializer and reported separately.
+   */
+  permissions: string[];
+  /** True when the account resolves to "*" (superuser / SUPER_ADMINISTRATOR). */
+  has_full_platform_access: boolean;
+  customer_profile: AdminUserCustomerProfileSummary | null;
+  seller_profile: AdminUserSellerProfileSummary | null;
+  date_joined: string;
+  last_login: string | null;
+}
+
+export interface AdminUserListParams {
+  page?: number;
+  page_size?: number;
+  /** Matches username / email / first_name / last_name, case-insensitive. */
+  search?: string;
+  /** The backend parses "true"/"1" and "false"/"0"; anything else is ignored. */
+  is_active?: boolean;
+  /** Exact Role.code — filters on an ACTIVE UserRole for that role. */
+  role?: string;
+}
+
+/**
+ * The writable surface of AdminUserUpdateSerializer, in full.
+ *
+ * `reason` is REQUIRED by the serializer on every call and is written to the
+ * AuditLog entry for the change. There is deliberately nothing else here:
+ * username, email and name are not editable through this endpoint, and no
+ * password field exists on it at all.
+ */
+export interface AdminUserUpdatePayload {
+  is_active?: boolean;
+  /**
+   * The COMPLETE desired set of role codes — the backend diffs it against the
+   * user's current roles and assigns/removes accordingly. Omit the key entirely
+   * to leave role assignments untouched.
+   */
+  roles?: string[];
+  reason: string;
+}
+
+/**
+ * GET /api/admin/users/
+ * Requires 'users.admin.view' (CanViewAdminUsers).
+ */
+export async function getAdminUsers(
+  token: string,
+  params?: AdminUserListParams
+): Promise<PaginatedResponse<AdminUserListItem>> {
+  const searchParams = new URLSearchParams();
+  if (params) {
+    if (params.page) searchParams.set("page", String(params.page));
+    if (params.page_size) searchParams.set("page_size", String(params.page_size));
+    if (params.search) searchParams.set("search", params.search);
+    if (params.is_active !== undefined) searchParams.set("is_active", String(params.is_active));
+    if (params.role) searchParams.set("role", params.role);
+  }
+  const queryString = searchParams.toString();
+  return adminRequest<PaginatedResponse<AdminUserListItem>>(
+    `/api/admin/users/${queryString ? `?${queryString}` : ""}`,
+    token
+  );
+}
+
+/**
+ * GET /api/admin/users/<id>/
+ * Requires 'users.admin.view' (CanViewAdminUsers). `id` is the auth user pk.
+ */
+export async function getAdminUserDetail(
+  token: string,
+  id: number | string
+): Promise<AdminUserDetail> {
+  return adminRequest<AdminUserDetail>(`/api/admin/users/${id}/`, token);
+}
+
+/**
+ * PATCH /api/admin/users/<id>/
+ * Requires 'users.admin.manage' (CanManageAdminUsers).
+ *
+ * AdminUserDetailAPIView.patch enforces, in order and independently of this
+ * client: only a Super Administrator may modify a Super Administrator account
+ * or grant/revoke SUPER_ADMINISTRATOR or any protected role; nobody may change
+ * their OWN roles; and the last active Super Administrator cannot be
+ * deactivated. Each refusal is a 403 (or 400 for the last-superadmin rule) that
+ * the console surfaces verbatim rather than pre-empting.
+ *
+ * Returns the full updated AdminUserDetail, which the caller should treat as
+ * authoritative instead of optimistically guessing the resulting state.
+ */
+export async function updateAdminUser(
+  token: string,
+  id: number | string,
+  payload: AdminUserUpdatePayload
+): Promise<AdminUserDetail> {
+  return adminRequest<AdminUserDetail>(`/api/admin/users/${id}/`, token, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * Mirrors AdminRoleSerializer field-for-field.
+ *
+ * `permissions` is a flat list of Permission.code strings — the role's grants
+ * via RolePermission, which is the only permission-bearing relation MiniShop
+ * RBAC uses for roles.
+ */
+export interface AdminRole {
+  id: number;
+  /** Machine-readable unique code, e.g. "OPERATION_MANAGER". Immutable after creation. */
+  code: string;
+  name: string;
+  description: string;
+  is_active: boolean;
+  /**
+   * True for the codes in PROTECTED_ROLE_CODES (SUPER_ADMINISTRATOR,
+   * ADMINISTRATOR). The backend refuses to update or delete these for ANY
+   * caller, superuser included, so the console offers no such control.
+   */
+  is_protected: boolean;
+  permissions: string[];
+  /** Count of ACTIVE UserRole rows — the role's current holders. */
+  user_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** The writable surface of AdminRoleCreateSerializer, in full. */
+export interface AdminRoleCreatePayload {
+  /** Upper-cased by the backend; must be unique and not a protected code. */
+  code: string;
+  name: string;
+  description?: string;
+  /** Permission codes. Every one is re-validated against the actor's delegation boundary. */
+  permissions?: string[];
+  reason: string;
+}
+
+/**
+ * The writable surface of AdminRoleUpdateSerializer, in full.
+ *
+ * `code` is absent because the serializer has no such field — a role's code is
+ * fixed once created. Supplying `permissions` REPLACES the role's entire grant
+ * set (the view deletes every RolePermission row and recreates it), so omit the
+ * key unless the permission set is genuinely being changed.
+ */
+export interface AdminRoleUpdatePayload {
+  name?: string;
+  description?: string;
+  is_active?: boolean;
+  permissions?: string[];
+  reason: string;
+}
+
+/**
+ * GET /api/admin/roles/
+ * Requires 'roles.admin.view' (CanViewAdminRoles).
+ *
+ * Returns a PLAIN ARRAY of every role, not a paginated envelope:
+ * AdminRoleListCreateAPIView.get applies no paginator, and no search or filter
+ * query parameter is read. The response is therefore always the complete role
+ * set, which is what lets the roles page filter it client-side without
+ * misrepresenting a single server page as the whole result.
+ */
+export async function getAdminRoles(token: string): Promise<AdminRole[]> {
+  return adminRequest<AdminRole[]>("/api/admin/roles/", token);
+}
+
+/** GET /api/admin/roles/<id>/ -> CanViewAdminRoles. */
+export async function getAdminRoleDetail(
+  token: string,
+  id: number | string
+): Promise<AdminRole> {
+  return adminRequest<AdminRole>(`/api/admin/roles/${id}/`, token);
+}
+
+/**
+ * POST /api/admin/roles/ -> 201 with the created AdminRole.
+ * Requires 'roles.admin.manage' (CanManageAdminRoles).
+ *
+ * The view rejects with 403 any requested permission outside the caller's
+ * delegation boundary (rbac.services.get_undelegatable_permission_codes), and
+ * the serializer rejects a protected code with 400. Both are backend-side and
+ * are not reimplemented here.
+ */
+export async function createAdminRole(
+  token: string,
+  payload: AdminRoleCreatePayload
+): Promise<AdminRole> {
+  return adminRequest<AdminRole>("/api/admin/roles/", token, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * PATCH /api/admin/roles/<id>/ -> the updated AdminRole.
+ * Requires 'roles.admin.manage'; refuses protected roles outright with 403.
+ */
+export async function updateAdminRole(
+  token: string,
+  id: number | string,
+  payload: AdminRoleUpdatePayload
+): Promise<AdminRole> {
+  return adminRequest<AdminRole>(`/api/admin/roles/${id}/`, token, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * DELETE /api/admin/roles/<id>/ — a HARD delete, not a deactivation.
+ *
+ * The backend refuses with 403 for a protected role and with 400 when the role
+ * is still assigned to any active user. Success is 200 with {"detail": "..."}
+ * (not 204). Deactivating via PATCH { is_active: false } is the reversible
+ * alternative for a role that is still in use.
+ */
+export async function deleteAdminRole(
+  token: string,
+  id: number | string
+): Promise<{ detail: string }> {
+  return adminRequest<{ detail: string }>(`/api/admin/roles/${id}/`, token, {
+    method: "DELETE",
+  });
+}
+
+/**
+ * One row of the permission catalogue. Mirrors AdminPermissionSerializer.
+ *
+ * `is_delegatable` is a property of the (REQUESTING USER, permission) pair, not
+ * of the permission — it answers "may the caller grant this to a role?" and is
+ * computed by rbac.services.get_delegatable_permission_codes, the same boundary
+ * the role create/update endpoints enforce.
+ */
+export interface AdminPermission {
+  id: number;
+  /** "<resource>.<action>", e.g. "sellers.create". */
+  code: string;
+  name: string;
+  /** Grouping key for the selector, e.g. "sellers". */
+  resource: string;
+  action: string;
+  description: string;
+  is_delegatable: boolean;
+}
+
+export interface AdminPermissionCatalog {
+  count: number;
+  /** True when the caller holds "*" and may delegate the whole catalogue. */
+  has_full_platform_access: boolean;
+  delegatable_count: number;
+  /** Ordered by (resource, action) — Permission.Meta.ordering. */
+  results: AdminPermission[];
+}
+
+/**
+ * GET /api/admin/permissions/
+ * Requires 'roles.admin.view' (CanViewAdminRoles).
+ *
+ * The source of truth for the permission selector. The catalogue is read from
+ * the database, so the console never hardcodes a permission list that could
+ * drift from the seeded one, and the delegation flags come from the backend, so
+ * a locked checkbox always corresponds to a real 403.
+ */
+export async function getAdminPermissionCatalog(
+  token: string
+): Promise<AdminPermissionCatalog> {
+  return adminRequest<AdminPermissionCatalog>("/api/admin/permissions/", token);
+}

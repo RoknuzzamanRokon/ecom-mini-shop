@@ -1309,6 +1309,7 @@ from .admin_views import (
     AdminUserDetailAPIView,
     AdminRoleListCreateAPIView,
     AdminRoleDetailAPIView,
+    AdminPermissionCatalogAPIView,
     AdminSellerListAPIView,
     AdminSellerDetailAPIView,
     AdminSellerStatusAPIView,

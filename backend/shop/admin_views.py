@@ -23,7 +23,15 @@ from audit.models import AuditLog
 from audit.services import AuditService
 from customers.models import CustomerProfile
 from rbac.models import Permission, Role, RolePermission, UserRole
-from rbac.services import assign_user_role, get_user_permissions, get_user_role_codes, has_user_permission, remove_user_role
+from rbac.services import (
+    assign_user_role,
+    get_delegatable_permission_codes,
+    get_undelegatable_permission_codes,
+    get_user_role_codes,
+    has_wildcard_delegation,
+    has_user_permission,
+    remove_user_role,
+)
 from sellers.models import SellerProfile
 from sellers.services import approve_seller, reactivate_seller, reject_seller, suspend_seller
 from shop.admin_permissions import (
@@ -46,6 +54,7 @@ from shop.admin_permissions import (
 from shop.admin_serializers import (
     PROTECTED_ROLE_CODES,
     AdminAuditLogSerializer,
+    AdminPermissionSerializer,
     AdminCategorySerializer,
     AdminCustomerDetailSerializer,
     AdminCustomerListSerializer,
@@ -273,19 +282,16 @@ class AdminRoleListCreateAPIView(APIView):
         reason = data["reason"]
 
         actor = request.user
-        actor_role_codes = get_user_role_codes(actor)
-        actor_is_super = actor.is_superuser or (Role.ROLE_SUPER_ADMINISTRATOR in actor_role_codes)
-
         requested_permissions = set(data.get("permissions", []))
-        actor_permissions = get_user_permissions(actor)
 
-        # Anti-escalation: Non-superadmin cannot create a role with permissions they do not hold
-        if not actor_is_super and "*" not in actor_permissions:
-            unauthorized_perms = requested_permissions - actor_permissions
-            if unauthorized_perms:
-                raise PermissionDenied(
-                    f"Cannot assign permissions you do not possess: {sorted(list(unauthorized_perms))}"
-                )
+        # Anti-escalation: a non-wildcard actor cannot create a role carrying
+        # permissions outside their own delegation boundary. The boundary lives
+        # in rbac.services so role creation and role editing can never diverge.
+        unauthorized_perms = get_undelegatable_permission_codes(actor, requested_permissions)
+        if unauthorized_perms:
+            raise PermissionDenied(
+                f"Cannot assign permissions you do not possess: {sorted(list(unauthorized_perms))}"
+            )
 
         with transaction.atomic():
             role = Role.objects.create(
@@ -352,8 +358,6 @@ class AdminRoleDetailAPIView(APIView):
         reason = data["reason"]
 
         actor = request.user
-        actor_role_codes = get_user_role_codes(actor)
-        actor_is_super = actor.is_superuser or (Role.ROLE_SUPER_ADMINISTRATOR in actor_role_codes)
 
         with transaction.atomic():
             role = Role.objects.select_for_update().get(pk=pk)
@@ -374,11 +378,9 @@ class AdminRoleDetailAPIView(APIView):
 
             if "permissions" in data:
                 requested_perms = set(data["permissions"])
-                actor_perms = get_user_permissions(actor)
-                if not actor_is_super and "*" not in actor_perms:
-                    unauthorized = requested_perms - actor_perms
-                    if unauthorized:
-                        raise PermissionDenied(f"Cannot grant permissions you do not hold: {sorted(list(unauthorized))}")
+                unauthorized = get_undelegatable_permission_codes(actor, requested_perms)
+                if unauthorized:
+                    raise PermissionDenied(f"Cannot grant permissions you do not hold: {sorted(list(unauthorized))}")
 
                 RolePermission.objects.filter(role=role).delete()
                 for perm in Permission.objects.filter(code__in=requested_perms):
@@ -436,6 +438,63 @@ class AdminRoleDetailAPIView(APIView):
             role.delete()
 
         return Response({"detail": f"Role '{role.code}' successfully deleted."}, status=status.HTTP_200_OK)
+
+
+# ==============================================================================
+# 2b. PERMISSION CATALOGUE VIEW
+# ==============================================================================
+
+class AdminPermissionCatalogAPIView(APIView):
+    """
+    GET /api/admin/permissions/
+
+    The MiniShop RBAC permission catalogue, annotated with what the REQUESTING
+    user is allowed to delegate.
+
+    This exists so the Management Console's role permission selector can be
+    driven entirely by backend data. Without it a client would have to hardcode
+    the permission list, which would make the frontend a second source of truth
+    for the catalogue, and would have to guess the delegation boundary, which
+    would make its checkboxes disagree with the 403s the role endpoints return.
+
+    `is_delegatable` is computed by get_delegatable_permission_codes(), the same
+    rbac.services boundary that get_undelegatable_permission_codes() enforces on
+    POST /api/admin/roles/ and PATCH /api/admin/roles/<pk>/. A locked checkbox
+    in the console is therefore a faithful preview of a backend refusal — and
+    never a substitute for it, since this endpoint is read-only and the role
+    endpoints re-validate every submitted code themselves.
+
+    Read access is gated by CanViewAdminRoles ('roles.admin.view'): the
+    catalogue describes the RBAC system, so it belongs to role administration.
+    """
+
+    permission_classes = [IsAuthenticated, CanViewAdminRoles]
+
+    def get(self, request):
+        # Permission.Meta.ordering is ("resource", "action"), so the catalogue
+        # arrives already grouped by resource for the console's selector.
+        permissions_qs = Permission.objects.all()
+        delegatable_codes = get_delegatable_permission_codes(request.user)
+
+        serializer = AdminPermissionSerializer(
+            permissions_qs,
+            many=True,
+            context={"delegatable_codes": delegatable_codes},
+        )
+        data = serializer.data
+
+        return Response(
+            {
+                "count": len(data),
+                # True only for superusers / SUPER_ADMINISTRATOR: the "*" holders
+                # who may delegate the entire catalogue. The console renders this
+                # as "Full platform access" rather than as 64 individual grants.
+                "has_full_platform_access": has_wildcard_delegation(request.user),
+                "delegatable_count": sum(1 for row in data if row["is_delegatable"]),
+                "results": data,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 # ==============================================================================
