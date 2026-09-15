@@ -1,0 +1,87 @@
+{% load i18n admin_urls %}
+{% comment %}
+  Role assignments as cards, for rbac.admin.UserRoleInline.
+
+  Django's stock tabular inline renders a <table> with a "Delete?" column and an
+  "original" cell repeating "<user> has role <CODE>" — fine for a generic admin,
+  out of place next to the permission boards on this page.
+
+  This uses data-inline-type="stacked", not "tabular". That is the supported
+  path for non-<tr> rows: inlines.js dispatches stacked on
+  "#<prefix>-group .inline-related" (any element), inserts the "add another"
+  control as a <div> after the last form, and appends the JS remove link to each
+  row's FIRST child — which is why the card header is first in the markup.
+
+  Everything Django's formset machinery needs is still emitted: the
+  js-inline-admin-formset wrapper with data-inline-formset, the management form,
+  the pk/fk hidden inputs, the empty-form template at id "<prefix>-empty", the
+  DELETE checkbox for saved rows, and every error list.
+{% endcomment %}
+<div class="js-inline-admin-formset inline-group mp-roles"
+     id="{{ inline_admin_formset.formset.prefix }}-group"
+     data-inline-type="stacked"
+     data-inline-formset="{{ inline_admin_formset.inline_formset_data }}">
+
+  {{ inline_admin_formset.formset.management_form }}
+  {{ inline_admin_formset.formset.non_form_errors }}
+
+  <div class="mp-roles-list">
+    {% for inline_admin_form in inline_admin_formset %}
+      <div class="inline-related mp-role-card{% if forloop.last and inline_admin_formset.has_add_permission %} empty-form{% endif %}{% if inline_admin_form.form.DELETE.value %} is-removing{% endif %}"
+           id="{{ inline_admin_formset.formset.prefix }}-{% if forloop.last and inline_admin_formset.has_add_permission %}empty{% else %}{{ forloop.counter0 }}{% endif %}">
+
+        {# First child: inlines.js appends its remove link here on new rows. #}
+        <div class="mp-role-head">
+          <span class="mp-role-badge" aria-hidden="true">
+            <span class="material-symbols-outlined">workspace_premium</span>
+          </span>
+          <span class="mp-role-title">
+            {% if inline_admin_form.original %}
+              {{ inline_admin_form.original.role.name }}
+              <code class="mp-role-code">{{ inline_admin_form.original.role.code }}</code>
+            {% else %}
+              <span class="inline_label">{% translate 'New role assignment' %}</span>
+            {% endif %}
+          </span>
+        </div>
+
+        {% if inline_admin_form.form.non_field_errors %}
+          <div class="mp-role-errors">{{ inline_admin_form.form.non_field_errors }}</div>
+        {% endif %}
+
+        <div class="mp-role-fields">
+          {% for fieldset in inline_admin_form %}
+            {% for line in fieldset %}
+              {% for field in line %}
+                <div class="mp-role-field{% if field.field.name %} field-{{ field.field.name }}{% endif %}{% if field.field.is_hidden %} hidden{% endif %}">
+                  {# Works for both: AdminReadonlyField.field is a dict with a
+                     "label" key, and a BoundField has a .label attribute. #}
+                  <span class="mp-role-label">{{ field.field.label|capfirst }}</span>
+                  {% if field.is_readonly %}
+                    <span class="mp-role-value">{{ field.contents }}</span>
+                  {% else %}
+                    {{ field.field.errors.as_ul }}
+                    <span class="mp-role-control">{{ field.field }}</span>
+                  {% endif %}
+                </div>
+              {% endfor %}
+            {% endfor %}
+          {% endfor %}
+        </div>
+
+        <div class="mp-role-foot">
+          {% if inline_admin_formset.formset.can_delete and inline_admin_formset.has_delete_permission and inline_admin_form.original %}
+            <label class="mp-role-remove">
+              {{ inline_admin_form.deletion_field.field }}
+              <span class="material-symbols-outlined" aria-hidden="true">delete</span>
+              {% translate 'Remove this assignment' %}
+            </label>
+          {% endif %}
+        </div>
+
+        {% if inline_admin_form.needs_explicit_pk_field %}{{ inline_admin_form.pk_field.field }}{% endif %}
+        {% if inline_admin_form.fk_field %}{{ inline_admin_form.fk_field.field }}{% endif %}
+      </div>
+    {% endfor %}
+  </div>
+</div>

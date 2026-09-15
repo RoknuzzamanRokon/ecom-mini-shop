@@ -22,7 +22,7 @@ from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from .models import Permission, Role, UserPermission
+from .models import Permission, Role, UserPermission, UserRole
 from .services import assign_user_role, get_user_permissions, has_user_permission
 
 User = get_user_model()
@@ -370,3 +370,89 @@ class DirectPermissionEscalationCeilingTests(TestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+
+class RoleAssignmentInlineTests(TestCase):
+    """
+    The role inline renders as cards (templates/admin/edit_inline/mp_role.html)
+    instead of Django's stock table. These pin the formset plumbing that the
+    custom markup has to keep emitting, and the assigned_by stamping that
+    replaced the old unfiltered <select> of every user.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_rbac", stdout=StringIO())
+        cls.superadmin = User.objects.create_superuser(
+            username="inline_super", email="i@example.com", password="pass12345"
+        )
+        cls.target = User.objects.create_user(
+            username="inline_target", password="pass12345"
+        )
+        cls.role = Role.objects.get(code=Role.ROLE_SUPPORT_TEAM)
+
+    def setUp(self):
+        self.client.force_login(self.superadmin)
+        self.url = f"/admin/auth/user/{self.target.pk}/change/"
+
+    def test_card_markup_keeps_formset_contract(self):
+        html = self.client.get(self.url).content.decode("utf-8", "replace")
+
+        # Stacked is the supported non-<tr> dispatch path in inlines.js.
+        self.assertIn('data-inline-type="stacked"', html)
+        self.assertIn('id="user_roles-group"', html)
+        # inlines.js clones this node for "add another".
+        self.assertIn('id="user_roles-empty"', html)
+        self.assertIn('name="user_roles-TOTAL_FORMS"', html)
+        self.assertIn('name="user_roles-INITIAL_FORMS"', html)
+        self.assertIn("mp-role-card", html)
+        # The stock table is gone.
+        self.assertNotIn("<thead>", html)
+
+    def test_assigned_by_is_stamped_not_chosen(self):
+        """
+        assigned_by is read-only in the card, so it must be filled in on save.
+        It is an audit fact about who acted, not an operator choice.
+        """
+        html = self.client.get(self.url).content.decode("utf-8", "replace")
+        self.assertNotIn('name="user_roles-0-assigned_by"', html)
+
+        response = self.client.post(
+            self.url,
+            {
+                "username": self.target.username,
+                "password": self.target.password,
+                "first_name": "",
+                "last_name": "",
+                "email": "",
+                "last_login_0": "",
+                "last_login_1": "",
+                "date_joined_0": self.target.date_joined.strftime("%Y-%m-%d"),
+                "date_joined_1": self.target.date_joined.strftime("%H:%M:%S"),
+                "user_roles-TOTAL_FORMS": "1",
+                "user_roles-INITIAL_FORMS": "0",
+                "user_roles-MIN_NUM_FORMS": "0",
+                "user_roles-MAX_NUM_FORMS": "1000",
+                "user_roles-0-id": "",
+                "user_roles-0-user": str(self.target.pk),
+                "user_roles-0-role": str(self.role.pk),
+                "user_roles-0-is_active": "on",
+                "_save": "Save",
+            },
+        )
+        self.assertEqual(response.status_code, 302)
+
+        assignment = UserRole.objects.get(user=self.target, role=self.role)
+        self.assertEqual(assignment.assigned_by, self.superadmin)
+        self.assertTrue(assignment.is_active)
+        # And the role's permissions are now live for that account.
+        self.assertIn("orders.staff.view", get_user_permissions(self.target))
+
+    def test_card_shows_what_the_role_grants(self):
+        UserRole.objects.create(
+            user=self.target, role=self.role, assigned_by=self.superadmin
+        )
+        html = self.client.get(self.url).content.decode("utf-8", "replace")
+        expected = self.role.role_permissions.count()
+        self.assertIn(f"{expected} permissions", html)
+        self.assertIn(self.role.code, html)

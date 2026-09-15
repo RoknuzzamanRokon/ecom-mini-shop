@@ -158,12 +158,38 @@ class RolePermissionAdmin(admin.ModelAdmin):
 # --- Custom User Admin ---
 
 class UserRoleInline(admin.TabularInline):
+    """
+    Role assignments, rendered as cards rather than Django's stock table.
+
+    `assigned_by` is deliberately read-only and stamped in
+    UserAdmin.save_formset: it records WHO made the assignment, which is an
+    audit fact, not an operator choice. Leaving it editable also meant rendering
+    an unfiltered <select> of every user in the system on this page.
+
+    `permission_summary` ties the row to the permission board above it -- the
+    question an operator actually has here is "what does this role give them",
+    and the answer was previously nowhere on the page.
+    """
+
     model = UserRole
     extra = 0
-    autocomplete_fields = ["role"]
+    # Two FKs point at AUTH_USER_MODEL (user, assigned_by), so the parent link
+    # has to be named explicitly.
     fk_name = "user"
+    autocomplete_fields = ["role"]
+    fields = ("role", "permission_summary", "is_active", "assigned_by", "assigned_at")
+    readonly_fields = ("permission_summary", "assigned_by", "assigned_at")
     verbose_name = _("role assignment")
     verbose_name_plural = _("Role assignments")
+    template = "admin/edit_inline/mp_role.html"
+
+    @admin.display(description=_("Grants"))
+    def permission_summary(self, obj=None):
+        # Called with an unsaved instance for the empty "add another" row.
+        if obj is None or obj.pk is None or obj.role_id is None:
+            return "—"
+        count = obj.role.role_permissions.count()
+        return f"{count} permission{'' if count == 1 else 's'}"
 
 
 admin.site.unregister(User)
@@ -279,6 +305,26 @@ class UserAdmin(BaseUserAdmin):
                 }
             swapped.append((name, options))
         return swapped
+
+    def save_formset(self, request, form, formset, change):
+        """
+        Stamp assigned_by on new role assignments.
+
+        The field is read-only in the inline because it records who performed
+        the assignment rather than offering a choice, so it has to be filled in
+        here. Existing rows keep whoever originally assigned them.
+        """
+        if formset.model is UserRole:
+            instances = formset.save(commit=False)
+            for instance in instances:
+                if instance.assigned_by_id is None:
+                    instance.assigned_by = request.user
+                instance.save()
+            for obj in formset.deleted_objects:
+                obj.delete()
+            formset.save_m2m()
+            return
+        super().save_formset(request, form, formset, change)
 
     def save_related(self, request, form, formsets, change):
         """

@@ -1086,63 +1086,160 @@ body.mp-userform { accent-color: var(--mp-grant); }
    that `tr.has_original td` adds. Overriding cell padding, border-collapse or
    table overflow collapses the whole row -- so nothing below touches geometry. */
 .mp-inlines .inline-group {
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+}
+
+/* --------------------------------------------------------------------------
+   ROLE ASSIGNMENT CARDS
+   Markup comes from templates/admin/edit_inline/mp_role.html, a stacked inline
+   (not Django's tabular table), so none of the table overrides that used to
+   live here are needed any more.
+   -------------------------------------------------------------------------- */
+.mp-roles-list {
+  display: grid;
+  gap: 10px;
+}
+
+.mp-role-card {
   border: 1px solid var(--jp-border-line);
   border-radius: var(--mp-radius-sm);
-  overflow: hidden;
+  background: var(--jp-bg-surface);
+  padding: 12px 14px;
+  position: relative;
 }
 
-.mp-inlines .inline-group fieldset {
-  background: transparent !important;
-  border: 0 !important;
-  box-shadow: none !important;
-  margin: 0 !important;
+/* Django clones this node to build a new row; it must never be visible. */
+.mp-roles-list .empty-form { display: none !important; }
+
+.mp-role-card.is-removing { opacity: 0.55; }
+
+.mp-role-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-bottom: 10px;
 }
 
-/* The card already carries this heading. It stays in the a11y tree because the
-   inline's <table> is aria-labelledby it -- hence clipped, not display:none. */
-.mp-inlines .inline-related h2.inline-heading {
-  position: absolute !important;
-  width: 1px !important;
-  height: 1px !important;
-  margin: -1px !important;
-  padding: 0 !important;
-  overflow: hidden !important;
-  clip-path: inset(50%) !important;
-  white-space: nowrap !important;
-  border: 0 !important;
+.mp-role-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border-radius: 9px;
+  background: var(--mp-grant-soft);
+  border: 1px solid var(--mp-grant-line);
+  color: var(--mp-grant);
 }
 
-.mp-inlines thead th {
-  background: var(--jp-bg-surface-sunken) !important;
-  font-size: 10.5px !important;
-  font-weight: 800 !important;
-  letter-spacing: 0.6px !important;
-  text-transform: uppercase !important;
-  color: var(--jp-text-ink-muted) !important;
-  border-bottom: 1px solid var(--jp-border-line) !important;
+.mp-role-badge .material-symbols-outlined { font-size: 17px; }
+
+.mp-role-title {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 7px;
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--jp-text-ink-body);
+  min-width: 0;
 }
 
-.mp-inlines tbody td,
-.mp-inlines tbody th {
-  font-size: 12.5px !important;
-  border-bottom: 1px solid var(--jp-border-line-subtle) !important;
+.mp-role-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--jp-bg-surface-sunken);
+  border: 1px solid var(--jp-border-line);
+  color: var(--jp-text-ink-muted);
 }
 
-.mp-inlines td.original p {
-  color: var(--jp-text-ink-muted) !important;
-  font-weight: 600 !important;
+/* The JS "remove" link inlines.js appends to unsaved rows lands in the head. */
+.mp-role-head .inline-deletelink {
+  margin-left: auto;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--jp-text-ink-muted);
+  text-decoration: none;
 }
 
-.mp-inlines .add-row td {
-  background: var(--jp-bg-surface-sunken) !important;
-  border-bottom: 0 !important;
+.mp-role-head .inline-deletelink:hover { color: #d14343; }
+
+.mp-role-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px 14px;
 }
 
-.mp-inlines .add-row a {
+.mp-role-field { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.mp-role-field.hidden { display: none; }
+
+.mp-role-label {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: var(--jp-text-ink-muted);
+}
+
+.mp-role-value {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--jp-text-ink-body);
+}
+
+.mp-role-control select,
+.mp-role-control input[type="text"] { max-width: 100%; }
+
+/* select2 (the role autocomplete) sizes itself off its container. */
+.mp-role-control .select2-container { width: 100% !important; }
+
+/* The three popup icon links Django hangs off a related field are noise on a
+   board whose job is "which roles does this account have". */
+.mp-role-control .related-widget-wrapper-link { display: none !important; }
+
+.mp-role-field.field-is_active { justify-content: flex-start; }
+
+.mp-role-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+
+.mp-role-foot:empty { display: none; }
+
+.mp-role-remove {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--jp-text-ink-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.mp-role-remove:hover { color: #d14343; }
+.mp-role-remove .material-symbols-outlined { font-size: 15px; }
+
+.mp-role-errors { margin-bottom: 8px; }
+.mp-role-errors ul { margin: 0; padding-left: 16px; color: #d14343; font-size: 12px; }
+
+/* "Add another role assignment", injected by inlines.js after the last card. */
+.mp-roles .add-row {
+  margin-top: 10px;
+}
+
+.mp-roles .add-row a {
   display: inline-flex !important;
   align-items: center !important;
   gap: 6px !important;
-  padding: 7px 14px !important;
+  padding: 8px 14px !important;
   border-radius: var(--mp-radius-sm) !important;
   background: var(--jp-bg-surface-sunken) !important;
   border: 1px dashed var(--jp-border-line) !important;
@@ -1152,7 +1249,14 @@ body.mp-userform { accent-color: var(--mp-grant); }
   text-decoration: none !important;
 }
 
-.mp-inlines .add-row a:hover { border-color: var(--jp-kinari-gold) !important; color: var(--jp-kinari-gold) !important; }
+.mp-roles .add-row a:hover {
+  border-color: var(--jp-kinari-gold) !important;
+  color: var(--jp-kinari-gold) !important;
+}
+
+@media (max-width: 640px) {
+  .mp-role-fields { grid-template-columns: 1fr; }
+}
 
 /* --------------------------------------------------------------------------
    7. ACCOUNT PANE
