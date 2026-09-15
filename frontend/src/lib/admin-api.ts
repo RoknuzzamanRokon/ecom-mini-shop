@@ -125,6 +125,18 @@ async function adminRequest<T>(
  * previously fell through to a generic "Request failed with status 400".
  */
 function extractErrorMessage(errorBody: unknown, fallback: string): string {
+  // DRF renders `ValidationError("a message")` raised with a plain string as a
+  // BARE JSON ARRAY — e.g. the category delete safeguard ("Cannot delete
+  // category 'X' because it is referenced by N product(s)...") and the product
+  // publish precondition. Arrays are typeof "object", but none of the
+  // field-level handling below matches them, so without this branch the most
+  // useful backend messages in the console fell through to the generic
+  // "Request failed with status 400".
+  if (Array.isArray(errorBody)) {
+    const messages = errorBody.filter((item): item is string => typeof item === "string");
+    if (messages.length > 0) return messages.join(" ");
+  }
+
   if (errorBody && typeof errorBody === "object") {
     const body = errorBody as Record<string, unknown>;
     if (typeof body.detail === "string") return body.detail;
@@ -525,5 +537,138 @@ export async function updateAdminProductStatus(
   return adminRequest<AdminProduct>(`/api/admin/products/${id}/status/`, token, {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+// ==============================================================================
+// CATEGORY GOVERNANCE (Phase 1E)
+// ==============================================================================
+
+/**
+ * Mirrors AdminCategorySerializer in shop/admin_serializers.py field-for-field.
+ *
+ * Category is FLAT: shop/models.py defines no `parent` relation, so there is no
+ * hierarchy, no children, and no tree endpoint to model here.
+ * Its only lifecycle state is the `is_active` boolean — there is no status
+ * enum, and none is invented.
+ */
+export interface AdminCategory {
+  id: number;
+  name: string;
+  slug: string;
+  /** Material Symbols ligature name, e.g. "checkroom". Blank when unset. */
+  icon: string;
+  /** ImageField URL, or null. Read-only here — see updateAdminCategory. */
+  image: string | null;
+  description: string;
+  is_active: boolean;
+  /** SerializerMethodField: obj.products.count(). */
+  products_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminCategoryListParams {
+  page?: number;
+  page_size?: number;
+  /** Matches name / slug, case-insensitive (AdminCategoryListCreateAPIView). */
+  search?: string;
+  /** The backend parses "true"/"1" and "false"/"0"; anything else is ignored. */
+  is_active?: boolean;
+}
+
+/**
+ * The writable subset of AdminCategorySerializer.
+ *
+ * `name` and `slug` are BOTH required by the serializer. Category.save()
+ * auto-slugifies a blank slug, but that never runs through the API: the model's
+ * SlugField is not blank=True, so DRF marks it required and rejects the payload
+ * before save() is reached. The create form therefore always sends a slug.
+ *
+ * `image` is deliberately absent. It is an ImageField, which needs a multipart
+ * upload, and adminRequest is a JSON transport — adding multipart here would
+ * mean a second request layer. Existing images are displayed but not edited.
+ */
+export interface AdminCategoryWritePayload {
+  name: string;
+  slug: string;
+  icon?: string;
+  description?: string;
+  is_active?: boolean;
+}
+
+/**
+ * GET /api/admin/categories/
+ * Requires 'categories.admin.manage' (CanManageAdminCategories) — there is no
+ * read-only category permission in seed_rbac.py, so viewing and managing the
+ * taxonomy are the same privilege.
+ */
+export async function getAdminCategories(
+  token: string,
+  params?: AdminCategoryListParams
+): Promise<PaginatedResponse<AdminCategory>> {
+  const searchParams = new URLSearchParams();
+  if (params) {
+    if (params.page) searchParams.set("page", String(params.page));
+    if (params.page_size) searchParams.set("page_size", String(params.page_size));
+    if (params.search) searchParams.set("search", params.search);
+    if (params.is_active !== undefined) searchParams.set("is_active", String(params.is_active));
+  }
+  const queryString = searchParams.toString();
+  return adminRequest<PaginatedResponse<AdminCategory>>(
+    `/api/admin/categories/${queryString ? `?${queryString}` : ""}`,
+    token
+  );
+}
+
+/** GET /api/admin/categories/<id>/ -> CanManageAdminCategories. */
+export async function getAdminCategoryDetail(
+  token: string,
+  id: number | string
+): Promise<AdminCategory> {
+  return adminRequest<AdminCategory>(`/api/admin/categories/${id}/`, token);
+}
+
+/** POST /api/admin/categories/ -> 201 with the created AdminCategorySerializer body. */
+export async function createAdminCategory(
+  token: string,
+  payload: AdminCategoryWritePayload
+): Promise<AdminCategory> {
+  return adminRequest<AdminCategory>("/api/admin/categories/", token, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * PATCH /api/admin/categories/<id>/ (partial=True) -> the updated category.
+ * Also the documented way to retire a category that cannot be deleted:
+ * PATCH { is_active: false }.
+ */
+export async function updateAdminCategory(
+  token: string,
+  id: number | string,
+  payload: Partial<AdminCategoryWritePayload>
+): Promise<AdminCategory> {
+  return adminRequest<AdminCategory>(`/api/admin/categories/${id}/`, token, {
+    method: "PATCH",
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * DELETE /api/admin/categories/<id>/ — a HARD delete, not a soft one.
+ *
+ * AdminCategoryDetailAPIView.delete refuses with 400 when the category is still
+ * referenced by any product, telling the operator to deactivate it instead.
+ * That safeguard is the backend's to enforce; this client never tries to work
+ * around it. Success is 200 with {"detail": "..."} (not 204).
+ */
+export async function deleteAdminCategory(
+  token: string,
+  id: number | string
+): Promise<{ detail: string }> {
+  return adminRequest<{ detail: string }>(`/api/admin/categories/${id}/`, token, {
+    method: "DELETE",
   });
 }
