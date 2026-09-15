@@ -228,3 +228,141 @@ class GroupCardsWidget(_ProjectTemplateWidget):
                 "total": len(groups),
             }
         }
+
+
+# ==============================================================================
+# MiniShop RBAC effective-permission board (read-only)
+# ==============================================================================
+# The board above is Django's own auth.Permission M2M, which governs access to
+# THIS admin site. MiniShop's API/console authorization is a separate system:
+# rbac.Permission, resolved by rbac.services.get_user_permissions() purely
+# through User -> UserRole -> Role -> RolePermission. There is no UserPermission
+# model, so a MiniShop permission cannot be granted to a user directly, and this
+# board is deliberately READ-ONLY -- the write path is the role assignment
+# inline on the same page (and RoleAdmin's RolePermission inline).
+#
+# Rendering it read-only is what keeps the two systems from being conflated: an
+# editable board here would have to invent a direct grant path and change
+# get_user_permissions(), i.e. replace the RBAC design rather than surface it.
+
+# resource -> (label, Material Symbols icon, sort weight). Resource is
+# rbac.Permission.resource, the field the model already groups on; anything
+# unlisted falls to the bottom under its own capitalized name.
+RESOURCE_META = {
+    "users": ("Users", "manage_accounts", 10),
+    "roles": ("Roles & access", "admin_panel_settings", 20),
+    "sellers": ("Sellers", "badge", 30),
+    "shops": ("Shops", "store", 40),
+    "products": ("Products", "inventory_2", 50),
+    "categories": ("Categories", "category", 60),
+    "customers": ("Customers", "groups", 70),
+    "orders": ("Orders", "receipt_long", 80),
+    "payments": ("Payments", "payments", 90),
+    "points": ("Points & wallet", "toll", 100),
+    "inventory": ("Inventory", "warehouse", 110),
+    "reports": ("Reports", "monitoring", 120),
+    "profile": ("Profile", "person", 130),
+    "address": ("Addresses", "home_pin", 140),
+    "cart": ("Carts", "shopping_cart", 150),
+}
+
+WILDCARD_CODE = "*"
+
+
+def build_minishop_permission_board(user):
+    """
+    Context for the read-only MiniShop RBAC board on the user change page.
+
+    Lists the WHOLE rbac.Permission catalogue grouped by resource, marks the
+    codes this user effectively holds, and attributes each held code to the
+    role(s) granting it -- so the page answers both "what can this account do"
+    and "why", with the roles that are editable right beside it.
+    """
+    # Imported here rather than at module import time: widgets.py is imported
+    # from admin.py during app loading, and rbac.models/services pull in the
+    # user model, which is not ready at that point.
+    from .models import Permission, RolePermission, Role
+    from .services import get_user_permissions, get_user_role_codes
+
+    if user is None or not getattr(user, "pk", None):
+        return {"board": None}
+
+    effective = get_user_permissions(user)
+    role_codes = get_user_role_codes(user)
+    full_access = user.is_superuser or WILDCARD_CODE in effective
+
+    # code -> [role code, ...], limited to the user's own active roles so the
+    # attribution reflects this account, not the platform-wide role catalogue.
+    granting_roles = {}
+    if role_codes:
+        pairs = RolePermission.objects.filter(
+            role__code__in=role_codes,
+            role__is_active=True,
+        ).values_list("permission__code", "role__code")
+        for perm_code, role_code in pairs:
+            granting_roles.setdefault(perm_code, []).append(role_code)
+
+    sections = {}
+    for permission in Permission.objects.all().order_by("resource", "action"):
+        bucket = sections.setdefault(
+            permission.resource,
+            {"permissions": [], "granted": 0},
+        )
+        granted = permission.code in effective
+        if granted:
+            bucket["granted"] += 1
+        bucket["permissions"].append(
+            {
+                "code": permission.code,
+                "name": permission.name,
+                "description": permission.description,
+                "granted": granted,
+                "roles": sorted(granting_roles.get(permission.code, [])),
+            }
+        )
+
+    rendered = []
+    for resource, bucket in sections.items():
+        label, icon, weight = RESOURCE_META.get(
+            resource,
+            (resource.replace("_", " ").capitalize(), "folder", DEFAULT_WEIGHT),
+        )
+        rendered.append(
+            {
+                "key": resource,
+                "label": label,
+                "icon": icon,
+                "weight": weight,
+                "permissions": bucket["permissions"],
+                "granted": bucket["granted"],
+                "total": len(bucket["permissions"]),
+            }
+        )
+    rendered.sort(key=lambda section: (section["weight"], section["label"]))
+
+    roles = [
+        {"code": role.code, "name": role.name}
+        for role in Role.objects.filter(code__in=role_codes).order_by("code")
+    ]
+
+    return {
+        "board": {
+            "sections": rendered,
+            "roles": roles,
+            "full_access": full_access,
+            "wildcard": WILDCARD_CODE,
+            "is_superuser": user.is_superuser,
+            "granted": sum(section["granted"] for section in rendered),
+            "total": sum(section["total"] for section in rendered),
+        }
+    }
+
+
+def render_minishop_permission_board(user):
+    """Renders the read-only board for use as a ModelAdmin readonly field."""
+    return mark_safe(
+        render_to_string(
+            "admin/widgets/minishop_permission_board.html",
+            build_minishop_permission_board(user),
+        )
+    )

@@ -1,0 +1,160 @@
+{% load i18n %}
+{% comment %}
+  Read-only board for rbac.widgets.render_minishop_permission_board.
+
+  This is MiniShop's OWN RBAC catalogue (rbac.Permission), not Django's
+  auth.Permission. It is deliberately not a form field: MiniShop resolves
+  effective permissions purely through User -> UserRole -> Role ->
+  RolePermission, with no direct user grant, so the write path is the role
+  assignment inline below this card -- not a checkbox here.
+
+  Reuses the mp-* / pm-* classes already defined for the admin change form so
+  it sits in the same visual language as the panel-permission board.
+{% endcomment %}
+
+{% if not board %}
+  <p class="mp-card-hint">
+    {% translate 'Save the user first to see their effective MiniShop permissions.' %}
+  </p>
+{% else %}
+<div class="ms-board">
+
+  <p class="mp-card-hint">
+    {% blocktranslate trimmed %}
+      These are the permissions the MiniShop API and Management Console enforce.
+      They are granted by role only, so this board is read-only — change the
+      role assignments below to change what this account can do.
+    {% endblocktranslate %}
+  </p>
+
+  <div class="ms-summary">
+    <span class="pm-counter">
+      <b>{{ board.granted }}</b>
+      <span class="pm-counter-sep">/</span>
+      <span class="pm-counter-total">{{ board.total }}</span>
+      {% translate 'granted' %}
+    </span>
+    {% if board.roles %}
+      <span class="ms-roles">
+        {% for role in board.roles %}
+          <span class="ms-role-chip" title="{{ role.name }}">{{ role.code }}</span>
+        {% endfor %}
+      </span>
+    {% else %}
+      <span class="ms-muted">{% translate 'No roles assigned' %}</span>
+    {% endif %}
+  </div>
+
+  {% if board.full_access %}
+    <p class="ms-wildcard">
+      <span class="material-symbols-outlined" aria-hidden="true">verified_user</span>
+      <span>
+        <b>{% translate 'Full platform access' %}</b> —
+        {% if board.is_superuser %}
+          {% blocktranslate trimmed %}
+            this account is a Django superuser, so every MiniShop permission
+            check passes regardless of the grants listed below.
+          {% endblocktranslate %}
+        {% else %}
+          {% blocktranslate trimmed with wildcard=board.wildcard %}
+            this account holds the {{ wildcard }} wildcard, so every MiniShop
+            permission check passes regardless of the grants listed below.
+          {% endblocktranslate %}
+        {% endif %}
+      </span>
+    </p>
+  {% endif %}
+
+  <div class="ms-sections">
+    {% for section in board.sections %}
+      <section class="ms-section" aria-labelledby="ms-sec-{{ section.key }}">
+        <h3 class="ms-section-head" id="ms-sec-{{ section.key }}">
+          <span class="material-symbols-outlined" aria-hidden="true">{{ section.icon }}</span>
+          <span class="ms-section-label">{{ section.label }}</span>
+          <span class="ms-section-count">{{ section.granted }}/{{ section.total }}</span>
+        </h3>
+        <ul class="ms-perm-list">
+          {% for permission in section.permissions %}
+            <li class="ms-perm{% if permission.granted %} is-granted{% endif %}">
+              <span class="material-symbols-outlined ms-perm-icon" aria-hidden="true">
+                {% if permission.granted %}check_circle{% else %}radio_button_unchecked{% endif %}
+              </span>
+              <span class="ms-perm-body">
+                <code class="ms-perm-code">{{ permission.code }}</code>
+                <span class="ms-perm-name">{{ permission.name }}</span>
+                {% if permission.roles %}
+                  <span class="ms-perm-via">
+                    {% translate 'via' %}
+                    {% for role_code in permission.roles %}<b>{{ role_code }}</b>{% if not forloop.last %}, {% endif %}{% endfor %}
+                  </span>
+                {% endif %}
+              </span>
+              <span class="sr-only">
+                {% if permission.granted %}{% translate 'granted' %}{% else %}{% translate 'not granted' %}{% endif %}
+              </span>
+            </li>
+          {% endfor %}
+        </ul>
+      </section>
+    {% endfor %}
+  </div>
+</div>
+
+<style>
+  .ms-board { margin-top: .25rem; }
+  .ms-summary {
+    display: flex; flex-wrap: wrap; align-items: center; gap: .75rem;
+    margin: .75rem 0;
+  }
+  .ms-roles { display: inline-flex; flex-wrap: wrap; gap: .3rem; }
+  .ms-role-chip {
+    font: 600 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 0 .45rem; border-radius: 999px;
+    background: rgba(99, 102, 241, .12); color: #4f46e5;
+    border: 1px solid rgba(99, 102, 241, .25);
+  }
+  .ms-muted { font-size: 12px; opacity: .7; }
+  .ms-wildcard {
+    display: flex; gap: .5rem; align-items: flex-start;
+    font-size: 12px; line-height: 1.5;
+    padding: .6rem .75rem; margin: 0 0 .9rem;
+    border-radius: .6rem;
+    background: rgba(16, 185, 129, .10);
+    border: 1px solid rgba(16, 185, 129, .25);
+    color: #047857;
+  }
+  .ms-wildcard .material-symbols-outlined { font-size: 18px; flex: 0 0 auto; }
+  .ms-sections {
+    display: grid; gap: .85rem;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  }
+  .ms-section {
+    border: 1px solid rgba(128, 128, 128, .25);
+    border-radius: .65rem; padding: .7rem .8rem;
+  }
+  .ms-section-head {
+    display: flex; align-items: center; gap: .4rem;
+    margin: 0 0 .5rem; font-size: 11px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .06em; opacity: .85;
+  }
+  .ms-section-head .material-symbols-outlined { font-size: 16px; }
+  .ms-section-label { flex: 1 1 auto; }
+  .ms-section-count { font-variant-numeric: tabular-nums; opacity: .7; }
+  .ms-perm-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .35rem; }
+  .ms-perm { display: flex; gap: .4rem; align-items: flex-start; opacity: .55; }
+  .ms-perm.is-granted { opacity: 1; }
+  .ms-perm-icon { font-size: 15px; flex: 0 0 auto; margin-top: 1px; }
+  .ms-perm.is-granted .ms-perm-icon { color: #059669; }
+  .ms-perm-body { display: flex; flex-direction: column; min-width: 0; }
+  .ms-perm-code {
+    font: 600 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    word-break: break-all;
+  }
+  .ms-perm-name { font-size: 11px; opacity: .75; }
+  .ms-perm-via { font-size: 10px; opacity: .75; }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+</style>
+{% endif %}

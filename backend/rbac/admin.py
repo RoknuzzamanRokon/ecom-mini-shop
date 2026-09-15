@@ -5,7 +5,11 @@ from django.contrib.auth.models import Permission as AuthPermission, User
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.utils.translation import gettext_lazy as _
 from .models import Permission, Role, RolePermission, UserRole
-from .widgets import GroupCardsWidget, PermissionMatrixWidget
+from .widgets import (
+    GroupCardsWidget,
+    PermissionMatrixWidget,
+    render_minishop_permission_board,
+)
 
 
 class RolePermissionInline(admin.TabularInline):
@@ -143,7 +147,34 @@ class UserAdmin(BaseUserAdmin):
             "fields": ("groups",),
             "classes": ("mp-pane-roles",),
         }),
+        (_("MiniShop management permissions"), {
+            "fields": ("minishop_permissions",),
+            "classes": ("mp-pane-roles",),
+            "description": _(
+                "Effective permissions enforced by the MiniShop API and "
+                "Management Console. Read-only: they are granted by role, so "
+                "edit the role assignments below to change them."
+            ),
+        }),
     )
+
+    # The board reports what the RBAC tables already say; it never writes.
+    readonly_fields = ("minishop_permissions",)
+
+    @admin.display(description=_("MiniShop management permissions"))
+    def minishop_permissions(self, obj=None):
+        """
+        Read-only view of the user's effective rbac.Permission codes.
+
+        Deliberately not editable. rbac.services.get_user_permissions() resolves
+        permissions solely through User -> UserRole -> Role -> RolePermission;
+        there is no UserPermission model, so a per-user grant does not exist in
+        this architecture. Making these checkboxes writable would require
+        inventing that grant path and changing the resolver, i.e. replacing the
+        RBAC design instead of surfacing it. The supported write paths are the
+        role assignment inline on this page and RoleAdmin's permission inline.
+        """
+        return render_minishop_permission_board(obj)
 
     def formfield_for_manytomany(self, db_field, request, **kwargs):
         if db_field.name == "user_permissions":

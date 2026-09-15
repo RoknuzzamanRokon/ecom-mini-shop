@@ -168,6 +168,12 @@ ROLE_PERMISSIONS_MAPPING = {
         "orders.staff.view", "orders.staff.update",
         "reports.view",
         "inventory.view", "inventory.adjust",
+        # Read-only customer directory (CanViewAdminCustomers). Operations needs
+        # to look up a customer while handling their order. Deliberately NOT
+        # paired with any customer mutation or admin-management permission:
+        # there is no 'customers.admin.manage' in PERMISSIONS_DATA, and the
+        # admin customer endpoints expose GET only.
+        "customers.admin.view",
     ],
     Role.ROLE_SALES_MANAGER: [
         "sellers.view", "sellers.create", "sellers.update", "sellers.approve",
