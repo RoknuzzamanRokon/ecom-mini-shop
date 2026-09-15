@@ -231,19 +231,21 @@ class GroupCardsWidget(_ProjectTemplateWidget):
 
 
 # ==============================================================================
-# MiniShop RBAC effective-permission board (read-only)
+# MiniShop RBAC permission board
 # ==============================================================================
 # The board above is Django's own auth.Permission M2M, which governs access to
 # THIS admin site. MiniShop's API/console authorization is a separate system:
-# rbac.Permission, resolved by rbac.services.get_user_permissions() purely
-# through User -> UserRole -> Role -> RolePermission. There is no UserPermission
-# model, so a MiniShop permission cannot be granted to a user directly, and this
-# board is deliberately READ-ONLY -- the write path is the role assignment
-# inline on the same page (and RoleAdmin's RolePermission inline).
+# rbac.Permission, resolved by rbac.services.get_user_permissions().
 #
-# Rendering it read-only is what keeps the two systems from being conflated: an
-# editable board here would have to invent a direct grant path and change
-# get_user_permissions(), i.e. replace the RBAC design rather than surface it.
+# A user holds a MiniShop permission by either of two routes:
+#   1. INHERITED -- User -> UserRole -> Role -> RolePermission. The primary path;
+#      editing it changes access for everyone holding that role.
+#   2. DIRECT    -- a UserPermission row. The single-account exception.
+#
+# The board renders both. Inherited rows are locked, because unticking one here
+# would be a lie: the permission comes from a role and would survive. Direct
+# rows are the editable ones, and only a superuser sees them editable at all
+# (see UserAdmin.get_fieldsets / save_related).
 
 # resource -> (label, Material Symbols icon, sort weight). Resource is
 # rbac.Permission.resource, the field the model already groups on; anything
@@ -269,27 +271,33 @@ RESOURCE_META = {
 WILDCARD_CODE = "*"
 
 
-def build_minishop_permission_board(user):
-    """
-    Context for the read-only MiniShop RBAC board on the user change page.
 
-    Lists the WHOLE rbac.Permission catalogue grouped by resource, marks the
-    codes this user effectively holds, and attributes each held code to the
-    role(s) granting it -- so the page answers both "what can this account do"
-    and "why", with the roles that are editable right beside it.
+
+def _minishop_permission_sections(user, direct_codes=None):
+    """
+    Shared context builder for both MiniShop boards.
+
+    Returns (sections, meta). Every row carries the two routes separately:
+
+      inherited -- granted by one of the user's active roles, listed in `roles`
+      direct    -- granted by a UserPermission row (or, when rendering a bound
+                   form, ticked in the POST that is being re-displayed)
+
+    `direct_codes` lets the editable widget show what the operator just ticked
+    rather than what is currently saved, so a validation error re-renders their
+    edits instead of silently discarding them. Pass None to read the saved rows.
     """
     # Imported here rather than at module import time: widgets.py is imported
     # from admin.py during app loading, and rbac.models/services pull in the
     # user model, which is not ready at that point.
-    from .models import Permission, RolePermission, Role
-    from .services import get_user_permissions, get_user_role_codes
+    from .models import Permission, RolePermission, Role, UserPermission
+    from .services import get_user_role_codes
 
     if user is None or not getattr(user, "pk", None):
-        return {"board": None}
+        return None, None
 
-    effective = get_user_permissions(user)
     role_codes = get_user_role_codes(user)
-    full_access = user.is_superuser or WILDCARD_CODE in effective
+    full_access = user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in role_codes
 
     # code -> [role code, ...], limited to the user's own active roles so the
     # attribution reflects this account, not the platform-wide role catalogue.
@@ -302,21 +310,29 @@ def build_minishop_permission_board(user):
         for perm_code, role_code in pairs:
             granting_roles.setdefault(perm_code, []).append(role_code)
 
+    if direct_codes is None:
+        direct_codes = set(
+            UserPermission.objects.filter(user=user, is_active=True).values_list(
+                "permission__code", flat=True
+            )
+        )
+
     sections = {}
     for permission in Permission.objects.all().order_by("resource", "action"):
-        bucket = sections.setdefault(
-            permission.resource,
-            {"permissions": [], "granted": 0},
-        )
-        granted = permission.code in effective
-        if granted:
+        bucket = sections.setdefault(permission.resource, {"permissions": [], "granted": 0})
+        inherited = permission.code in granting_roles
+        direct = permission.code in direct_codes
+        if inherited or direct:
             bucket["granted"] += 1
         bucket["permissions"].append(
             {
+                "pk": permission.pk,
                 "code": permission.code,
                 "name": permission.name,
                 "description": permission.description,
-                "granted": granted,
+                "inherited": inherited,
+                "direct": direct,
+                "granted": inherited or direct,
                 "roles": sorted(granting_roles.get(permission.code, [])),
             }
         )
@@ -340,22 +356,32 @@ def build_minishop_permission_board(user):
         )
     rendered.sort(key=lambda section: (section["weight"], section["label"]))
 
-    roles = [
-        {"code": role.code, "name": role.name}
-        for role in Role.objects.filter(code__in=role_codes).order_by("code")
-    ]
-
-    return {
-        "board": {
-            "sections": rendered,
-            "roles": roles,
-            "full_access": full_access,
-            "wildcard": WILDCARD_CODE,
-            "is_superuser": user.is_superuser,
-            "granted": sum(section["granted"] for section in rendered),
-            "total": sum(section["total"] for section in rendered),
-        }
+    meta = {
+        "roles": [
+            {"code": role.code, "name": role.name}
+            for role in Role.objects.filter(code__in=role_codes).order_by("code")
+        ],
+        "full_access": full_access,
+        "wildcard": WILDCARD_CODE,
+        "is_superuser": user.is_superuser,
+        "granted": sum(section["granted"] for section in rendered),
+        "total": sum(section["total"] for section in rendered),
     }
+    return rendered, meta
+
+
+def build_minishop_permission_board(user):
+    """
+    Context for the READ-ONLY board, shown to operators who may not edit grants.
+
+    Lists the whole rbac.Permission catalogue grouped by resource, marks what
+    the account effectively holds, and says which role grants it -- so the page
+    answers both "what can this account do" and "why".
+    """
+    sections, meta = _minishop_permission_sections(user)
+    if sections is None:
+        return {"board": None}
+    return {"board": {"sections": sections, **meta}}
 
 
 def render_minishop_permission_board(user):
@@ -366,3 +392,60 @@ def render_minishop_permission_board(user):
             build_minishop_permission_board(user),
         )
     )
+
+
+class MiniShopPermissionWidget(_ProjectTemplateWidget):
+    """
+    Editable board for a user's DIRECT MiniShop permission grants.
+
+    Every editable checkbox is `name="<field>" value="<rbac.Permission pk>"`, so
+    the field round-trips through ModelMultipleChoiceField untouched -- only the
+    markup is ours.
+
+    Inherited rows render `disabled`. A disabled checkbox submits nothing, so the
+    browser itself guarantees a role-derived permission can never be turned into
+    a direct grant by accident, and the saved set stays a clean record of the
+    exceptions rather than a snapshot of everything the user happened to hold.
+    """
+
+    template_name = "admin/widgets/minishop_permission_matrix.html"
+
+    def __init__(self, user=None, attrs=None):
+        self.user = user
+        super().__init__(attrs)
+
+    def get_context(self, name, value, attrs):
+        final_attrs = self.build_attrs(self.attrs, attrs)
+        base_id = final_attrs.get("id") or "id_%s" % name
+
+        # `value` is whatever the field currently holds -- saved pks on a fresh
+        # GET, or the operator's unsaved ticks when a bound form re-renders.
+        selected_pks = {str(v) for v in (value or []) if v not in (None, "")}
+
+        from .models import Permission
+
+        direct_codes = set(
+            Permission.objects.filter(pk__in=[p for p in selected_pks]).values_list(
+                "code", flat=True
+            )
+        ) if selected_pks else set()
+
+        sections, meta = _minishop_permission_sections(self.user, direct_codes=direct_codes)
+        if sections is None:
+            return {"widget": {"name": name, "attrs": final_attrs, "board": None}}
+
+        for section in sections:
+            for permission in section["permissions"]:
+                permission["input_name"] = name
+                permission["id"] = "%s_%s" % (base_id, permission["pk"])
+                # Locked when the role already grants it, or when the wildcard
+                # makes an individual grant meaningless.
+                permission["locked"] = permission["inherited"] or meta["full_access"]
+
+        return {
+            "widget": {
+                "name": name,
+                "attrs": final_attrs,
+                "board": {"sections": sections, **meta},
+            }
+        }

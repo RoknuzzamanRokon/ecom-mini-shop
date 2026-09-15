@@ -130,3 +130,59 @@ class UserRole(models.Model):
 
     def __str__(self):
         return f"{self.user} has role {self.role.code}"
+
+
+class UserPermission(models.Model):
+    """
+    A permission granted DIRECTLY to one user, outside any role.
+
+    Roles remain the primary grant path: RolePermission is how a whole job
+    function gets its access, and editing a role is still the right tool when
+    the change should apply to everyone holding it. This table exists for the
+    single-account exception -- "this one operations user also needs to read the
+    customer directory" -- which previously forced you to either edit the shared
+    role or invent a new one.
+
+    Mirrors UserRole field-for-field on purpose: same unique_together, same
+    is_active flag, same granted_by/granted_at audit pair. Revoking is a flag
+    flip rather than a delete, so the grant history survives exactly as it does
+    for role assignments.
+
+    rbac.services.get_user_permissions() unions these with the role-derived set,
+    so a direct grant is enforced by every existing permission class without any
+    of them changing.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="direct_permissions",
+    )
+    permission = models.ForeignKey(
+        Permission,
+        on_delete=models.CASCADE,
+        related_name="user_permissions",
+    )
+    granted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="granted_user_permissions",
+    )
+    granted_at = models.DateTimeField(auto_now_add=True)
+    is_active = models.BooleanField(default=True)
+    note = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text="Why this account needs this permission outside its roles.",
+    )
+
+    class Meta:
+        unique_together = ("user", "permission")
+        ordering = ["-granted_at"]
+        verbose_name = "Direct User Permission"
+        verbose_name_plural = "Direct User Permissions"
+
+    def __str__(self):
+        return f"{self.user} granted {self.permission.code}"

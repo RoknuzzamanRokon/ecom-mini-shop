@@ -109,9 +109,14 @@
     var countEl = board.querySelector("[data-pm-count]");
     var emptyEl = board.querySelector("[data-pm-empty]");
 
-    var grantedEl = root.querySelector("[data-mp-granted]");
-    var totalEl = root.querySelector("[data-mp-total]");
-    var gaugeEl = root.querySelector("[data-mp-gauge]");
+    // The hero gauge reports ADMIN-PANEL permissions specifically, so only the
+    // board that opts in with data-pm-hero drives it. Without this the MiniShop
+    // RBAC board would overwrite the same three nodes and the two counts would
+    // fight over the header on every keystroke.
+    var ownsHero = board.hasAttribute("data-pm-hero");
+    var grantedEl = ownsHero ? root.querySelector("[data-mp-granted]") : null;
+    var totalEl = ownsHero ? root.querySelector("[data-mp-total]") : null;
+    var gaugeEl = ownsHero ? root.querySelector("[data-mp-gauge]") : null;
 
     var railByKey = {};
     railLinks.forEach(function (link) {

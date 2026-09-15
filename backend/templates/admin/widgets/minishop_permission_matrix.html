@@ -1,0 +1,206 @@
+{% load i18n %}
+{% comment %}
+  Editable board for rbac.widgets.MiniShopPermissionWidget.
+
+  This is MiniShop's OWN RBAC catalogue (rbac.Permission), not Django's
+  auth.Permission. Ticking a box here creates a DIRECT grant (a UserPermission
+  row) for this one account; it never edits a role.
+
+  Inherited rows are rendered `disabled`. A disabled checkbox submits nothing,
+  so the browser guarantees a role-derived permission cannot be silently copied
+  into the direct-grant set -- the saved set stays a record of the exceptions.
+
+  Reuses the pm-* chrome and the data-pm-* hooks of the panel-permission board,
+  so static/js/admin_user_permission.js drives the search, the resource rail,
+  select-all and the live counters with no JS specific to this board. It
+  deliberately does NOT carry data-pm-hero: the hero gauge reports admin-panel
+  permissions, and two boards writing to it would fight.
+{% endcomment %}
+
+{% if not widget.board %}
+  <p class="mp-card-hint">
+    {% translate 'Save the user first to grant MiniShop permissions.' %}
+  </p>
+{% else %}
+<div class="pm-board ms-board" data-pm-board data-total="{{ widget.board.total }}">
+
+  <p class="mp-card-hint">
+    {% blocktranslate trimmed %}
+      These are the permissions the MiniShop API and Management Console enforce.
+      Ticking one grants it to this account alone. Greyed rows already come from
+      a role — change the role assignments below to alter those.
+    {% endblocktranslate %}
+  </p>
+
+  {% if widget.board.full_access %}
+    <p class="ms-wildcard">
+      <span class="material-symbols-outlined" aria-hidden="true">verified_user</span>
+      <span>
+        <b>{% translate 'Full platform access' %}</b> —
+        {% if widget.board.is_superuser %}
+          {% blocktranslate trimmed %}
+            this account is a Django superuser, so every MiniShop permission check
+            already passes. Individual grants below would change nothing and are locked.
+          {% endblocktranslate %}
+        {% else %}
+          {% blocktranslate trimmed with wildcard=widget.board.wildcard %}
+            this account holds the {{ wildcard }} wildcard, so every MiniShop permission
+            check already passes. Individual grants below would change nothing and are locked.
+          {% endblocktranslate %}
+        {% endif %}
+      </span>
+    </p>
+  {% endif %}
+
+  <div class="pm-toolbar">
+    <div class="pm-search">
+      <span class="material-symbols-outlined" aria-hidden="true">search</span>
+      <input type="search"
+             data-pm-search
+             placeholder="{% translate 'Filter modules and resources…' %}"
+             aria-label="{% translate 'Filter MiniShop permissions' %}"
+             autocomplete="off">
+    </div>
+
+    <div class="pm-toolbar-meta">
+      <span class="pm-counter">
+        <b data-pm-count>{{ widget.board.granted }}</b>
+        <span class="pm-counter-sep">/</span>
+        <span class="pm-counter-total">{{ widget.board.total }}</span>
+        {% translate 'granted' %}
+      </span>
+      {% if widget.board.roles %}
+        <span class="ms-roles">
+          {% for role in widget.board.roles %}
+            <span class="ms-role-chip" title="{{ role.name }}">{{ role.code }}</span>
+          {% endfor %}
+        </span>
+      {% else %}
+        <span class="ms-muted">{% translate 'No roles assigned' %}</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="pm-board-body">
+    <div class="pm-rail-col">
+      <nav class="pm-rail" aria-label="{% translate 'MiniShop permission resources' %}">
+        {% for section in widget.board.sections %}
+          <a class="pm-rail-link"
+             href="#ms-sec-{{ section.key }}"
+             data-pm-rail="{{ section.key }}"
+             data-search="{{ section.label|lower }} {{ section.key }}">
+            <span class="material-symbols-outlined" aria-hidden="true">{{ section.icon }}</span>
+            <span class="pm-rail-label">{{ section.label }}</span>
+            <span class="pm-rail-count" data-pm-rail-count>{{ section.granted }}</span>
+          </a>
+        {% endfor %}
+      </nav>
+    </div>
+
+    <div class="pm-grid">
+      {% for section in widget.board.sections %}
+        <section class="pm-section"
+                 id="ms-sec-{{ section.key }}"
+                 data-pm-section="{{ section.key }}"
+                 data-search="{{ section.label|lower }} {{ section.key }}">
+
+          <header class="pm-section-head">
+            <span class="material-symbols-outlined pm-section-icon" aria-hidden="true">{{ section.icon }}</span>
+            <h3 class="pm-section-title">{{ section.label }}</h3>
+            <span class="pm-chip" data-pm-section-count>{{ section.granted }}/{{ section.total }}</span>
+          </header>
+
+          <ul class="ms-perm-list">
+            {% for permission in section.permissions %}
+              <li class="ms-perm{% if permission.granted %} is-granted{% endif %}{% if permission.locked %} is-locked{% endif %}"
+                  data-search="{{ permission.code|lower }} {{ permission.name|lower }}">
+
+                <span class="pm-cell ms-perm-check">
+                  <input type="checkbox"
+                         class="pm-input"
+                         name="{{ permission.input_name }}"
+                         value="{{ permission.pk }}"
+                         id="{{ permission.id }}"
+                         {% if not permission.locked %}data-pm-perm{% endif %}
+                         {% if permission.direct or permission.locked and permission.granted %}checked{% endif %}
+                         {% if permission.locked %}disabled{% endif %}>
+                  <label for="{{ permission.id }}" title="{{ permission.code }}">
+                    <span class="pm-box" aria-hidden="true"></span>
+                    <span class="ms-sr">{{ permission.code }}</span>
+                  </label>
+                </span>
+
+                <span class="ms-perm-body">
+                  <code class="ms-perm-code">{{ permission.code }}</code>
+                  <span class="ms-perm-name">{{ permission.name }}</span>
+                  {% if permission.inherited %}
+                    <span class="ms-perm-via">
+                      <span class="material-symbols-outlined" aria-hidden="true">lock</span>
+                      {% translate 'inherited' %} ·
+                      {% for role_code in permission.roles %}<b>{{ role_code }}</b>{% if not forloop.last %}, {% endif %}{% endfor %}
+                    </span>
+                  {% elif permission.direct %}
+                    <span class="ms-perm-direct">
+                      <span class="material-symbols-outlined" aria-hidden="true">person_add</span>
+                      {% translate 'direct grant' %}
+                    </span>
+                  {% endif %}
+                </span>
+              </li>
+            {% endfor %}
+          </ul>
+        </section>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+
+<style>
+  /* Rows only -- the board chrome above reuses admin_user_permission.css. */
+  .ms-board .ms-perm-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+  .ms-board .ms-perm {
+    display: flex; gap: .5rem; align-items: flex-start;
+    padding: .3rem .4rem; border-radius: .4rem;
+  }
+  .ms-board .ms-perm.is-granted { background: var(--mp-grant-soft); }
+  .ms-board .ms-perm.is-locked { opacity: .72; }
+  .ms-board .ms-perm-check { flex: 0 0 auto; padding-top: 1px; }
+  .ms-board .ms-perm.is-locked .pm-box { cursor: not-allowed; }
+  .ms-board .ms-perm-body { display: flex; flex-direction: column; min-width: 0; }
+  .ms-board .ms-perm-code {
+    font: 600 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+    word-break: break-all;
+  }
+  .ms-board .ms-perm-name { font-size: 11px; opacity: .75; }
+  .ms-board .ms-perm-via,
+  .ms-board .ms-perm-direct {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-size: 10px; opacity: .85; margin-top: 1px;
+  }
+  .ms-board .ms-perm-via .material-symbols-outlined,
+  .ms-board .ms-perm-direct .material-symbols-outlined { font-size: 12px; }
+  .ms-board .ms-perm-direct { color: var(--mp-grant); font-weight: 700; }
+  .ms-board .ms-roles { display: inline-flex; flex-wrap: wrap; gap: .3rem; }
+  .ms-board .ms-role-chip {
+    font: 600 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 0 .45rem; border-radius: 999px;
+    background: var(--mp-grant-soft); color: var(--mp-grant);
+    border: 1px solid var(--mp-grant-line);
+  }
+  .ms-board .ms-muted { font-size: 12px; opacity: .7; }
+  .ms-board .ms-wildcard {
+    display: flex; gap: .5rem; align-items: flex-start;
+    font-size: 12px; line-height: 1.5;
+    padding: .6rem .75rem; margin: 0 0 .9rem;
+    border-radius: .6rem;
+    background: var(--mp-grant-soft);
+    border: 1px solid var(--mp-grant-line);
+    color: var(--mp-grant);
+  }
+  .ms-board .ms-wildcard .material-symbols-outlined { font-size: 18px; flex: 0 0 auto; }
+  .ms-board .ms-sr {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+</style>
+{% endif %}

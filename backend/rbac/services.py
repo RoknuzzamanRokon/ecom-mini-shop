@@ -23,10 +23,17 @@ def get_user_role_codes(user) -> Set[str]:
 
 def get_user_permissions(user) -> Set[str]:
     """
-    Resolves the set of permission codes available to the user based on their
-    assigned roles.
+    Resolves the set of permission codes available to the user.
+
     - Superusers or users with SUPER_ADMINISTRATOR role receive all system permissions.
-    - Regular staff receive the union of all permissions from their active assigned roles.
+    - Everyone else receives the UNION of:
+        1. every permission from their active assigned roles, and
+        2. any permission granted directly to them via UserPermission.
+
+    Roles stay the primary grant path; the direct grants are the single-account
+    exception (see UserPermission's docstring). This function is the only place
+    permissions are resolved, so unioning here is what makes a direct grant
+    enforceable by every existing permission class without changing any of them.
     """
     if not user or not user.is_authenticated:
         return set()
@@ -39,13 +46,22 @@ def get_user_permissions(user) -> Set[str]:
         all_perms.add("*")
         return all_perms
 
-    return set(
+    role_permissions = set(
         Permission.objects.filter(
             role_permissions__role__user_roles__user=user,
             role_permissions__role__user_roles__is_active=True,
             role_permissions__role__is_active=True,
         ).values_list("code", flat=True)
     )
+
+    direct_permissions = set(
+        Permission.objects.filter(
+            user_permissions__user=user,
+            user_permissions__is_active=True,
+        ).values_list("code", flat=True)
+    )
+
+    return role_permissions | direct_permissions
 
 
 def has_user_permission(user, permission_code: str) -> bool:
