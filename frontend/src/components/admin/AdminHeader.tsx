@@ -97,16 +97,33 @@ export default function AdminHeader({
                   Assigned Roles
                 </span>
                 <div className="flex flex-wrap gap-1 mt-1">
-                  {(user?.roles || ["ADMINISTRATOR"]).map((r) => (
-                    <span
-                      key={r}
-                      className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-surface-alt text-ink"
-                    >
-                      {r}
+                  {(user?.roles ?? []).length === 0 ? (
+                    <span className="text-[9px] font-semibold text-ink-muted">
+                      No roles assigned
                     </span>
-                  ))}
+                  ) : (
+                    (user?.roles ?? []).map((r) => (
+                      <span
+                        key={r}
+                        className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-surface-alt text-ink"
+                      >
+                        {r}
+                      </span>
+                    ))
+                  )}
                 </div>
               </div>
+
+              <Link
+                href="/admin/profile"
+                onClick={() => setShowUserMenu(false)}
+                className="w-full flex items-center gap-2 px-4 py-2.5 text-xs text-ink hover:bg-surface-alt transition-colors"
+              >
+                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
+                  account_circle
+                </span>
+                View Profile
+              </Link>
 
               <button
                 type="button"
