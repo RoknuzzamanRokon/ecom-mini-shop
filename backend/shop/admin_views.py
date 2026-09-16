@@ -8,6 +8,7 @@ concurrency control, and comprehensive audit logging.
 
 import logging
 from django.contrib.auth import get_user_model
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Q, Sum
 from django.utils import timezone
@@ -33,7 +34,13 @@ from rbac.services import (
     remove_user_role,
 )
 from sellers.models import SellerProfile
-from sellers.services import approve_seller, reactivate_seller, reject_seller, suspend_seller
+from sellers.services import (
+    approve_seller,
+    create_seller_profile,
+    reactivate_seller,
+    reject_seller,
+    suspend_seller,
+)
 from shop.admin_permissions import (
     CanChangeAdminProductStatus,
     CanChangeAdminShopStatus,
@@ -60,6 +67,7 @@ from shop.admin_serializers import (
     AdminCustomerListSerializer,
     AdminProductSerializer,
     AdminProductStatusUpdateSerializer,
+    AdminSellerCreateSerializer,
     AdminRoleCreateSerializer,
     AdminRoleSerializer,
     AdminRoleUpdateSerializer,
@@ -67,6 +75,7 @@ from shop.admin_serializers import (
     AdminSellerStatusUpdateSerializer,
     AdminShopSerializer,
     AdminShopStatusUpdateSerializer,
+    AdminUserCreateSerializer,
     AdminUserDetailSerializer,
     AdminUserListSerializer,
     AdminUserUpdateSerializer,
@@ -97,10 +106,15 @@ def get_client_ip(request):
 
 class AdminUserListAPIView(APIView):
     """
-    GET /api/admin/users/
-    List users with search, role filters, active filters, and pagination.
+    GET  /api/admin/users/
+    POST /api/admin/users/
+    List users with search, role filters, active filters, and pagination, or
+    create a new management/platform account.
     """
-    permission_classes = [IsAuthenticated, CanViewAdminUsers]
+    def get_permissions(self):
+        if self.request.method in ("POST", "PUT", "PATCH", "DELETE"):
+            return [IsAuthenticated(), CanManageAdminUsers()]
+        return [IsAuthenticated(), CanViewAdminUsers()]
 
     def get(self, request):
         qs = User.objects.all().order_by("-date_joined")
@@ -128,6 +142,90 @@ class AdminUserListAPIView(APIView):
         page = paginator.paginate_queryset(qs, request)
         serializer = AdminUserListSerializer(page, many=True)
         return paginator.get_paginated_response(serializer.data)
+
+
+    def post(self, request):
+        """
+        Creates a user account, optionally assigning roles in the same
+        transaction.
+
+        The role-assignment rules below are deliberately IDENTICAL to checks 3
+        and 4 of AdminUserDetailAPIView.patch, evaluated against an empty
+        starting role set (a new account holds nothing yet). Creation must not
+        become a way around a restriction that applies to editing: an actor who
+        may not grant SUPER_ADMINISTRATOR to an existing user must not be able
+        to grant it by creating a user instead.
+
+        Two of the patch checks have no counterpart here, because they cannot
+        apply to an account that does not exist yet: the target cannot already
+        be a Super Administrator, and the actor cannot be modifying themselves.
+        The last-active-Super-Administrator rule likewise cannot be violated by
+        a creation, which can only ever increase that count.
+        """
+        serializer = AdminUserCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        reason = data["reason"]
+
+        actor = request.user
+        actor_role_codes = get_user_role_codes(actor)
+        actor_is_super = actor.is_superuser or (Role.ROLE_SUPER_ADMINISTRATOR in actor_role_codes)
+
+        desired_roles = set(data.get("roles", []))
+
+        # Check 1: only a Super Administrator may grant SUPER_ADMINISTRATOR.
+        if (Role.ROLE_SUPER_ADMINISTRATOR in desired_roles) and not actor_is_super:
+            raise PermissionDenied("Only a Super Administrator can grant the Super Administrator role.")
+
+        # Check 2: only a Super Administrator may assign any protected role.
+        for protected_code in PROTECTED_ROLE_CODES:
+            if (protected_code in desired_roles) and not actor_is_super:
+                raise PermissionDenied(f"Only a Super Administrator can assign the protected role '{protected_code}'.")
+
+        # Check 3: every requested role must exist and be active, exactly as the
+        # patch path resolves them.
+        if desired_roles:
+            existing_roles = {r.code for r in Role.objects.filter(code__in=desired_roles, is_active=True)}
+            missing_codes = desired_roles - existing_roles
+            if missing_codes:
+                raise DRFValidationError({"roles": f"Unknown or inactive role codes: {sorted(list(missing_codes))}"})
+
+        with transaction.atomic():
+            new_user = User.objects.create_user(
+                username=data["username"],
+                email=data["email"],
+                password=data["password"],
+                first_name=data.get("first_name", "").strip(),
+                last_name=data.get("last_name", "").strip(),
+            )
+
+            # create_user() defaults is_active=True; only touch it when the
+            # caller asked for something else.
+            if data.get("is_active") is False:
+                new_user.is_active = False
+                new_user.save(update_fields=["is_active"])
+
+            for code in sorted(desired_roles):
+                assign_user_role(new_user, code, assigned_by=actor)
+
+            AuditService.log(
+                action="ADMIN_USER_CREATED",
+                target=new_user,
+                actor=actor,
+                reason=reason,
+                new_state={
+                    "username": new_user.username,
+                    "email": new_user.email,
+                    "is_active": new_user.is_active,
+                    "roles": sorted(list(get_user_role_codes(new_user))),
+                },
+                ip_address=get_client_ip(request),
+            )
+
+        return Response(
+            AdminUserDetailSerializer(User.objects.get(pk=new_user.pk)).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class AdminUserDetailAPIView(APIView):
@@ -503,10 +601,15 @@ class AdminPermissionCatalogAPIView(APIView):
 
 class AdminSellerListAPIView(APIView):
     """
-    GET /api/admin/sellers/
-    Searchable, filterable, paginated seller list for administrators.
+    GET  /api/admin/sellers/
+    POST /api/admin/sellers/
+    Browse the seller directory, or create a seller profile on behalf of an
+    existing user account.
     """
-    permission_classes = [IsAuthenticated, CanViewAdminSellers]
+    def get_permissions(self):
+        if self.request.method in ("POST", "PUT", "PATCH", "DELETE"):
+            return [IsAuthenticated(), CanManageAdminSellers()]
+        return [IsAuthenticated(), CanViewAdminSellers()]
 
     def get(self, request):
         qs = SellerProfile.objects.select_related("user").prefetch_related("shops").all().order_by("-created_at")
@@ -532,6 +635,70 @@ class AdminSellerListAPIView(APIView):
         page = paginator.paginate_queryset(qs, request)
         serializer = AdminSellerSerializer(page, many=True)
         return paginator.get_paginated_response(serializer.data)
+
+
+    def post(self, request):
+        """
+        Creates a SellerProfile for an existing user, in the PENDING state.
+
+        Gated by CanManageAdminSellers ('sellers.admin.manage'), the permission
+        that already governs every other arbitrary-target seller operation
+        (AdminSellerStatusAPIView). The seeded but unreferenced 'sellers.create'
+        is deliberately NOT wired up here: three roles hold it today on the
+        understanding that it grants nothing, and giving it meaning would
+        silently widen their authority without anyone assigning it.
+
+        Creation is intentionally inert beyond the profile itself — the seller
+        starts PENDING and must go through the existing approval endpoints. No
+        role is assigned, no wallet or point transaction is created, and no shop
+        or product is touched.
+        """
+        serializer = AdminSellerCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        reason = data["reason"]
+
+        with transaction.atomic():
+            try:
+                target_user = User.objects.select_for_update().get(pk=data["user_id"])
+            except User.DoesNotExist:
+                raise NotFound("User not found.")
+
+            try:
+                seller = create_seller_profile(
+                    target_user,
+                    seller_type=data["seller_type"],
+                    business_name=data["business_name"],
+                    business_email=data.get("business_email", ""),
+                    business_phone=data.get("business_phone", ""),
+                    tax_id=data.get("tax_id", ""),
+                    description=data.get("description", ""),
+                )
+            except DjangoValidationError as exc:
+                # The shared service and SellerProfile.full_clean() raise Django
+                # validation errors; surface them as ordinary DRF 400 field
+                # errors rather than letting them become a 500.
+                raise DRFValidationError(
+                    exc.message_dict if hasattr(exc, "message_dict") else {"detail": exc.messages}
+                )
+
+            AuditService.log(
+                action="ADMIN_SELLER_CREATED",
+                target=seller,
+                actor=request.user,
+                reason=reason,
+                new_state={
+                    "seller_id": seller.id,
+                    "user_id": target_user.id,
+                    "username": target_user.username,
+                    "business_name": seller.business_name,
+                    "seller_type": seller.seller_type,
+                    "status": seller.status,
+                },
+                ip_address=get_client_ip(request),
+            )
+
+        return Response(AdminSellerSerializer(seller).data, status=status.HTTP_201_CREATED)
 
 
 class AdminSellerDetailAPIView(APIView):

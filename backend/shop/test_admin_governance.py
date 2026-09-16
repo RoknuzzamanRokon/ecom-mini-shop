@@ -895,3 +895,419 @@ class AdminPermissionDelegationTests(APITestCase):
         self.client.force_authenticate(user=self.outsider)
         res = self.client.get(f"/api/admin/users/{self.delegator.id}/")
         self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class AdminUserCreationTests(APITestCase):
+    """
+    Phase 1G-B: POST /api/admin/users/.
+
+    The governance question under test is that creation cannot become a way
+    around a restriction that already applies to editing — an actor who may not
+    grant a role via PATCH must not be able to grant it by creating a user.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_rbac")
+
+        cls.superadmin = User.objects.create_superuser(
+            username="uc_superadmin",
+            email="uc_super@minishop.com",
+            password="SuperPassword123!",
+        )
+        assign_user_role(cls.superadmin, Role.ROLE_SUPER_ADMINISTRATOR)
+
+        cls.admin = User.objects.create_user(
+            username="uc_admin",
+            email="uc_admin@minishop.com",
+            password="AdminPassword123!",
+            is_staff=True,
+        )
+        assign_user_role(cls.admin, Role.ROLE_ADMINISTRATOR)
+
+        # Holds users.admin.view but NOT users.admin.manage.
+        cls.viewer_role = Role.objects.create(code="UC_VIEWER", name="User Viewer")
+        RolePermission.objects.create(
+            role=cls.viewer_role, permission=Permission.objects.get(code="users.admin.view")
+        )
+        cls.viewer = User.objects.create_user(
+            username="uc_viewer", email="uc_viewer@minishop.com", password="ViewerPassword123!"
+        )
+        assign_user_role(cls.viewer, "UC_VIEWER")
+
+        cls.outsider = User.objects.create_user(
+            username="uc_outsider", email="uc_outsider@minishop.com", password="OutsiderPassword123!"
+        )
+        assign_user_role(cls.outsider, Role.ROLE_CUSTOMER)
+
+    def _payload(self, **overrides):
+        payload = {
+            "username": "created_user",
+            "email": "created_user@minishop.com",
+            "password": "BrandNewPassword123!",
+            "password_confirm": "BrandNewPassword123!",
+            "first_name": "Created",
+            "last_name": "User",
+            "reason": "Phase 1G-B creation test",
+        }
+        payload.update(overrides)
+        return payload
+
+    # -- authorization -------------------------------------------------------
+
+    def test_anonymous_cannot_create_user(self):
+        res = self.client.post("/api/admin/users/", data=self._payload(), format="json")
+        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertFalse(User.objects.filter(username="created_user").exists())
+
+    def test_user_without_manage_permission_gets_403(self):
+        """users.admin.view is not enough to create — only to read."""
+        self.client.force_authenticate(user=self.viewer)
+        res = self.client.post("/api/admin/users/", data=self._payload(), format="json")
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(User.objects.filter(username="created_user").exists())
+
+    def test_unrelated_user_gets_403(self):
+        self.client.force_authenticate(user=self.outsider)
+        res = self.client.post("/api/admin/users/", data=self._payload(), format="json")
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+    # -- happy path ----------------------------------------------------------
+
+    def test_authorized_actor_creates_user_with_roles(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            "/api/admin/users/",
+            data=self._payload(roles=[Role.ROLE_SUPPORT_TEAM]),
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+
+        created = User.objects.get(username="created_user")
+        self.assertTrue(created.is_active)
+        self.assertEqual(created.email, "created_user@minishop.com")
+        self.assertEqual(get_user_role_codes(created), {Role.ROLE_SUPPORT_TEAM})
+
+        # The password must be usable and stored hashed, never echoed back.
+        self.assertTrue(created.check_password("BrandNewPassword123!"))
+        self.assertNotIn("password", json.dumps(res.data).lower())
+
+        # Response follows the existing admin user representation.
+        self.assertEqual(res.data["id"], created.id)
+        self.assertIn("permissions", res.data)
+        self.assertIn("has_full_platform_access", res.data)
+
+    def test_creation_is_audited(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post("/api/admin/users/", data=self._payload(), format="json")
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+
+        entry = AuditLog.objects.filter(action="ADMIN_USER_CREATED").order_by("-id").first()
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.actor, self.admin)
+        self.assertEqual(entry.metadata.get("reason"), "Phase 1G-B creation test")
+        self.assertEqual(entry.metadata["new_state"]["username"], "created_user")
+
+    def test_can_create_inactive_user(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post("/api/admin/users/", data=self._payload(is_active=False), format="json")
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertFalse(User.objects.get(username="created_user").is_active)
+
+    # -- input validation ----------------------------------------------------
+
+    def test_duplicate_username_rejected_case_insensitively(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            "/api/admin/users/", data=self._payload(username="UC_ADMIN"), format="json"
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("username", res.data)
+
+    def test_duplicate_email_rejected_case_insensitively(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            "/api/admin/users/", data=self._payload(email="UC_ADMIN@minishop.com"), format="json"
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("email", res.data)
+
+    def test_password_mismatch_rejected(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            "/api/admin/users/", data=self._payload(password_confirm="Different123!"), format="json"
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_weak_password_rejected_by_django_validators(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            "/api/admin/users/",
+            data=self._payload(password="123", password_confirm="123"),
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("password", res.data)
+
+    def test_reason_is_required(self):
+        payload = self._payload()
+        del payload["reason"]
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post("/api/admin/users/", data=payload, format="json")
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("reason", res.data)
+
+    def test_unknown_role_code_rejected(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            "/api/admin/users/", data=self._payload(roles=["NO_SUCH_ROLE"]), format="json"
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(User.objects.filter(username="created_user").exists())
+
+    def test_inactive_role_cannot_be_assigned(self):
+        inactive = Role.objects.create(code="UC_RETIRED", name="Retired", is_active=False)
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            "/api/admin/users/", data=self._payload(roles=[inactive.code]), format="json"
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(User.objects.filter(username="created_user").exists())
+
+    # -- anti-escalation -----------------------------------------------------
+
+    def test_administrator_cannot_create_super_administrator(self):
+        """The escalation attempt this endpoint most needs to refuse."""
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            "/api/admin/users/",
+            data=self._payload(roles=[Role.ROLE_SUPER_ADMINISTRATOR]),
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(User.objects.filter(username="created_user").exists())
+
+    def test_administrator_cannot_create_another_protected_role_holder(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            "/api/admin/users/",
+            data=self._payload(roles=[Role.ROLE_ADMINISTRATOR]),
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(User.objects.filter(username="created_user").exists())
+
+    def test_super_administrator_may_create_protected_role_holder(self):
+        """The restriction is the actor's authority, not a blanket ban."""
+        self.client.force_authenticate(user=self.superadmin)
+        res = self.client.post(
+            "/api/admin/users/",
+            data=self._payload(roles=[Role.ROLE_ADMINISTRATOR]),
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(
+            get_user_role_codes(User.objects.get(username="created_user")),
+            {Role.ROLE_ADMINISTRATOR},
+        )
+
+    def test_failed_role_assignment_creates_no_user(self):
+        """Creation and role assignment share one transaction."""
+        self.client.force_authenticate(user=self.admin)
+        before = User.objects.count()
+        res = self.client.post(
+            "/api/admin/users/",
+            data=self._payload(roles=[Role.ROLE_SUPPORT_TEAM, Role.ROLE_SUPER_ADMINISTRATOR]),
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(User.objects.count(), before)
+
+    def test_patch_protections_still_hold_after_adding_post(self):
+        """Regression guard: the new POST must not have relaxed the PATCH path."""
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.patch(
+            f"/api/admin/users/{self.outsider.id}/",
+            data={"roles": [Role.ROLE_SUPER_ADMINISTRATOR], "reason": "escalation attempt"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+        res = self.client.patch(
+            f"/api/admin/users/{self.admin.id}/",
+            data={"roles": [Role.ROLE_SUPER_ADMINISTRATOR], "reason": "self escalation"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class AdminSellerCreationTests(APITestCase):
+    """Phase 1G-B: POST /api/admin/sellers/ for an existing user."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_rbac")
+
+        cls.superadmin = User.objects.create_superuser(
+            username="sc_superadmin",
+            email="sc_super@minishop.com",
+            password="SuperPassword123!",
+        )
+        assign_user_role(cls.superadmin, Role.ROLE_SUPER_ADMINISTRATOR)
+
+        cls.admin = User.objects.create_user(
+            username="sc_admin",
+            email="sc_admin@minishop.com",
+            password="AdminPassword123!",
+            is_staff=True,
+        )
+        assign_user_role(cls.admin, Role.ROLE_ADMINISTRATOR)
+
+        # OPERATION_MANAGER holds sellers.view but NOT sellers.admin.manage.
+        cls.op_manager = User.objects.create_user(
+            username="sc_op_manager",
+            email="sc_op@minishop.com",
+            password="OpPassword123!",
+            is_staff=True,
+        )
+        assign_user_role(cls.op_manager, Role.ROLE_OPERATION_MANAGER)
+
+        cls.target_user = User.objects.create_user(
+            username="sc_target", email="sc_target@minishop.com", password="TargetPassword123!"
+        )
+        cls.already_seller = User.objects.create_user(
+            username="sc_existing", email="sc_existing@minishop.com", password="ExistingPassword123!"
+        )
+        SellerProfile.objects.create(
+            user=cls.already_seller,
+            seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+            business_name="Existing Business",
+            status=SellerProfile.STATUS_ACTIVE,
+        )
+
+    def _payload(self, **overrides):
+        payload = {
+            "user_id": self.target_user.id,
+            "business_name": "Admin Created Shop",
+            "seller_type": SellerProfile.TYPE_PRODUCT_OWNER,
+            "business_email": "created@minishop.com",
+            "business_phone": "01799999999",
+            "reason": "Phase 1G-B seller creation test",
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_anonymous_cannot_create_seller(self):
+        res = self.client.post("/api/admin/sellers/", data=self._payload(), format="json")
+        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_seller_view_permission_is_not_enough(self):
+        """OPERATION_MANAGER can read the directory but not create in it."""
+        self.client.force_authenticate(user=self.op_manager)
+        res = self.client.post("/api/admin/sellers/", data=self._payload(), format="json")
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(SellerProfile.objects.filter(user=self.target_user).exists())
+
+        # ...and the GET path it does hold still works.
+        self.assertEqual(self.client.get("/api/admin/sellers/").status_code, status.HTTP_200_OK)
+
+    def test_authorized_actor_creates_seller_for_specified_user(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post("/api/admin/sellers/", data=self._payload(), format="json")
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+
+        seller = SellerProfile.objects.get(user=self.target_user)
+        # Attached to the named user, NOT to the acting administrator.
+        self.assertEqual(seller.user, self.target_user)
+        self.assertFalse(SellerProfile.objects.filter(user=self.admin).exists())
+
+        self.assertEqual(seller.status, SellerProfile.STATUS_PENDING)
+        self.assertFalse(seller.is_operational)
+        self.assertEqual(seller.seller_type, SellerProfile.TYPE_PRODUCT_OWNER)
+        self.assertEqual(seller.business_name, "Admin Created Shop")
+        self.assertEqual(res.data["id"], seller.id)
+
+    def test_creation_has_no_side_effects(self):
+        """No wallet, no points, no roles, no shop."""
+        from points.models import PointTransaction as PT, SellerWallet
+
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post("/api/admin/sellers/", data=self._payload(), format="json")
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+
+        seller = SellerProfile.objects.get(user=self.target_user)
+        self.assertFalse(SellerWallet.objects.filter(seller=seller).exists())
+        self.assertFalse(PT.objects.filter(seller=seller).exists())
+        self.assertEqual(get_user_role_codes(self.target_user), set())
+        self.assertEqual(seller.shops.count(), 0)
+
+    def test_creation_is_audited(self):
+        self.client.force_authenticate(user=self.admin)
+        self.client.post("/api/admin/sellers/", data=self._payload(), format="json")
+
+        entry = AuditLog.objects.filter(action="ADMIN_SELLER_CREATED").order_by("-id").first()
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.actor, self.admin)
+        self.assertEqual(entry.metadata["new_state"]["user_id"], self.target_user.id)
+
+    def test_nonexistent_user_rejected(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post("/api/admin/sellers/", data=self._payload(user_id=999999), format="json")
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("user_id", res.data)
+
+    def test_user_with_existing_profile_rejected(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            "/api/admin/sellers/", data=self._payload(user_id=self.already_seller.id), format="json"
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(SellerProfile.objects.filter(user=self.already_seller).count(), 1)
+
+    def test_invalid_seller_type_rejected(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            "/api/admin/sellers/", data=self._payload(seller_type="GALACTIC_OVERLORD"), format="json"
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(SellerProfile.objects.filter(user=self.target_user).exists())
+
+    def test_blank_business_name_rejected(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            "/api/admin/sellers/", data=self._payload(business_name="   "), format="json"
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_reason_is_required(self):
+        payload = self._payload()
+        del payload["reason"]
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post("/api/admin/sellers/", data=payload, format="json")
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("reason", res.data)
+
+    def test_seller_self_registration_still_works(self):
+        """The shared-service refactor must not disturb the existing endpoint."""
+        fresh = User.objects.create_user(
+            username="sc_selfreg", email="sc_selfreg@minishop.com", password="SelfPassword123!"
+        )
+        self.client.force_authenticate(user=fresh)
+        res = self.client.post(
+            "/api/sellers/register/",
+            data={"business_name": "Self Registered", "seller_type": SellerProfile.TYPE_FULL_SHOP_OWNER},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+
+        seller = SellerProfile.objects.get(user=fresh)
+        self.assertEqual(seller.status, SellerProfile.STATUS_PENDING)
+        self.assertEqual(seller.business_name, "Self Registered")
+
+        # Still refuses a second profile for the same account.
+        duplicate = self.client.post(
+            "/api/sellers/register/",
+            data={"business_name": "Second Attempt"},
+            format="json",
+        )
+        self.assertEqual(duplicate.status_code, status.HTTP_400_BAD_REQUEST)

@@ -4,10 +4,25 @@ from .models import SellerWallet, PointTransaction, ProductCreationCost
 
 @admin.register(SellerWallet)
 class SellerWalletAdmin(admin.ModelAdmin):
+    """
+    Read-only balance view of a seller's wallet.
+
+    `balance` is deliberately NOT editable here. Every legitimate balance change
+    goes through PointService.credit/debit, which takes a row lock, checks the
+    non-negative invariant and appends the PointTransaction that makes the
+    movement auditable. A direct edit on this form would do none of that: it
+    would silently desynchronise the balance from its own ledger, with no
+    transaction, no before/after pair, and no actor recorded.
+
+    The wallet row itself stays creatable and deletable, because the model is
+    created lazily by PointService.get_or_create_wallet and a zero-balance row
+    carries no financial meaning on its own.
+    """
+
     list_display = ('seller', 'balance_display', 'created_at', 'updated_at')
     search_fields = ('seller__user__username', 'seller__business_name')
     list_filter = ('created_at', 'updated_at')
-    readonly_fields = ('created_at', 'updated_at')
+    readonly_fields = ('balance', 'created_at', 'updated_at')
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('seller', 'seller__user')

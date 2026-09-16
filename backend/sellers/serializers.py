@@ -79,12 +79,12 @@ class SellerRegistrationSerializer(serializers.ModelSerializer):
         return attrs
 
     def create(self, validated_data):
-        user = self.context["request"].user
-        return SellerProfile.objects.create(
-            user=user,
-            status=SellerProfile.STATUS_PENDING,
-            **validated_data,
-        )
+        from .services import create_seller_profile
+
+        # Self-registration always targets the requesting user; validate() above
+        # already rejected a duplicate profile, and the shared service re-checks
+        # it so the invariant holds for every caller.
+        return create_seller_profile(self.context["request"].user, **validated_data)
 
 
 class SellerProfileUpdateSerializer(serializers.ModelSerializer):

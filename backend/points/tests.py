@@ -428,3 +428,248 @@ class PointConcurrencyTests(TransactionTestCase):
         self.assertEqual(failure_count[0], 3, f"Expected exactly 3 failures, got {failure_count[0]}")
         self.assertEqual(final_balance, 20, f"Expected final balance 20, got {final_balance}")
         self.assertGreaterEqual(final_balance, 0, "Balance must never drop below zero")
+
+
+class PointActionAuthorizationTests(TestCase):
+    """
+    Phase 1G-B: per-action authorization on the point adjustment endpoint.
+
+    'points.add' and 'points.deduct' are one-way authorities. Before this phase
+    the endpoint only checked that the actor held ONE of add/deduct/adjust and
+    then performed whichever direction the body asked for, so an actor with
+    'points.add' alone could debit a seller's balance.
+
+    Every role below is an ISOLATED test-only fixture built from the real
+    permission catalogue. No shipped role's permissions are modified — in
+    particular this suite never grants OPERATION_MANAGER a points permission.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_rbac")
+        from rbac.models import Permission, RolePermission
+
+        cls.seller_user = User.objects.create_user(
+            username="pa_seller", email="pa_seller@minishop.com", password="SellerPassword123!"
+        )
+        cls.seller = SellerProfile.objects.create(
+            user=cls.seller_user,
+            seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+            business_name="Point Action Shop",
+            status=SellerProfile.STATUS_ACTIVE,
+        )
+
+        def make_actor(username, role_code, permission_codes):
+            role = Role.objects.create(code=role_code, name=role_code.title())
+            for code in permission_codes:
+                RolePermission.objects.create(
+                    role=role, permission=Permission.objects.get(code=code)
+                )
+            user = User.objects.create_user(
+                username=username, email=f"{username}@minishop.com", password="ActorPassword123!"
+            )
+            assign_user_role(user, role_code)
+            return user
+
+        cls.adder = make_actor("pa_adder", "PA_ADD_ONLY", ["points.add"])
+        cls.deducter = make_actor("pa_deducter", "PA_DEDUCT_ONLY", ["points.deduct"])
+        cls.adjuster = make_actor("pa_adjuster", "PA_ADJUST_ONLY", ["points.adjust"])
+        cls.viewer = make_actor("pa_viewer", "PA_VIEW_ONLY", ["points.view"])
+
+        cls.wildcard = User.objects.create_superuser(
+            username="pa_wildcard", email="pa_wildcard@minishop.com", password="WildPassword123!"
+        )
+        assign_user_role(cls.wildcard, Role.ROLE_SUPER_ADMINISTRATOR)
+
+    def setUp(self):
+        self.client = APIClient()
+        self.url = f"/api/points/sellers/{self.seller.pk}/adjust/"
+        # A starting balance so DEBIT attempts fail on AUTHORIZATION, never on
+        # an empty wallet — otherwise a 400 could be mistaken for a 403.
+        PointService.credit(self.seller, 500, PointTransaction.TYPE_BONUS, "Test float")
+
+    def _adjust(self, actor, action, amount=10):
+        self.client.force_authenticate(user=actor)
+        return self.client.post(
+            self.url,
+            {"action": action, "amount": amount, "reason": f"{action} authorization test"},
+            format="json",
+        )
+
+    # -- the 8 permission/action combinations --------------------------------
+
+    def test_1_add_only_may_credit(self):
+        res = self._adjust(self.adder, "CREDIT")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(PointService.get_balance(self.seller), 510)
+
+    def test_2_add_only_may_not_debit(self):
+        """The core gap this phase closes."""
+        res = self._adjust(self.adder, "DEBIT")
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(PointService.get_balance(self.seller), 500)
+
+    def test_3_deduct_only_may_debit(self):
+        res = self._adjust(self.deducter, "DEBIT")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(PointService.get_balance(self.seller), 490)
+
+    def test_4_deduct_only_may_not_credit(self):
+        res = self._adjust(self.deducter, "CREDIT")
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(PointService.get_balance(self.seller), 500)
+
+    def test_5_adjust_only_may_credit(self):
+        res = self._adjust(self.adjuster, "CREDIT")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(PointService.get_balance(self.seller), 510)
+
+    def test_6_adjust_only_may_debit(self):
+        res = self._adjust(self.adjuster, "DEBIT")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(PointService.get_balance(self.seller), 490)
+
+    def test_7_wildcard_may_credit(self):
+        res = self._adjust(self.wildcard, "CREDIT")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(PointService.get_balance(self.seller), 510)
+
+    def test_8_wildcard_may_debit(self):
+        res = self._adjust(self.wildcard, "DEBIT")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(PointService.get_balance(self.seller), 490)
+
+    # -- everything else -----------------------------------------------------
+
+    def test_9_actor_without_any_point_permission_is_forbidden(self):
+        """points.view opens the ledger, never the adjustment endpoint."""
+        for action in ("CREDIT", "DEBIT"):
+            res = self._adjust(self.viewer, action)
+            self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN, msg=action)
+        self.assertEqual(PointService.get_balance(self.seller), 500)
+
+    def test_9b_anonymous_is_unauthorized(self):
+        self.client.force_authenticate(user=None)
+        res = self.client.post(
+            self.url, {"action": "CREDIT", "amount": 10, "reason": "anon"}, format="json"
+        )
+        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_10_insufficient_balance_behaviour_preserved(self):
+        res = self._adjust(self.deducter, "DEBIT", amount=99999)
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(PointService.get_balance(self.seller), 500)
+
+    def test_11_successful_mutation_writes_the_expected_ledger_entry(self):
+        before = PointTransaction.objects.filter(seller=self.seller).count()
+        res = self._adjust(self.adder, "CREDIT", amount=75)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+        self.assertEqual(PointTransaction.objects.filter(seller=self.seller).count(), before + 1)
+        txn = PointTransaction.objects.filter(seller=self.seller).order_by("-id").first()
+        self.assertEqual(txn.transaction_type, PointTransaction.TYPE_ADMIN_CREDIT)
+        self.assertEqual(txn.amount, 75)
+        self.assertEqual(txn.balance_before, 500)
+        self.assertEqual(txn.balance_after, 575)
+        self.assertEqual(txn.actor, self.adder)
+        self.assertTrue(txn.reason)
+
+    def test_12_refused_action_writes_no_ledger_entry(self):
+        before = PointTransaction.objects.filter(seller=self.seller).count()
+        res = self._adjust(self.adder, "DEBIT")
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(PointTransaction.objects.filter(seller=self.seller).count(), before)
+        self.assertEqual(PointService.get_balance(self.seller), 500)
+
+    def test_refusal_message_does_not_enumerate_permissions(self):
+        """A caller must not be able to probe which point authorities exist."""
+        res = self._adjust(self.adder, "DEBIT")
+        detail = str(res.data.get("detail", "")).lower()
+        for code in ("points.add", "points.deduct", "points.adjust"):
+            self.assertNotIn(code, detail)
+
+    def test_staff_adjustment_writes_a_central_audit_entry(self):
+        from audit.models import AuditLog
+
+        res = self._adjust(self.adder, "CREDIT", amount=25)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+        entry = AuditLog.objects.filter(action="ADMIN_POINTS_CREDIT").order_by("-id").first()
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.actor, self.adder)
+        self.assertEqual(entry.seller, self.seller)
+        self.assertEqual(entry.metadata["amount"], 25)
+        self.assertEqual(entry.metadata["previous_state"]["balance"], 500)
+        self.assertEqual(entry.metadata["new_state"]["balance"], 525)
+
+
+class SellerWalletAdminIntegrityTests(TestCase):
+    """
+    Phase 1G-B: the Django Admin wallet form must not be able to rewrite a
+    balance, which would desynchronise it from its own PointTransaction ledger.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_rbac")
+        cls.seller_user = User.objects.create_user(
+            username="wa_seller", email="wa_seller@minishop.com", password="SellerPassword123!"
+        )
+        cls.seller = SellerProfile.objects.create(
+            user=cls.seller_user,
+            seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+            business_name="Wallet Admin Shop",
+            status=SellerProfile.STATUS_ACTIVE,
+        )
+
+    def _admin_request(self):
+        """
+        A real request bound to a superuser.
+
+        ModelAdmin.get_form() builds the related-field widgets, which call
+        has_add_permission(request) on the related admin — so request.user must
+        exist. Passing None raises AttributeError inside Django rather than
+        telling us anything about our own configuration.
+        """
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/admin/")
+        request.user = User.objects.create_superuser(
+            username="wa_admin", email="wa_admin@minishop.com", password="AdminPassword123!"
+        )
+        return request
+
+    def test_balance_is_readonly_on_the_wallet_admin_form(self):
+        from django.contrib.admin.sites import site
+        from points.admin import SellerWalletAdmin
+
+        wallet = PointService.get_or_create_wallet(self.seller)
+        request = self._admin_request()
+        model_admin = SellerWalletAdmin(SellerWallet, site)
+
+        self.assertIn("balance", model_admin.get_readonly_fields(request, obj=wallet))
+
+        # A read-only field is excluded from the generated form entirely, so
+        # even a hand-crafted POST has no field to smuggle a balance through.
+        form_class = model_admin.get_form(request, obj=wallet)
+        self.assertNotIn("balance", form_class.base_fields)
+
+    def test_point_transaction_admin_remains_append_only(self):
+        from django.contrib.admin.sites import site
+        from points.admin import PointTransactionAdmin
+
+        request = self._admin_request()
+        model_admin = PointTransactionAdmin(PointTransaction, site)
+        self.assertFalse(model_admin.has_add_permission(request))
+        self.assertFalse(model_admin.has_change_permission(request))
+        self.assertFalse(model_admin.has_delete_permission(request))
+
+    def test_service_remains_the_only_balance_mutation_path(self):
+        """The wallet model itself is untouched — only the admin form is locked."""
+        wallet = PointService.get_or_create_wallet(self.seller)
+        self.assertEqual(wallet.balance, 0)
+
+        PointService.credit(self.seller, 40, PointTransaction.TYPE_ADMIN_CREDIT, "Service path")
+        wallet.refresh_from_db()
+        self.assertEqual(wallet.balance, 40)
+        self.assertEqual(PointTransaction.objects.filter(seller=self.seller).count(), 1)

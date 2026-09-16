@@ -134,6 +134,91 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
         }
 
 
+class AdminUserCreateSerializer(serializers.Serializer):
+    """
+    Admin-governed user creation (POST /api/admin/users/).
+
+    Deliberately NOT built on CustomerRegistrationSerializer: that serializer is
+    a PUBLIC endpoint's contract. It forbids any privileged field outright and
+    hardcodes the CUSTOMER role, because an anonymous caller must never
+    influence either. An authorized administrator legitimately needs to set
+    is_active and assign roles, so applying the public rules here would make the
+    endpoint useless, and relaxing them there would weaken public registration.
+    The two therefore stay separate on purpose.
+
+    What IS shared with public registration is the account-quality policy —
+    case-insensitive uniqueness of username and email, password confirmation,
+    and Django's configured password validators — because those protect the
+    account itself rather than the privilege boundary.
+
+    `roles` and `is_active` are validated here only for shape. WHICH roles this
+    actor may grant is an authorization decision and is enforced in the view,
+    against the same rules as AdminUserDetailAPIView.patch.
+    """
+
+    username = serializers.CharField(max_length=150, required=True)
+    email = serializers.EmailField(max_length=254, required=True)
+    password = serializers.CharField(
+        write_only=True, required=True, style={"input_type": "password"}
+    )
+    password_confirm = serializers.CharField(
+        write_only=True, required=True, style={"input_type": "password"}
+    )
+    first_name = serializers.CharField(
+        max_length=150, required=False, allow_blank=True, default=""
+    )
+    last_name = serializers.CharField(
+        max_length=150, required=False, allow_blank=True, default=""
+    )
+    is_active = serializers.BooleanField(required=False, default=True)
+    roles = serializers.ListField(
+        child=serializers.CharField(max_length=50),
+        required=False,
+        default=list,
+        help_text="Role codes to assign atomically with creation.",
+    )
+    reason = serializers.CharField(
+        required=True,
+        max_length=500,
+        help_text="Required justification for the administrative creation.",
+    )
+
+    def validate_username(self, value):
+        username = value.strip()
+        if not username:
+            raise serializers.ValidationError("Username cannot be empty.")
+        if User.objects.filter(username__iexact=username).exists():
+            raise serializers.ValidationError("A user with that username already exists.")
+        return username
+
+    def validate_email(self, value):
+        email = value.strip().lower()
+        if not email:
+            raise serializers.ValidationError("Email cannot be empty.")
+        if User.objects.filter(email__iexact=email).exists():
+            raise serializers.ValidationError("A user with that email already exists.")
+        return email
+
+    def validate(self, attrs):
+        if attrs.get("password") != attrs.get("password_confirm"):
+            raise serializers.ValidationError(
+                {"password_confirm": "Passwords do not match."}
+            )
+
+        from django.contrib.auth.password_validation import validate_password
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        temp_user = User(username=attrs["username"], email=attrs["email"])
+        try:
+            validate_password(attrs["password"], user=temp_user)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({"password": list(exc.messages)})
+
+        # Duplicate role codes would make the assignment diff ambiguous.
+        attrs["roles"] = sorted(set(attrs.get("roles", [])))
+        return attrs
+
+
 class AdminUserUpdateSerializer(serializers.Serializer):
     is_active = serializers.BooleanField(required=False)
     roles = serializers.ListField(
@@ -284,6 +369,59 @@ class AdminSellerSerializer(serializers.ModelSerializer):
 
     def get_shops_count(self, obj):
         return obj.shops.count()
+
+
+class AdminSellerCreateSerializer(serializers.Serializer):
+    """
+    Admin-governed SellerProfile creation for an EXISTING user
+    (POST /api/admin/sellers/).
+
+    Distinct from SellerRegistrationSerializer, which always targets
+    request.user and cannot express "create a profile for someone else". The
+    business field set is identical on purpose; only `user_id` and the
+    governance `reason` are added.
+
+    Seller-type validity, the initial status and the one-profile-per-user rule
+    are NOT re-implemented here — they belong to SellerProfile.full_clean() and
+    sellers.services.create_seller_profile, which this endpoint calls. The
+    `user_id` check below exists so a bad reference fails as a clean 400 field
+    error rather than surfacing from deeper in the stack.
+    """
+
+    user_id = serializers.IntegerField(
+        required=True,
+        help_text="Primary key of the existing user to attach the seller profile to.",
+    )
+    business_name = serializers.CharField(max_length=200, required=True)
+    seller_type = serializers.ChoiceField(
+        choices=[choice[0] for choice in SellerProfile.SELLER_TYPE_CHOICES],
+        required=False,
+        default=SellerProfile.TYPE_FULL_SHOP_OWNER,
+    )
+    business_email = serializers.EmailField(required=False, allow_blank=True, default="")
+    business_phone = serializers.CharField(
+        max_length=30, required=False, allow_blank=True, default=""
+    )
+    tax_id = serializers.CharField(
+        max_length=100, required=False, allow_blank=True, default=""
+    )
+    description = serializers.CharField(required=False, allow_blank=True, default="")
+    reason = serializers.CharField(
+        required=True,
+        max_length=500,
+        help_text="Required justification for the administrative creation.",
+    )
+
+    def validate_user_id(self, value):
+        if not User.objects.filter(pk=value).exists():
+            raise serializers.ValidationError(f"No user exists with id {value}.")
+        return value
+
+    def validate_business_name(self, value):
+        name = value.strip()
+        if not name:
+            raise serializers.ValidationError("Business name cannot be empty.")
+        return name
 
 
 class AdminSellerStatusUpdateSerializer(serializers.Serializer):

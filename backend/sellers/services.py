@@ -3,6 +3,40 @@ from django.db import transaction
 from .models import SellerProfile
 
 
+@transaction.atomic
+def create_seller_profile(user, **fields) -> SellerProfile:
+    """
+    Creates a SellerProfile for `user` in the PENDING state.
+
+    The single creation path for the domain, shared by seller self-registration
+    (SellerRegistrationSerializer, where the target is always request.user) and
+    by admin creation on behalf of an existing account. Centralising it means
+    the initial status and the one-profile-per-user rule cannot diverge between
+    the two entry points.
+
+    WHO may create a profile for WHOM is deliberately not decided here — that is
+    an authorization question, answered by the calling view's permission class.
+    This function only enforces the domain invariants.
+
+    SellerProfile.save() calls full_clean(), so seller_type and status choices,
+    and the reason requirements on REJECTED/SUSPENDED, are validated by the
+    model itself rather than re-implemented here.
+    """
+    if user is None:
+        raise ValidationError({"user": "A seller profile requires a user account."})
+
+    if SellerProfile.objects.filter(user=user).exists():
+        raise ValidationError(
+            {"user": "A seller profile already exists for this user account."}
+        )
+
+    return SellerProfile.objects.create(
+        user=user,
+        status=SellerProfile.STATUS_PENDING,
+        **fields,
+    )
+
+
 def get_seller_capabilities(seller: SellerProfile) -> dict:
     """
     Returns capability flags determined by seller type.
