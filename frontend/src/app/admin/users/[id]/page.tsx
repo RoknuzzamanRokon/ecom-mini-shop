@@ -29,6 +29,7 @@ import {
   targetIsSuperAdministrator,
   userDisplayName,
 } from "../userGovernance";
+import { canManageAdminSellers } from "../../sellers/sellerGovernance";
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -270,6 +271,7 @@ export default function AdminUserDetailPage() {
   const fullName = `${target.first_name} ${target.last_name}`.trim();
   const isSuperTarget = targetIsSuperAdministrator(target);
   const permissionGroups = groupPermissionCodesByResource(target.permissions);
+  const showSellerCreatePrompt = !target.seller_profile && canManageAdminSellers(actor);
 
   return (
     <div className="space-y-6">
@@ -381,7 +383,7 @@ export default function AdminUserDetailPage() {
           <h3 className="text-xs font-extrabold text-ink uppercase tracking-wider mt-5 mb-2">
             Linked Profiles
           </h3>
-          {!target.customer_profile && !target.seller_profile ? (
+          {!target.customer_profile && !target.seller_profile && !showSellerCreatePrompt ? (
             <p className="text-xs text-ink-muted">
               This account has no customer or seller profile.
             </p>
@@ -421,6 +423,23 @@ export default function AdminUserDetailPage() {
                     className="inline-flex items-center gap-1 mt-1 font-bold text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary rounded-sm"
                   >
                     View seller profile
+                    <span aria-hidden="true" className="material-symbols-outlined text-[14px]">
+                      arrow_forward
+                    </span>
+                  </Link>
+                </li>
+              )}
+              {showSellerCreatePrompt && (
+                <li className="rounded-xl border border-dashed border-line p-3">
+                  <p className="font-bold text-ink mb-0.5">No Seller Profile</p>
+                  <p className="text-ink-muted">
+                    This account is not a registered seller yet.
+                  </p>
+                  <Link
+                    href={`/admin/sellers/new?user_id=${target.id}`}
+                    className="inline-flex items-center gap-1 mt-1 font-bold text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary rounded-sm"
+                  >
+                    Create seller profile
                     <span aria-hidden="true" className="material-symbols-outlined text-[14px]">
                       arrow_forward
                     </span>

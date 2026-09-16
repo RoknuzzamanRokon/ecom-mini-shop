@@ -25,6 +25,7 @@ import type { AuthUser } from "@/lib/types";
 import { getAuthToken } from "@/lib/auth";
 import {
   AdminApiError,
+  AdminPointTransaction,
   AdminSeller,
   AdminSellerStatusAction,
   updateAdminSellerStatus,
@@ -196,6 +197,76 @@ export function getAvailableSellerActions(
  */
 export function canViewAdminSellers(user: AuthUser | null | undefined): boolean {
   return hasAnyPermission(user, ADMIN_PERMISSIONS.sellersView);
+}
+
+/**
+ * Mirrors CanManageAdminSellers exactly: 'sellers.admin.manage' plus the
+ * superuser / SUPER_ADMINISTRATOR bypass. This is the gate for BOTH the
+ * lifecycle actions above and POST /api/admin/sellers/ (seller creation) —
+ * AdminSellerListAPIView.post uses the identical permission class.
+ */
+export function canManageAdminSellers(user: AuthUser | null | undefined): boolean {
+  return hasAnyPermission(user, ADMIN_PERMISSIONS.sellersManage);
+}
+
+// =============================================================================
+// SELLER POINTS / WALLET (Phase 1G-C)
+// =============================================================================
+//
+// Mirrors points.permissions exactly. These three gates are UI visibility
+// only — StaffSellerWalletView / StaffSellerHistoryView / StaffPointAdjustmentView
+// re-derive the same decision server-side on every request, and
+// StaffPointAdjustmentView additionally re-checks the specific direction
+// AFTER validating the request body (can_perform_point_action), so a locked
+// button here is a preview of a 403, never a substitute for one.
+
+/** Mirrors CanViewPoints: 'points.view' (plus the superuser / wildcard bypass). */
+export function canViewSellerPoints(user: AuthUser | null | undefined): boolean {
+  return hasAnyPermission(user, ADMIN_PERMISSIONS.pointsView);
+}
+
+/**
+ * Whether CREDIT is worth offering. Mirrors
+ * POINT_ACTION_PERMISSIONS["CREDIT"] = ('points.add', 'points.adjust').
+ * Holding only 'points.deduct' must NOT satisfy this.
+ */
+export function canCreditSellerPoints(user: AuthUser | null | undefined): boolean {
+  return hasAnyPermission(user, ADMIN_PERMISSIONS.pointsCredit);
+}
+
+/**
+ * Whether DEBIT is worth offering. Mirrors
+ * POINT_ACTION_PERMISSIONS["DEBIT"] = ('points.deduct', 'points.adjust').
+ * Holding only 'points.add' must NOT satisfy this.
+ */
+export function canDebitSellerPoints(user: AuthUser | null | undefined): boolean {
+  return hasAnyPermission(user, ADMIN_PERMISSIONS.pointsDebit);
+}
+
+/** Verbatim PointTransaction.TRANSACTION_TYPE_CHOICES labels from points/models.py. */
+export const POINT_TRANSACTION_TYPE_LABELS: Record<string, string> = {
+  BONUS: "Bonus / Promotional Credit",
+  ADMIN_CREDIT: "Admin Staff Credit",
+  ADMIN_DEBIT: "Admin Staff Debit",
+  PRODUCT_CREATION: "Product Creation Fee",
+  REFUND: "Point Refund",
+  ADJUSTMENT: "Administrative Adjustment",
+};
+
+export const POINT_TRANSACTION_TYPE_OPTIONS: AdminSelectOption[] = Object.entries(
+  POINT_TRANSACTION_TYPE_LABELS
+).map(([value, label]) => ({ value, label }));
+
+/**
+ * Whether a ledger row increased the balance. `amount` is always a positive
+ * magnitude (PointTransaction.amount is a PositiveIntegerField) — direction is
+ * only recoverable by comparing balance_after to balance_before, exactly as
+ * PointTransaction.__str__ does it server-side. Never inferred from
+ * transaction_type: PRODUCT_CREATION is a debit (a fee) despite its name not
+ * saying so, so type-based guessing would mislabel it.
+ */
+export function isCreditTransaction(txn: AdminPointTransaction): boolean {
+  return txn.balance_after > txn.balance_before;
 }
 
 /**

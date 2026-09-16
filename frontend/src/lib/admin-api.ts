@@ -412,6 +412,48 @@ export async function updateAdminSellerStatus(
   });
 }
 
+/**
+ * The writable surface of AdminSellerCreateSerializer, in full.
+ *
+ * Targets an EXISTING user by id — there is no way to create a user and a
+ * seller profile in one call, and none is added here. `seller_type` defaults
+ * to FULL_SHOP_OWNER server-side when omitted, matching
+ * SellerProfile.TYPE_FULL_SHOP_OWNER. The created profile always starts
+ * PENDING (sellers.services.create_seller_profile hardcodes it) — this
+ * payload cannot set an initial status because the serializer has no such
+ * field.
+ */
+export interface AdminSellerCreatePayload {
+  /** Primary key of the existing user to attach the seller profile to. */
+  user_id: number;
+  business_name: string;
+  /** Exact SellerProfile.SELLER_TYPE_CHOICES value; defaults server-side to FULL_SHOP_OWNER. */
+  seller_type?: string;
+  business_email?: string;
+  business_phone?: string;
+  tax_id?: string;
+  description?: string;
+  reason: string;
+}
+
+/**
+ * POST /api/admin/sellers/ -> 201 with the created AdminSeller (status PENDING).
+ * Requires 'sellers.admin.manage' (CanManageAdminSellers).
+ *
+ * The backend rejects a user_id that does not exist, or one that already has a
+ * SellerProfile, with a 400 field/validation error — this client does not
+ * pre-check either condition, it only surfaces what the backend decides.
+ */
+export async function createAdminSeller(
+  token: string,
+  payload: AdminSellerCreatePayload
+): Promise<AdminSeller> {
+  return adminRequest<AdminSeller>("/api/admin/sellers/", token, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 // ==============================================================================
 // PRODUCT GOVERNANCE (Phase 1D)
 // ==============================================================================
@@ -976,6 +1018,47 @@ export async function updateAdminUser(
 }
 
 /**
+ * The writable surface of AdminUserCreateSerializer, in full.
+ *
+ * `password_confirm` is required by the backend purely as a client-input
+ * safeguard — it is never persisted. `reason` is required and written to the
+ * AuditLog entry, exactly like AdminUserUpdatePayload.
+ */
+export interface AdminUserCreatePayload {
+  username: string;
+  email: string;
+  password: string;
+  password_confirm: string;
+  first_name?: string;
+  last_name?: string;
+  /** Defaults to true server-side when omitted. */
+  is_active?: boolean;
+  /** Role codes to assign atomically with creation. */
+  roles?: string[];
+  reason: string;
+}
+
+/**
+ * POST /api/admin/users/ -> 201 with the created AdminUserDetail.
+ * Requires 'users.admin.manage' (CanManageAdminUsers).
+ *
+ * AdminUserListAPIView.post enforces the same anti-escalation rules as
+ * updateAdminUser's PATCH path, evaluated against an empty starting role set:
+ * only a Super Administrator may include SUPER_ADMINISTRATOR or any protected
+ * role code in `roles`. This client does not pre-empt that decision — a 403
+ * here is the backend's, surfaced verbatim.
+ */
+export async function createAdminUser(
+  token: string,
+  payload: AdminUserCreatePayload
+): Promise<AdminUserDetail> {
+  return adminRequest<AdminUserDetail>("/api/admin/users/", token, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
  * Mirrors AdminRoleSerializer field-for-field.
  *
  * `permissions` is a flat list of Permission.code strings — the role's grants
@@ -1144,4 +1227,176 @@ export async function getAdminPermissionCatalog(
   token: string
 ): Promise<AdminPermissionCatalog> {
   return adminRequest<AdminPermissionCatalog>("/api/admin/permissions/", token);
+}
+
+// ==============================================================================
+// SELLER POINTS / WALLET (Phase 1G-C)
+// ==============================================================================
+//
+// These are STAFF endpoints under points/urls.py, mounted at /api/points/ —
+// NOT /api/admin/points/, which does not exist and is not created here. The
+// `seller_id` path segment is the SellerProfile primary key (the same id
+// AdminSeller.id already carries), not the auth User id: StaffSellerWalletView,
+// StaffSellerHistoryView and StaffPointAdjustmentView all resolve it with
+// get_object_or_404(SellerProfile, pk=seller_id).
+
+/** Mirrors SellerWalletSerializer field-for-field. */
+export interface AdminSellerWallet {
+  id: number;
+  seller_id: number;
+  business_name: string;
+  balance: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Exact PointTransaction.TRANSACTION_TYPE_CHOICES values. */
+export type AdminPointTransactionType =
+  | "BONUS"
+  | "ADMIN_CREDIT"
+  | "ADMIN_DEBIT"
+  | "PRODUCT_CREATION"
+  | "REFUND"
+  | "ADJUSTMENT";
+
+/** Mirrors PointTransactionSerializer field-for-field. */
+export interface AdminPointTransaction {
+  id: number;
+  wallet_id: number;
+  seller_id: number;
+  business_name: string;
+  transaction_type: AdminPointTransactionType | string;
+  transaction_type_display: string;
+  /** Always a positive magnitude (PointTransaction.amount is a PositiveIntegerField); direction is balance_after vs balance_before. */
+  amount: number;
+  balance_before: number;
+  balance_after: number;
+  reason: string;
+  reference_type: string;
+  reference_id: string;
+  /** Null when the actor account was later deleted (actor is SET_NULL). */
+  actor_id: number | null;
+  actor_username: string | null;
+  created_at: string;
+}
+
+/**
+ * GET /api/points/sellers/<seller_id>/
+ * Requires 'points.view' (CanViewPoints). Creates the wallet on first read if
+ * one does not exist yet (PointService.get_or_create_wallet), so this never
+ * 404s for a valid seller — a brand-new seller simply has a zero balance.
+ */
+export async function getAdminSellerWallet(
+  token: string,
+  sellerId: number | string
+): Promise<AdminSellerWallet> {
+  return adminRequest<AdminSellerWallet>(`/api/points/sellers/${sellerId}/`, token);
+}
+
+export interface AdminSellerPointHistoryParams {
+  page?: number;
+  /** Exact PointTransaction.TRANSACTION_TYPE_CHOICES value. */
+  type?: AdminPointTransactionType | string;
+}
+
+/**
+ * GET /api/points/sellers/<seller_id>/history/
+ * Requires 'points.view' (CanViewPoints).
+ *
+ * Paginated by DRF's default PageNumberPagination (PAGE_SIZE = 12 in
+ * settings.py), not AdminPagination — the envelope shape is the same
+ * {count, next, previous, results}, but the page size differs from the
+ * /api/admin/* modules' 20.
+ */
+export async function getAdminSellerPointHistory(
+  token: string,
+  sellerId: number | string,
+  params?: AdminSellerPointHistoryParams
+): Promise<PaginatedResponse<AdminPointTransaction>> {
+  const searchParams = new URLSearchParams();
+  if (params?.page) searchParams.set("page", String(params.page));
+  if (params?.type) searchParams.set("type", params.type);
+  const queryString = searchParams.toString();
+  return adminRequest<PaginatedResponse<AdminPointTransaction>>(
+    `/api/points/sellers/${sellerId}/history/${queryString ? `?${queryString}` : ""}`,
+    token
+  );
+}
+
+/** Exactly the `action` choices accepted by PointAdjustmentRequestSerializer. */
+export type AdminPointAdjustmentAction = "CREDIT" | "DEBIT";
+
+export interface AdminPointAdjustmentPayload {
+  action: AdminPointAdjustmentAction;
+  /** Positive integer; the backend rejects amount <= 0 with a 400 field error. */
+  amount: number;
+  /** Minimum 3 characters — mandatory business justification. */
+  reason: string;
+  reference_type?: string;
+  reference_id?: string;
+}
+
+export interface AdminPointAdjustmentResult {
+  message: string;
+  transaction: AdminPointTransaction;
+  current_balance: number;
+}
+
+/**
+ * POST /api/points/sellers/<seller_id>/adjust/
+ *
+ * Entry is gated by CanAdjustPoints (any one of points.add / points.deduct /
+ * points.adjust, or the superuser / SUPER_ADMINISTRATOR wildcard bypass), but
+ * that is NOT sufficient on its own: the view then checks the specific
+ * direction via can_perform_point_action, so a caller holding only
+ * 'points.add' reaches this endpoint but still gets 403 on a DEBIT request.
+ * ADMIN_PERMISSIONS.pointsCredit / pointsDebit in admin-navigation.ts mirror
+ * that per-direction map for the UI gate — this function performs no
+ * client-side authorization decision of its own.
+ *
+ * On insufficient balance the backend returns 400 with a distinct shape (see
+ * getInsufficientPointsInfo) rather than the generic validation-error format.
+ */
+export async function adjustAdminSellerPoints(
+  token: string,
+  sellerId: number | string,
+  payload: AdminPointAdjustmentPayload
+): Promise<AdminPointAdjustmentResult> {
+  return adminRequest<AdminPointAdjustmentResult>(`/api/points/sellers/${sellerId}/adjust/`, token, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/** The distinct 400 body StaffPointAdjustmentView returns for InsufficientPointsError. */
+export interface AdminInsufficientPointsInfo {
+  /** e.g. "Insufficient points. Required: 500, available: 120." */
+  error: string;
+  detail: string;
+  available_balance: number;
+}
+
+/**
+ * Recognises the insufficient-balance 400 specifically, so the UI can show the
+ * seller's real available balance instead of a generic validation message.
+ *
+ * extractErrorMessage (used to build AdminApiError.message for every endpoint)
+ * prefers `detail` over `error`, but for THIS endpoint `detail` is the generic
+ * "Seller does not have enough points for this deduction." while `error`
+ * carries the actual required/available numbers — so callers that care about
+ * the numbers should read err.data via this helper rather than err.message.
+ * Returns null for every other error shape, including the other PointError
+ * subclasses, which share the endpoint's plain {"error": "..."} 400 body but
+ * carry no `available_balance`.
+ */
+export function getInsufficientPointsInfo(err: unknown): AdminInsufficientPointsInfo | null {
+  if (!(err instanceof AdminApiError) || !err.isValidationError) return null;
+  if (!err.data || typeof err.data !== "object") return null;
+  const data = err.data as Record<string, unknown>;
+  if (typeof data.available_balance !== "number" || typeof data.error !== "string") return null;
+  return {
+    error: data.error,
+    detail: typeof data.detail === "string" ? data.detail : "",
+    available_balance: data.available_balance,
+  };
 }

@@ -266,18 +266,23 @@ function AdminUsersPageContent() {
             its effective permissions, assign roles, or change its active state.
           </p>
         </div>
-        {!canManage && (
+        {canManage ? (
+          <Link
+            href="/admin/users/new"
+            className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-primary hover:bg-primary-hover text-on-primary text-xs font-bold transition-colors shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+              add
+            </span>
+            New user
+          </Link>
+        ) : (
           <p className="text-[11px] font-bold uppercase tracking-wider text-ink-faint shrink-0">
             Read-only
           </p>
         )}
       </div>
 
-      {/*
-        There is no "New user" control: the admin API exposes no user-creation
-        endpoint (AdminUserListAPIView defines GET only), so the console does
-        not advertise an action the backend cannot perform.
-      */}
       <AdminFilterBar
         isDirty={isFiltered}
         onReset={clearFilters}

@@ -91,6 +91,27 @@ export const ADMIN_PERMISSIONS = {
   /** Analytical/sales reporting permission (held by ADMIN, OPS, SALES, FINANCE, SUPPORT). */
   reportsView: ["reports.view"],
 
+  /**
+   * GET /api/points/sellers/<id>/ and /history/ -> CanViewPoints ('points.view').
+   * Phase 1G-C. No wildcard-only entry here: rbac.services.has_user_permission
+   * already treats a resolved '*' as pass-all, and hasAnyPermission separately
+   * bypasses for is_superuser / permissions.includes('*').
+   */
+  pointsView: ["points.view"],
+  /**
+   * POST /api/points/sellers/<id>/adjust/ with action=CREDIT.
+   * Mirrors points.permissions.POINT_ACTION_PERMISSIONS["CREDIT"] exactly:
+   * 'points.add' OR 'points.adjust'. 'points.deduct' alone must NOT satisfy
+   * this — see points.permissions.can_perform_point_action.
+   */
+  pointsCredit: ["points.add", "points.adjust"],
+  /**
+   * POST /api/points/sellers/<id>/adjust/ with action=DEBIT.
+   * Mirrors POINT_ACTION_PERMISSIONS["DEBIT"]: 'points.deduct' OR
+   * 'points.adjust'. 'points.add' alone must NOT satisfy this.
+   */
+  pointsDebit: ["points.deduct", "points.adjust"],
+
   // ---------------------------------------------------------------------------
   // DASHBOARD KPI GATES
   // ---------------------------------------------------------------------------
