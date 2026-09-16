@@ -290,6 +290,49 @@ export async function updateAdminShopStatus(
   });
 }
 
+/**
+ * The writable surface of AdminShopCreateSerializer, in full (Phase 1H).
+ *
+ * Targets an EXISTING SellerProfile by id — there is no way to create a
+ * seller and a shop in one call, and none is added here. The created shop
+ * always starts DRAFT (ShopService.create_shop hardcodes it when
+ * submit_for_review is omitted) — this payload cannot set an initial status
+ * because the serializer has no such field. `seller_id` eligibility (must be
+ * operational, not PRODUCT_OWNER, and under the LIMITED_SHOP_OWNER 1-shop
+ * cap) is enforced server-side by the same ShopService rule the removed
+ * seller self-service endpoint used to enforce.
+ */
+export interface AdminShopCreatePayload {
+  /** Primary key of the existing SellerProfile to assign as owner. */
+  seller_id: number;
+  name: string;
+  description?: string;
+  phone?: string;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  reason: string;
+}
+
+/**
+ * POST /api/admin/shops/ -> 201 with the created AdminShop (status DRAFT).
+ * Requires 'shops.admin.manage' (CanManageAdminShops).
+ *
+ * The backend rejects a seller_id that does not exist, or one that is
+ * ineligible (ineligible status, PRODUCT_OWNER, or LIMITED_SHOP_OWNER already
+ * at its 1-shop cap), with a 400 field/validation error — this client does
+ * not pre-check any of that, it only surfaces what the backend decides.
+ */
+export async function createAdminShop(
+  token: string,
+  payload: AdminShopCreatePayload
+): Promise<AdminShop> {
+  return adminRequest<AdminShop>("/api/admin/shops/", token, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 
 // ==============================================================================
 // SELLER GOVERNANCE (Phase 1C)

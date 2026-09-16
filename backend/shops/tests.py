@@ -104,29 +104,32 @@ class ShopSystemTests(TestCase):
     def setUp(self):
         self.client = APIClient()
 
-    # 1. Shop creation by eligible seller & 4. Full Shop Owner behavior
+    # 1. Shop creation eligibility & 4. Full Shop Owner behavior (Admin-created Shop Owner model,
+    # Phase 1H: shop creation is service-level / admin-only now — see AdminShopCreationTests
+    # in shop/test_admin_governance.py for the HTTP-level admin-create-and-assign flow).
     def test_shop_creation_by_full_shop_owner(self):
-        """Full shop owner can create a draft shop or submit directly for review."""
-        self.client.force_authenticate(user=self.user_full)
-        payload = {
-            "name": "Apex Electronics Hub",
-            "description": "Leading electronics store in Dhaka.",
-            "phone": "+8801712345678",
-            "address": "House 12, Road 5, Dhanmondi, Dhaka",
-            "location": "Dhanmondi, Dhaka",
-            "submit_for_review": False,
-        }
-        response = self.client.post("/api/shops/mine/create/", payload, format="json")
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["name"], "Apex Electronics Hub")
-        self.assertEqual(response.data["status"], Shop.STATUS_DRAFT)
-        self.assertEqual(response.data["slug"], "apex-electronics-hub")
-        self.assertFalse(response.data["is_publicly_visible"])
-
-        # Check DB
-        shop = Shop.objects.get(name="Apex Electronics Hub")
-        self.assertEqual(shop.owner, self.seller_full)
+        """A FULL_SHOP_OWNER seller is eligible for shop creation at the service level."""
+        shop = ShopService.create_shop(
+            self.seller_full,
+            name="Apex Electronics Hub",
+            description="Leading electronics store in Dhaka.",
+            phone="+8801712345678",
+            address="House 12, Road 5, Dhanmondi, Dhaka",
+        )
+        self.assertEqual(shop.name, "Apex Electronics Hub")
         self.assertEqual(shop.status, Shop.STATUS_DRAFT)
+        self.assertEqual(shop.slug, "apex-electronics-hub")
+        self.assertFalse(shop.is_publicly_visible)
+        self.assertEqual(shop.owner, self.seller_full)
+
+    # 1b. Seller self-service shop creation is hard-disabled (Phase 1H core rule).
+    def test_seller_self_service_shop_creation_is_disabled(self):
+        """No seller — regardless of type or eligibility — may create a shop via the API."""
+        for user in (self.user_full, self.user_limited, self.user_prod, self.user_suspended):
+            self.client.force_authenticate(user=user)
+            response = self.client.post("/api/shops/mine/create/", {"name": "Attempted Shop"}, format="json")
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN, f"Failed for {user.username}")
+        self.assertFalse(Shop.objects.filter(name="Attempted Shop").exists())
 
     # 2. Shop creation by unauthorized/ineligible seller
     def test_shop_creation_by_unauthorized_user(self):
@@ -144,31 +147,27 @@ class ShopSystemTests(TestCase):
 
     # 3. Product Owner shop restriction
     def test_product_owner_cannot_create_shop(self):
-        """Product Owner sellers are strictly barred from creating shops."""
-        self.client.force_authenticate(user=self.user_prod)
-        response = self.client.post("/api/shops/mine/create/", {"name": "Solo Shop Attempt"}, format="json")
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
-
-        # Service-level validation
+        """Product Owner sellers are strictly barred from creating shops, at the service level."""
         with self.assertRaises(IneligibleSellerError):
             ShopService.create_shop(self.seller_prod, name="Direct Service Shop")
 
     # 5. Limited Shop Owner behavior (limit of 1 shop)
     def test_limited_shop_owner_single_shop_limit(self):
-        """Limited Shop Owner can create 1 shop, but is blocked from creating a second."""
-        self.client.force_authenticate(user=self.user_limited)
+        """Limited Shop Owner is eligible for exactly 1 shop, at the service level."""
+        ShopService.create_shop(self.seller_limited, name="Kiosk One")
 
-        # First shop succeeds
-        resp1 = self.client.post("/api/shops/mine/create/", {"name": "Kiosk One"}, format="json")
-        self.assertEqual(resp1.status_code, status.HTTP_201_CREATED)
-
-        # Second shop fails with 403
-        resp2 = self.client.post("/api/shops/mine/create/", {"name": "Kiosk Two"}, format="json")
-        self.assertEqual(resp2.status_code, status.HTTP_403_FORBIDDEN)
-
-        # Direct service call also raises ShopLimitExceededError
+        # A second shop for the same Limited Shop Owner is rejected.
         with self.assertRaises(ShopLimitExceededError):
-            ShopService.create_shop(self.seller_limited, name="Kiosk Three")
+            ShopService.create_shop(self.seller_limited, name="Kiosk Two")
+
+    # 5b. Full Shop Owner is also capped at exactly 1 shop under the confirmed
+    # single-Shop-per-owner business model (not just Limited Shop Owners).
+    def test_full_shop_owner_single_shop_limit(self):
+        """Full Shop Owner is eligible for exactly 1 shop, at the service level."""
+        ShopService.create_shop(self.seller_full, name="Full Owner Shop One")
+
+        with self.assertRaises(ShopLimitExceededError):
+            ShopService.create_shop(self.seller_full, name="Full Owner Shop Two")
 
     # 6. Seller ownership enforcement & 7. Cannot modify another seller's shop
     def test_seller_ownership_and_cross_modification_protection(self):
@@ -255,19 +254,42 @@ class ShopSystemTests(TestCase):
     # 11-15. Public visibility isolation
     def test_public_visibility_isolation(self):
         """Public users can ONLY see APPROVED or ACTIVE shops. All other states return 404."""
+        # Each Shop Owner is capped at exactly one Shop under the confirmed business
+        # model, so each status scenario below needs its own seller.
+        def _make_full_shop_owner_seller(tag):
+            user = User.objects.create_user(
+                username=f"visibility_{tag}",
+                email=f"visibility_{tag}@example.com",
+                password="TestPassword123!",
+            )
+            return SellerProfile.objects.create(
+                user=user,
+                seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+                business_name=f"Visibility {tag.title()} Co",
+                status=SellerProfile.STATUS_ACTIVE,
+            )
+
         # 1. Draft shop
-        draft_shop = ShopService.create_shop(self.seller_full, name="Public Draft Shop")
+        draft_shop = ShopService.create_shop(_make_full_shop_owner_seller("draft"), name="Public Draft Shop")
         # 2. Pending shop
-        pending_shop = ShopService.create_shop(self.seller_full, name="Public Pending Shop", submit_for_review=True)
+        pending_shop = ShopService.create_shop(
+            _make_full_shop_owner_seller("pending"), name="Public Pending Shop", submit_for_review=True
+        )
         # 3. Active shop
-        active_shop = ShopService.create_shop(self.seller_full, name="Public Active Shop", submit_for_review=True)
+        active_shop = ShopService.create_shop(
+            _make_full_shop_owner_seller("active"), name="Public Active Shop", submit_for_review=True
+        )
         ShopService.approve_shop(active_shop, self.staff_op_manager)
         # 4. Suspended shop
-        suspended_shop = ShopService.create_shop(self.seller_full, name="Public Suspended Shop", submit_for_review=True)
+        suspended_shop = ShopService.create_shop(
+            _make_full_shop_owner_seller("suspended"), name="Public Suspended Shop", submit_for_review=True
+        )
         ShopService.approve_shop(suspended_shop, self.staff_op_manager)
         ShopService.suspend_shop(suspended_shop, self.staff_op_manager, reason="Violations")
         # 5. Rejected shop
-        rejected_shop = ShopService.create_shop(self.seller_full, name="Public Rejected Shop", submit_for_review=True)
+        rejected_shop = ShopService.create_shop(
+            _make_full_shop_owner_seller("rejected"), name="Public Rejected Shop", submit_for_review=True
+        )
         ShopService.reject_shop(rejected_shop, self.staff_op_manager, reason="Incomplete documents")
 
         self.client.force_authenticate(user=None)
@@ -291,9 +313,25 @@ class ShopSystemTests(TestCase):
 
     # 16. Slug uniqueness
     def test_slug_uniqueness_and_auto_increment(self):
-        """Creating shops with duplicate names automatically generates unique slugs."""
+        """Creating shops with duplicate names (for different owners) automatically generates unique slugs.
+
+        Slug uniqueness is global across the Shop table, independent of ownership,
+        so this is exercised across two distinct sellers (each capped at one shop).
+        """
+        second_user = User.objects.create_user(
+            username="full_owner_two",
+            email="full_two@example.com",
+            password="TestPassword123!",
+        )
+        second_seller = SellerProfile.objects.create(
+            user=second_user,
+            seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+            business_name="Full Mart Two Ltd",
+            status=SellerProfile.STATUS_ACTIVE,
+        )
+
         shop1 = ShopService.create_shop(self.seller_full, name="Unique Name Store")
-        shop2 = ShopService.create_shop(self.seller_full, name="Unique Name Store")
+        shop2 = ShopService.create_shop(second_seller, name="Unique Name Store")
         self.assertEqual(shop1.slug, "unique-name-store")
         self.assertEqual(shop2.slug, "unique-name-store-1")
 

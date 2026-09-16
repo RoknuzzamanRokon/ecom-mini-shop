@@ -509,6 +509,58 @@ class SellerProductAPITests(BaseSellerProductTestCase):
         self.assertIn(res.status_code, (status.HTTP_400_BAD_REQUEST, status.HTTP_403_FORBIDDEN))
         self.assertIn("own", str(res.data).lower())
 
+    def test_api_seller_product_creation_without_shop_id_auto_resolves_assigned_shop(self):
+        """POST /api/products/mine/ omitting shop_id auto-resolves the seller's single assigned Shop."""
+        self.client.force_authenticate(user=self.user_full)
+        balance_before = PointService.get_balance(self.seller_full)
+
+        payload = {
+            "name": "Auto-Resolved Shop Product",
+            "category_id": self.category.id,
+            "description": "No shop_id supplied by the client",
+            "price": "49.99",
+        }
+        res = self.client.post("/api/products/mine/", payload)
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.data["shop"]["id"], self.shop_full.id)
+
+        balance_after = PointService.get_balance(self.seller_full)
+        self.assertEqual(balance_after, balance_before - 5)
+
+    def test_api_seller_without_assigned_shop_cannot_create_product(self):
+        """A Shop Owner with no assigned Shop yet gets a clear error, not a crash, when omitting shop_id."""
+        self.client.force_authenticate(user=self.user_prod_owner)
+        payload = {
+            "name": "No Shop Product",
+            "category_id": self.category.id,
+            "description": "Product Owner has no assigned Shop",
+            "price": "20.00",
+        }
+        res = self.client.post("/api/products/mine/", payload)
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("shop", str(res.data).lower())
+
+    def test_api_seller_cannot_change_product_shop_to_another_sellers_shop(self):
+        """PATCH /api/products/mine/<id>/ rejects reassigning a product to another seller's Shop."""
+        product = ProductService.create_product(
+            seller=self.seller_full,
+            name="Stable Ownership Item",
+            category=self.category,
+            shop=self.shop_full,
+            description="Should remain on shop_full",
+            price=Decimal("40.00"),
+            actor=self.user_full,
+        )
+
+        self.client.force_authenticate(user=self.user_full)
+        res = self.client.patch(
+            f"/api/products/mine/{product.id}/",
+            {"shop_id": self.shop_competitor.id},
+        )
+        self.assertIn(res.status_code, (status.HTTP_400_BAD_REQUEST, status.HTTP_403_FORBIDDEN))
+        product.refresh_from_db()
+        self.assertEqual(product.shop, self.shop_full)
+
     def test_api_seller_product_list_only_shows_own_products(self):
         """GET /api/products/mine/ lists only products belonging to the authenticated seller's shops."""
         # Create product for full seller

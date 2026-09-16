@@ -196,7 +196,11 @@ class SellerProductCreateSerializer(serializers.Serializer):
     """
     name = serializers.CharField(max_length=200)
     category_id = serializers.IntegerField()
-    shop_id = serializers.IntegerField()
+    # Optional: a Shop Owner has exactly one assigned Shop, so the backend
+    # auto-resolves it (see SellerProductListCreateAPIView.post). If a client
+    # still sends shop_id, it is validated exactly as before and must match
+    # the seller's own Shop — it can never be used to target another seller's Shop.
+    shop_id = serializers.IntegerField(required=False)
     description = serializers.CharField()
     price = serializers.DecimalField(max_digits=10, decimal_places=2)
     old_price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)

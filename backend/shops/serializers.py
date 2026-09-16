@@ -111,32 +111,6 @@ class SellerShopSerializer(serializers.ModelSerializer):
         ]
 
 
-class SellerShopCreateSerializer(serializers.Serializer):
-    """
-    Validates payload for creating a new shop.
-    """
-    name = serializers.CharField(max_length=200, required=True)
-    description = serializers.CharField(required=False, allow_blank=True, default="")
-    phone = serializers.CharField(max_length=30, required=False, allow_blank=True, default="")
-    address = serializers.CharField(required=False, allow_blank=True, default="")
-    latitude = serializers.FloatField(required=False, allow_null=True, default=None)
-    longitude = serializers.FloatField(required=False, allow_null=True, default=None)
-    logo = serializers.ImageField(required=False, allow_null=True)
-    cover_image = serializers.ImageField(required=False, allow_null=True)
-    submit_for_review = serializers.BooleanField(required=False, default=False)
-
-    def validate(self, attrs):
-        lat = attrs.get("latitude")
-        lng = attrs.get("longitude")
-        if (lat is not None and lng is None) or (lat is None and lng is not None):
-            raise serializers.ValidationError("Both latitude and longitude must be provided together.")
-        if lat is not None and lng is not None:
-            valid_lat, valid_lng = validate_coordinates(lat, lng)
-            attrs["latitude"] = valid_lat
-            attrs["longitude"] = valid_lng
-        return attrs
-
-
 class SellerShopUpdateSerializer(serializers.ModelSerializer):
     """
     Validates seller updates to existing shops. Prohibits altering owner or status directly.

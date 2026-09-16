@@ -483,6 +483,56 @@ class AdminShopSerializer(serializers.ModelSerializer):
         return obj.products.count()
 
 
+class AdminShopCreateSerializer(serializers.Serializer):
+    """
+    Admin-governed Shop creation with immediate owner assignment
+    (POST /api/admin/shops/), completing the Admin-created Shop Owner model:
+    an administrator creates/approves a Seller, then creates a Shop and
+    assigns that Seller as its owner in the same step.
+
+    Seller eligibility (operational status, the PRODUCT_OWNER restriction,
+    and the LIMITED_SHOP_OWNER single-shop cap) is NOT re-implemented here —
+    it belongs to shops.services.ShopService.create_shop /
+    validate_seller_eligibility_for_creation, which this endpoint calls, so
+    the same rule applies whether a shop is self-created by a seller or
+    assigned by an administrator.
+    """
+
+    seller_id = serializers.IntegerField(
+        required=True,
+        help_text="Primary key of the SellerProfile to assign as this shop's owner.",
+    )
+    name = serializers.CharField(max_length=200, required=True)
+    description = serializers.CharField(required=False, allow_blank=True, default="")
+    phone = serializers.CharField(max_length=30, required=False, allow_blank=True, default="")
+    address = serializers.CharField(required=False, allow_blank=True, default="")
+    latitude = serializers.FloatField(required=False, allow_null=True, default=None)
+    longitude = serializers.FloatField(required=False, allow_null=True, default=None)
+    reason = serializers.CharField(
+        required=True,
+        max_length=500,
+        help_text="Required justification for the administrative shop creation.",
+    )
+
+    def validate_seller_id(self, value):
+        if not SellerProfile.objects.filter(pk=value).exists():
+            raise serializers.ValidationError(f"No seller profile exists with id {value}.")
+        return value
+
+    def validate_name(self, value):
+        name = value.strip()
+        if not name:
+            raise serializers.ValidationError("Shop name cannot be empty.")
+        return name
+
+    def validate(self, attrs):
+        lat = attrs.get("latitude")
+        lng = attrs.get("longitude")
+        if (lat is not None and lng is None) or (lat is None and lng is not None):
+            raise serializers.ValidationError("Both latitude and longitude must be provided together.")
+        return attrs
+
+
 class AdminShopStatusUpdateSerializer(serializers.Serializer):
     action = serializers.ChoiceField(
         choices=["approve", "reject", "suspend", "reactivate"],

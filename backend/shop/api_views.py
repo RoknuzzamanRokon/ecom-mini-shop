@@ -504,13 +504,28 @@ class SellerProductListCreateAPIView(APIView):
         serializer = SellerProductCreateSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        seller = request.user.seller_profile
+
+        # A Shop Owner has exactly one assigned Shop (Admin-created Shop Owner
+        # model). Auto-resolve it server-side rather than requiring the client
+        # to supply a shop_id. If a shop_id was supplied, validate_shop_id above
+        # has already confirmed it belongs to this seller — it can never be used
+        # to target another seller's Shop.
+        shop = data.get("shop_id")
+        if shop is None:
+            shop = seller.shops.first()
+            if shop is None:
+                return Response(
+                    {"error": "You have not been assigned a Shop yet. Contact an administrator to have a Shop assigned to your account."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         try:
             product = ProductService.create_product(
-                seller=request.user.seller_profile,
+                seller=seller,
                 name=data["name"],
                 category=data["category_id"],
-                shop=data["shop_id"],
+                shop=shop,
                 description=data["description"],
                 price=data["price"],
                 old_price=data.get("old_price"),

@@ -10,9 +10,22 @@ import {
   createSellerProduct,
   updateSellerProduct,
   deleteSellerProduct,
+  getSellerWallet,
+  InsufficientPointsError,
   formatImageUrl,
 } from "@/lib/api";
 import { Product, SellerShop, Category } from "@/lib/types";
+
+const PRODUCT_CREATION_COST = 5;
+
+const STATUS_BADGE_STYLES: Record<string, string> = {
+  DRAFT: "bg-surface-alt text-ink-muted",
+  SUBMITTED: "bg-primary/15 text-primary",
+  APPROVED: "bg-success/15 text-success",
+  PUBLISHED: "bg-success/15 text-success",
+  REJECTED: "bg-accent/15 text-accent",
+  UNPUBLISHED: "bg-surface-alt text-ink-muted",
+};
 
 export default function SellerProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -29,6 +42,7 @@ export default function SellerProductsPage() {
   // Metadata for dropdowns
   const [shops, setShops] = useState<SellerShop[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
 
   // Modals
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -36,14 +50,21 @@ export default function SellerProductsPage() {
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
   const [submittingModal, setSubmittingModal] = useState(false);
 
+  // Product image (create/edit)
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+
   // Feedback notifications
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // A Shop Owner has exactly one assigned Shop (Admin-created Shop Owner model).
+  // The Seller Panel never lets a seller pick among arbitrary Shops.
+  const myShop = shops.length > 0 ? shops[0] : null;
+
   // Form State
   const [formData, setFormData] = useState({
     name: "",
-    shop_id: "",
     category_id: "",
     price: "",
     old_price: "",
@@ -97,12 +118,27 @@ export default function SellerProductsPage() {
 
     getSellerShops(token).then((res) => setShops(res)).catch(() => {});
     getCategories().then((res) => setCategories(res)).catch(() => {});
+    getSellerWallet(token)
+      .then((res) => setWalletBalance(res.balance))
+      .catch(() => {});
+  }, []);
+
+  const refreshWalletBalance = useCallback(() => {
+    const token =
+      typeof window !== "undefined"
+        ? localStorage.getItem("minishop_token") ||
+          localStorage.getItem("token") ||
+          localStorage.getItem("access_token")
+        : null;
+    if (!token) return;
+    getSellerWallet(token)
+      .then((res) => setWalletBalance(res.balance))
+      .catch(() => {});
   }, []);
 
   const handleOpenAdd = () => {
     setFormData({
       name: "",
-      shop_id: shops.length > 0 ? shops[0].id.toString() : "",
       category_id: categories.length > 0 ? categories[0].id.toString() : "",
       price: "",
       old_price: "",
@@ -111,6 +147,8 @@ export default function SellerProductsPage() {
       description: "",
       is_active: true,
     });
+    setImageFile(null);
+    setImagePreview(null);
     setActionError(null);
     setActionSuccess(null);
     setIsAddOpen(true);
@@ -120,7 +158,6 @@ export default function SellerProductsPage() {
     setEditingProduct(p);
     setFormData({
       name: p.name,
-      shop_id: p.shop ? p.shop.id.toString() : "",
       category_id: p.category ? p.category.id.toString() : "",
       price: p.price.toString(),
       old_price: p.old_price ? p.old_price.toString() : "",
@@ -129,8 +166,30 @@ export default function SellerProductsPage() {
       description: p.description || "",
       is_active: p.is_active !== false,
     });
+    setImageFile(null);
+    setImagePreview(p.image_url || (p.image ? formatImageUrl(p.image) : null));
     setActionError(null);
     setActionSuccess(null);
+  };
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    if (!file) return;
+    if (imagePreview && imagePreview.startsWith("blob:")) {
+      URL.revokeObjectURL(imagePreview);
+    }
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+  };
+
+  const closeProductModal = () => {
+    if (imagePreview && imagePreview.startsWith("blob:")) {
+      URL.revokeObjectURL(imagePreview);
+    }
+    setImageFile(null);
+    setImagePreview(null);
+    setIsAddOpen(false);
+    setEditingProduct(null);
   };
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
@@ -143,8 +202,10 @@ export default function SellerProductsPage() {
         : null;
     if (!token) return;
 
-    if (!formData.shop_id) {
-      setActionError("Please select a shop to associate with this product.");
+    if (!myShop) {
+      setActionError(
+        "You have not been assigned a Shop yet. Contact an authorized administrator to have a Shop assigned to your account."
+      );
       return;
     }
     if (!formData.category_id) {
@@ -158,22 +219,30 @@ export default function SellerProductsPage() {
     try {
       await createSellerProduct(token, {
         name: formData.name,
-        shop_id: parseInt(formData.shop_id),
         category_id: parseInt(formData.category_id),
         price: parseFloat(formData.price),
         old_price: formData.old_price ? parseFloat(formData.old_price) : null,
         stock: parseInt(formData.stock) || 0,
         badge: formData.badge || undefined,
         description: formData.description,
+        image: imageFile,
       });
 
       setActionSuccess(`Product "${formData.name}" created successfully.`);
-      setIsAddOpen(false);
+      closeProductModal();
       await fetchProductsList();
+      refreshWalletBalance();
     } catch (err: any) {
-      setActionError(
-        err.message || "Failed to create product. Check point balance and permissions."
-      );
+      if (err instanceof InsufficientPointsError) {
+        setActionError(
+          `Insufficient points. You need ${err.requiredPoints} points to create a product. ` +
+            `Available points: ${err.availablePoints}. Please contact an authorized administrator to add points.`
+        );
+      } else {
+        setActionError(
+          err.message || "Failed to create product. Check point balance and permissions."
+        );
+      }
     } finally {
       setSubmittingModal(false);
     }
@@ -202,10 +271,11 @@ export default function SellerProductsPage() {
         badge: formData.badge,
         description: formData.description,
         is_active: formData.is_active,
+        ...(imageFile ? { image: imageFile } : {}),
       });
 
       setActionSuccess(`Product "${formData.name}" updated successfully.`);
-      setEditingProduct(null);
+      closeProductModal();
       await fetchProductsList();
     } catch (err: any) {
       setActionError(err.message || "Failed to update product.");
@@ -253,7 +323,7 @@ export default function SellerProductsPage() {
           <button
             type="button"
             onClick={handleOpenAdd}
-            disabled={shops.length === 0}
+            disabled={!myShop}
             className="px-4 py-2.5 rounded-lg bg-primary hover:bg-primary-hover disabled:opacity-50 text-on-primary font-bold text-xs uppercase tracking-wider transition-colors shadow-sm flex items-center gap-2 cursor-pointer disabled:cursor-not-allowed"
           >
             <span className="material-symbols-outlined text-[18px]">add_box</span>
@@ -262,15 +332,12 @@ export default function SellerProductsPage() {
         </div>
       </div>
 
-      {shops.length === 0 && (
+      {!myShop && (
         <div className="p-3.5 rounded-xl bg-accent/10 border border-accent/20 text-accent text-xs flex items-center gap-2">
           <span className="material-symbols-outlined text-[18px] shrink-0">warning</span>
           <span>
-            You must have at least one registered shop before creating products.{" "}
-            <Link href="/seller/shops" className="underline font-bold">
-              Register a shop here
-            </Link>
-            .
+            You have not been assigned a Shop yet. Contact an authorized administrator to have a
+            Shop assigned to your account before creating products.
           </span>
         </div>
       )}
@@ -424,13 +491,22 @@ export default function SellerProductsPage() {
                       <td className="py-3 px-4">
                         <span
                           className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded ${
-                            p.is_active !== false
-                              ? "bg-success/15 text-success"
-                              : "bg-surface-alt text-ink-muted"
+                            STATUS_BADGE_STYLES[p.status || "DRAFT"] ||
+                            "bg-surface-alt text-ink-muted"
                           }`}
+                          title={
+                            p.status === "REJECTED" && p.rejection_reason
+                              ? `Rejection reason: ${p.rejection_reason}`
+                              : undefined
+                          }
                         >
-                          {p.is_active !== false ? "Active" : "Draft"}
+                          {p.status || "DRAFT"}
                         </span>
+                        {p.status === "REJECTED" && p.rejection_reason && (
+                          <p className="text-[10px] text-accent mt-1 max-w-[160px] truncate" title={p.rejection_reason}>
+                            {p.rejection_reason}
+                          </p>
+                        )}
                       </td>
 
                       <td className="py-3 px-4 text-right">
@@ -509,23 +585,40 @@ export default function SellerProductsPage() {
               </h3>
               <button
                 type="button"
-                onClick={() => {
-                  setIsAddOpen(false);
-                  setEditingProduct(null);
-                }}
+                onClick={closeProductModal}
                 className="text-ink-muted hover:text-ink p-1 rounded-md"
               >
                 <span className="material-symbols-outlined text-[20px]">close</span>
               </button>
             </div>
 
+            {isAddOpen && walletBalance !== null && walletBalance < PRODUCT_CREATION_COST && (
+              <div className="p-3.5 rounded-xl bg-accent/10 border border-accent/30 text-accent text-xs space-y-1">
+                <p className="font-bold flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[18px]">error</span>
+                  Insufficient points
+                </p>
+                <p>You need {PRODUCT_CREATION_COST} points to create a product.</p>
+                <p>Available points: {walletBalance}</p>
+                <p>Please contact an authorized administrator to add points.</p>
+              </div>
+            )}
+
             {isAddOpen && (
-              <div className="p-3 rounded-xl bg-primary/10 border border-primary/20 text-primary text-xs flex items-center gap-2">
-                <span className="material-symbols-outlined text-[18px] shrink-0">
-                  paid
+              <div className="p-3 rounded-xl bg-primary/10 border border-primary/20 text-primary text-xs flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-[18px] shrink-0">paid</span>
+                  <span>Product Creation Cost</span>
                 </span>
-                <span>
-                  <strong>Point Cost Notice:</strong> Listing a product will automatically deduct points from your seller wallet balance according to platform rules.
+                <span className="font-bold text-right">
+                  {walletBalance !== null ? (
+                    <>
+                      Available: {walletBalance} · Cost: {PRODUCT_CREATION_COST} · After:{" "}
+                      {Math.max(walletBalance - PRODUCT_CREATION_COST, 0)}
+                    </>
+                  ) : (
+                    <>Cost: {PRODUCT_CREATION_COST} points</>
+                  )}
                 </span>
               </div>
             )}
@@ -552,23 +645,16 @@ export default function SellerProductsPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-xs font-semibold text-ink mb-1.5">
-                      Shop <span className="text-accent">*</span>
+                      Shop
                     </label>
-                    <select
-                      required
-                      value={formData.shop_id}
-                      onChange={(e) =>
-                        setFormData({ ...formData, shop_id: e.target.value })
-                      }
-                      className="w-full px-3.5 py-2 rounded-lg border border-line bg-surface text-ink text-xs focus:outline-none focus:border-primary"
-                    >
-                      <option value="">Select Shop</option>
-                      {shops.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="w-full px-3.5 py-2 rounded-lg border border-line bg-surface-alt text-ink-muted text-xs flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[16px] shrink-0">
+                        storefront
+                      </span>
+                      <span className="truncate font-semibold text-ink">
+                        {myShop ? myShop.name : "No Shop assigned"}
+                      </span>
+                    </div>
                   </div>
 
                   <div>
@@ -667,6 +753,25 @@ export default function SellerProductsPage() {
                 />
               </div>
 
+              <div>
+                <label className="block text-xs font-semibold text-ink mb-1.5">
+                  Product Image
+                </label>
+                <div className="flex items-center gap-3">
+                  {imagePreview && (
+                    <div className="w-14 h-14 rounded-lg overflow-hidden bg-surface-alt border border-line shrink-0 relative">
+                      <Image src={imagePreview} alt="Preview" fill className="object-cover" />
+                    </div>
+                  )}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                    className="w-full text-xs text-ink-muted file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-primary/10 file:text-primary file:text-xs file:font-bold file:uppercase file:cursor-pointer cursor-pointer"
+                  />
+                </div>
+              </div>
+
               {!isAddOpen && (
                 <div className="flex items-center gap-2 pt-1">
                   <input
@@ -687,18 +792,18 @@ export default function SellerProductsPage() {
               <div className="flex justify-end gap-2 pt-3 border-t border-line">
                 <button
                   type="button"
-                  onClick={() => {
-                    setIsAddOpen(false);
-                    setEditingProduct(null);
-                  }}
+                  onClick={closeProductModal}
                   className="px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider text-ink-muted hover:text-ink transition-colors cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  disabled={submittingModal}
-                  className="px-5 py-2 rounded-lg bg-primary hover:bg-primary-hover disabled:opacity-50 text-on-primary font-bold text-xs uppercase tracking-wider shadow-sm transition-all flex items-center gap-2 cursor-pointer"
+                  disabled={
+                    submittingModal ||
+                    (isAddOpen && walletBalance !== null && walletBalance < PRODUCT_CREATION_COST)
+                  }
+                  className="px-5 py-2 rounded-lg bg-primary hover:bg-primary-hover disabled:opacity-50 text-on-primary font-bold text-xs uppercase tracking-wider shadow-sm transition-all flex items-center gap-2 cursor-pointer disabled:cursor-not-allowed"
                 >
                   {submittingModal
                     ? "Saving..."

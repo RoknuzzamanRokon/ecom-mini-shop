@@ -1311,3 +1311,181 @@ class AdminSellerCreationTests(APITestCase):
             format="json",
         )
         self.assertEqual(duplicate.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class AdminShopCreationTests(APITestCase):
+    """Phase 1H: POST /api/admin/shops/ creates a Shop and assigns an existing seller as owner."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_rbac")
+
+        cls.superadmin = User.objects.create_superuser(
+            username="shc_superadmin",
+            email="shc_super@minishop.com",
+            password="SuperPassword123!",
+        )
+        assign_user_role(cls.superadmin, Role.ROLE_SUPER_ADMINISTRATOR)
+
+        cls.admin = User.objects.create_user(
+            username="shc_admin",
+            email="shc_admin@minishop.com",
+            password="AdminPassword123!",
+            is_staff=True,
+        )
+        assign_user_role(cls.admin, Role.ROLE_ADMINISTRATOR)
+
+        # OPERATION_MANAGER holds shops.view + shops.approve but NOT shops.admin.manage.
+        cls.op_manager = User.objects.create_user(
+            username="shc_op_manager",
+            email="shc_op@minishop.com",
+            password="OpPassword123!",
+            is_staff=True,
+        )
+        assign_user_role(cls.op_manager, Role.ROLE_OPERATION_MANAGER)
+
+        cls.seller_user = User.objects.create_user(
+            username="shc_seller", email="shc_seller@minishop.com", password="SellerPassword123!"
+        )
+        cls.eligible_seller = SellerProfile.objects.create(
+            user=cls.seller_user,
+            seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+            business_name="Eligible Seller Co",
+            status=SellerProfile.STATUS_ACTIVE,
+        )
+
+        cls.product_owner_user = User.objects.create_user(
+            username="shc_product_owner",
+            email="shc_product_owner@minishop.com",
+            password="ProductPassword123!",
+        )
+        cls.product_owner_seller = SellerProfile.objects.create(
+            user=cls.product_owner_user,
+            seller_type=SellerProfile.TYPE_PRODUCT_OWNER,
+            business_name="Product Owner Co",
+            status=SellerProfile.STATUS_ACTIVE,
+        )
+
+        cls.limited_user = User.objects.create_user(
+            username="shc_limited", email="shc_limited@minishop.com", password="LimitedPassword123!"
+        )
+        cls.limited_seller_at_cap = SellerProfile.objects.create(
+            user=cls.limited_user,
+            seller_type=SellerProfile.TYPE_LIMITED_SHOP_OWNER,
+            business_name="Limited Owner Co",
+            status=SellerProfile.STATUS_ACTIVE,
+        )
+        Shop.objects.create(owner=cls.limited_seller_at_cap, name="Existing Limited Shop")
+
+    def _payload(self, **overrides):
+        payload = {
+            "seller_id": self.eligible_seller.id,
+            "name": "Admin Assigned Shop",
+            "description": "Created and assigned by an administrator.",
+            "phone": "01799999999",
+            "address": "House 1, Road 1, Dhaka",
+            "reason": "Phase 1H admin shop creation test",
+        }
+        payload.update(overrides)
+        return payload
+
+    def test_anonymous_cannot_create_shop(self):
+        res = self.client.post("/api/admin/shops/", data=self._payload(), format="json")
+        self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_shop_view_permission_is_not_enough(self):
+        """OPERATION_MANAGER can read the directory but not create in it."""
+        self.client.force_authenticate(user=self.op_manager)
+        res = self.client.post("/api/admin/shops/", data=self._payload(), format="json")
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(Shop.objects.filter(name="Admin Assigned Shop").exists())
+
+        # ...and the GET path it does hold still works.
+        self.assertEqual(self.client.get("/api/admin/shops/").status_code, status.HTTP_200_OK)
+
+    def test_authorized_actor_creates_shop_and_assigns_owner(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post("/api/admin/shops/", data=self._payload(), format="json")
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+
+        shop = Shop.objects.get(name="Admin Assigned Shop")
+        self.assertEqual(shop.owner, self.eligible_seller)
+        self.assertEqual(shop.status, Shop.STATUS_DRAFT)
+        self.assertEqual(res.data["owner_id"], self.eligible_seller.id)
+        self.assertEqual(res.data["id"], shop.id)
+
+    def test_creation_is_audited(self):
+        self.client.force_authenticate(user=self.admin)
+        self.client.post("/api/admin/shops/", data=self._payload(), format="json")
+
+        entry = AuditLog.objects.filter(action="ADMIN_SHOP_CREATED").order_by("-id").first()
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry.actor, self.admin)
+        self.assertEqual(entry.metadata["new_state"]["owner_id"], self.eligible_seller.id)
+
+    def test_nonexistent_seller_rejected(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            "/api/admin/shops/", data=self._payload(seller_id=999999), format="json"
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("seller_id", res.data)
+
+    def test_product_owner_seller_rejected(self):
+        """ShopService's PRODUCT_OWNER restriction applies to admin-assigned shops too."""
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            "/api/admin/shops/",
+            data=self._payload(seller_id=self.product_owner_seller.id, name="Product Owner Shop"),
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("seller_id", res.data)
+        self.assertFalse(Shop.objects.filter(name="Product Owner Shop").exists())
+
+    def test_limited_shop_owner_cap_applies_to_admin_creation(self):
+        """A LIMITED_SHOP_OWNER already at their 1-shop cap cannot be assigned a second shop."""
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            "/api/admin/shops/",
+            data=self._payload(seller_id=self.limited_seller_at_cap.id, name="Second Limited Shop"),
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("seller_id", res.data)
+        self.assertFalse(Shop.objects.filter(name="Second Limited Shop").exists())
+
+    def test_full_shop_owner_single_shop_cap_applies_to_admin_creation(self):
+        """Confirmed business rule: a FULL_SHOP_OWNER already owning one Shop cannot be assigned a second."""
+        self.client.force_authenticate(user=self.admin)
+        first_res = self.client.post("/api/admin/shops/", data=self._payload(), format="json")
+        self.assertEqual(first_res.status_code, status.HTTP_201_CREATED)
+
+        second_res = self.client.post(
+            "/api/admin/shops/",
+            data=self._payload(name="Second Admin Assigned Shop"),
+            format="json",
+        )
+        self.assertEqual(second_res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("seller_id", second_res.data)
+        self.assertFalse(Shop.objects.filter(name="Second Admin Assigned Shop").exists())
+        self.assertEqual(Shop.objects.filter(owner=self.eligible_seller).count(), 1)
+
+    def test_blank_name_rejected(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post("/api/admin/shops/", data=self._payload(name="   "), format="json")
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_reason_is_required(self):
+        payload = self._payload()
+        del payload["reason"]
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post("/api/admin/shops/", data=payload, format="json")
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("reason", res.data)
+
+    def test_seller_cannot_create_shop_via_admin_endpoint(self):
+        """A plain seller account (no RBAC role) is blocked from the admin endpoint too."""
+        self.client.force_authenticate(user=self.seller_user)
+        res = self.client.post("/api/admin/shops/", data=self._payload(), format="json")
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)

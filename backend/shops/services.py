@@ -105,10 +105,13 @@ class ShopService:
                 "Product Owners are not permitted to create shops under system business rules."
             )
 
-        # Limited Shop Owners are restricted to a single shop
-        if seller.seller_type == SellerProfile.TYPE_LIMITED_SHOP_OWNER and seller.shops.count() >= 1:
+        # Confirmed business rule: every Shop Owner (Full or Limited) is capped at
+        # exactly one Shop. A Shop is always admin-created and admin-assigned; this
+        # cap prevents an administrator from assigning a second Shop to a seller who
+        # already has one, regardless of seller type.
+        if seller.shops.count() >= 1:
             raise ShopLimitExceededError(
-                "Limited Shop Owners are restricted to a maximum of 1 shop."
+                "Shop Owners are restricted to a maximum of 1 shop under the current business model."
             )
 
     @classmethod

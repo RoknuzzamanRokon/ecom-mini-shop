@@ -20,6 +20,7 @@ import {
 import {
   SHOP_STATUS_LABELS,
   SHOP_STATUS_OPTIONS,
+  canManageAdminShops,
   getAvailableShopActions,
   useShopStatusAction,
 } from "./shopGovernance";
@@ -244,6 +245,8 @@ function AdminShopsPageContent() {
     [user, requestAction]
   );
 
+  const canCreate = canManageAdminShops(user);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -253,6 +256,17 @@ function AdminShopsPageContent() {
             Review, approve, and govern multi-vendor storefronts across the platform.
           </p>
         </div>
+        {canCreate && (
+          <Link
+            href="/admin/shops/new"
+            className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-primary hover:bg-primary-hover text-on-primary text-xs font-bold transition-colors shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+              add
+            </span>
+            Create shop
+          </Link>
+        )}
       </div>
 
       <AdminFilterBar

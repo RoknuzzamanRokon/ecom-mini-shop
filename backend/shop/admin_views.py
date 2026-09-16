@@ -73,6 +73,7 @@ from shop.admin_serializers import (
     AdminRoleUpdateSerializer,
     AdminSellerSerializer,
     AdminSellerStatusUpdateSerializer,
+    AdminShopCreateSerializer,
     AdminShopSerializer,
     AdminShopStatusUpdateSerializer,
     AdminUserCreateSerializer,
@@ -82,6 +83,7 @@ from shop.admin_serializers import (
 )
 from shop.models import Category, Order, Payment, Product
 from shops.models import Shop
+from shops.services import IneligibleSellerError, ShopLimitExceededError, ShopService
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -774,10 +776,15 @@ class AdminSellerStatusAPIView(APIView):
 
 class AdminShopListAPIView(APIView):
     """
-    GET /api/admin/shops/
-    Paginated, searchable list of shops across the platform.
+    GET  /api/admin/shops/
+    POST /api/admin/shops/
+    Paginated, searchable list of shops across the platform, or create a Shop
+    and assign an existing SellerProfile as its owner.
     """
-    permission_classes = [IsAuthenticated, CanViewAdminShops]
+    def get_permissions(self):
+        if self.request.method in ("POST", "PUT", "PATCH", "DELETE"):
+            return [IsAuthenticated(), CanManageAdminShops()]
+        return [IsAuthenticated(), CanViewAdminShops()]
 
     def get(self, request):
         qs = Shop.objects.select_related("owner", "owner__user").prefetch_related("products").all().order_by("-created_at")
@@ -798,6 +805,63 @@ class AdminShopListAPIView(APIView):
         page = paginator.paginate_queryset(qs, request)
         serializer = AdminShopSerializer(page, many=True)
         return paginator.get_paginated_response(serializer.data)
+
+    def post(self, request):
+        """
+        Creates a Shop and assigns an existing SellerProfile as its owner —
+        the "Admin creates Shop -> assigns Shop Owner" half of the Admin-created
+        Shop Owner model. Delegates entirely to ShopService.create_shop so the
+        same eligibility rules (operational seller, no PRODUCT_OWNER, single
+        shop cap for every Shop Owner type) apply as for the (now seller-disabled)
+        self-service path.
+        """
+        serializer = AdminShopCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        reason = data["reason"]
+
+        with transaction.atomic():
+            try:
+                seller = SellerProfile.objects.select_for_update().get(pk=data["seller_id"])
+            except SellerProfile.DoesNotExist:
+                raise NotFound("Seller profile not found.")
+
+            try:
+                shop = ShopService.create_shop(
+                    seller=seller,
+                    name=data["name"],
+                    description=data.get("description", ""),
+                    phone=data.get("phone", ""),
+                    address=data.get("address", ""),
+                    latitude=data.get("latitude"),
+                    longitude=data.get("longitude"),
+                )
+            except (IneligibleSellerError, ShopLimitExceededError) as exc:
+                raise DRFValidationError({"seller_id": [str(exc)]})
+            except DjangoValidationError as exc:
+                raise DRFValidationError(
+                    exc.message_dict if hasattr(exc, "message_dict") else {"detail": exc.messages}
+                )
+
+            AuditService.log(
+                action="ADMIN_SHOP_CREATED",
+                target=shop,
+                actor=request.user,
+                shop=shop,
+                seller=seller,
+                reason=reason,
+                new_state={
+                    "shop_id": shop.id,
+                    "name": shop.name,
+                    "slug": shop.slug,
+                    "owner_id": seller.id,
+                    "owner_business_name": seller.business_name,
+                    "status": shop.status,
+                },
+                ip_address=get_client_ip(request),
+            )
+
+        return Response(AdminShopSerializer(shop).data, status=status.HTTP_201_CREATED)
 
 
 class AdminShopDetailAPIView(APIView):

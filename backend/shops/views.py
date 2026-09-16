@@ -15,7 +15,6 @@ from .permissions import (
 from .serializers import (
     NearbyShopSerializer,
     PublicShopSerializer,
-    SellerShopCreateSerializer,
     SellerShopSerializer,
     SellerShopUpdateSerializer,
     ShopActionReasonSerializer,
@@ -25,8 +24,6 @@ from .serializers import (
 from .services import (
     IneligibleSellerError,
     InvalidShopTransitionError,
-    ShopError,
-    ShopLimitExceededError,
     ShopService,
     validate_coordinates,
     validate_radius,
@@ -132,34 +129,21 @@ class SellerShopListView(generics.ListAPIView):
 
 class SellerShopCreateView(APIView):
     """
-    Allows an eligible seller (FULL_SHOP_OWNER, LIMITED_SHOP_OWNER) to create a shop.
-    Rejects PRODUCT_OWNER sellers and suspended sellers.
+    Shops are no longer self-service. Under the Admin-created Shop Owner
+    model, a Shop is always created by an administrator (see
+    AdminShopListAPIView.post in shop/admin_views.py) with the owning
+    SellerProfile assigned at creation time. This endpoint is kept in place
+    (rather than removed from urls.py) so any direct API call — not just the
+    removed frontend button — gets an explicit, authoritative 403 instead of
+    a bare 404 that could look like a routing bug.
     """
-    permission_classes = [permissions.IsAuthenticated, IsEligibleShopSeller]
+    permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        serializer = SellerShopCreateSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        data = serializer.validated_data
-
-        try:
-            shop = ShopService.create_shop(
-                seller=request.user.seller_profile,
-                name=data["name"],
-                description=data.get("description", ""),
-                phone=data.get("phone", ""),
-                address=data.get("address", ""),
-                location=data.get("location", ""),
-                logo=request.FILES.get("logo") or data.get("logo"),
-                cover_image=request.FILES.get("cover_image") or data.get("cover_image"),
-                submit_for_review=data.get("submit_for_review", False),
-            )
-        except (IneligibleSellerError, ShopLimitExceededError) as e:
-            return Response({"error": str(e)}, status=status.HTTP_403_FORBIDDEN)
-        except ShopError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
-
-        return Response(SellerShopSerializer(shop).data, status=status.HTTP_201_CREATED)
+        raise PermissionDenied(
+            "Shops are created and assigned by platform administrators. "
+            "Contact an administrator to have a shop assigned to your account."
+        )
 
 
 class SellerShopDetailView(generics.RetrieveAPIView):

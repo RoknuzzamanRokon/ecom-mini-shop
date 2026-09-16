@@ -430,33 +430,64 @@ export async function getSellerProducts(
   return await res.json();
 }
 
+export class InsufficientPointsError extends Error {
+  requiredPoints: number;
+  availablePoints: number;
+
+  constructor(message: string, requiredPoints: number, availablePoints: number) {
+    super(message);
+    this.name = "InsufficientPointsError";
+    this.requiredPoints = requiredPoints;
+    this.availablePoints = availablePoints;
+  }
+}
+
 export async function createSellerProduct(
   token: string,
   data: {
     name: string;
     category_id: number;
-    shop_id: number;
+    // Optional: a Shop Owner has exactly one assigned Shop, so the backend
+    // auto-resolves it when omitted. Never used to target another seller's Shop.
+    shop_id?: number;
     description: string;
     price: string | number;
     old_price?: string | number | null;
     stock?: number;
     badge?: string;
+    image?: File | null;
   }
 ): Promise<Product> {
+  const { image, ...rest } = data;
+  const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+  let body: FormData | string;
+
+  if (image) {
+    const formData = new FormData();
+    Object.entries(rest).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) formData.append(key, String(value));
+    });
+    formData.append("image", image);
+    body = formData;
+  } else {
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify(rest);
+  }
+
   const res = await fetch(`${API_BASE_URL}/api/products/mine/`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(data),
+    headers,
+    body,
   });
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
     if (res.status === 400 && errorData.required_points) {
-      throw new Error(
-        `Insufficient points: required ${errorData.required_points}, available ${errorData.available_points}`
+      throw new InsufficientPointsError(
+        errorData.error ||
+          `Insufficient points: required ${errorData.required_points}, available ${errorData.available_points}`,
+        errorData.required_points,
+        errorData.available_points
       );
     }
     throw new Error(errorData.error || "Failed to create product");
@@ -1206,27 +1237,6 @@ export async function getSellerShopDetail(token: string, id: number): Promise<Se
   return await res.json();
 }
 
-export async function createSellerShop(token: string, data: FormData | Record<string, any>): Promise<SellerShop> {
-  const isFormData = typeof FormData !== "undefined" && data instanceof FormData;
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
-  };
-  if (!isFormData) {
-    headers["Content-Type"] = "application/json";
-  }
-
-  const res = await fetch(`${API_BASE_URL}/api/shops/mine/create/`, {
-    method: "POST",
-    headers,
-    body: isFormData ? data : JSON.stringify(data),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || err.detail || Object.values(err)[0] as string || "Failed to create shop");
-  }
-  return await res.json();
-}
-
 export async function updateSellerShop(
   token: string,
   id: number,
@@ -1284,13 +1294,26 @@ export async function updateSellerProduct(
   id: number,
   data: Record<string, any>
 ): Promise<Product> {
+  const hasImageFile = typeof File !== "undefined" && data.image instanceof File;
+  const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+  let body: FormData | string;
+
+  if (hasImageFile) {
+    const formData = new FormData();
+    Object.entries(data).forEach(([key, value]) => {
+      if (value === undefined || value === null) return;
+      formData.append(key, value instanceof File ? value : String(value));
+    });
+    body = formData;
+  } else {
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify(data);
+  }
+
   const res = await fetch(`${API_BASE_URL}/api/products/mine/${id}/`, {
     method: "PATCH",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(data),
+    headers,
+    body,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));

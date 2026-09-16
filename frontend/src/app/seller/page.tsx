@@ -12,7 +12,7 @@ import {
 import { SellerShop, Product, SellerOrder, SellerWallet } from "@/lib/types";
 
 export default function SellerDashboardPage() {
-  const { seller, capabilities, dashboardData } = useSeller();
+  const { seller, dashboardData } = useSeller();
 
   const [shops, setShops] = useState<SellerShop[]>([]);
   const [productsCount, setProductsCount] = useState<number>(0);
@@ -99,13 +99,7 @@ export default function SellerDashboardPage() {
             <p className="text-2xl font-black text-ink mt-1">
               {loadingMetrics ? "..." : shops.length}
             </p>
-            <p className="text-[11px] text-ink-muted mt-0.5">
-              {capabilities?.can_create_shops
-                ? capabilities.max_shops
-                  ? `Max limit: ${capabilities.max_shops}`
-                  : "Unlimited shops allowed"
-                : "Shop creation disabled"}
-            </p>
+            <p className="text-[11px] text-ink-muted mt-0.5">Assigned to your account</p>
           </div>
           <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
             <span className="material-symbols-outlined text-[26px]">storefront</span>

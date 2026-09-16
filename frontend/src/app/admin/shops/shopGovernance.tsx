@@ -14,6 +14,7 @@
  */
 
 import React from "react";
+import Link from "next/link";
 import type { AdminSelectOption } from "@/components/admin/shared";
 import type { AuthUser } from "@/lib/types";
 import { getAuthToken } from "@/lib/auth";
@@ -220,4 +221,63 @@ export function useShopStatusAction(onSuccess: (updated: AdminShop) => void) {
   );
 
   return { pendingAction, targetShop, submitError, requestAction, cancel, confirm };
+}
+
+/**
+ * Page access gate, mirroring CanViewAdminShops
+ * ('shops.admin.manage' OR 'shops.view'). Being a management user is NOT
+ * sufficient — AdminGuard only establishes console eligibility.
+ */
+export function canViewAdminShops(user: AuthUser | null | undefined): boolean {
+  return hasAnyPermission(user, ADMIN_PERMISSIONS.shopsView);
+}
+
+/**
+ * Mirrors CanManageAdminShops exactly: 'shops.admin.manage' plus the
+ * superuser / SUPER_ADMINISTRATOR bypass. This is the gate for POST
+ * /api/admin/shops/ (Phase 1H shop creation + owner assignment) —
+ * AdminShopListAPIView.post uses the identical permission class. Holding
+ * only 'shops.approve' (the narrower shopsApprove set) is NOT enough, exactly
+ * as it is not enough for reject/suspend/reactivate above.
+ */
+export function canManageAdminShops(user: AuthUser | null | undefined): boolean {
+  return hasAnyPermission(user, ADMIN_PERMISSIONS.shopsManage);
+}
+
+/**
+ * Page-level "you may not open this module" panel.
+ *
+ * Hiding the sidebar entry does not stop somebody typing the URL, so the
+ * shop creation route renders this instead of its form when the operator
+ * lacks the view permission. It is a UX courtesy only: the backend would
+ * return 403 for the request regardless.
+ */
+export function ShopAccessNotice() {
+  return (
+    <div className="min-h-[60vh] flex flex-col items-center justify-center text-center p-6">
+      <div className="max-w-md w-full bg-surface rounded-2xl border border-line p-8 shadow-xs flex flex-col items-center">
+        <div className="w-14 h-14 rounded-2xl bg-red-500/10 text-red-600 flex items-center justify-center mb-4">
+          <span aria-hidden="true" className="material-symbols-outlined text-[32px]">
+            shield_lock
+          </span>
+        </div>
+        <h1 className="text-xl font-black text-ink tracking-tight mb-2">
+          Insufficient Permissions
+        </h1>
+        <p className="text-xs text-ink-muted leading-relaxed mb-6">
+          Your account does not hold the permissions required to open{" "}
+          <strong className="text-ink">Shops</strong>. Shop governance requires{" "}
+          <code className="font-mono text-[11px]">shops.view</code> or{" "}
+          <code className="font-mono text-[11px]">shops.admin.manage</code>. Contact a
+          Super Administrator if you believe this is incorrect.
+        </p>
+        <Link
+          href="/admin"
+          className="w-full py-2.5 px-4 rounded-xl bg-primary hover:bg-primary-hover text-on-primary font-bold text-xs uppercase tracking-wider transition-colors shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        >
+          Return to Overview
+        </Link>
+      </div>
+    </div>
+  );
 }
