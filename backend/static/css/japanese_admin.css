@@ -724,39 +724,125 @@ input:focus, textarea:focus, select:focus {
 
 /* --------------------------------------------------------------------------
    8. SIDE PANEL NAVIGATION & CATEGORY OPTIONS
+
+   Design intent: a quiet, editorial rail. Hairline rules instead of boxes,
+   one accent colour carrying state, generous breathing room between groups,
+   and a single scroll region held between a pinned brand plate and a pinned
+   storefront plate.
+
+   Every colour below resolves through a --sb-* token. Dark mode is the two
+   token blocks that follow this one and nothing else -- do not hard-code a
+   colour in a component rule here, add a token instead.
    -------------------------------------------------------------------------- */
+:root {
+  /* Geometry */
+  --sb-width: 274px;
+  --sb-handle: 22px;
+  --sb-gutter: 14px;
+  --sb-row-h: 34px;
+  --sb-radius: 9px;
+  /* Measured onto <html> by the sidebar script; this is the fallback. */
+  --sb-top: 56px;
+
+  /* Surfaces and text follow the theme palette automatically */
+  --sb-surface: var(--jp-bg-surface);
+  --sb-sunken: var(--jp-bg-surface-sunken);
+  --sb-rule: var(--jp-border-line);
+  --sb-rule-soft: var(--jp-border-line-subtle);
+  --sb-ink: var(--jp-text-ink);
+  --sb-ink-body: var(--jp-text-ink-body);
+  --sb-ink-muted: var(--jp-text-ink-muted);
+
+  /* State colours -- the only values dark mode has to restate */
+  --sb-hover: rgba(19, 35, 45, 0.05);
+  --sb-chip-bg: rgba(19, 35, 45, 0.06);
+  --sb-scroll-thumb: rgba(19, 35, 45, 0.2);
+  --sb-accent: #21486B;
+  --sb-accent-wash: rgba(33, 72, 107, 0.08);
+  --sb-gold: #A9761F;
+  --sb-gold-wash: rgba(186, 134, 48, 0.13);
+  --sb-green: #047857;
+  --sb-green-wash: rgba(4, 120, 87, 0.08);
+  --sb-green-wash-hi: rgba(4, 120, 87, 0.14);
+  --sb-green-line: rgba(4, 120, 87, 0.22);
+}
+
+[data-theme="dark"],
+body.theme-dark {
+  --sb-hover: rgba(255, 255, 255, 0.055);
+  --sb-chip-bg: rgba(255, 255, 255, 0.075);
+  --sb-scroll-thumb: rgba(255, 255, 255, 0.2);
+  --sb-accent: #93C5FD;
+  --sb-accent-wash: rgba(96, 165, 250, 0.14);
+  --sb-gold: #E0B25C;
+  --sb-gold-wash: rgba(224, 178, 92, 0.14);
+  --sb-green: #34D399;
+  --sb-green-wash: rgba(52, 211, 153, 0.1);
+  --sb-green-wash-hi: rgba(52, 211, 153, 0.18);
+  --sb-green-line: rgba(52, 211, 153, 0.26);
+}
+
+/* Twin of the block above, for data-theme="auto" under a dark OS. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --sb-hover: rgba(255, 255, 255, 0.055);
+    --sb-chip-bg: rgba(255, 255, 255, 0.075);
+    --sb-scroll-thumb: rgba(255, 255, 255, 0.2);
+    --sb-accent: #93C5FD;
+    --sb-accent-wash: rgba(96, 165, 250, 0.14);
+    --sb-gold: #E0B25C;
+    --sb-gold-wash: rgba(224, 178, 92, 0.14);
+    --sb-green: #34D399;
+    --sb-green-wash: rgba(52, 211, 153, 0.1);
+    --sb-green-wash-hi: rgba(52, 211, 153, 0.18);
+    --sb-green-line: rgba(52, 211, 153, 0.26);
+  }
+}
+
+/* -- Collapse handle ------------------------------------------------------ */
 .toggle-nav-sidebar {
-  background-color: var(--jp-bg-surface-sunken) !important;
-  border-right: 1px solid var(--jp-border-line) !important;
-  color: var(--jp-text-ink-muted) !important;
-  width: 24px !important;
-  flex: 0 0 24px !important;
+  background-color: var(--jp-bg-canvas) !important;
+  border-right: 1px solid var(--sb-rule) !important;
+  color: var(--sb-ink-muted) !important;
+  width: var(--sb-handle) !important;
+  flex: 0 0 var(--sb-handle) !important;
+  top: var(--sb-top) !important;
+  height: calc(100vh - var(--sb-top)) !important;
+  max-height: calc(100vh - var(--sb-top)) !important;
+  font-size: 13px !important;
   cursor: pointer !important;
-  transition: all 0.2s ease !important;
+  transition: background-color 0.18s ease, color 0.18s ease !important;
   z-index: 40 !important;
 }
 
-.toggle-nav-sidebar:hover {
-  background-color: var(--jp-border-line) !important;
-  color: var(--jp-kachi-primary) !important;
+.toggle-nav-sidebar:hover,
+.toggle-nav-sidebar:focus-visible {
+  background-color: var(--sb-hover) !important;
+  color: var(--sb-accent) !important;
 }
 
-[data-theme="dark"] .toggle-nav-sidebar:hover {
-  color: #93C5FD !important;
-}
-
+/* -- Shell ---------------------------------------------------------------- */
 #nav-sidebar {
-  background-color: var(--jp-bg-surface) !important;
-  border-right: 1px solid var(--jp-border-line) !important;
-  flex: 0 0 270px !important;
-  width: 270px !important;
-  max-width: 270px !important;
-  left: -271px !important;
-  margin-left: -271px !important;
+  background-color: var(--sb-surface) !important;
+  border-right: 1px solid var(--sb-rule) !important;
+  flex: 0 0 var(--sb-width) !important;
+  width: var(--sb-width) !important;
+  max-width: var(--sb-width) !important;
+  left: calc(-1px - var(--sb-width)) !important;
+  margin-left: calc(-1px - var(--sb-width)) !important;
+  /* Sit below the sticky header rather than sliding underneath it. */
+  top: var(--sb-top) !important;
+  height: calc(100vh - var(--sb-top)) !important;
+  max-height: calc(100vh - var(--sb-top)) !important;
   overflow-y: auto !important;
-  scrollbar-width: thin !important;
-  box-shadow: 2px 0 16px rgba(0, 0, 0, 0.03) !important;
+  overflow-x: hidden !important;
+  overscroll-behavior: contain !important;
+  box-shadow: none !important;
   z-index: 30 !important;
+  /* Thin, self-effacing scrollbar -- drawn only while the rail is in use. */
+  scrollbar-width: thin !important;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 0.2s ease;
 }
 
 .main.shifted > #nav-sidebar {
@@ -772,252 +858,338 @@ input:focus, textarea:focus, select:focus {
 }
 
 .main.shifted > #nav-sidebar + .content {
-  max-width: calc(100% - 294px) !important;
+  max-width: calc(100% - var(--sb-width) - var(--sb-handle)) !important;
+}
+
+.main > #nav-sidebar + .content {
+  max-width: calc(100% - var(--sb-handle)) !important;
+}
+
+#nav-sidebar:hover,
+#nav-sidebar:focus-within {
+  scrollbar-color: var(--sb-scroll-thumb) transparent;
+}
+
+#nav-sidebar::-webkit-scrollbar {
+  width: 9px;
+}
+
+#nav-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#nav-sidebar::-webkit-scrollbar-thumb {
+  background-color: transparent;
+  border: 3px solid transparent;
+  background-clip: content-box;
+  border-radius: 9999px;
+}
+
+#nav-sidebar:hover::-webkit-scrollbar-thumb,
+#nav-sidebar:focus-within::-webkit-scrollbar-thumb {
+  background-color: var(--sb-scroll-thumb);
+}
+
+/* The category filter toggles rows with the `hidden` attribute; author
+   `display` rules below would otherwise beat the UA sheet and keep them
+   visible. */
+#nav-sidebar [hidden] {
+  display: none !important;
 }
 
 .sidebar-inner {
-  padding: 16px 14px 28px;
   display: flex;
   flex-direction: column;
-  gap: 18px;
-  min-height: calc(100vh - 65px);
+  min-height: 100%;
+  padding: 0;
   box-sizing: border-box;
 }
 
-/* Sidebar Branding Header */
+/* -- Brand plate (pinned to the top of the rail) -------------------------- */
 .sidebar-header {
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--jp-border-line);
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  padding: 13px var(--sb-gutter);
+  background: var(--sb-surface);
+  border-bottom: 1px solid var(--sb-rule);
 }
 
 .sidebar-header-title {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 11px;
+  min-width: 0;
 }
 
 .sidebar-brand-icon {
-  font-size: 22px !important;
-  color: var(--jp-kinari-gold) !important;
-  background: var(--jp-kinari-gold-bg);
-  padding: 6px;
-  border-radius: 8px;
-  display: flex;
+  font-size: 19px !important;
+  color: var(--sb-gold) !important;
+  background: var(--sb-gold-wash);
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 9px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
 }
 
 .sidebar-brand-name {
-  font-size: 14px;
-  font-weight: 800;
-  letter-spacing: -0.3px;
-  color: var(--jp-text-ink);
-  line-height: 1.2;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--sb-ink);
+  line-height: 1.25;
 }
 
 .sidebar-brand-sub {
-  font-size: 11px;
-  color: var(--jp-text-ink-muted);
-  font-weight: 500;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--sb-ink-muted);
+  line-height: 1.4;
 }
 
-/* Sidebar Section Headers */
+/* -- Scrolling body ------------------------------------------------------- */
+.sidebar-body {
+  flex: 1 1 auto;
+  padding: 16px var(--sb-gutter) 20px;
+}
+
+/* -- Section headings ----------------------------------------------------- */
 .sidebar-section {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+}
+
+.sidebar-section + .sidebar-section {
+  margin-top: 18px;
 }
 
 .sidebar-section-title {
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.8px;
-  text-transform: uppercase;
-  color: var(--jp-text-ink-muted);
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 4px;
-  margin-bottom: 6px;
+  gap: 8px;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--sb-ink-muted);
+  padding: 0 10px;
+  margin: 0 0 8px;
+}
+
+/* Hairline running out from the label to the edge of the rail. */
+.sidebar-section-title::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--sb-rule-soft);
 }
 
 .sidebar-section-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
-  padding: 0 4px;
+  gap: 6px;
+  padding: 0 4px 0 0;
+  margin-bottom: 8px;
 }
 
 .sidebar-section-header .sidebar-section-title {
+  flex: 1 1 auto;
   margin-bottom: 0;
-  padding: 0;
+  padding-right: 0;
 }
 
 .sidebar-count-badge {
-  background: var(--jp-kinari-gold-bg);
-  color: var(--jp-kinari-gold);
-  font-size: 10px;
+  font-size: 9.5px;
   font-weight: 700;
-  padding: 1px 6px;
+  line-height: 1;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--sb-ink-muted);
+  background: var(--sb-chip-bg);
+  padding: 3px 6px;
   border-radius: 9999px;
-  border: 1px solid rgba(186, 134, 48, 0.25);
 }
 
 .sidebar-add-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  background: var(--jp-tokiwa-green-bg);
-  color: #059669;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--sb-ink-muted);
   text-decoration: none;
-  transition: all 0.15s ease;
-}
-
-[data-theme="dark"] .sidebar-add-btn {
-  color: #34D399;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
 .sidebar-add-btn:hover {
-  background: rgba(16, 185, 129, 0.25);
-  transform: scale(1.08);
+  background: var(--sb-green-wash-hi);
+  color: var(--sb-green);
 }
 
 .sidebar-add-btn .material-symbols-outlined {
-  font-size: 16px !important;
+  font-size: 17px !important;
 }
 
-/* Sidebar Search Filter */
-.sidebar-filter-wrap {
-  position: relative;
-  display: flex;
-  align-items: center;
-  margin-bottom: 6px;
-  padding: 0 2px;
-}
-
-.sidebar-filter-wrap .filter-icon {
-  position: absolute;
-  left: 10px;
-  font-size: 16px !important;
-  color: var(--jp-text-ink-muted) !important;
-  pointer-events: none;
-}
-
-.sidebar-filter-wrap input {
-  width: 100% !important;
-  box-sizing: border-box !important;
-  padding: 6px 26px 6px 30px !important;
-  font-size: 12px !important;
-  border-radius: 8px !important;
-  background: var(--jp-bg-surface-sunken) !important;
-  border: 1px solid var(--jp-border-line) !important;
-  color: var(--jp-text-ink) !important;
-  outline: none !important;
-  transition: border-color 0.15s ease, box-shadow 0.15s ease !important;
-}
-
-.sidebar-filter-wrap input:focus {
-  border-color: var(--jp-kinari-gold) !important;
-  box-shadow: 0 0 0 2px rgba(186, 134, 48, 0.18) !important;
-}
-
-.filter-clear-btn {
-  position: absolute;
-  right: 8px;
-  background: transparent;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  color: var(--jp-text-ink-muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.filter-clear-btn:hover {
-  color: var(--jp-text-ink);
-}
-
-.filter-clear-btn .material-symbols-outlined {
-  font-size: 14px !important;
-}
-
-/* Sidebar Main Menu */
+/* -- Primary navigation rows ---------------------------------------------- */
 .sidebar-menu {
   list-style: none !important;
   padding: 0 !important;
   margin: 0 !important;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .sidebar-link {
+  position: relative;
   display: flex !important;
   align-items: center !important;
-  gap: 10px !important;
-  padding: 7px 10px !important;
-  border-radius: 8px !important;
-  color: var(--jp-text-ink-body) !important;
-  font-size: 12px !important;
+  gap: 11px !important;
+  min-height: var(--sb-row-h);
+  padding: 0 10px 0 11px !important;
+  border-radius: var(--sb-radius) !important;
+  color: var(--sb-ink-body) !important;
+  font-size: 12.5px !important;
   font-weight: 500 !important;
+  letter-spacing: -0.005em !important;
   text-decoration: none !important;
-  transition: all 0.15s ease !important;
+  transition: background-color 0.16s ease, color 0.16s ease !important;
 }
 
 .sidebar-link .material-symbols-outlined {
-  font-size: 18px !important;
-  color: var(--jp-text-ink-muted);
-  transition: color 0.15s ease;
+  font-size: 19px !important;
+  flex: 0 0 auto;
+  color: var(--sb-ink-muted);
+  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20 !important;
+  transition: color 0.16s ease;
+}
+
+.sidebar-link .link-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .sidebar-link:hover {
-  background: var(--jp-bg-surface-sunken) !important;
-  color: var(--jp-text-ink) !important;
+  background: var(--sb-hover) !important;
+  color: var(--sb-ink) !important;
 }
 
 .sidebar-link:hover .material-symbols-outlined {
-  color: var(--jp-kachi-primary);
-}
-
-[data-theme="dark"] .sidebar-link:hover .material-symbols-outlined {
-  color: #93C5FD;
+  color: var(--sb-ink-body);
 }
 
 .sidebar-link.active {
-  background: rgba(33, 72, 107, 0.1) !important;
-  color: var(--jp-kachi-primary) !important;
-  font-weight: 700 !important;
+  background: var(--sb-accent-wash) !important;
+  color: var(--sb-accent) !important;
+  font-weight: 600 !important;
 }
 
-[data-theme="dark"] .sidebar-link.active {
-  background: rgba(96, 165, 250, 0.15) !important;
-  color: #93C5FD !important;
+/* Rail marker instead of a heavy filled block. */
+.sidebar-link.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 17px;
+  border-radius: 0 3px 3px 0;
+  background: var(--sb-accent);
 }
 
 .sidebar-link.active .material-symbols-outlined {
-  color: var(--jp-kachi-primary) !important;
+  color: var(--sb-accent) !important;
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 20 !important;
 }
 
-[data-theme="dark"] .sidebar-link.active .material-symbols-outlined {
-  color: #93C5FD !important;
+/* -- Category filter ------------------------------------------------------ */
+.sidebar-filter-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 0 0 8px;
+  padding: 0;
 }
 
-/* Category Section List */
+.sidebar-filter-wrap .filter-icon {
+  position: absolute;
+  left: 11px;
+  font-size: 16px !important;
+  color: var(--sb-ink-muted) !important;
+  pointer-events: none;
+}
+
+.sidebar-filter-wrap input {
+  width: 100% !important;
+  box-sizing: border-box !important;
+  height: 32px !important;
+  padding: 0 30px 0 33px !important;
+  font-family: inherit !important;
+  font-size: 12px !important;
+  border-radius: 8px !important;
+  background: var(--sb-sunken) !important;
+  border: 1px solid var(--sb-rule) !important;
+  color: var(--sb-ink) !important;
+  outline: none !important;
+  transition: background-color 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease !important;
+}
+
+.sidebar-filter-wrap input::placeholder {
+  color: var(--sb-ink-muted) !important;
+}
+
+.sidebar-filter-wrap input:focus {
+  background: var(--sb-surface) !important;
+  border-color: var(--sb-accent) !important;
+  box-shadow: 0 0 0 3px var(--sb-accent-wash) !important;
+}
+
+.filter-clear-btn {
+  position: absolute;
+  right: 6px;
+  width: 20px;
+  height: 20px;
+  background: transparent;
+  border: none;
+  padding: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--sb-ink-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.filter-clear-btn:hover {
+  background: var(--sb-hover);
+  color: var(--sb-ink);
+}
+
+.filter-clear-btn .material-symbols-outlined {
+  font-size: 14px !important;
+}
+
+/* -- Category rows -------------------------------------------------------- */
 .sidebar-cat-list {
   list-style: none !important;
   padding: 0 !important;
   margin: 0 !important;
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  max-height: 360px;
-  overflow-y: auto;
-  scrollbar-width: thin;
+  gap: 1px;
 }
 
 .cat-item {
@@ -1025,84 +1197,96 @@ input:focus, textarea:focus, select:focus {
 }
 
 .cat-item-row {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  border-radius: 8px;
-  padding: 1px 4px 1px 2px;
-  transition: background-color 0.15s ease;
+  border-radius: var(--sb-radius);
+  padding-right: 4px;
+  transition: background-color 0.16s ease;
 }
 
 .cat-item-row:hover {
-  background-color: var(--jp-bg-surface-sunken);
+  background-color: var(--sb-hover);
 }
 
 .cat-item-row.active {
-  background-color: var(--jp-kinari-gold-bg);
-  border-left: 3px solid var(--jp-kinari-gold);
-  border-radius: 2px 8px 8px 2px;
+  background-color: var(--sb-gold-wash);
+}
+
+.cat-item-row.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 16px;
+  border-radius: 0 3px 3px 0;
+  background: var(--sb-gold);
 }
 
 .cat-main-link {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   display: flex !important;
   align-items: center !important;
-  gap: 8px !important;
-  padding: 6px 6px !important;
-  color: var(--jp-text-ink-body) !important;
+  gap: 9px !important;
+  min-height: 30px;
+  padding: 0 6px 0 11px !important;
+  color: var(--sb-ink-body) !important;
   font-size: 12px !important;
   font-weight: 500 !important;
   text-decoration: none !important;
-  min-width: 0;
-  transition: color 0.15s ease;
+  transition: color 0.16s ease;
 }
 
 .cat-item-row:hover .cat-main-link {
-  color: var(--jp-text-ink) !important;
+  color: var(--sb-ink) !important;
 }
 
 .cat-item-row.active .cat-main-link {
-  color: var(--jp-kinari-gold) !important;
-  font-weight: 700 !important;
+  color: var(--sb-gold) !important;
+  font-weight: 600 !important;
 }
 
 .cat-symbol {
   font-size: 17px !important;
-  color: var(--jp-text-ink-muted);
-  flex-shrink: 0;
+  flex: 0 0 auto;
+  color: var(--sb-ink-muted);
+  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20 !important;
+  transition: color 0.16s ease;
 }
 
 .cat-item-row:hover .cat-symbol {
-  color: var(--jp-kinari-gold);
+  color: var(--sb-ink-body);
 }
 
 .cat-item-row.active .cat-symbol {
-  color: var(--jp-kinari-gold) !important;
+  color: var(--sb-gold) !important;
 }
 
 .cat-name-text {
+  flex: 1 1 auto;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 1;
 }
 
 .cat-product-count {
   font-size: 10px;
-  font-weight: 700;
-  background: rgba(0, 0, 0, 0.05);
-  color: var(--jp-text-ink-muted);
-  padding: 1px 6px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  flex: 0 0 auto;
+  color: var(--sb-ink-muted);
+  background: var(--sb-chip-bg);
+  padding: 3px 6px;
   border-radius: 9999px;
-  flex-shrink: 0;
-}
-
-[data-theme="dark"] .cat-product-count {
-  background: rgba(255, 255, 255, 0.08);
 }
 
 .cat-item-row.active .cat-product-count {
-  background: var(--jp-kinari-gold);
+  background: var(--sb-gold);
   color: #FFFFFF;
 }
 
@@ -1110,43 +1294,55 @@ input:focus, textarea:focus, select:focus {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  border-radius: 6px;
-  color: var(--jp-text-ink-muted);
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  border-radius: 7px;
+  color: var(--sb-ink-muted);
   text-decoration: none;
-  opacity: 0.35;
-  transition: all 0.15s ease;
-  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease, background-color 0.15s ease, color 0.15s ease;
 }
 
-.cat-item-row:hover .cat-quick-edit {
+.cat-item-row:hover .cat-quick-edit,
+.cat-quick-edit:focus-visible {
   opacity: 1;
 }
 
 .cat-quick-edit:hover {
-  background: var(--jp-bg-surface);
-  color: var(--jp-kachi-primary);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
+  background: var(--sb-hover);
+  color: var(--sb-accent);
 }
 
-[data-theme="dark"] .cat-quick-edit:hover {
-  color: #93C5FD;
+.cat-quick-edit .material-symbols-outlined {
+  font-size: 16px !important;
 }
 
-.cat-empty, .cat-no-match {
-  padding: 12px 8px;
+/* Touch devices never fire :hover, so keep the affordance visible there. */
+@media (hover: none) {
+  .cat-quick-edit {
+    opacity: 0.55;
+  }
+}
+
+.cat-empty,
+.cat-no-match {
+  padding: 14px 10px;
   font-size: 11px;
-  color: var(--jp-text-ink-muted);
+  letter-spacing: 0.02em;
+  color: var(--sb-ink-muted);
   text-align: center;
-  font-style: italic;
 }
 
-/* Sidebar Footer */
+/* -- Storefront plate (pinned to the foot of the rail) -------------------- */
 .sidebar-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
   margin-top: auto;
-  padding-top: 14px;
-  border-top: 1px solid var(--jp-border-line);
+  padding: 12px var(--sb-gutter) 14px;
+  background: var(--sb-surface);
+  border-top: 1px solid var(--sb-rule);
 }
 
 .sidebar-store-button {
@@ -1155,31 +1351,49 @@ input:focus, textarea:focus, select:focus {
   justify-content: center;
   gap: 8px;
   width: 100%;
-  padding: 9px 12px;
-  border-radius: 8px;
-  background: var(--jp-tokiwa-green-bg);
-  border: 1px solid rgba(16, 185, 129, 0.3);
-  color: #059669;
-  font-size: 12px;
-  font-weight: 700;
-  text-decoration: none;
   box-sizing: border-box;
-  transition: all 0.15s ease;
-}
-
-[data-theme="dark"] .sidebar-store-button {
-  color: #34D399;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: var(--sb-radius);
+  background: var(--sb-green-wash);
+  border: 1px solid var(--sb-green-line);
+  color: var(--sb-green);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  text-decoration: none;
+  transition: background-color 0.16s ease, border-color 0.16s ease;
 }
 
 .sidebar-store-button:hover {
-  background: rgba(16, 185, 129, 0.22);
-  transform: translateY(-1px);
+  background: var(--sb-green-wash-hi);
 }
 
-/* Responsive adjustments */
+.sidebar-store-button .material-symbols-outlined {
+  font-size: 17px !important;
+}
+
+/* -- Keyboard focus ------------------------------------------------------- */
+#nav-sidebar a:focus-visible,
+#nav-sidebar button:focus-visible,
+#nav-sidebar input:focus-visible {
+  outline: 2px solid var(--sb-accent) !important;
+  outline-offset: 1px !important;
+}
+
+/* -- Responsive ----------------------------------------------------------- */
 @media (max-width: 1024px) {
   .main.shifted > #nav-sidebar + .content {
     max-width: 100% !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #nav-sidebar,
+  #nav-sidebar *,
+  #nav-sidebar *::before,
+  .toggle-nav-sidebar {
+    transition: none !important;
   }
 }
 
@@ -1188,10 +1402,12 @@ input:focus, textarea:focus, select:focus {
    The palette block near the top of this file is activated both by an
    explicit data-theme="dark" and by a dark OS under data-theme="auto".
    These component overrides had only the attribute form, so under a dark
-   OS the surfaces went dark while links, badges and sidebar states kept
-   their light-mode colours. Each rule below is the mechanical twin of a
-   [data-theme="dark"] rule above, in the same order -- change one, change
-   its twin.
+   OS the surfaces went dark while links and badges kept their light-mode
+   colours. Each rule below is the mechanical twin of a [data-theme="dark"]
+   rule above, in the same order -- change one, change its twin.
+   The sidebar is no longer listed here: section 8 routes every colour
+   through a --sb-* token, so its dark variant lives in that section's own
+   token blocks.
    -------------------------------------------------------------------------- */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .breadcrumbs a { color: #60A5FA !important; }
@@ -1204,15 +1420,4 @@ input:focus, textarea:focus, select:focus {
   }
   :root:not([data-theme="light"]) #result_list tbody tr:hover { background-color: rgba(255, 255, 255, 0.04) !important; }
   :root:not([data-theme="light"]) fieldset h2 { color: #93C5FD !important; }
-  :root:not([data-theme="light"]) .toggle-nav-sidebar:hover { color: #93C5FD !important; }
-  :root:not([data-theme="light"]) .sidebar-add-btn { color: #34D399; }
-  :root:not([data-theme="light"]) .sidebar-link:hover .material-symbols-outlined { color: #93C5FD; }
-  :root:not([data-theme="light"]) .sidebar-link.active {
-    background: rgba(96, 165, 250, 0.15) !important;
-    color: #93C5FD !important;
-  }
-  :root:not([data-theme="light"]) .sidebar-link.active .material-symbols-outlined { color: #93C5FD !important; }
-  :root:not([data-theme="light"]) .cat-product-count { background: rgba(255, 255, 255, 0.08); }
-  :root:not([data-theme="light"]) .cat-quick-edit:hover { color: #93C5FD; }
-  :root:not([data-theme="light"]) .sidebar-store-button { color: #34D399; }
 }

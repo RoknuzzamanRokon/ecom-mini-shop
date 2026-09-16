@@ -2,11 +2,11 @@
 <button class="sticky toggle-nav-sidebar" id="toggle-nav-sidebar" aria-label="{% translate 'Toggle navigation' %}" title="Toggle navigation (shortcut: A)"></button>
 <nav class="sticky" id="nav-sidebar" aria-label="{% translate 'Sidebar' %}">
   <div class="sidebar-inner">
-    
-    <!-- Sidebar Header / Branding -->
+
+    <!-- Brand plate: pinned to the top of the rail while the body scrolls -->
     <div class="sidebar-header">
       <div class="sidebar-header-title">
-        <span class="material-symbols-outlined sidebar-brand-icon">storefront</span>
+        <span class="material-symbols-outlined sidebar-brand-icon" aria-hidden="true">storefront</span>
         <div>
           <div class="sidebar-brand-name">MiniShop</div>
           <div class="sidebar-brand-sub">Management Panel</div>
@@ -14,220 +14,221 @@
       </div>
     </div>
 
-    <!-- Primary Navigation -->
-    <div class="sidebar-section">
-      <div class="sidebar-section-title"><span>MAIN</span></div>
-      <ul class="sidebar-menu">
-        <li>
-          <a href="{% url 'admin:index' %}" class="sidebar-link {% if request.path == '/admin/' %}active{% endif %}">
-            <span class="material-symbols-outlined">space_dashboard</span>
-            <span class="link-label">Dashboard</span>
-          </a>
-        </li>
-      </ul>
-    </div>
+    <!-- Scrolling body -->
+    <div class="sidebar-body">
 
-    <div class="sidebar-section">
-      <div class="sidebar-section-title"><span>COMMERCE</span></div>
-      <ul class="sidebar-menu">
-        <li>
-          <a href="{% url 'admin:shop_product_changelist' %}" class="sidebar-link {% if '/admin/shop/product/' in request.path and not request.GET.category__id__exact %}active{% endif %}">
-            <span class="material-symbols-outlined">shopping_bag</span>
-            <span class="link-label">Products</span>
-          </a>
-        </li>
-        <li>
-          <a href="{% url 'admin:shop_category_changelist' %}" class="sidebar-link {% if '/admin/shop/category/' in request.path %}active{% endif %}">
-            <span class="material-symbols-outlined">category</span>
-            <span class="link-label">Categories</span>
-          </a>
-        </li>
-        <li>
-          <a href="{% url 'admin:shop_order_changelist' %}" class="sidebar-link {% if '/admin/shop/order/' in request.path %}active{% endif %}">
-            <span class="material-symbols-outlined">receipt_long</span>
-            <span class="link-label">Orders</span>
-          </a>
-        </li>
-        <li>
-          <a href="{% url 'admin:shop_payment_changelist' %}" class="sidebar-link {% if '/admin/shop/payment/' in request.path %}active{% endif %}">
-            <span class="material-symbols-outlined">payments</span>
-            <span class="link-label">Payments</span>
-          </a>
-        </li>
-        <li>
-          <a href="{% url 'admin:shop_refund_changelist' %}" class="sidebar-link {% if '/admin/shop/refund/' in request.path %}active{% endif %}">
-            <span class="material-symbols-outlined">currency_exchange</span>
-            <span class="link-label">Refunds</span>
-          </a>
-        </li>
-        <li>
-          <a href="{% url 'admin:shop_productinventory_changelist' %}" class="sidebar-link {% if '/admin/shop/productinventory/' in request.path %}active{% endif %}">
-            <span class="material-symbols-outlined">inventory_2</span>
-            <span class="link-label">Inventory</span>
-          </a>
-        </li>
-        <li>
-          <a href="{% url 'admin:shop_inventorytransaction_changelist' %}" class="sidebar-link {% if '/admin/shop/inventorytransaction/' in request.path %}active{% endif %}">
-            <span class="material-symbols-outlined">swap_vert</span>
-            <span class="link-label">Stock Movements</span>
-          </a>
-        </li>
-      </ul>
-    </div>
-
-    <div class="sidebar-section">
-      <div class="sidebar-section-title"><span>MERCHANTS</span></div>
-      <ul class="sidebar-menu">
-        <li>
-          <a href="{% url 'admin:sellers_sellerprofile_changelist' %}" class="sidebar-link {% if '/admin/sellers/' in request.path %}active{% endif %}">
-            <span class="material-symbols-outlined">badge</span>
-            <span class="link-label">Sellers</span>
-          </a>
-        </li>
-        <li>
-          <a href="{% url 'admin:shops_shop_changelist' %}" class="sidebar-link {% if '/admin/shops/' in request.path %}active{% endif %}">
-            <span class="material-symbols-outlined">storefront</span>
-            <span class="link-label">Shops</span>
-          </a>
-        </li>
-        <li>
-          <a href="{% url 'admin:points_sellerwallet_changelist' %}" class="sidebar-link {% if '/admin/points/sellerwallet/' in request.path %}active{% endif %}">
-            <span class="material-symbols-outlined">account_balance_wallet</span>
-            <span class="link-label">Wallets</span>
-          </a>
-        </li>
-        <li>
-          <a href="{% url 'admin:points_pointtransaction_changelist' %}" class="sidebar-link {% if '/admin/points/pointtransaction/' in request.path %}active{% endif %}">
-            <span class="material-symbols-outlined">toll</span>
-            <span class="link-label">Point Ledger</span>
-          </a>
-        </li>
-      </ul>
-    </div>
-
-    <div class="sidebar-section">
-      <div class="sidebar-section-title"><span>CUSTOMERS</span></div>
-      <ul class="sidebar-menu">
-        <li>
-          <a href="{% url 'admin:customers_customerprofile_changelist' %}" class="sidebar-link {% if '/admin/customers/customerprofile/' in request.path %}active{% endif %}">
-            <span class="material-symbols-outlined">person</span>
-            <span class="link-label">Profiles</span>
-          </a>
-        </li>
-        <li>
-          <a href="{% url 'admin:customers_address_changelist' %}" class="sidebar-link {% if '/admin/customers/address/' in request.path %}active{% endif %}">
-            <span class="material-symbols-outlined">home_pin</span>
-            <span class="link-label">Addresses</span>
-          </a>
-        </li>
-        <li>
-          <a href="{% url 'admin:customers_favorite_changelist' %}" class="sidebar-link {% if '/admin/customers/favorite/' in request.path %}active{% endif %}">
-            <span class="material-symbols-outlined">favorite</span>
-            <span class="link-label">Favorites</span>
-          </a>
-        </li>
-        <li>
-          <a href="{% url 'admin:cart_cart_changelist' %}" class="sidebar-link {% if '/admin/cart/' in request.path %}active{% endif %}">
-            <span class="material-symbols-outlined">shopping_cart</span>
-            <span class="link-label">Carts</span>
-          </a>
-        </li>
-      </ul>
-    </div>
-
-    <div class="sidebar-section">
-      <div class="sidebar-section-title"><span>ACCESS CONTROL</span></div>
-      <ul class="sidebar-menu">
-        <li>
-          <a href="{% url 'admin:auth_user_changelist' %}" class="sidebar-link {% if '/admin/auth/user/' in request.path %}active{% endif %}">
-            <span class="material-symbols-outlined">manage_accounts</span>
-            <span class="link-label">Users</span>
-          </a>
-        </li>
-        <li>
-          <a href="{% url 'admin:rbac_role_changelist' %}" class="sidebar-link {% if '/admin/rbac/role/' in request.path %}active{% endif %}">
-            <span class="material-symbols-outlined">shield_person</span>
-            <span class="link-label">Roles</span>
-          </a>
-        </li>
-        <li>
-          <a href="{% url 'admin:rbac_permission_changelist' %}" class="sidebar-link {% if '/admin/rbac/permission/' in request.path %}active{% endif %}">
-            <span class="material-symbols-outlined">key</span>
-            <span class="link-label">Permissions</span>
-          </a>
-        </li>
-        <li>
-          <a href="{% url 'admin:rbac_userrole_changelist' %}" class="sidebar-link {% if '/admin/rbac/userrole/' in request.path %}active{% endif %}">
-            <span class="material-symbols-outlined">assignment_ind</span>
-            <span class="link-label">Role Assignments</span>
-          </a>
-        </li>
-      </ul>
-    </div>
-
-    <div class="sidebar-section">
-      <div class="sidebar-section-title"><span>GOVERNANCE</span></div>
-      <ul class="sidebar-menu">
-        <li>
-          <a href="{% url 'admin:audit_auditlog_changelist' %}" class="sidebar-link {% if '/admin/audit/' in request.path %}active{% endif %}">
-            <span class="material-symbols-outlined">history</span>
-            <span class="link-label">Audit Logs</span>
-          </a>
-        </li>
-      </ul>
-    </div>
-
-    <!-- Categories Section -->
-    <div class="sidebar-section category-section">
-      <div class="sidebar-section-header">
-        <div class="sidebar-section-title">
-          <span>CATEGORIES</span>
-          <span class="sidebar-count-badge" id="cat-count-badge">{{ nav_categories|length }}</span>
-        </div>
-        <a href="{% url 'admin:shop_category_add' %}" class="sidebar-add-btn" title="Add new category">
-          <span class="material-symbols-outlined">add</span>
-        </a>
+      <div class="sidebar-section">
+        <div class="sidebar-section-title"><span>Main</span></div>
+        <ul class="sidebar-menu">
+          <li>
+            <a href="{% url 'admin:index' %}" class="sidebar-link {% if request.path == '/admin/' %}active{% endif %}">
+              <span class="material-symbols-outlined" aria-hidden="true">space_dashboard</span>
+              <span class="link-label">Dashboard</span>
+            </a>
+          </li>
+        </ul>
       </div>
 
-      <!-- Quick Filter Categories Box -->
-      <div class="sidebar-filter-wrap">
-        <span class="material-symbols-outlined filter-icon">search</span>
-        <input type="text" id="cat-sidebar-filter" placeholder="Filter categories..." autocomplete="off">
-        <button type="button" id="cat-filter-clear" class="filter-clear-btn" style="display:none;" title="Clear filter">
-          <span class="material-symbols-outlined">close</span>
-        </button>
+      <div class="sidebar-section">
+        <div class="sidebar-section-title"><span>Commerce</span></div>
+        <ul class="sidebar-menu">
+          <li>
+            <a href="{% url 'admin:shop_product_changelist' %}" class="sidebar-link {% if '/admin/shop/product/' in request.path and not request.GET.category__id__exact %}active{% endif %}">
+              <span class="material-symbols-outlined" aria-hidden="true">shopping_bag</span>
+              <span class="link-label">Products</span>
+            </a>
+          </li>
+          <li>
+            <a href="{% url 'admin:shop_category_changelist' %}" class="sidebar-link {% if '/admin/shop/category/' in request.path %}active{% endif %}">
+              <span class="material-symbols-outlined" aria-hidden="true">category</span>
+              <span class="link-label">Categories</span>
+            </a>
+          </li>
+          <li>
+            <a href="{% url 'admin:shop_order_changelist' %}" class="sidebar-link {% if '/admin/shop/order/' in request.path %}active{% endif %}">
+              <span class="material-symbols-outlined" aria-hidden="true">receipt_long</span>
+              <span class="link-label">Orders</span>
+            </a>
+          </li>
+          <li>
+            <a href="{% url 'admin:shop_payment_changelist' %}" class="sidebar-link {% if '/admin/shop/payment/' in request.path %}active{% endif %}">
+              <span class="material-symbols-outlined" aria-hidden="true">payments</span>
+              <span class="link-label">Payments</span>
+            </a>
+          </li>
+          <li>
+            <a href="{% url 'admin:shop_refund_changelist' %}" class="sidebar-link {% if '/admin/shop/refund/' in request.path %}active{% endif %}">
+              <span class="material-symbols-outlined" aria-hidden="true">currency_exchange</span>
+              <span class="link-label">Refunds</span>
+            </a>
+          </li>
+          <li>
+            <a href="{% url 'admin:shop_productinventory_changelist' %}" class="sidebar-link {% if '/admin/shop/productinventory/' in request.path %}active{% endif %}">
+              <span class="material-symbols-outlined" aria-hidden="true">inventory_2</span>
+              <span class="link-label">Inventory</span>
+            </a>
+          </li>
+          <li>
+            <a href="{% url 'admin:shop_inventorytransaction_changelist' %}" class="sidebar-link {% if '/admin/shop/inventorytransaction/' in request.path %}active{% endif %}">
+              <span class="material-symbols-outlined" aria-hidden="true">swap_vert</span>
+              <span class="link-label">Stock Movements</span>
+            </a>
+          </li>
+        </ul>
       </div>
 
-      <!-- Category Links List -->
-      <ul class="sidebar-cat-list" id="sidebar-cat-list">
-        {% for cat in nav_categories %}
-        <li class="cat-item" data-cat-name="{{ cat.name|lower }}">
-          <div class="cat-item-row {% if request.GET.category__id__exact == cat.id|stringformat:'s' %}active{% endif %}">
-            <a href="{% url 'admin:shop_product_changelist' %}?category__id__exact={{ cat.id }}" class="cat-main-link" title="Filter products by {{ cat.name }}">
-              <span class="material-symbols-outlined cat-symbol">{{ cat.icon|default:'sell' }}</span>
-              <span class="cat-name-text">{{ cat.name }}</span>
-              <span class="cat-product-count" title="{{ cat.product_count }} products">{{ cat.product_count }}</span>
+      <div class="sidebar-section">
+        <div class="sidebar-section-title"><span>Merchants</span></div>
+        <ul class="sidebar-menu">
+          <li>
+            <a href="{% url 'admin:sellers_sellerprofile_changelist' %}" class="sidebar-link {% if '/admin/sellers/' in request.path %}active{% endif %}">
+              <span class="material-symbols-outlined" aria-hidden="true">badge</span>
+              <span class="link-label">Sellers</span>
             </a>
-            <a href="{% url 'admin:shop_category_change' cat.id %}" class="cat-quick-edit" title="Edit {{ cat.name }} category settings">
-              <span class="material-symbols-outlined">edit_note</span>
+          </li>
+          <li>
+            <a href="{% url 'admin:shops_shop_changelist' %}" class="sidebar-link {% if '/admin/shops/' in request.path %}active{% endif %}">
+              <span class="material-symbols-outlined" aria-hidden="true">storefront</span>
+              <span class="link-label">Shops</span>
             </a>
+          </li>
+          <li>
+            <a href="{% url 'admin:points_sellerwallet_changelist' %}" class="sidebar-link {% if '/admin/points/sellerwallet/' in request.path %}active{% endif %}">
+              <span class="material-symbols-outlined" aria-hidden="true">account_balance_wallet</span>
+              <span class="link-label">Wallets</span>
+            </a>
+          </li>
+          <li>
+            <a href="{% url 'admin:points_pointtransaction_changelist' %}" class="sidebar-link {% if '/admin/points/pointtransaction/' in request.path %}active{% endif %}">
+              <span class="material-symbols-outlined" aria-hidden="true">toll</span>
+              <span class="link-label">Point Ledger</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-section-title"><span>Customers</span></div>
+        <ul class="sidebar-menu">
+          <li>
+            <a href="{% url 'admin:customers_customerprofile_changelist' %}" class="sidebar-link {% if '/admin/customers/customerprofile/' in request.path %}active{% endif %}">
+              <span class="material-symbols-outlined" aria-hidden="true">person</span>
+              <span class="link-label">Profiles</span>
+            </a>
+          </li>
+          <li>
+            <a href="{% url 'admin:customers_address_changelist' %}" class="sidebar-link {% if '/admin/customers/address/' in request.path %}active{% endif %}">
+              <span class="material-symbols-outlined" aria-hidden="true">home_pin</span>
+              <span class="link-label">Addresses</span>
+            </a>
+          </li>
+          <li>
+            <a href="{% url 'admin:customers_favorite_changelist' %}" class="sidebar-link {% if '/admin/customers/favorite/' in request.path %}active{% endif %}">
+              <span class="material-symbols-outlined" aria-hidden="true">favorite</span>
+              <span class="link-label">Favorites</span>
+            </a>
+          </li>
+          <li>
+            <a href="{% url 'admin:cart_cart_changelist' %}" class="sidebar-link {% if '/admin/cart/' in request.path %}active{% endif %}">
+              <span class="material-symbols-outlined" aria-hidden="true">shopping_cart</span>
+              <span class="link-label">Carts</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-section-title"><span>Access Control</span></div>
+        <ul class="sidebar-menu">
+          <li>
+            <a href="{% url 'admin:auth_user_changelist' %}" class="sidebar-link {% if '/admin/auth/user/' in request.path %}active{% endif %}">
+              <span class="material-symbols-outlined" aria-hidden="true">manage_accounts</span>
+              <span class="link-label">Users</span>
+            </a>
+          </li>
+          <li>
+            <a href="{% url 'admin:rbac_role_changelist' %}" class="sidebar-link {% if '/admin/rbac/role/' in request.path %}active{% endif %}">
+              <span class="material-symbols-outlined" aria-hidden="true">shield_person</span>
+              <span class="link-label">Roles</span>
+            </a>
+          </li>
+          <li>
+            <a href="{% url 'admin:rbac_permission_changelist' %}" class="sidebar-link {% if '/admin/rbac/permission/' in request.path %}active{% endif %}">
+              <span class="material-symbols-outlined" aria-hidden="true">key</span>
+              <span class="link-label">Permissions</span>
+            </a>
+          </li>
+          <li>
+            <a href="{% url 'admin:rbac_userrole_changelist' %}" class="sidebar-link {% if '/admin/rbac/userrole/' in request.path %}active{% endif %}">
+              <span class="material-symbols-outlined" aria-hidden="true">assignment_ind</span>
+              <span class="link-label">Role Assignments</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+
+      <div class="sidebar-section">
+        <div class="sidebar-section-title"><span>Governance</span></div>
+        <ul class="sidebar-menu">
+          <li>
+            <a href="{% url 'admin:audit_auditlog_changelist' %}" class="sidebar-link {% if '/admin/audit/' in request.path %}active{% endif %}">
+              <span class="material-symbols-outlined" aria-hidden="true">history</span>
+              <span class="link-label">Audit Logs</span>
+            </a>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Categories -->
+      <div class="sidebar-section category-section">
+        <div class="sidebar-section-header">
+          <div class="sidebar-section-title">
+            <span>Categories</span>
+            <span class="sidebar-count-badge" id="cat-count-badge">{{ nav_categories|length }}</span>
           </div>
-        </li>
-        {% empty %}
-        <li class="cat-empty">No active categories found</li>
-        {% endfor %}
-      </ul>
-      <div id="cat-no-results" class="cat-no-match" style="display: none;">
-        <span>No matching category</span>
+          <a href="{% url 'admin:shop_category_add' %}" class="sidebar-add-btn" title="Add new category" aria-label="Add new category">
+            <span class="material-symbols-outlined" aria-hidden="true">add</span>
+          </a>
+        </div>
+
+        <div class="sidebar-filter-wrap">
+          <span class="material-symbols-outlined filter-icon" aria-hidden="true">search</span>
+          <input type="text" id="cat-sidebar-filter" placeholder="Filter categories" autocomplete="off" aria-label="Filter categories">
+          <button type="button" id="cat-filter-clear" class="filter-clear-btn" hidden title="Clear filter" aria-label="Clear filter">
+            <span class="material-symbols-outlined" aria-hidden="true">close</span>
+          </button>
+        </div>
+
+        <ul class="sidebar-cat-list" id="sidebar-cat-list">
+          {% for cat in nav_categories %}
+          <li class="cat-item" data-cat-name="{{ cat.name|lower }}">
+            <div class="cat-item-row {% if request.GET.category__id__exact == cat.id|stringformat:'s' %}active{% endif %}">
+              <a href="{% url 'admin:shop_product_changelist' %}?category__id__exact={{ cat.id }}" class="cat-main-link" title="Filter products by {{ cat.name }}">
+                <span class="material-symbols-outlined cat-symbol" aria-hidden="true">{{ cat.icon|default:'sell' }}</span>
+                <span class="cat-name-text">{{ cat.name }}</span>
+                <span class="cat-product-count" title="{{ cat.product_count }} products">{{ cat.product_count }}</span>
+              </a>
+              <a href="{% url 'admin:shop_category_change' cat.id %}" class="cat-quick-edit" title="Edit {{ cat.name }} category settings" aria-label="Edit {{ cat.name }}">
+                <span class="material-symbols-outlined" aria-hidden="true">edit_note</span>
+              </a>
+            </div>
+          </li>
+          {% empty %}
+          <li class="cat-empty">No active categories</li>
+          {% endfor %}
+        </ul>
+        <div id="cat-no-results" class="cat-no-match" hidden>
+          <span>No matching category</span>
+        </div>
       </div>
+
     </div>
 
-    <!-- Storefront Quick Link -->
+    <!-- Storefront plate: pinned to the foot of the rail -->
     <div class="sidebar-footer">
       <a href="{{ storefront_url }}" target="_blank" rel="noopener noreferrer" class="sidebar-store-button">
-        <span class="pulse-dot"></span>
-        <span class="material-symbols-outlined" style="font-size: 18px;">storefront</span>
-        <span>View Storefront ↗</span>
+        <span class="pulse-dot" aria-hidden="true"></span>
+        <span>View Storefront &#8599;</span>
       </a>
     </div>
 
@@ -236,7 +237,74 @@
 
 <script>
   (function() {
-    // Dynamic real-time filter for categories in sidebar
+    // The sidebar is sticky beneath a sticky header. Measure the header once
+    // (and on resize) so the rail starts under it instead of sliding behind.
+    const header = document.getElementById('header');
+    if (header) {
+      const syncOffset = function() {
+        document.documentElement.style.setProperty('--sb-top', header.offsetHeight + 'px');
+      };
+      syncOffset();
+      window.addEventListener('resize', syncOffset);
+      if ('ResizeObserver' in window) {
+        new ResizeObserver(syncOffset).observe(header);
+      }
+    }
+
+    // Django admin navigates with a full page load, so the rail's scroll
+    // position dies on every click and it snaps back to the top. Persist it
+    // per tab and put it back here -- this script runs during parse, before
+    // the first paint, so the restore is invisible.
+    const rail = document.getElementById('nav-sidebar');
+    const SCROLL_KEY = 'minishop.admin.sidebarScroll';
+
+    if (rail) {
+      let stored = null;
+      try {
+        stored = parseInt(sessionStorage.getItem(SCROLL_KEY) || '', 10);
+      } catch (err) {
+        stored = null;
+      }
+      if (stored > 0) {
+        rail.scrollTop = stored;
+      }
+
+      // The brand and storefront plates are pinned over the scroll area, so
+      // a row can be "in view" yet covered. Only nudge when the active row
+      // is genuinely unreachable -- arriving from a breadcrumb or a
+      // dashboard card, say, rather than from the rail itself.
+      const active = rail.querySelector('.sidebar-link.active, .cat-item-row.active');
+      if (active) {
+        const plateTop = (rail.querySelector('.sidebar-header') || {}).offsetHeight || 0;
+        const plateBottom = (rail.querySelector('.sidebar-footer') || {}).offsetHeight || 0;
+        const top = active.offsetTop;
+        const bottom = top + active.offsetHeight;
+        const viewTop = rail.scrollTop + plateTop;
+        const viewBottom = rail.scrollTop + rail.clientHeight - plateBottom;
+        if (top < viewTop || bottom > viewBottom) {
+          rail.scrollTop = Math.max(0, top - (rail.clientHeight - plateTop - plateBottom) / 2);
+        }
+      }
+
+      let pending = null;
+      const remember = function() {
+        pending = null;
+        try {
+          sessionStorage.setItem(SCROLL_KEY, String(rail.scrollTop));
+        } catch (err) {
+          // Private mode or blocked storage -- the rail just won't persist.
+        }
+      };
+
+      rail.addEventListener('scroll', function() {
+        if (pending === null) {
+          pending = window.requestAnimationFrame(remember);
+        }
+      }, { passive: true });
+      window.addEventListener('pagehide', remember);
+    }
+
+    // Real-time filter for the category list.
     const filterInput = document.getElementById('cat-sidebar-filter');
     const clearBtn = document.getElementById('cat-filter-clear');
     const catList = document.getElementById('sidebar-cat-list');
@@ -251,20 +319,17 @@
 
         items.forEach(function(item) {
           const name = item.getAttribute('data-cat-name') || '';
-          if (!query || name.includes(query)) {
-            item.style.display = '';
-            matches++;
-          } else {
-            item.style.display = 'none';
-          }
+          const hit = !query || name.includes(query);
+          item.hidden = !hit;
+          if (hit) { matches++; }
         });
 
         if (clearBtn) {
-          clearBtn.style.display = query ? 'flex' : 'none';
+          clearBtn.hidden = !query;
         }
 
         if (noResults) {
-          noResults.style.display = (items.length > 0 && matches === 0) ? 'block' : 'none';
+          noResults.hidden = !(items.length > 0 && matches === 0);
         }
       }
 
