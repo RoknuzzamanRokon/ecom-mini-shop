@@ -1,13 +1,19 @@
+from decimal import Decimal
+
 from django.contrib import admin, messages
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
+from django.urls import path
 from django.utils.html import format_html
 from django.db.models import Count
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 
 from .models import (
     Category, Order, OrderItem, Product, ProductImage,
     ProductInventory, InventoryTransaction, Payment, Refund
 )
 from shop.services import OrderService
+from shop.invoice import build_order_invoice_pdf, invoice_filename
 from audit.admin_mixins import StatusBadgeMixin
 
 
@@ -85,19 +91,39 @@ class ProductAdmin(StatusBadgeMixin, admin.ModelAdmin):
 class OrderItemInline(admin.TabularInline):
     model = OrderItem
     extra = 0
-    readonly_fields = (
-        "product",
+    verbose_name_plural = "Order Items"
+    fields = (
         "product_name",
         "shop_name",
         "seller_name",
-        "unit_price",
+        "unit_price_display",
         "quantity",
-        "line_total",
+        "line_total_display",
     )
+    readonly_fields = fields
     can_delete = False
 
     def has_add_permission(self, request, obj=None):
         return False
+
+    @admin.display(description="Unit price")
+    def unit_price_display(self, obj):
+        return self._money(obj.unit_price or obj.price)
+
+    @admin.display(description="Line total")
+    def line_total_display(self, obj):
+        return self._money(obj.line_total or obj.subtotal)
+
+    @staticmethod
+    def _money(amount):
+        # Taka, grouped to thousands -- the raw DecimalField rendered as a bare
+        # "3250.00", which reads as neither a price nor a quantity.
+        return format_html("৳ {}", f"{Decimal(amount or 0):,.2f}")
+
+    def get_queryset(self, request):
+        # The inline renders the shop and seller snapshots; without this every
+        # row costs two extra queries.
+        return super().get_queryset(request).select_related("product", "shop", "seller")
 
 
 @admin.register(Order)
@@ -133,8 +159,43 @@ class OrderAdmin(StatusBadgeMixin, admin.ModelAdmin):
         "cancel_orders",
     ]
 
+    change_form_template = "admin/shop/order/change_form.html"
+
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('user').prefetch_related('items')
+
+    def get_urls(self):
+        # Registered ahead of super() so "<pk>/invoice/" is matched before
+        # ModelAdmin's catch-all "<path:object_id>/" change route.
+        custom = [
+            path(
+                "<path:object_id>/invoice/",
+                self.admin_site.admin_view(self.invoice_pdf_view),
+                name="shop_order_invoice",
+            ),
+        ]
+        return custom + super().get_urls()
+
+    def invoice_pdf_view(self, request, object_id):
+        """Streams the order invoice as a PDF named after the order number."""
+        order = get_object_or_404(
+            Order.objects.select_related("user").prefetch_related(
+                "items", "payments", "refunds__payment"
+            ),
+            pk=object_id,
+        )
+        if not self.has_view_permission(request, order):
+            raise PermissionDenied
+
+        pdf = build_order_invoice_pdf(order, generated_by=request.user)
+        response = HttpResponse(pdf, content_type="application/pdf")
+        # `attachment` so the browser saves it under the order-derived name
+        # instead of showing it in the built-in viewer as "invoice".
+        response["Content-Disposition"] = (
+            f'attachment; filename="{invoice_filename(order)}"'
+        )
+        response["Content-Length"] = str(len(pdf))
+        return response
 
     def confirm_orders(self, request, queryset):
         self._transition_orders(request, queryset, 'CONFIRMED')

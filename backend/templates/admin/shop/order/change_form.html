@@ -1,0 +1,25 @@
+{% extends "admin/change_form.html" %}
+{% load i18n %}
+
+{% comment %}
+  Resolves for shop.Order only, and is selected explicitly by
+  OrderAdmin.change_form_template.
+
+  The stock layout is kept in full: only the object-tools list is extended, so
+  History and View-on-site still come from {% change_form_object_tools %} via
+  block.super. The invoice link is a plain GET download, not a form action --
+  it neither mutates the order nor needs the change form to be saved first.
+{% endcomment %}
+
+{% block object-tools-items %}
+  {% if change and original.pk %}
+    <li>
+      <a href="{% url 'admin:shop_order_invoice' original.pk %}"
+         class="mp-invoice-link"
+         title="{% translate 'Download this order as a PDF invoice' %}">
+        {% translate "Download Invoice PDF" %}
+      </a>
+    </li>
+  {% endif %}
+  {{ block.super }}
+{% endblock %}

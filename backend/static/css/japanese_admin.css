@@ -1398,6 +1398,203 @@ body.theme-dark {
 }
 
 /* --------------------------------------------------------------------------
+   9. INLINE FORMSETS (TABULAR + STACKED)
+
+   A tabular inline is a <fieldset class="module">, so every `.module` rule in
+   section 4 was landing on it with !important and breaking the layout three
+   ways:
+
+     * `overflow: hidden` clipped the columns of any table wider than the card,
+       which is what hid most of the Order Items grid;
+     * `padding: 12px 18px` on every cell overrode Django's
+       `.tabular tr.has_original td { padding-top: 2em }`, so the absolutely
+       positioned row label printed on top of the first row's own text;
+     * the same padding widened `td.original`, a column Django sizes to zero.
+
+   This section returns the inline to Django's geometry and then styles it as a
+   document table rather than a dashboard card. Keep it after section 4 -- it
+   wins on source order where specificity ties.
+   -------------------------------------------------------------------------- */
+.inline-group {
+  margin: 0 0 26px !important;
+}
+
+.inline-group .module,
+.inline-related fieldset.module {
+  border: 1px solid var(--jp-border-line) !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+  margin-bottom: 0 !important;
+  /* Let a wide item table scroll sideways instead of being cut off. */
+  overflow-x: auto !important;
+  overflow-y: visible !important;
+}
+
+.inline-group .module:hover,
+.inline-related fieldset.module:hover {
+  border-color: var(--jp-border-line) !important;
+}
+
+.inline-group .module > h2,
+.inline-group .module > h2.inline-heading {
+  background: var(--jp-bg-surface-sunken) !important;
+  color: var(--jp-text-ink) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.1em !important;
+  text-transform: uppercase !important;
+  padding: 11px 16px !important;
+  border-bottom: 1px solid var(--jp-border-line) !important;
+  /* The card version is a space-between flex row; an inline heading is a
+     single label and should simply sit at the start. */
+  justify-content: flex-start !important;
+  position: sticky;
+  left: 0;
+}
+
+.inline-group .module table {
+  width: 100% !important;
+  border-collapse: collapse !important;
+  margin: 0 !important;
+}
+
+.inline-group .tabular thead th {
+  background: var(--jp-bg-surface) !important;
+  color: var(--jp-text-ink-muted) !important;
+  font-size: 9.5px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  text-align: left !important;
+  white-space: nowrap !important;
+  padding: 9px 12px !important;
+  border-bottom: 1px solid var(--jp-border-line) !important;
+}
+
+.inline-group .tabular tbody td {
+  padding: 9px 12px !important;
+  font-size: 12.5px !important;
+  color: var(--jp-text-ink-body) !important;
+  border-bottom: 1px solid var(--jp-border-line-subtle) !important;
+  vertical-align: middle !important;
+}
+
+.inline-group .tabular tbody tr:last-child td {
+  border-bottom: none !important;
+}
+
+.inline-group .tabular tbody tr:hover td {
+  background: var(--jp-bg-surface-sunken) !important;
+}
+
+/* Readonly cells arrive wrapped in a <p> that carries browser margins. */
+.inline-group .tabular tbody td > p {
+  margin: 0 !important;
+  padding: 0 !important;
+  font-size: inherit !important;
+  color: inherit !important;
+  line-height: 1.45 !important;
+}
+
+/* Django sizes the leading `original` column to zero and hangs an absolutely
+   positioned object label off it. The label reads "OrderItem object (12)" and
+   earns none of the room it costs, so hide it -- which also removes the need
+   for the 2em head-room rule the card padding was overriding. */
+.inline-group .tabular th.original,
+.inline-group .tabular td.original {
+  width: 0 !important;
+  padding: 0 !important;
+  border-bottom-color: transparent !important;
+}
+
+.inline-group .tabular td.original > p {
+  display: none !important;
+}
+
+.inline-group .tabular tr.has_original td {
+  padding-top: 9px !important;
+}
+
+/* The trailing delete column is empty whenever can_delete is off. */
+.inline-group .tabular th:empty,
+.inline-group .tabular td.delete:empty {
+  width: 0 !important;
+  padding: 0 !important;
+}
+
+/* Money and counts line up on the decimal. */
+.inline-group .tabular td.field-unit_price_display,
+.inline-group .tabular td.field-price,
+.inline-group .tabular td.field-quantity,
+.inline-group .tabular td.field-line_total_display,
+.inline-group .tabular td.field-subtotal,
+.inline-group .tabular th.column-unit_price_display,
+.inline-group .tabular th.column-price,
+.inline-group .tabular th.column-quantity,
+.inline-group .tabular th.column-line_total_display,
+.inline-group .tabular th.column-subtotal {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums !important;
+  white-space: nowrap !important;
+}
+
+.inline-group .tabular td.field-line_total_display,
+.inline-group .tabular td.field-subtotal {
+  font-weight: 700 !important;
+  color: var(--jp-text-ink) !important;
+}
+
+.inline-group .tabular td.field-product_name {
+  font-weight: 600 !important;
+  color: var(--jp-text-ink) !important;
+  min-width: 180px !important;
+}
+
+/* Rows the formset keeps in the DOM but must never show. */
+.inline-group .tabular tr.empty-form {
+  display: none !important;
+}
+
+.inline-group .tabular td.hidden,
+.inline-group .tabular th.hidden {
+  display: none !important;
+}
+
+.inline-group .tabular tr.add-row td {
+  background: var(--jp-bg-surface-sunken) !important;
+  padding: 10px 14px !important;
+  border-bottom: none !important;
+}
+
+/* Stacked inlines keep the same card, minus the table treatment. */
+.inline-related:not(.tabular) h3 {
+  background: var(--jp-bg-surface-sunken) !important;
+  color: var(--jp-text-ink) !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  padding: 10px 16px !important;
+  border-bottom: 1px solid var(--jp-border-line) !important;
+  margin: 0 !important;
+}
+
+/* -- Invoice download button in the change-form object tools -------------- */
+.object-tools a.mp-invoice-link {
+  background: var(--jp-kinari-gold) !important;
+  box-shadow: 0 2px 8px rgba(186, 134, 48, 0.3) !important;
+}
+
+.object-tools a.mp-invoice-link::before {
+  content: "\2193";
+  font-weight: 700;
+}
+
+.object-tools a.mp-invoice-link:hover {
+  background: var(--jp-kinari-gold-hover) !important;
+}
+
+/* --------------------------------------------------------------------------
    DARK SCHEME VIA OS PREFERENCE -- COMPONENT RULES
    The palette block near the top of this file is activated both by an
    explicit data-theme="dark" and by a dark OS under data-theme="auto".
