@@ -223,7 +223,6 @@ class ProductService:
                 "description",
                 "price",
                 "old_price",
-                "stock",
                 "badge",
                 "is_active",
                 "image",
@@ -235,6 +234,27 @@ class ProductService:
 
             product.full_clean()
             product.save()
+
+            # Stock is authoritatively owned by ProductInventory. Route the requested
+            # absolute stock value through InventoryService as a locked delta adjustment
+            # so Product.stock and ProductInventory.available_quantity cannot desync
+            # (see Known Issues #2 in docs/MINISHOP_REVIEW_STATE.md).
+            if "stock" in data:
+                from shop.inventory_service import InventoryService
+                from shop.models import ProductInventory
+
+                InventoryService.get_or_create_inventory(product)
+                locked_inventory = ProductInventory.objects.select_for_update().get(product=product)
+                stock_delta = data["stock"] - locked_inventory.available_quantity
+                if stock_delta != 0:
+                    InventoryService.adjust_stock(
+                        product=product,
+                        quantity_delta=stock_delta,
+                        actor=actor,
+                        reason="Stock updated via product edit.",
+                        ip_address=ip_address,
+                    )
+                    changed_fields.append("stock")
 
             AuditService.log(
                 action="PRODUCT_UPDATED",

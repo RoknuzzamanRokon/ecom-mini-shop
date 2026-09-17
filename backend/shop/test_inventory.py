@@ -562,3 +562,100 @@ class InventoryTests(APITestCase):
         self.assertEqual(order_item.unit_price, orig_price)
         self.assertEqual(order_item.line_total, orig_line_total)
         self.assertEqual(order_item.quantity, orig_qty)
+
+    # --- 9. Product.stock / ProductInventory sync on seller product update (Known Issues #2) ---
+
+    def test_seller_update_stock_stays_synced_with_inventory(self):
+        """
+        PATCH-equivalent ProductService.update_product(..., data={"stock": N}) must move
+        ProductInventory.available_quantity in lockstep with Product.stock, not just the
+        Product row. Regression test for Known Issues #2 in docs/MINISHOP_REVIEW_STATE.md.
+        """
+        self.assertEqual(self.product_a.stock, 20)
+        self.assertEqual(self.product_a.inventory.available_quantity, 20)
+
+        ProductService.update_product(
+            product=self.product_a,
+            seller=self.seller_a,
+            data={"stock": 5},
+            actor=self.user_seller_a,
+        )
+
+        self.product_a.refresh_from_db()
+        self.product_a.inventory.refresh_from_db()
+        self.assertEqual(self.product_a.stock, 5)
+        self.assertEqual(self.product_a.inventory.available_quantity, 5)
+
+        # A matching ADJUSTMENT ledger entry must exist recording the delta.
+        adj = InventoryTransaction.objects.filter(
+            product=self.product_a,
+            transaction_type=InventoryTransaction.TYPE_ADJUSTMENT,
+        ).order_by("-created_at").first()
+        self.assertIsNotNone(adj)
+        self.assertEqual(adj.quantity, -15)
+        self.assertEqual(adj.after_available, 5)
+
+    def test_seller_update_stock_increase_stays_synced_with_inventory(self):
+        """Increasing stock via update_product must also route through InventoryService."""
+        ProductService.update_product(
+            product=self.product_a,
+            seller=self.seller_a,
+            data={"stock": 30},
+            actor=self.user_seller_a,
+        )
+        self.product_a.refresh_from_db()
+        self.product_a.inventory.refresh_from_db()
+        self.assertEqual(self.product_a.stock, 30)
+        self.assertEqual(self.product_a.inventory.available_quantity, 30)
+
+    def test_seller_update_stock_noop_when_unchanged(self):
+        """Setting stock to its current value must not create a spurious ledger entry."""
+        tx_count_before = InventoryTransaction.objects.filter(product=self.product_a).count()
+        ProductService.update_product(
+            product=self.product_a,
+            seller=self.seller_a,
+            data={"stock": 20},
+            actor=self.user_seller_a,
+        )
+        self.assertEqual(
+            InventoryTransaction.objects.filter(product=self.product_a).count(),
+            tx_count_before,
+        )
+
+    def test_seller_update_stock_respects_existing_reservation(self):
+        """
+        Updating stock while units are already reserved must only move the available
+        pool; reserved units (already promised to a placed order) must be untouched.
+        """
+        cart, _ = Cart.objects.get_or_create(user=self.customer_user)
+        CartItem.objects.create(cart=cart, product=self.product_a, quantity=4)
+        OrderService.create_order_from_cart(user=self.customer_user, address_id=self.address.id)
+
+        self.product_a.inventory.refresh_from_db()
+        self.assertEqual(self.product_a.inventory.available_quantity, 16)
+        self.assertEqual(self.product_a.inventory.reserved_quantity, 4)
+
+        # Seller sets absolute stock to 10 (i.e. 10 more units on top of what is available).
+        ProductService.update_product(
+            product=self.product_a,
+            seller=self.seller_a,
+            data={"stock": 10},
+            actor=self.user_seller_a,
+        )
+
+        self.product_a.refresh_from_db()
+        self.product_a.inventory.refresh_from_db()
+        self.assertEqual(self.product_a.inventory.available_quantity, 10)
+        self.assertEqual(self.product_a.inventory.reserved_quantity, 4)
+        self.assertEqual(self.product_a.stock, 10)
+
+    def test_api_seller_product_update_stock_stays_synced_with_inventory(self):
+        """PATCH /api/products/mine/<id>/ with a stock field must sync ProductInventory too."""
+        self.client.force_authenticate(user=self.user_seller_a)
+        res = self.client.patch(f"/api/products/mine/{self.product_a.id}/", {"stock": 7})
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+        self.product_a.refresh_from_db()
+        self.product_a.inventory.refresh_from_db()
+        self.assertEqual(self.product_a.stock, 7)
+        self.assertEqual(self.product_a.inventory.available_quantity, 7)
