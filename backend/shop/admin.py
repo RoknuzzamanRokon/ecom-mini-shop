@@ -197,27 +197,43 @@ class OrderAdmin(StatusBadgeMixin, admin.ModelAdmin):
         response["Content-Length"] = str(len(pdf))
         return response
 
+    # `allowed_permissions` is what keeps these actions off a read-only account.
+    # The changelist opens with view permission alone, and a custom action that
+    # declares nothing runs for anyone who can reach it -- so without this the
+    # five actions below handed every order-viewer the full OrderService
+    # lifecycle: inventory release, sale finalization and automatic refunds.
     def confirm_orders(self, request, queryset):
         self._transition_orders(request, queryset, 'CONFIRMED')
     confirm_orders.short_description = "Mark selected orders as Confirmed"
+    confirm_orders.allowed_permissions = ("change",)
 
     def mark_orders_processing(self, request, queryset):
         self._transition_orders(request, queryset, 'PROCESSING')
     mark_orders_processing.short_description = "Mark selected orders as Processing"
+    mark_orders_processing.allowed_permissions = ("change",)
 
     def mark_orders_shipped(self, request, queryset):
         self._transition_orders(request, queryset, 'SHIPPED')
     mark_orders_shipped.short_description = "Mark selected orders as Shipped"
+    mark_orders_shipped.allowed_permissions = ("change",)
 
     def mark_orders_delivered(self, request, queryset):
         self._transition_orders(request, queryset, 'DELIVERED')
     mark_orders_delivered.short_description = "Mark selected orders as Delivered"
+    mark_orders_delivered.allowed_permissions = ("change",)
 
     def cancel_orders(self, request, queryset):
         self._transition_orders(request, queryset, 'CANCELLED')
     cancel_orders.short_description = "Mark selected orders as Cancelled"
+    cancel_orders.allowed_permissions = ("change",)
 
     def _transition_orders(self, request, queryset, new_status):
+        # Belt and braces: `allowed_permissions` gates the action, and this gates
+        # the service call, so a future action wired to this helper cannot quietly
+        # reintroduce the bypass.
+        if not self.has_change_permission(request):
+            raise PermissionDenied
+
         success_count = 0
         for order in queryset:
             try:

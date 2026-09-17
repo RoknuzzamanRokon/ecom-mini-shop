@@ -2,7 +2,7 @@
 
 **Last full review:** 2026-09-17
 **Reviewed at commit:** `c4fb3b8` (`feat(reviews): add product reviews and ratings`)
-**Last targeted update:** 2026-09-17 — legacy checkout IDOR fixed (Known Issues #1 resolved). See [Review History](#21-review-history).
+**Last targeted update:** 2026-09-17 — OrderService authorization audit. #1b re-classified (it is **not** an authorization bypass); a real one found and fixed elsewhere in the call graph (new #15). See [Review History](#21-review-history).
 
 ---
 
@@ -379,6 +379,7 @@ Guards: `SellerGuard` (fetches `/api/sellers/dashboard/`, renders "Seller Accoun
 - Every permission class resolves through `has_user_permission()` → MiniShop RBAC. Superuser / `SUPER_ADMINISTRATOR` short-circuit is consistent and deliberate.
 - Ownership is checked **server-side on every seller/customer resource**, independent of the request payload: shop ownership on product create/update, `IsProductOwner` object checks, `shop__owner=seller` list scoping, order ownership with safe 404s, address and review owner checks.
 - Cross-shop payload tampering is blocked: a supplied `shop_id` is validated against the caller's own shops before use; a multi-shop data inconsistency returns 409 rather than silently choosing.
+- **`OrderService` authorization contract, audited end-to-end 2026-09-17.** Two of its mutators authorize themselves — `cancel_customer_order()` (`shop/services.py:690-698`, owner or staff override) and `transition_seller_order_status()` (`:804-828`, seller must own an item, plus the multi-seller guard). `transition_order_status()` (`:595`) authorizes **nothing** and is the one every caller must guard. Its callers are `StaffOrderStatusAPIView` (`CanUpdateStaffOrders`) and `OrderAdmin._transition_orders` — the latter was unguarded until #15. Reads follow the same shape: `get_seller_order()` raises `NotFound` off-scope, and every view resolving an order from a client-supplied `id`/`order_number` re-checks ownership with a safe 404 before the service is reached.
 - Point integrity: `transaction.atomic()` + `select_for_update()` + model validator + **DB CheckConstraint `balance >= 0`**, with an append-only ledger recording before/after balances and the actor.
 - Order/inventory/payment mutations are atomic with row locks; inventory release and sale-finalization are idempotent.
 - Anti-escalation on role editing; protected roles cannot be abused; role deletion guarded.
@@ -388,6 +389,8 @@ Guards: `SellerGuard` (fetches `/api/sellers/dashboard/`, renders "Seller Accoun
 **Known security limitations** (see Known Issues for detail)
 
 - ~~The legacy server-rendered order-success view has **no ownership check** (#1)~~ — **fixed 2026-09-17**; reads are now authorized by session, owner or staff override.
+- ~~The Django-admin order actions call `OrderService.transition_order_status()` with no permission of their own (#15)~~ — **fixed 2026-09-17**; they now declare `allowed_permissions = ("change",)`.
+- The equivalent Django-admin **seller and shop** lifecycle actions still declare no `allowed_permissions` (#16) — same class of gap, not yet fixed.
 - API-driven seller lifecycle transitions are not audited (#6).
 - Dev-posture settings: `DEBUG = True`, a hardcoded `SECRET_KEY` committed in `settings.py`, and a 4-character minimum password. Must change before any production deployment.
 - Access tokens cannot be revoked (no blacklist); "logout" is client-side only.
@@ -397,7 +400,7 @@ Guards: `SellerGuard` (fetches `/api/sellers/dashboard/`, renders "Seller Accoun
 
 ## 15. Test Status — as of 2026-09-17
 
-**Inventory:** ~471 test methods across 23 files (462 at the full review, +9 from the legacy-IDOR fix).
+**Inventory:** ~485 test methods across 24 files (462 at the full review, +9 from the legacy-IDOR fix, +14 from the OrderService authorization fix).
 
 | File | Tests | | File | Tests |
 |---|---|---|---|---|
@@ -417,6 +420,8 @@ Guards: `SellerGuard` (fetches `/api/sellers/dashboard/`, renders "Seller Accoun
 | `manage.py makemigrations --check --dry-run` | **Pass** — "No changes detected" (schema and models are in sync) |
 | `shop.test_seller_product` (23 tests) | **Pass** — 23/23 OK, ~500s |
 | `shop.tests shop.test_orders shop.test_customer_orders` (57 tests, legacy-IDOR fix) | **Pass** — `Ran 57 tests in 2011s … OK`, 0 failures |
+| `shop.test_order_service_authorization` (14 tests, new) | **Pass** — `Ran 14 tests in 145s … OK` |
+| `shop.test_customer_orders shop.test_seller_orders shop.test_staff_orders shop.test_admin_site` (62 tests, OrderService-authorization regression) | **Pass apart from the known #14** — `Ran 62 tests in 460s … FAILED (failures=1)`; the single failure is the pre-existing Taka assertion |
 | Full backend suite | **Ran 462 tests in 5509s (~92 min) — `FAILED (failures=1)`.** The single failure is `shop.test_admin_site.AdminRegistrySmokeTests.test_dashboard_renders_taka_not_dollar`, and it is **pre-existing** (see Known Issues #14). Everything else passes. |
 | `npx tsc --noEmit` | **Pass** — exit 0 |
 | `npm run build` | **Pass** — exit 0, 40 static pages, all seller/admin routes compiled |
@@ -431,12 +436,12 @@ Guards: `SellerGuard` (fetches `/api/sellers/dashboard/`, renders "Seller Accoun
 
 ## 16. Known Issues
 
-Discovered during the 2026-09-17 review. All were open at that point; **#1 has since been fixed** — see the Status column.
+#1–#14 were discovered during the 2026-09-17 review and all were open at that point; **#1 and #15 have since been fixed** — see the Status column. #15 and #16 were found later the same day during the OrderService authorization audit.
 
 | # | Issue | Area | Severity | Status |
 |---|---|---|---|---|
 | 1 | **Legacy checkout IDOR.** `order_success(request, order_id)` did `get_object_or_404(Order, id=order_id)` with **no ownership or session check** — any visitor could read any order (customer name, phone, address) by walking sequential ids. | Legacy server-rendered flow | **High** | **FIXED 2026-09-17.** `checkout()` now records ownership server-side (`Order.user` for authenticated buyers, `request.session["placed_order_ids"]` for everyone including guests) and `order_success()` authorizes through `_can_view_order()` — session / owner / staff override — returning a safe 404 otherwise. Covered by `shop.tests.LegacyOrderAccessTests` (9 tests). |
-| 1b | The same legacy `checkout()` (`shop/views.py:111-145`) still creates orders **bypassing `OrderService`**: no inventory reservation, no audit entry, no server-side price re-validation. Split out of #1 when the IDOR was fixed; this half is untouched. | Legacy server-rendered flow | Medium | Open. Not a data-exposure issue; it is a correctness/consistency gap between the legacy template flow and the API order pipeline. |
+| 1b | The same legacy `checkout()` (`shop/views.py:111-145`) still creates orders **bypassing `OrderService`**: no inventory reservation, no audit entry, no product-eligibility re-validation (`shop/cart.py:68-94` filters on `is_active` only, so a DRAFT product or one from a suspended shop can still be ordered through this path), and none of the `shipping_*`/`subtotal` snapshot fields are populated. Split out of #1 when the IDOR was fixed. | Legacy server-rendered flow | Medium | **Open — re-classified 2026-09-17.** Audited specifically for an authorization bypass and **there is none**: prices come from `Product.price` server-side via the session cart, the session holds no client-supplied totals, and the flow only ever *creates* an order — it accepts no order id and touches no existing order. This is a correctness/consistency gap, not a security issue. Knock-on effect worth noting: because these orders carry no RESERVE ledger row, cancelling one makes `release_order_reservation()` release `min(reserved_quantity, item.quantity)` from stock reserved by *other* orders (`shop/inventory_service.py:258`). |
 | 2 | `ProductService.update_product` lists `"stock"` in `updatable_fields` (`shop/services.py:220-235`) and writes `Product.stock` directly **without touching `ProductInventory`**, so `PATCH /api/products/mine/<pk>/` silently desyncs `Product.stock` from `ProductInventory.available_quantity`. `Product.in_stock` reads inventory while the cart serializer reads `product.stock`. | Seller products / inventory | **Medium** | Pre-existing; newly documented. |
 | 3 | Seller wallet UI contract mismatch: the page reads `wallet.total_earned` / `wallet.total_spent` (`seller/wallet/page.tsx:96,111`) and `txn.description` (`:204`), but `SellerWalletSerializer` returns neither total (only `balance`) and `PointTransactionSerializer` exposes `reason`, not `description`. The TS types declare the missing fields, so `tsc` cannot catch it. Tiles always show `+0`/`-0`; every row reads "Point transaction". | Seller panel | Medium | Pre-existing; newly documented. |
 | 4 | `get_seller_capabilities` reports `can_create_shop: true` for FULL/LIMITED shop owners (`sellers/services.py:51-58`), contradicting the enforced hard-403 on shop creation. Stale flag; misleading to any UI that trusts it. | Sellers | Medium | Pre-existing; newly documented. |
@@ -450,6 +455,8 @@ Discovered during the 2026-09-17 review. All were open at that point; **#1 has s
 | 12 | Dev-posture config committed: `DEBUG = True`, hardcoded `SECRET_KEY`, password `MinimumLengthValidator` set to 4 characters. | Config | Medium (for production only) | Pre-existing; acceptable for local dev. |
 | 13 | `/api/admin/roles/` returns an unpaginated plain array while every other admin list is paginated — an inconsistency for frontend consumers. | Admin API | Low | Pre-existing. |
 | 14 | **The one failing backend test.** `shop.test_admin_site.AdminRegistrySmokeTests.test_dashboard_renders_taka_not_dollar` asserts `assertIn("৳", body)` against the raw admin dashboard HTML (`shop/test_admin_site.py:91-95`), but `templates/admin/index.html:80` emits the numeric character reference `&#2547;`, not the literal `৳`. The entity renders correctly as ৳ in a browser, so **this is an assertion/template mismatch in the test, not a user-visible currency bug** — the test as written can never pass. Fixing it means either asserting `&#2547;` or rendering the literal character. Note the test's second assertion (`assertNotIn("$", body)`) has not been exercised and may also fail once the first is fixed. | Tests / Django admin | Low | **Pre-existing**, not caused by current working-tree changes: the render path (`config/admin_site.py`, `shop/metrics.py`, `templates/admin/index.html`) is unmodified at HEAD — the template last changed in `51e6c84`, the test in `3f0a5da`. Reproduces deterministically in isolation. |
+| 15 | **Django-admin order actions had no permission of their own.** `OrderAdmin`'s five lifecycle actions (`confirm_orders`, `mark_orders_processing`, `mark_orders_shipped`, `mark_orders_delivered`, `cancel_orders`) called `OrderService.transition_order_status()` while declaring no `allowed_permissions`. Django only permission-filters actions that declare one (`django/contrib/admin/options.py:1063-1077`) and the changelist opens on `has_view_or_change_permission`, so any account with `is_staff` + `shop.view_order` could drive **every customer's** order through the full lifecycle — releasing reservations, writing irreversible SALE ledger rows and triggering automatic refunds on paid orders. Reproduced before the fix: a `view_order`-only account moved a PENDING order to CONFIRMED. | Django admin / orders | **High** | **FIXED 2026-09-17.** All five actions now declare `allowed_permissions = ("change",)`, and `_transition_orders()` re-checks `has_change_permission()` before reaching the service. Covered by `shop.test_order_service_authorization` (14 tests). |
+| 16 | The same unguarded-action pattern as #15 remains on `SellerProfileAdmin` (`sellers/admin.py:62-104` — approve/suspend/reject/reactivate) and `ShopAdmin` (`shops/admin.py:64-110`). A `view`-only Django-admin account can run seller and shop lifecycle transitions. | Django admin / sellers, shops | Medium | Open. Newly observed while fixing #15; left alone as out of scope for that order-only security task. The fix is one line per action. |
 
 ---
 
@@ -512,7 +519,8 @@ Reconstructed from source, tests and git history. Backend work was tracked as **
 
 ## 20. Current Project State
 
-**Last completed change:** Legacy checkout IDOR fix — a targeted security hardening of the server-rendered `/order-success/<id>/` page, not a feature.
+**Last completed change:** OrderService authorization fix — the Django-admin order actions now require `change` permission (#15). A targeted security hardening, not a feature.
+**Preceding change:** Legacy checkout IDOR fix — a targeted security hardening of the server-rendered `/order-success/<id>/` page, not a feature.
 **Last completed feature:** Product Reviews & Ratings (`c4fb3b8`).
 **Preceding feature:** Admin-assigned shop ownership with single-shop cap + seller product management (`b623553`).
 
@@ -524,11 +532,22 @@ Reconstructed from source, tests and git history. Backend work was tracked as **
 
 **Constraints future work must preserve:** everything in [Architecture Decisions](#18-important-architecture-decisions), plus the regression-sensitive areas — customer auth, storefront catalog, cart, orders, payments, inventory, seller orders/wallet, admin governance, RBAC, and the public `average_rating` / `review_count` fields.
 
-**Immediate follow-ups:** the legacy template checkout still bypasses `OrderService` (#1b) — decide whether to route it through the service or retire the template flow; `Product.stock` / `ProductInventory` desync on seller product update (#2); decide intent on seller self-registration (#5); the one failing test (#14) is a trivial assertion fix. The legacy order-success IDOR (#1) is done.
+**Immediate follow-ups:** the seller/shop Django-admin actions still carry no `allowed_permissions` (#16) — the same one-line fix as #15; the legacy template checkout still bypasses `OrderService` (#1b, now confirmed to be a correctness gap rather than a security one) — decide whether to route it through the service or retire the template flow; `Product.stock` / `ProductInventory` desync on seller product update (#2); decide intent on seller self-registration (#5); the one failing test (#14) is a trivial assertion fix. The legacy order-success IDOR (#1) and the Django-admin order-action bypass (#15) are done.
 
 ---
 
 ## 21. Review History
+
+### 2026-09-17 — OrderService authorization audit (#1b re-classified, #15 found and fixed)
+
+- **The suspected bypass was not where this file said it was.** #1b was carried forward as "the OrderService-bypass half", and the task framed it as an authorization bypass. Audited against source rather than against this file, and the two do not agree.
+- **No cross-customer bypass exists on the JSON API.** Enumerated every DRF view in the backend by AST — all 91 declare either `permission_classes` or `get_permissions()`, none relies on the DRF default. Every view that resolves an order from a client-supplied `id` or `order_number` (`OrderDetailAPIView`, `OrderCancelAPIView`, `_get_customer_order_or_404`, `OrderService.get_seller_order`) re-checks ownership server-side and returns a safe 404 before the service is reached. `CUSTOMER` holds none of `orders.update` / `orders.seller.*` / `orders.staff.*` (`rbac/management/commands/seed_rbac.py:215-222`), and nothing in the codebase sets `is_staff = True` implicitly, so the staff override cannot be reached by an ordinary account.
+- **#1b itself is a correctness gap, not a security one** — re-classified in Known Issues with the evidence. The legacy flow only creates orders, accepts no order identifier, and prices from `Product.price` server-side.
+- **A real bypass was found one step further out**, at the caller the audit brief called "any direct `OrderService` call": `OrderAdmin._transition_orders` (`shop/admin.py`). Django permission-filters only those changelist actions that declare `allowed_permissions`, and the changelist opens on view permission alone — so `is_staff` + `shop.view_order` was enough to run all five order actions into `OrderService.transition_order_status()`. **Reproduced before fixing**: a `view_order`-only account moved another customer's order PENDING → CONFIRMED. Recorded as #15.
+- **Fix** (`backend/shop/admin.py`, +16 lines): the five actions declare `allowed_permissions = ("change",)`, and `_transition_orders()` re-checks `has_change_permission()` so a future action wired to the same helper cannot silently reintroduce the gap. This uses Django's own admin authorization — no new RBAC, no new permission model, and `OrderService` is unchanged.
+- **Tests**: `shop/test_order_service_authorization.py`, 14 new tests — the three damaging admin actions refused for a read-only account (status, inventory ledger, payment and refunds all asserted unchanged), the editor and superuser paths still working, cross-customer cancellation by id and by order number, the service-level `PermissionDenied`, and the customer / seller / staff happy paths. `Ran 14 tests … OK`.
+- **Regression**: `shop.test_customer_orders shop.test_seller_orders shop.test_staff_orders shop.test_admin_site` → 62 tests, 1 failure, that failure being the pre-existing #14 Taka assertion. `shop.tests.LegacyOrderAccessTests` re-run for guest checkout. `manage.py check` passes.
+- **Not touched**: frontend (no API contract changed — the fix is inside Django admin, which the Next.js console does not use), `OrderService` itself, the DRF permission classes, #1b, and the seller/shop admin actions that share the #15 pattern (logged as #16).
 
 ### 2026-09-17 — Targeted security fix: legacy checkout IDOR (Known Issues #1)
 
