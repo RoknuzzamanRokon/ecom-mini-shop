@@ -70,6 +70,7 @@ class ShopAdmin(ReasonRequiredActionMixin, StatusBadgeMixin, admin.ModelAdmin):
             catch=(ValidationError, ShopError),
         )
     approve_and_activate.short_description = "Approve and activate selected shops"
+    approve_and_activate.allowed_permissions = ('change',)
 
     def suspend_shops(self, request, queryset):
         return self.run_reason_action(
@@ -84,6 +85,7 @@ class ShopAdmin(ReasonRequiredActionMixin, StatusBadgeMixin, admin.ModelAdmin):
             catch=(ValidationError, ShopError),
         )
     suspend_shops.short_description = "Suspend selected shops (reason required)"
+    suspend_shops.allowed_permissions = ('change',)
 
     def reject_shops(self, request, queryset):
         return self.run_reason_action(
@@ -98,6 +100,7 @@ class ShopAdmin(ReasonRequiredActionMixin, StatusBadgeMixin, admin.ModelAdmin):
             catch=(ValidationError, ShopError),
         )
     reject_shops.short_description = "Reject selected shops (reason required)"
+    reject_shops.allowed_permissions = ('change',)
 
     def reactivate_shops(self, request, queryset):
         self.run_simple_action(
@@ -108,3 +111,4 @@ class ShopAdmin(ReasonRequiredActionMixin, StatusBadgeMixin, admin.ModelAdmin):
             catch=(ValidationError, ShopError),
         )
     reactivate_shops.short_description = "Reactivate selected shops"
+    reactivate_shops.allowed_permissions = ('change',)

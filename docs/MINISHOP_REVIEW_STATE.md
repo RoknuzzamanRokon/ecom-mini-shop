@@ -2,7 +2,8 @@
 
 **Last full review:** 2026-09-17
 **Reviewed at commit:** `c4fb3b8` (`feat(reviews): add product reviews and ratings`)
-**Last targeted update:** 2026-09-17 — OrderService authorization audit. #1b re-classified (it is **not** an authorization bypass); a real one found and fixed elsewhere in the call graph (new #15). See [Review History](#21-review-history).
+**Last targeted update:** 2026-09-18 — seller/shop Django-admin action authorization (#16 fixed). This closes the unguarded-admin-action class across the whole project. See [Review History](#21-review-history).
+**Preceding targeted update:** 2026-09-17 — OrderService authorization audit. #1b re-classified (it is **not** an authorization bypass); a real one found and fixed elsewhere in the call graph (#15).
 
 ---
 
@@ -390,7 +391,7 @@ Guards: `SellerGuard` (fetches `/api/sellers/dashboard/`, renders "Seller Accoun
 
 - ~~The legacy server-rendered order-success view has **no ownership check** (#1)~~ — **fixed 2026-09-17**; reads are now authorized by session, owner or staff override.
 - ~~The Django-admin order actions call `OrderService.transition_order_status()` with no permission of their own (#15)~~ — **fixed 2026-09-17**; they now declare `allowed_permissions = ("change",)`.
-- The equivalent Django-admin **seller and shop** lifecycle actions still declare no `allowed_permissions` (#16) — same class of gap, not yet fixed.
+- ~~The equivalent Django-admin **seller and shop** lifecycle actions declare no `allowed_permissions` (#16)~~ — **fixed 2026-09-18**; all eight now declare it, and the shared `ReasonRequiredActionMixin` re-checks `has_change_permission()`. With #15 and #16 done, **all three** ModelAdmins that declare custom actions are guarded — the class is closed project-wide.
 - API-driven seller lifecycle transitions are not audited (#6).
 - Dev-posture settings: `DEBUG = True`, a hardcoded `SECRET_KEY` committed in `settings.py`, and a 4-character minimum password. Must change before any production deployment.
 - Access tokens cannot be revoked (no blacklist); "logout" is client-side only.
@@ -400,7 +401,7 @@ Guards: `SellerGuard` (fetches `/api/sellers/dashboard/`, renders "Seller Accoun
 
 ## 15. Test Status — as of 2026-09-17
 
-**Inventory:** ~485 test methods across 24 files (462 at the full review, +9 from the legacy-IDOR fix, +14 from the OrderService authorization fix).
+**Inventory:** ~493 test methods across 25 files (462 at the full review, +9 from the legacy-IDOR fix, +14 from the OrderService authorization fix, +8 from the seller/shop admin-action fix).
 
 | File | Tests | | File | Tests |
 |---|---|---|---|---|
@@ -422,6 +423,8 @@ Guards: `SellerGuard` (fetches `/api/sellers/dashboard/`, renders "Seller Accoun
 | `shop.tests shop.test_orders shop.test_customer_orders` (57 tests, legacy-IDOR fix) | **Pass** — `Ran 57 tests in 2011s … OK`, 0 failures |
 | `shop.test_order_service_authorization` (14 tests, new) | **Pass** — `Ran 14 tests in 145s … OK` |
 | `shop.test_customer_orders shop.test_seller_orders shop.test_staff_orders shop.test_admin_site` (62 tests, OrderService-authorization regression) | **Pass apart from the known #14** — `Ran 62 tests in 460s … FAILED (failures=1)`; the single failure is the pre-existing Taka assertion |
+| `audit.test_admin_action_authorization` (8 tests, new) | **Pass** — `Ran 8 tests in 61s … OK`. Against the unfixed code the same file reported `FAILED (failures=10)`. |
+| `sellers shops shop.test_admin_site` (46 tests, seller/shop admin-action regression) | **Pass apart from the known #14** — `Ran 46 tests in 657s … FAILED (failures=1)`; same pre-existing Taka assertion |
 | Full backend suite | **Ran 462 tests in 5509s (~92 min) — `FAILED (failures=1)`.** The single failure is `shop.test_admin_site.AdminRegistrySmokeTests.test_dashboard_renders_taka_not_dollar`, and it is **pre-existing** (see Known Issues #14). Everything else passes. |
 | `npx tsc --noEmit` | **Pass** — exit 0 |
 | `npm run build` | **Pass** — exit 0, 40 static pages, all seller/admin routes compiled |
@@ -436,7 +439,7 @@ Guards: `SellerGuard` (fetches `/api/sellers/dashboard/`, renders "Seller Accoun
 
 ## 16. Known Issues
 
-#1–#14 were discovered during the 2026-09-17 review and all were open at that point; **#1 and #15 have since been fixed** — see the Status column. #15 and #16 were found later the same day during the OrderService authorization audit.
+#1–#14 were discovered during the 2026-09-17 review and all were open at that point; **#1, #15 and #16 have since been fixed** — see the Status column. #15 and #16 were both found on 2026-09-17 during the OrderService authorization audit; #16 was fixed on 2026-09-18.
 
 | # | Issue | Area | Severity | Status |
 |---|---|---|---|---|
@@ -456,7 +459,7 @@ Guards: `SellerGuard` (fetches `/api/sellers/dashboard/`, renders "Seller Accoun
 | 13 | `/api/admin/roles/` returns an unpaginated plain array while every other admin list is paginated — an inconsistency for frontend consumers. | Admin API | Low | Pre-existing. |
 | 14 | **The one failing backend test.** `shop.test_admin_site.AdminRegistrySmokeTests.test_dashboard_renders_taka_not_dollar` asserts `assertIn("৳", body)` against the raw admin dashboard HTML (`shop/test_admin_site.py:91-95`), but `templates/admin/index.html:80` emits the numeric character reference `&#2547;`, not the literal `৳`. The entity renders correctly as ৳ in a browser, so **this is an assertion/template mismatch in the test, not a user-visible currency bug** — the test as written can never pass. Fixing it means either asserting `&#2547;` or rendering the literal character. Note the test's second assertion (`assertNotIn("$", body)`) has not been exercised and may also fail once the first is fixed. | Tests / Django admin | Low | **Pre-existing**, not caused by current working-tree changes: the render path (`config/admin_site.py`, `shop/metrics.py`, `templates/admin/index.html`) is unmodified at HEAD — the template last changed in `51e6c84`, the test in `3f0a5da`. Reproduces deterministically in isolation. |
 | 15 | **Django-admin order actions had no permission of their own.** `OrderAdmin`'s five lifecycle actions (`confirm_orders`, `mark_orders_processing`, `mark_orders_shipped`, `mark_orders_delivered`, `cancel_orders`) called `OrderService.transition_order_status()` while declaring no `allowed_permissions`. Django only permission-filters actions that declare one (`django/contrib/admin/options.py:1063-1077`) and the changelist opens on `has_view_or_change_permission`, so any account with `is_staff` + `shop.view_order` could drive **every customer's** order through the full lifecycle — releasing reservations, writing irreversible SALE ledger rows and triggering automatic refunds on paid orders. Reproduced before the fix: a `view_order`-only account moved a PENDING order to CONFIRMED. | Django admin / orders | **High** | **FIXED 2026-09-17.** All five actions now declare `allowed_permissions = ("change",)`, and `_transition_orders()` re-checks `has_change_permission()` before reaching the service. Covered by `shop.test_order_service_authorization` (14 tests). |
-| 16 | The same unguarded-action pattern as #15 remains on `SellerProfileAdmin` (`sellers/admin.py:62-104` — approve/suspend/reject/reactivate) and `ShopAdmin` (`shops/admin.py:64-110`). A `view`-only Django-admin account can run seller and shop lifecycle transitions. | Django admin / sellers, shops | Medium | Open. Newly observed while fixing #15; left alone as out of scope for that order-only security task. The fix is one line per action. |
+| 16 | The same unguarded-action pattern as #15 on `SellerProfileAdmin` (`sellers/admin.py` — approve/suspend/reject/reactivate) and `ShopAdmin` (`shops/admin.py` — the same four). Neither the eight actions nor their shared helpers (`ReasonRequiredActionMixin.run_simple_action` / `run_reason_action`) checked any permission, so `is_staff` + `view_sellerprofile` / `view_shop` was enough to approve, reject, suspend or reactivate any seller or shop — and to write an AuditLog entry naming the read-only account as actor. **All eight reproduced before the fix** (e.g. a PENDING seller driven to ACTIVE, an ACTIVE shop to SUSPENDED). Posting the `apply_reason` payload directly skipped the confirmation page, which was never a gate. | Django admin / sellers, shops | **High** | **FIXED 2026-09-18.** All eight declare `allowed_permissions = ('change',)`, and both mixin helpers call `_require_change_permission()`. Covered by `audit.test_admin_action_authorization` (8 tests). |
 
 ---
 
@@ -519,7 +522,8 @@ Reconstructed from source, tests and git history. Backend work was tracked as **
 
 ## 20. Current Project State
 
-**Last completed change:** OrderService authorization fix — the Django-admin order actions now require `change` permission (#15). A targeted security hardening, not a feature.
+**Last completed change:** Seller/shop Django-admin action authorization (#16) — the eight lifecycle actions now require `change` permission. With #15 this closes the unguarded-admin-action class project-wide. A targeted security hardening, not a feature.
+**Preceding change:** OrderService authorization fix — the Django-admin order actions now require `change` permission (#15).
 **Preceding change:** Legacy checkout IDOR fix — a targeted security hardening of the server-rendered `/order-success/<id>/` page, not a feature.
 **Last completed feature:** Product Reviews & Ratings (`c4fb3b8`).
 **Preceding feature:** Admin-assigned shop ownership with single-shop cap + seller product management (`b623553`).
@@ -532,11 +536,25 @@ Reconstructed from source, tests and git history. Backend work was tracked as **
 
 **Constraints future work must preserve:** everything in [Architecture Decisions](#18-important-architecture-decisions), plus the regression-sensitive areas — customer auth, storefront catalog, cart, orders, payments, inventory, seller orders/wallet, admin governance, RBAC, and the public `average_rating` / `review_count` fields.
 
-**Immediate follow-ups:** the seller/shop Django-admin actions still carry no `allowed_permissions` (#16) — the same one-line fix as #15; the legacy template checkout still bypasses `OrderService` (#1b, now confirmed to be a correctness gap rather than a security one) — decide whether to route it through the service or retire the template flow; `Product.stock` / `ProductInventory` desync on seller product update (#2); decide intent on seller self-registration (#5); the one failing test (#14) is a trivial assertion fix. The legacy order-success IDOR (#1) and the Django-admin order-action bypass (#15) are done.
+**Immediate follow-ups:** the legacy template checkout still bypasses `OrderService` (#1b, confirmed to be a correctness gap rather than a security one) — decide whether to route it through the service or retire the template flow; `Product.stock` / `ProductInventory` desync on seller product update (#2); decide intent on seller self-registration (#5); the one failing test (#14) is a trivial assertion fix. The legacy order-success IDOR (#1) and the whole unguarded-admin-action class (#15, #16) are done.
 
 ---
 
 ## 21. Review History
+
+### 2026-09-18 — Seller/shop Django-admin action authorization (#16 fixed)
+
+- **Scope**: the vulnerability class from #15, applied to the seller and shop admins. Audited both registrations in full rather than assuming they matched `OrderAdmin`.
+- **Seller findings — all four actions vulnerable.** `SellerProfileAdmin` (`sellers/admin.py`) declares `approve_and_activate`, `suspend_sellers`, `reject_sellers`, `reactivate_sellers`. None declared `allowed_permissions`; all four mutate `SellerProfile.status` through `sellers/services.py` and write an `ADMIN_SELLER_*` AuditLog entry.
+- **Shop findings — all four actions vulnerable.** `ShopAdmin` (`shops/admin.py`) declares `approve_and_activate`, `suspend_shops`, `reject_shops`, `reactivate_shops`, mutating `Shop.status` through `ShopService` with `ADMIN_SHOP_*` audit entries. Same omission.
+- **The shared helpers were unguarded too.** Both admins route through `ReasonRequiredActionMixin.run_simple_action()` / `run_reason_action()` (`audit/admin_mixins.py`), neither of which checked any permission — so the gap sat in the common path, not only in the eight declarations.
+- **Reproduced before fixing.** All eight ran successfully for an account with `is_staff` + `view_sellerprofile` + `view_shop` and no change permission: a PENDING seller was driven to ACTIVE, an ACTIVE shop to SUSPENDED, and so on. The suspend/reject confirmation page is **not** a gate — posting the `apply_reason` + `reason` payload directly skips it. The pre-fix run of the new test file reported `FAILED (failures=10)`.
+- **Side effect worth recording**: each unauthorized action also wrote an AuditLog row naming the read-only account as `actor`, so the gap corrupted the audit trail as well as the data. The tests assert that no such row is written.
+- **Fix**, following #15 exactly: all eight actions declare `allowed_permissions = ('change',)` (`sellers/admin.py`, `shops/admin.py`), and `ReasonRequiredActionMixin` gained `_require_change_permission()`, called at the top of both helpers (`audit/admin_mixins.py`). Django's own admin `view`/`change` authorization — no new permissions, no change to MiniShop RBAC, no new framework, and the seller/shop lifecycle rules and services are untouched.
+- **Tests**: `audit/test_admin_action_authorization.py`, 8 tests. Placed in `audit` because that is where the shared mixin lives. Loops over all eight actions from a table of (action, starting status, expected status), driving the real admin changelist POST: read-only refused on every action with state *and* audit trail unchanged; change-authorized user and superuser still able to run every action; and `get_actions()` offering the actions to the editor but not the read-only account.
+- **Verification**: `manage.py check` → no issues. `audit.test_admin_action_authorization` → 8/8 OK. `sellers shops shop.test_admin_site` → 46 tests, 1 failure, that failure being the pre-existing #14 Taka assertion.
+- **Class now closed.** Only three ModelAdmins in the project declare custom actions — `OrderAdmin` (#15), `SellerProfileAdmin` and `ShopAdmin` (#16) — and all three are guarded. Neither seller nor shop admin defines `get_urls`, `list_editable` or a `save_model` override, so there is no other mutation path on those two surfaces.
+- **Not touched**: frontend, MiniShop RBAC, JWT auth, seller onboarding, points, the stock desync (#2), #1b, #14, and the `list_editable` fields on `CategoryAdmin` / `ProductAdmin` / the rbac admins (Django gates those on `has_change_permission` natively, and they are outside this task's seller/shop scope).
 
 ### 2026-09-17 — OrderService authorization audit (#1b re-classified, #15 found and fixed)
 

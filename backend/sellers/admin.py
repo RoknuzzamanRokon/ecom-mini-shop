@@ -67,6 +67,7 @@ class SellerProfileAdmin(ReasonRequiredActionMixin, StatusBadgeMixin, admin.Mode
             audit_action='ADMIN_SELLER_APPROVE',
         )
     approve_and_activate.short_description = "Approve and activate selected sellers"
+    approve_and_activate.allowed_permissions = ('change',)
 
     def suspend_sellers(self, request, queryset):
         return self.run_reason_action(
@@ -80,6 +81,7 @@ class SellerProfileAdmin(ReasonRequiredActionMixin, StatusBadgeMixin, admin.Mode
             audit_action='ADMIN_SELLER_SUSPEND',
         )
     suspend_sellers.short_description = "Suspend selected sellers (reason required)"
+    suspend_sellers.allowed_permissions = ('change',)
 
     def reject_sellers(self, request, queryset):
         return self.run_reason_action(
@@ -93,6 +95,7 @@ class SellerProfileAdmin(ReasonRequiredActionMixin, StatusBadgeMixin, admin.Mode
             audit_action='ADMIN_SELLER_REJECT',
         )
     reject_sellers.short_description = "Reject selected sellers (reason required)"
+    reject_sellers.allowed_permissions = ('change',)
 
     def reactivate_sellers(self, request, queryset):
         self.run_simple_action(
@@ -102,3 +105,4 @@ class SellerProfileAdmin(ReasonRequiredActionMixin, StatusBadgeMixin, admin.Mode
             audit_action='ADMIN_SELLER_REACTIVATE',
         )
     reactivate_sellers.short_description = "Reactivate selected sellers"
+    reactivate_sellers.allowed_permissions = ('change',)

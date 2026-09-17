@@ -8,7 +8,7 @@ therefore import from here without creating a cycle.
 """
 from django.contrib import messages
 from django.contrib.admin import helpers
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.template.response import TemplateResponse
 from django.utils.html import format_html
 
@@ -91,9 +91,21 @@ class ReasonRequiredActionMixin:
         """Hook for per-model AuditService kwargs (shop=..., seller=...)."""
         return {}
 
+    def _require_change_permission(self, request):
+        """
+        Defense in depth for every action routed through this mixin.
+
+        Each action also declares `allowed_permissions = ("change",)`, which is
+        what Django itself filters on; this second check means a future action
+        wired to these helpers cannot silently mutate records without it.
+        """
+        if not self.has_change_permission(request):
+            raise PermissionDenied
+
     def run_simple_action(self, request, queryset, *, verb, perform,
                           audit_action, catch=(ValidationError,)):
         """Lifecycle action that needs no reason (approve / reactivate)."""
+        self._require_change_permission(request)
         done = 0
         for obj in queryset:
             previous_state = {'status': obj.status}
@@ -120,6 +132,7 @@ class ReasonRequiredActionMixin:
     def run_reason_action(self, request, queryset, *, action_name, title, verb,
                           reason_label, perform, audit_action,
                           catch=(ValidationError,), help_text=''):
+        self._require_change_permission(request)
         reason = (request.POST.get(REASON_FIELD) or '').strip()
         errors = []
 
