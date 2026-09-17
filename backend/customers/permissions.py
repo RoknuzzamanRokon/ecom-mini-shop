@@ -92,3 +92,34 @@ class IsAddressOwner(BasePermission):
         if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
             return True
         return obj.user == user
+
+
+class CanCreateReview(BasePermission):
+    """
+    Enforces that the requesting user holds the 'reviews.create' RBAC permission.
+    """
+    message = "You do not have permission to create reviews ('reviews.create' required)."
+
+    def has_permission(self, request, view):
+        if not request.user or not request.user.is_authenticated:
+            return False
+        return has_user_permission(request.user, "reviews.create")
+
+
+class IsReviewOwner(BasePermission):
+    """
+    Object-level permission ensuring only the review owner (or super administrator)
+    can update or delete an individual review record.
+    """
+    message = "You can only edit or delete your own reviews."
+
+    def has_permission(self, request, view):
+        return bool(request.user and request.user.is_authenticated)
+
+    def has_object_permission(self, request, view, obj):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
+            return True
+        return obj.user == user

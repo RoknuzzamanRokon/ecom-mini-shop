@@ -1,4 +1,4 @@
-import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse, Favorite, PasswordChangePayload, SellerProfile, SellerDashboardData, SellerShop, SellerWallet, PointTransaction } from "./types";
+import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse, Favorite, PasswordChangePayload, SellerProfile, SellerDashboardData, SellerShop, SellerWallet, PointTransaction, Review, ReviewCreatePayload, ReviewUpdatePayload } from "./types";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
@@ -1112,6 +1112,85 @@ export async function removeFavorite(productId: number, token: string): Promise<
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok && res.status !== 404) throw new Error("Failed to remove favorite");
+}
+
+/**
+ * Reviews
+ */
+export async function getProductReviews(
+  productId: number,
+  page = 1
+): Promise<PaginatedResponse<Review>> {
+  const res = await fetch(
+    `${API_BASE_URL}/api/products/${productId}/reviews/?page=${page}`,
+    { cache: "no-store" }
+  );
+  if (!res.ok) throw new Error("Failed to fetch reviews");
+  return await res.json();
+}
+
+export async function getMyProductReview(
+  productId: number,
+  token: string
+): Promise<Review | null> {
+  const res = await fetch(`${API_BASE_URL}/api/reviews/mine/?product_id=${productId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error("Failed to fetch your review");
+  return await res.json();
+}
+
+export async function createReview(
+  payload: ReviewCreatePayload,
+  token: string
+): Promise<Review> {
+  const res = await fetch(`${API_BASE_URL}/api/reviews/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 409 && data.detail) throw new Error(data.detail);
+    const firstError =
+      data.rating?.[0] || data.comment?.[0] || data.product_id?.[0] || data.detail;
+    throw new Error(firstError || "Failed to submit review");
+  }
+  return await res.json();
+}
+
+export async function updateReview(
+  reviewId: number,
+  payload: ReviewUpdatePayload,
+  token: string
+): Promise<Review> {
+  const res = await fetch(`${API_BASE_URL}/api/reviews/${reviewId}/`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    const firstError = data.rating?.[0] || data.comment?.[0] || data.detail;
+    throw new Error(firstError || "Failed to update review");
+  }
+  return await res.json();
+}
+
+export async function deleteReview(reviewId: number, token: string): Promise<void> {
+  const res = await fetch(`${API_BASE_URL}/api/reviews/${reviewId}/`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok && res.status !== 404) throw new Error("Failed to delete review");
 }
 
 /**

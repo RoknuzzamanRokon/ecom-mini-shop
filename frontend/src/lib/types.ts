@@ -100,10 +100,34 @@ export interface Product {
   discount_percent?: number;
   savings_amount?: string | number | null;
   in_stock: boolean;
+  average_rating?: number;
+  review_count?: number;
   created_at: string;
   images?: ProductImage[];
   all_image_urls?: string[];
   related_products?: Product[];
+}
+
+export interface Review {
+  id: number;
+  user_id: number;
+  reviewer_name: string;
+  rating: number;
+  comment: string;
+  is_verified_purchase: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReviewCreatePayload {
+  product_id: number;
+  rating: number;
+  comment?: string;
+}
+
+export interface ReviewUpdatePayload {
+  rating?: number;
+  comment?: string;
 }
 
 export interface CartItem {

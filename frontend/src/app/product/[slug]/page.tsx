@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
@@ -10,6 +10,7 @@ import Footer from "@/components/layout/Footer";
 import ProductCard from "@/components/home/ProductCard";
 import ProductImageZoom from "@/components/product/ProductImageZoom";
 import FavoriteButton from "@/components/product/FavoriteButton";
+import ProductReviews from "@/components/product/ProductReviews";
 import { Product } from "@/lib/types";
 import { getProductDetail, formatImageUrl } from "@/lib/api";
 import { useCart } from "@/context/CartContext";
@@ -31,20 +32,26 @@ export default function ProductDetailPage() {
     router.push("/checkout");
   };
 
-  useEffect(() => {
-    async function load() {
+  const loadProduct = useCallback(
+    async (showSpinner: boolean) => {
       if (!slug) return;
-      setLoading(true);
+      if (showSpinner) setLoading(true);
       const data = await getProductDetail(slug);
       if (data) {
         setProduct(data);
-        const mainImg = formatImageUrl(data.image_url || (data.image ? data.image : ""));
-        setSelectedImage(mainImg);
+        if (showSpinner) {
+          const mainImg = formatImageUrl(data.image_url || (data.image ? data.image : ""));
+          setSelectedImage(mainImg);
+        }
       }
-      setLoading(false);
-    }
-    load();
-  }, [slug]);
+      if (showSpinner) setLoading(false);
+    },
+    [slug]
+  );
+
+  useEffect(() => {
+    loadProduct(true);
+  }, [loadProduct]);
 
   if (loading) {
     return (
@@ -158,13 +165,24 @@ export default function ProductDetailPage() {
             {/* Rating */}
             <div className="flex items-center gap-2 mt-2.5">
               <div className="flex items-center text-star">
-                <span className="material-symbols-outlined fill-active text-[16px]">star</span>
-                <span className="material-symbols-outlined fill-active text-[16px]">star</span>
-                <span className="material-symbols-outlined fill-active text-[16px]">star</span>
-                <span className="material-symbols-outlined fill-active text-[16px]">star</span>
-                <span className="material-symbols-outlined fill-active text-[16px]">star</span>
+                {[1, 2, 3, 4, 5].map((n) => (
+                  <span
+                    key={n}
+                    className="material-symbols-outlined text-[16px]"
+                    style={{
+                      fontVariationSettings:
+                        n <= Math.round(product.average_rating ?? 0) ? "'FILL' 1" : "'FILL' 0",
+                    }}
+                  >
+                    star
+                  </span>
+                ))}
               </div>
-              <span className="text-xs font-semibold text-ink-muted">(42 customer reviews)</span>
+              <span className="text-xs font-semibold text-ink-muted">
+                {product.review_count
+                  ? `${product.review_count} customer review${product.review_count === 1 ? "" : "s"}`
+                  : "No reviews yet"}
+              </span>
             </div>
 
             {/* Price Box */}
@@ -303,6 +321,8 @@ export default function ProductDetailPage() {
             </div>
           </div>
         </div>
+
+        <ProductReviews productId={product.id} onReviewsChanged={() => loadProduct(false)} />
 
         {/* Related Products */}
         {product.related_products && product.related_products.length > 0 && (

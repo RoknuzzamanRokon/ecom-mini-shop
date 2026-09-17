@@ -6,6 +6,9 @@ from .views import (
     CustomerProfileView,
     FavoriteDetailView,
     FavoriteListCreateView,
+    MyProductReviewView,
+    ReviewDetailView,
+    ReviewListCreateView,
 )
 
 app_name = "customers"
@@ -17,4 +20,7 @@ urlpatterns = [
     path("addresses/<int:pk>/set-default/", AddressSetDefaultView.as_view(), name="address-set-default"),
     path("favorites/", FavoriteListCreateView.as_view(), name="favorite-list-create"),
     path("favorites/<int:product_id>/", FavoriteDetailView.as_view(), name="favorite-detail"),
+    path("reviews/", ReviewListCreateView.as_view(), name="review-list-create"),
+    path("reviews/mine/", MyProductReviewView.as_view(), name="review-mine"),
+    path("reviews/<int:pk>/", ReviewDetailView.as_view(), name="review-detail"),
 ]

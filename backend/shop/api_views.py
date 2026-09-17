@@ -13,6 +13,8 @@ from rest_framework.views import APIView
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.dateparse import parse_date
+from customers.models import Review
+from customers.serializers import ReviewSerializer
 from points.services import InsufficientPointsError, PointService
 from rbac.models import Role
 from rbac.services import get_user_role_codes, has_user_permission
@@ -215,6 +217,21 @@ class ProductDetailAPIView(generics.RetrieveAPIView):
         ).data
 
         return Response(data)
+
+
+class ProductReviewListAPIView(generics.ListAPIView):
+    """
+    Public listing of customer reviews for a single product.
+    GET /api/products/<int:product_id>/reviews/
+    404s for non-public products, exactly like ProductDetailAPIView.
+    """
+    permission_classes = [permissions.AllowAny]
+    serializer_class = ReviewSerializer
+    pagination_class = StandardResultsSetPagination
+
+    def get_queryset(self):
+        product = ProductService.get_public_product_by_identifier(self.kwargs["product_id"])
+        return Review.objects.filter(product=product).select_related("user").order_by("-created_at")
 
 
 class HotDealAPIView(APIView):

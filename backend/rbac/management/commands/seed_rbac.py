@@ -75,6 +75,8 @@ PERMISSIONS_DATA = [
     # Inventory & Stock
     ("inventory.view", "View Inventory", "inventory", "view", "Can view product inventory and stock levels"),
     ("inventory.adjust", "Adjust Inventory", "inventory", "adjust", "Can adjust product inventory and stock levels"),
+    # Reviews
+    ("reviews.create", "Create Reviews", "reviews", "create", "Can submit product ratings and reviews"),
     # Admin Governance Permissions
     ("users.admin.view", "View Admin Users", "users", "admin_view", "Can view admin user accounts"),
     ("users.admin.manage", "Manage Admin Users", "users", "admin_manage", "Can manage admin users, roles, and statuses"),
@@ -216,6 +218,7 @@ ROLE_PERMISSIONS_MAPPING = {
         "cart.view", "cart.update",
         "orders.view", "orders.create", "orders.cancel",
         "payments.create",
+        "reviews.create",
     ],
 }
 

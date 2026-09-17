@@ -3,7 +3,7 @@ from rest_framework import serializers
 
 from shop.models import Product
 from shop.serializers import ProductListSerializer
-from .models import Address, CustomerProfile, Favorite
+from .models import Address, CustomerProfile, Favorite, Review
 
 
 class CustomerProfileSerializer(serializers.ModelSerializer):
@@ -185,3 +185,52 @@ class FavoriteCreateSerializer(serializers.Serializer):
         if not Product.objects.public().filter(pk=value).exists():
             raise serializers.ValidationError("Product not found.")
         return value
+
+
+class ReviewSerializer(serializers.ModelSerializer):
+    """
+    Read serializer for a product review.
+    """
+    user_id = serializers.IntegerField(source="user.id", read_only=True)
+    reviewer_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Review
+        fields = [
+            "id",
+            "user_id",
+            "reviewer_name",
+            "rating",
+            "comment",
+            "is_verified_purchase",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+    def get_reviewer_name(self, obj):
+        return obj.user.get_full_name() or obj.user.username
+
+
+class ReviewCreateSerializer(serializers.Serializer):
+    """
+    Accepts a product id and resolves it against the public catalog only, so
+    unpublished or suspended-shop products can never receive a review.
+    """
+    product_id = serializers.IntegerField()
+    rating = serializers.IntegerField(min_value=1, max_value=5)
+    comment = serializers.CharField(required=False, allow_blank=True, max_length=2000, default="")
+
+    def validate_product_id(self, value):
+        if not Product.objects.public().filter(pk=value).exists():
+            raise serializers.ValidationError("Product not found.")
+        return value
+
+
+class ReviewUpdateSerializer(serializers.Serializer):
+    """
+    Partial-update serializer for a review's rating/comment. Ownership is
+    enforced at the view/permission layer, not here.
+    """
+    rating = serializers.IntegerField(min_value=1, max_value=5, required=False)
+    comment = serializers.CharField(required=False, allow_blank=True, max_length=2000)

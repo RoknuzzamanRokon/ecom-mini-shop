@@ -186,3 +186,57 @@ class Favorite(models.Model):
 
     def __str__(self):
         return f"{self.user.username} -> {self.product.name}"
+
+
+class Review(models.Model):
+    """
+    Customer rating and comment for a product. related_name is deliberately
+    "customer_reviews", not "reviews" — Product already has reviewed_by/
+    reviewed_at fields for the unrelated admin-approval workflow.
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="product_reviews",
+    )
+    product = models.ForeignKey(
+        "shop.Product",
+        on_delete=models.CASCADE,
+        related_name="customer_reviews",
+    )
+    rating = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(5)],
+    )
+    comment = models.TextField(blank=True)
+    is_verified_purchase = models.BooleanField(
+        default=False,
+        help_text="Computed once at creation time; never recomputed afterward.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Review"
+        verbose_name_plural = "Reviews"
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "product"],
+                name="unique_review_per_user_product",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["product", "-created_at"], name="cust_review_prod_created_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.rating is not None and not (1 <= self.rating <= 5):
+            raise ValidationError({"rating": "Rating must be between 1 and 5."})
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.user.username} rated {self.product.name}: {self.rating}/5"

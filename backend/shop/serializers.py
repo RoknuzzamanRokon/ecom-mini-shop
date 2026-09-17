@@ -84,6 +84,8 @@ class ProductListSerializer(serializers.ModelSerializer):
     discount_percent = serializers.ReadOnlyField()
     savings_amount = serializers.ReadOnlyField()
     in_stock = serializers.ReadOnlyField()
+    average_rating = serializers.SerializerMethodField()
+    review_count = serializers.IntegerField(read_only=True, default=0)
 
     class Meta:
         model = Product
@@ -105,6 +107,8 @@ class ProductListSerializer(serializers.ModelSerializer):
             "discount_percent",
             "savings_amount",
             "in_stock",
+            "average_rating",
+            "review_count",
             "created_at",
         ]
 
@@ -115,6 +119,10 @@ class ProductListSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(obj.image.url)
             return obj.image.url
         return None
+
+    def get_average_rating(self, obj):
+        value = getattr(obj, "average_rating", None)
+        return round(float(value), 1) if value is not None else 0.0
 
 
 class ProductDetailSerializer(ProductListSerializer):

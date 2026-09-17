@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.db.models import Count
-from .models import CustomerProfile, Address, Favorite
+from .models import CustomerProfile, Address, Favorite, Review
 
 @admin.register(CustomerProfile)
 class CustomerProfileAdmin(admin.ModelAdmin):
@@ -41,6 +41,15 @@ class FavoriteAdmin(admin.ModelAdmin):
     list_display = ('user', 'product', 'created_at')
     search_fields = ('user__username', 'product__name')
     list_filter = ('created_at',)
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related('user', 'product')
+
+@admin.register(Review)
+class ReviewAdmin(admin.ModelAdmin):
+    list_display = ('user', 'product', 'rating', 'is_verified_purchase', 'created_at')
+    search_fields = ('user__username', 'product__name')
+    list_filter = ('rating', 'is_verified_purchase', 'created_at')
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('user', 'product')

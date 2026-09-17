@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional, Union
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Count, Prefetch, Q
+from django.db.models import Avg, Count, Prefetch, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.text import slugify
@@ -298,6 +298,10 @@ class ProductService:
             Product.objects.public()
             .select_related("category", "shop", "shop__owner")
             .prefetch_related("images")
+            .annotate(
+                average_rating=Avg("customer_reviews__rating"),
+                review_count=Count("customer_reviews", distinct=True),
+            )
         )
 
     @classmethod

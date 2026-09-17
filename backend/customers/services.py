@@ -1,13 +1,18 @@
 import logging
 from typing import Any, Dict, Optional
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.db import IntegrityError, transaction
 
 from audit.services import AuditService
-from .models import Address, CustomerProfile
+from .models import Address, CustomerProfile, Review
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
+
+
+class ReviewAlreadyExistsError(Exception):
+    """Raised when a customer attempts to review a product they've already reviewed."""
+    pass
 
 
 class CustomerService:
@@ -272,3 +277,81 @@ class AddressService:
             ip_address=ip_address,
         )
         return address
+
+
+class ReviewService:
+    """
+    Domain service for customer product reviews.
+    """
+
+    @classmethod
+    @transaction.atomic
+    def create_review(cls, user, product_id: int, rating: int, comment: str = "") -> Review:
+        """
+        Creates a review for a product, computing is_verified_purchase once at
+        creation time from the user's DELIVERED order history. Raises
+        ReviewAlreadyExistsError if the user has already reviewed this product.
+        """
+        from shop.models import Order, OrderItem
+
+        is_verified_purchase = OrderItem.objects.filter(
+            order__user=user,
+            order__status=Order.STATUS_DELIVERED,
+            product_id=product_id,
+        ).exists()
+
+        try:
+            review = Review.objects.create(
+                user=user,
+                product_id=product_id,
+                rating=rating,
+                comment=comment,
+                is_verified_purchase=is_verified_purchase,
+            )
+        except IntegrityError:
+            raise ReviewAlreadyExistsError(
+                "You have already reviewed this product. Edit your existing review instead."
+            )
+
+        AuditService.log(
+            action="REVIEW_CREATED",
+            target=review,
+            actor=user,
+            metadata={"product_id": product_id, "rating": rating},
+        )
+        return review
+
+    @classmethod
+    @transaction.atomic
+    def update_review(cls, review: Review, data: Dict[str, Any]) -> Review:
+        """Updates a review's rating/comment."""
+        changed_fields = {}
+        for field in ["rating", "comment"]:
+            if field in data:
+                old_val = getattr(review, field)
+                new_val = data[field]
+                if old_val != new_val:
+                    changed_fields[field] = {"old": str(old_val), "new": str(new_val)}
+                    setattr(review, field, new_val)
+
+        if changed_fields:
+            review.save()
+            AuditService.log(
+                action="REVIEW_UPDATED",
+                target=review,
+                actor=review.user,
+                metadata={"changed_fields": changed_fields},
+            )
+        return review
+
+    @classmethod
+    @transaction.atomic
+    def delete_review(cls, review: Review) -> None:
+        """Deletes a review."""
+        AuditService.log(
+            action="REVIEW_DELETED",
+            target=review,
+            actor=review.user,
+            metadata={"product_id": review.product_id, "rating": review.rating},
+        )
+        review.delete()
