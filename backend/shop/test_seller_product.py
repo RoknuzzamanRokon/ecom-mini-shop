@@ -540,6 +540,39 @@ class SellerProductAPITests(BaseSellerProductTestCase):
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("shop", str(res.data).lower())
 
+    def test_api_seller_with_inconsistent_multiple_shops_gets_safe_error_not_silent_pick(self):
+        """
+        Single-shop-per-seller is a hard business rule, but nothing at the DB layer
+        prevents legacy/inconsistent data from giving one seller two Shops. When
+        that happens, omitting shop_id must NOT silently pick one of them (that
+        would risk products landing under the wrong Shop) - it must fail safely.
+        """
+        Shop.objects.create(
+            owner=self.seller_full,
+            name="Second Legacy Shop",
+            slug="second-legacy-shop",
+            status=Shop.STATUS_ACTIVE,
+            location=Point(90.4125, 23.8103),
+        )
+
+        self.client.force_authenticate(user=self.user_full)
+        prod_count_before = Product.objects.count()
+        balance_before = PointService.get_balance(self.seller_full)
+
+        payload = {
+            "name": "Ambiguous Shop Product",
+            "category_id": self.category.id,
+            "description": "No shop_id supplied while seller owns 2 shops",
+            "price": "20.00",
+        }
+        res = self.client.post("/api/products/mine/", payload)
+        self.assertEqual(res.status_code, status.HTTP_409_CONFLICT)
+        self.assertIn("multiple", str(res.data).lower())
+
+        # Nothing was created and no points were touched.
+        self.assertEqual(Product.objects.count(), prod_count_before)
+        self.assertEqual(PointService.get_balance(self.seller_full), balance_before)
+
     def test_api_seller_cannot_change_product_shop_to_another_sellers_shop(self):
         """PATCH /api/products/mine/<id>/ rejects reassigning a product to another seller's Shop."""
         product = ProductService.create_product(

@@ -530,12 +530,29 @@ class SellerProductListCreateAPIView(APIView):
         # to target another seller's Shop.
         shop = data.get("shop_id")
         if shop is None:
-            shop = seller.shops.first()
-            if shop is None:
+            owned_shops = list(seller.shops.all()[:2])
+            if len(owned_shops) == 0:
                 return Response(
                     {"error": "You have not been assigned a Shop yet. Contact an administrator to have a Shop assigned to your account."},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+            if len(owned_shops) > 1:
+                # Single-shop-per-seller is a hard business rule; more than one
+                # owned Shop means the seller's data is inconsistent (e.g. legacy
+                # data or an out-of-band assignment). Never guess which Shop to
+                # use — that would be an ownership bypass risk. Surface a safe,
+                # explicit error instead and let an administrator resolve it.
+                return Response(
+                    {
+                        "error": (
+                            "Your seller account is currently assigned to multiple Shops, which "
+                            "violates the single-shop-per-seller policy. Please contact an "
+                            "administrator to resolve this before creating products."
+                        )
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+            shop = owned_shops[0]
 
         try:
             product = ProductService.create_product(
