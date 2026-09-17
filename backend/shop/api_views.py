@@ -22,6 +22,7 @@ from .inventory_service import InventoryService
 from .models import Category, InventoryTransaction, Order, OrderItem, Product, ProductInventory, Payment, Refund
 from .payment_service import PaymentService
 from .permissions import (
+    can_user_view_any_order,
     CanAdjustInventory,
     CanCancelOrder,
     CanCreateOrder,
@@ -361,15 +362,7 @@ class OrderDetailAPIView(APIView):
 
         # Strict customer ownership isolation
         user = request.user
-        role_codes = get_user_role_codes(user)
-        is_staff_override = (
-            user.is_superuser
-            or user.is_staff
-            or Role.ROLE_SUPER_ADMINISTRATOR in role_codes
-            or Role.ROLE_ADMINISTRATOR in role_codes
-            or Role.ROLE_OPERATION_MANAGER in role_codes
-        )
-        if order.user != user and not is_staff_override:
+        if order.user != user and not can_user_view_any_order(user):
             raise NotFound("Order not found.")
 
         serializer = OrderDetailSerializer(order, context={"request": request})

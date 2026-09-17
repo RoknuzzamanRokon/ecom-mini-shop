@@ -2,6 +2,7 @@
 
 **Last full review:** 2026-09-17
 **Reviewed at commit:** `c4fb3b8` (`feat(reviews): add product reviews and ratings`)
+**Last targeted update:** 2026-09-17 — legacy checkout IDOR fixed (Known Issues #1 resolved). See [Review History](#21-review-history).
 
 ---
 
@@ -255,7 +256,9 @@ Statuses `PENDING → CONFIRMED → PROCESSING → SHIPPED → DELIVERED`, with 
 | Seller | `GET /api/seller/orders/`, `GET /api/seller/orders/<order_number>/`, `PATCH .../status/` — scoped to the seller's own items via a `Prefetch(to_attr="seller_items")`, so only their items serialize |
 | Staff | `GET /api/staff/orders/[<pk\|order_number>/]`, `PATCH .../status/` — `orders.staff.view` / `orders.staff.update` |
 
-**Guest checkout — the precise answer:** through the JSON API, **no** (POST `/api/orders/` requires `IsAuthenticated` + `orders.create`, and the service requires a user cart). Through the **legacy server-rendered flow**, **yes**: `shop/views.py:100-133` `checkout()` has no auth at all and creates an `Order` with `user` left NULL. That path bypasses `OrderService` entirely — no inventory reservation, no audit, no price re-validation — and its order-lookup view is insecure (see Known Issues #1).
+**Guest checkout — the precise answer:** through the JSON API, **no** (POST `/api/orders/` requires `IsAuthenticated` + `orders.create`, and the service requires a user cart). Through the **legacy server-rendered flow**, **yes**: `shop/views.py:111-145` `checkout()` has no auth at all and, for a guest, creates an `Order` with `user` left NULL. That path still bypasses `OrderService` entirely — no inventory reservation, no audit, no price re-validation (see Known Issues #1b).
+
+**Legacy order ownership (fixed 2026-09-17).** `checkout()` now records ownership two ways: it sets `Order.user` when the buyer is authenticated, and it writes the new order's id into the session under `placed_order_ids` (`shop/views.py:_remember_placed_order`). `order_success()` authorizes every read through `_can_view_order()` — session that placed the order, owning user, or the staff override — and raises a safe `Http404` otherwise. The session is the ownership token for guests, so guest checkout keeps working with no login and no client-supplied identifier is ever trusted. The staff override is shared with the JSON API through `shop/permissions.py:can_user_view_any_order`.
 
 ### Inventory
 `ProductInventory` (available / reserved / sold, each with a `>= 0` CheckConstraint) plus an `InventoryTransaction` ledger. `InventoryService` reserve → release → finalize-sale all run inside the caller's atomic block with `select_for_update()`, and release/finalize are idempotent (guarded by an existing RELEASE/SALE row). Endpoints under `/api/seller/inventory/...` (aliased at `/api/inventory/...`) gated on `inventory.view` / `inventory.adjust` plus per-object ownership.
@@ -384,7 +387,7 @@ Guards: `SellerGuard` (fetches `/api/sellers/dashboard/`, renders "Seller Accoun
 
 **Known security limitations** (see Known Issues for detail)
 
-- The legacy server-rendered order-success view has **no ownership check** (#1) — the most serious finding in this review.
+- ~~The legacy server-rendered order-success view has **no ownership check** (#1)~~ — **fixed 2026-09-17**; reads are now authorized by session, owner or staff override.
 - API-driven seller lifecycle transitions are not audited (#6).
 - Dev-posture settings: `DEBUG = True`, a hardcoded `SECRET_KEY` committed in `settings.py`, and a 4-character minimum password. Must change before any production deployment.
 - Access tokens cannot be revoked (no blacklist); "logout" is client-side only.
@@ -394,7 +397,7 @@ Guards: `SellerGuard` (fetches `/api/sellers/dashboard/`, renders "Seller Accoun
 
 ## 15. Test Status — as of 2026-09-17
 
-**Inventory:** ~462 test methods across 23 files.
+**Inventory:** ~471 test methods across 23 files (462 at the full review, +9 from the legacy-IDOR fix).
 
 | File | Tests | | File | Tests |
 |---|---|---|---|---|
@@ -402,7 +405,7 @@ Guards: `SellerGuard` (fetches `/api/sellers/dashboard/`, renders "Seller Accoun
 | `shop/test_public_catalog.py` | 26 | | `shop/test_staff_orders.py` | 23 |
 | `points/tests.py` | 29 | | `shop/test_payments.py` | 21 |
 | `shops/tests.py` | 27 | | `rbac/test_direct_permissions.py` | 21 |
-| `shop/tests.py` | 24 | | `shop/test_admin_phase1.py` / `test_product_reviews.py` | 19 / 19 |
+| `shop/tests.py` | 33 | | `shop/test_admin_phase1.py` / `test_product_reviews.py` | 19 / 19 |
 | `cart/tests.py` | 17 | | `customers/tests.py` | 16 |
 | `shop/test_inventory.py` / `test_seller_orders.py` | 15 / 15 | | `rbac/tests.py` / `test_admin_permission_board.py` | 14 / 14 |
 | `shop/test_customer_orders.py` | 13 | | `shop/test_orders.py` / `test_admin_site.py` | 11 / 11 |
@@ -413,6 +416,7 @@ Guards: `SellerGuard` (fetches `/api/sellers/dashboard/`, renders "Seller Accoun
 | `manage.py check` | **Pass** — "System check identified no issues (0 silenced)" |
 | `manage.py makemigrations --check --dry-run` | **Pass** — "No changes detected" (schema and models are in sync) |
 | `shop.test_seller_product` (23 tests) | **Pass** — 23/23 OK, ~500s |
+| `shop.tests shop.test_orders shop.test_customer_orders` (57 tests, legacy-IDOR fix) | **Pass** — `Ran 57 tests in 2011s … OK`, 0 failures |
 | Full backend suite | **Ran 462 tests in 5509s (~92 min) — `FAILED (failures=1)`.** The single failure is `shop.test_admin_site.AdminRegistrySmokeTests.test_dashboard_renders_taka_not_dollar`, and it is **pre-existing** (see Known Issues #14). Everything else passes. |
 | `npx tsc --noEmit` | **Pass** — exit 0 |
 | `npm run build` | **Pass** — exit 0, 40 static pages, all seller/admin routes compiled |
@@ -427,11 +431,12 @@ Guards: `SellerGuard` (fetches `/api/sellers/dashboard/`, renders "Seller Accoun
 
 ## 16. Known Issues
 
-Discovered during this review. **None of these were fixed** — this was a documentation task.
+Discovered during the 2026-09-17 review. All were open at that point; **#1 has since been fixed** — see the Status column.
 
 | # | Issue | Area | Severity | Status |
 |---|---|---|---|---|
-| 1 | `order_success(request, order_id)` (`shop/views.py:136-138`) does `get_object_or_404(Order, id=order_id)` with **no ownership or session check** — any visitor can read any order (customer name, phone, address) by walking sequential IDs. The same legacy `checkout()` (`:100-133`) creates orders with `user=NULL`, bypassing `OrderService`: no inventory reservation, no audit, no price re-validation. | Legacy server-rendered flow | **High** | Pre-existing; newly documented. Does not block API/Next.js work, but the template routes are still mounted. |
+| 1 | **Legacy checkout IDOR.** `order_success(request, order_id)` did `get_object_or_404(Order, id=order_id)` with **no ownership or session check** — any visitor could read any order (customer name, phone, address) by walking sequential ids. | Legacy server-rendered flow | **High** | **FIXED 2026-09-17.** `checkout()` now records ownership server-side (`Order.user` for authenticated buyers, `request.session["placed_order_ids"]` for everyone including guests) and `order_success()` authorizes through `_can_view_order()` — session / owner / staff override — returning a safe 404 otherwise. Covered by `shop.tests.LegacyOrderAccessTests` (9 tests). |
+| 1b | The same legacy `checkout()` (`shop/views.py:111-145`) still creates orders **bypassing `OrderService`**: no inventory reservation, no audit entry, no server-side price re-validation. Split out of #1 when the IDOR was fixed; this half is untouched. | Legacy server-rendered flow | Medium | Open. Not a data-exposure issue; it is a correctness/consistency gap between the legacy template flow and the API order pipeline. |
 | 2 | `ProductService.update_product` lists `"stock"` in `updatable_fields` (`shop/services.py:220-235`) and writes `Product.stock` directly **without touching `ProductInventory`**, so `PATCH /api/products/mine/<pk>/` silently desyncs `Product.stock` from `ProductInventory.available_quantity`. `Product.in_stock` reads inventory while the cart serializer reads `product.stock`. | Seller products / inventory | **Medium** | Pre-existing; newly documented. |
 | 3 | Seller wallet UI contract mismatch: the page reads `wallet.total_earned` / `wallet.total_spent` (`seller/wallet/page.tsx:96,111`) and `txn.description` (`:204`), but `SellerWalletSerializer` returns neither total (only `balance`) and `PointTransactionSerializer` exposes `reason`, not `description`. The TS types declare the missing fields, so `tsc` cannot catch it. Tiles always show `+0`/`-0`; every row reads "Point transaction". | Seller panel | Medium | Pre-existing; newly documented. |
 | 4 | `get_seller_capabilities` reports `can_create_shop: true` for FULL/LIMITED shop owners (`sellers/services.py:51-58`), contradicting the enforced hard-403 on shop creation. Stale flag; misleading to any UI that trusts it. | Sellers | Medium | Pre-existing; newly documented. |
@@ -500,18 +505,18 @@ Reconstructed from source, tests and git history. Backend work was tracked as **
 | Order items inline fix + invoice PDF download | Complete | commit `0d07b8a` |
 | Prompt-injection removed from `frontend/AGENTS.md` | Complete | commit `5552532` |
 | **Admin-assigned shop ownership + single-shop cap + seller product management** (Phase 1H/1I) | Complete | commit `b623553`; `shop/test_seller_product.py` |
-| **Product reviews & ratings** | Complete — most recent feature | commit `c4fb3b8` (HEAD); `shop/test_product_reviews.py` |
+| **Product reviews & ratings** | Complete | commit `c4fb3b8`; `shop/test_product_reviews.py` |
+| **Legacy checkout IDOR fix** (Known Issues #1) | Complete — most recent change | `shop/views.py`, `shop/permissions.py`, `shop/api_views.py`; `shop/tests.py::LegacyOrderAccessTests` |
 
 ---
 
 ## 20. Current Project State
 
-**Last completed feature:** Product Reviews & Ratings (`c4fb3b8`, HEAD).
+**Last completed change:** Legacy checkout IDOR fix — a targeted security hardening of the server-rendered `/order-success/<id>/` page, not a feature.
+**Last completed feature:** Product Reviews & Ratings (`c4fb3b8`).
 **Preceding feature:** Admin-assigned shop ownership with single-shop cap + seller product management (`b623553`).
 
-**Working tree at review time:** two files modified and **uncommitted**, from seller-product hardening done earlier in this same session (not by this documentation task):
-- `backend/shop/api_views.py` — seller product creation now returns **409** when a seller is inconsistently attached to multiple shops, instead of silently taking `seller.shops.first()`.
-- `backend/shop/test_seller_product.py` — regression test for that case (`test_api_seller_with_inconsistent_multiple_shops_gets_safe_error_not_silent_pick`). The 23-test file passes with it.
+**Working tree:** clean as of the legacy-IDOR commit. (The earlier note here described two uncommitted seller-product files; they landed in `c8485f8`.)
 
 **What is implemented:** the full commerce chain (catalog → cart → checkout → orders → inventory → payments/refunds), the seller panel, the management console, RBAC governance, points/wallet, and reviews.
 
@@ -519,11 +524,23 @@ Reconstructed from source, tests and git history. Backend work was tracked as **
 
 **Constraints future work must preserve:** everything in [Architecture Decisions](#18-important-architecture-decisions), plus the regression-sensitive areas — customer auth, storefront catalog, cart, orders, payments, inventory, seller orders/wallet, admin governance, RBAC, and the public `average_rating` / `review_count` fields.
 
-**Immediate follow-ups:** the legacy template checkout/order-success routes (#1) deserve a decision — secure them or remove them; `Product.stock` / `ProductInventory` desync on seller product update (#2); decide intent on seller self-registration (#5); the one failing test (#14) is a trivial assertion fix.
+**Immediate follow-ups:** the legacy template checkout still bypasses `OrderService` (#1b) — decide whether to route it through the service or retire the template flow; `Product.stock` / `ProductInventory` desync on seller product update (#2); decide intent on seller self-registration (#5); the one failing test (#14) is a trivial assertion fix. The legacy order-success IDOR (#1) is done.
 
 ---
 
 ## 21. Review History
+
+### 2026-09-17 — Targeted security fix: legacy checkout IDOR (Known Issues #1)
+
+- **Root cause confirmed in source**, not assumed from this file: `shop/views.py` `order_success()` resolved the order purely from the URL's `order_id` path parameter and rendered it. Any visitor could enumerate ids at `/order-success/<n>/` and read another buyer's name, phone, delivery address, order number and total. Unauthenticated read-only exposure, affecting both guest and authenticated buyers' orders.
+- **Fix**: ownership is now recorded server-side at checkout and checked on read.
+  - `shop/views.py` — `checkout()` sets `Order.user` for authenticated buyers and calls `_remember_placed_order()`, which appends the order id to `request.session["placed_order_ids"]` (capped at 20). `order_success()` gates on `_can_view_order()`: placing session → owner → staff override, else `Http404`.
+  - `shop/permissions.py` — new `can_user_view_any_order()` + `ORDER_OVERRIDE_ROLES`, the single source of truth for the staff/admin order-read override.
+  - `shop/api_views.py` — `OrderDetailAPIView` now calls that helper instead of its own inline copy. Behaviour-preserving; it removes the duplicate that would otherwise drift from the legacy path.
+- **Guest checkout preserved.** The session is the ownership token, so `Guest → Cart → Checkout → Order` still works with no account and no login prompt. No client-supplied identifier is trusted anywhere in the new path.
+- **Deliberately a 404, not a 403**, so the page cannot be used as an order-existence oracle — matching what the JSON order API already returns for someone else's order.
+- **Tests**: `shop.tests.LegacyOrderAccessTests` (9 new) covers owner access, cross-visitor 404, id tampering, anonymous access to an owned order, the staff override, unknown ids, guest checkout still succeeding, and rejected cross-customer cancellation. Ran `shop.tests shop.test_orders shop.test_customer_orders` → **57 tests, OK, 0 failures**. `manage.py check` passes.
+- **Not touched**: frontend (the Next.js `/order-success/[orderNumber]` page reads the already-secure `/api/orders/<order_number>/`, so no API-contract change was needed), the `OrderService` bypass on the legacy checkout (split out as #1b), and every other known issue.
 
 ### 2026-09-17 — Initial persistent review
 - Full backend architecture reviewed against source: config/settings, RBAC core, sellers, shops, products, points, customers, cart, orders, inventory, payments, reviews, audit, admin governance.

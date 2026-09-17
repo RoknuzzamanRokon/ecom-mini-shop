@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
-from django.test import TestCase
+from django.test import Client, TestCase
 from django.urls import reverse
 
 from rbac.models import Role
@@ -187,6 +187,152 @@ class CheckoutTests(ShopTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, order.order_number)
         self.assertContains(response, "Jane Doe")
+
+
+class LegacyOrderAccessTests(ShopTestCase):
+    """
+    Regression tests for the legacy checkout IDOR: `/order-success/<order_id>/`
+    used to hand any visitor any order's customer name, phone and address by
+    walking sequential ids.
+
+    Access is now bound to the session that placed the order (this is what keeps
+    guest checkout working without a login), to the owning user, or to the
+    platform-wide staff order-read override.
+    """
+
+    CHECKOUT_PAYLOAD = {
+        "full_name": "Jane Doe",
+        "phone": "+1234567890",
+        "address": "123 Main St",
+        "city": "Springfield",
+    }
+
+    def _place_order(self, client, **overrides):
+        """Runs a full legacy cart -> checkout -> order flow and returns the Order."""
+        payload = {**self.CHECKOUT_PAYLOAD, **overrides}
+        client.post(reverse("shop:cart_add", args=[self.keyboard.id]), {"quantity": 1})
+        client.post(reverse("shop:checkout"), payload)
+        return Order.objects.get(customer_name=payload["full_name"])
+
+    def test_guest_checkout_still_succeeds_without_login(self):
+        order = self._place_order(self.client)
+
+        self.assertIsNone(order.user)
+        self.assertEqual(order.total_amount, Decimal("148.00"))
+        self.assertEqual(OrderItem.objects.filter(order=order).count(), 1)
+
+        response = self.client.get(reverse("shop:order_success", args=[order.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, order.order_number)
+
+    def test_another_visitor_cannot_read_a_guest_order(self):
+        order = self._place_order(self.client)
+
+        attacker = Client()
+        response = attacker.get(reverse("shop:order_success", args=[order.id]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_tampering_with_the_order_id_does_not_expose_another_order(self):
+        victim = Client()
+        victim_order = self._place_order(victim, full_name="Victim Buyer")
+
+        attacker = Client()
+        attacker_order = self._place_order(attacker, full_name="Attacker Buyer")
+
+        # The attacker's own confirmation page still works ...
+        own = attacker.get(reverse("shop:order_success", args=[attacker_order.id]))
+        self.assertEqual(own.status_code, 200)
+        self.assertContains(own, "Attacker Buyer")
+
+        # ... but swapping in the victim's id does not leak their details.
+        stolen = attacker.get(reverse("shop:order_success", args=[victim_order.id]))
+        self.assertEqual(stolen.status_code, 404)
+        self.assertNotContains(stolen, "Victim Buyer", status_code=404)
+        self.assertNotContains(stolen, victim_order.phone, status_code=404)
+
+    def test_checkout_by_authenticated_customer_records_ownership(self):
+        customer = User.objects.create_user(username="legacy_buyer", password="password123")
+        assign_user_role(customer, Role.ROLE_CUSTOMER)
+
+        buyer = Client()
+        buyer.force_login(customer)
+        order = self._place_order(buyer, full_name="Logged In Buyer")
+
+        self.assertEqual(order.user, customer)
+
+        # A fresh session of the same user still reaches their own order.
+        elsewhere = Client()
+        elsewhere.force_login(customer)
+        response = elsewhere.get(reverse("shop:order_success", args=[order.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, order.order_number)
+
+    def test_another_customer_cannot_read_an_authenticated_customers_order(self):
+        owner = User.objects.create_user(username="legacy_owner", password="password123")
+        assign_user_role(owner, Role.ROLE_CUSTOMER)
+        other = User.objects.create_user(username="legacy_other", password="password123")
+        assign_user_role(other, Role.ROLE_CUSTOMER)
+
+        buyer = Client()
+        buyer.force_login(owner)
+        order = self._place_order(buyer, full_name="Owner Buyer")
+
+        attacker = Client()
+        attacker.force_login(other)
+        response = attacker.get(reverse("shop:order_success", args=[order.id]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_anonymous_visitor_cannot_read_an_authenticated_customers_order(self):
+        owner = User.objects.create_user(username="legacy_owner2", password="password123")
+        assign_user_role(owner, Role.ROLE_CUSTOMER)
+
+        buyer = Client()
+        buyer.force_login(owner)
+        order = self._place_order(buyer, full_name="Owner Buyer Two")
+
+        response = Client().get(reverse("shop:order_success", args=[order.id]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_administrator_retains_the_platform_wide_order_read_override(self):
+        order = self._place_order(self.client)
+
+        admin = User.objects.create_user(username="legacy_admin", password="password123")
+        assign_user_role(admin, Role.ROLE_ADMINISTRATOR)
+
+        staff_client = Client()
+        staff_client.force_login(admin)
+        response = staff_client.get(reverse("shop:order_success", args=[order.id]))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, order.order_number)
+
+    def test_unknown_order_id_returns_404(self):
+        response = self.client.get(reverse("shop:order_success", args=[999999]))
+        self.assertEqual(response.status_code, 404)
+
+    def test_another_customer_cannot_cancel_a_legacy_order(self):
+        guest_order = self._place_order(self.client, full_name="Guest Buyer")
+
+        owner = User.objects.create_user(username="legacy_owner3", password="password123")
+        assign_user_role(owner, Role.ROLE_CUSTOMER)
+        buyer = Client()
+        buyer.force_login(owner)
+        owned_order = self._place_order(buyer, full_name="Owner Buyer Three")
+
+        other = User.objects.create_user(username="legacy_other3", password="password123")
+        assign_user_role(other, Role.ROLE_CUSTOMER)
+        attacker = Client()
+        attacker.force_login(other)
+
+        for order in (guest_order, owned_order):
+            with self.subTest(order=order.order_number):
+                response = attacker.post(
+                    reverse("shop:api_order_cancel_pk", args=[order.id]),
+                    {},
+                    content_type="application/json",
+                )
+                self.assertEqual(response.status_code, 404)
+                order.refresh_from_db()
+                self.assertNotEqual(order.status, Order.STATUS_CANCELLED)
 
 
 class APITests(ShopTestCase):

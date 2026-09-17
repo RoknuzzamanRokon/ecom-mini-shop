@@ -6,6 +6,33 @@ from rbac.services import get_user_role_codes, has_user_permission
 from sellers.models import SellerProfile
 
 
+#: RBAC roles allowed to read any order, regardless of who placed it.
+ORDER_OVERRIDE_ROLES = frozenset(
+    {
+        Role.ROLE_SUPER_ADMINISTRATOR,
+        Role.ROLE_ADMINISTRATOR,
+        Role.ROLE_OPERATION_MANAGER,
+    }
+)
+
+
+def can_user_view_any_order(user) -> bool:
+    """
+    Returns True when the user may read orders that are not their own.
+
+    Single source of truth for the staff/admin override on order reads, shared by
+    the JSON order API and the legacy server-rendered order page so the two cannot
+    drift apart.
+    """
+    if not user or not user.is_authenticated:
+        return False
+
+    if user.is_superuser or user.is_staff:
+        return True
+
+    return bool(ORDER_OVERRIDE_ROLES & get_user_role_codes(user))
+
+
 class CanCreateProduct(BasePermission):
     """
     Enforces that the user holds the 'products.create' RBAC permission.
