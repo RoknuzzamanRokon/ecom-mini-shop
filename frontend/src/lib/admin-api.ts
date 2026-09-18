@@ -1443,3 +1443,221 @@ export function getInsufficientPointsInfo(err: unknown): AdminInsufficientPoints
     available_balance: data.available_balance,
   };
 }
+
+// ==============================================================================
+// STAFF ORDER OPERATIONS (Phase 1J)
+// ==============================================================================
+//
+// Backed entirely by the existing shop/urls.py "api/staff/orders/..." routes
+// (StaffOrderListAPIView / StaffOrderDetailAPIView / StaffOrderStatusAPIView),
+// mirroring StaffOrderListSerializer / StaffOrderDetailSerializer /
+// StaffOrderStatusUpdateSerializer in shop/serializers.py field-for-field. No
+// endpoint is invented and nothing here talks to Order/OrderItem directly —
+// every mutation still goes through OrderService.transition_order_status()
+// server-side.
+
+/** Mirrors StaffOrderListSerializer.get_customer / StaffOrderDetailSerializer.get_customer. */
+export interface AdminOrderCustomer {
+  id: number | null;
+  username: string;
+  email: string;
+  name: string;
+  phone: string;
+}
+
+/** Mirrors StaffOrderListSerializer exactly — the concise listing shape. */
+export interface AdminOrderListItem {
+  id: number;
+  order_number: string;
+  status: string;
+  customer: AdminOrderCustomer;
+  subtotal: string;
+  discount_total: string;
+  shipping_fee: string;
+  total_amount: string;
+  total_items_count: number;
+  /** Current payment's status, or null when the order has no payment record. */
+  payment_status: string | null;
+  payment_method: string | null;
+  shipping_city: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Mirrors StaffOrderItemSerializer exactly. */
+export interface AdminOrderItem {
+  id: number;
+  product_id: number | null;
+  product_name: string;
+  product_slug: string;
+  shop_id: number | null;
+  shop_name: string;
+  seller_id: number | null;
+  seller_name: string;
+  unit_price: string;
+  price: string;
+  quantity: number;
+  line_total: string;
+  subtotal: string;
+  created_at: string;
+}
+
+/** Mirrors StaffOrderDetailSerializer.get_shipping_address exactly. */
+export interface AdminOrderShippingAddress {
+  recipient_name: string;
+  phone: string;
+  address_line_1: string;
+  address_line_2: string;
+  area: string;
+  city: string;
+  state: string;
+  postal_code: string;
+  country: string;
+}
+
+/** Mirrors StaffOrderPaymentSummarySerializer exactly. */
+export interface AdminOrderPaymentSummary {
+  id: number;
+  payment_number: string;
+  payment_method: string;
+  status: string;
+  amount: string;
+  currency: string;
+  transaction_id: string;
+  provider: string;
+  failure_reason: string;
+  paid_at: string | null;
+  is_paid: boolean;
+  created_at: string;
+}
+
+/** Mirrors StaffOrderRefundSummarySerializer exactly. */
+export interface AdminOrderRefundSummary {
+  id: number;
+  refund_number: string;
+  amount: string;
+  currency: string;
+  status: string;
+  reason: string;
+  transaction_id: string;
+  /** username of the staff member who processed it, or null. */
+  processed_by: string | null;
+  created_at: string;
+}
+
+/** Mirrors StaffOrderDetailSerializer exactly — the full operational view. */
+export interface AdminOrderDetail {
+  id: number;
+  order_number: string;
+  status: string;
+  /**
+   * Order.VALID_TRANSITIONS[status], computed server-side. Authoritative for
+   * which status buttons the detail page may offer — prefer this over the
+   * client-side mirror in orderGovernance.tsx wherever both are available,
+   * since this reflects the exact instant the order was fetched.
+   */
+  allowed_transitions: string[];
+  customer: AdminOrderCustomer;
+  shipping_address: AdminOrderShippingAddress;
+  items: AdminOrderItem[];
+  subtotal: string;
+  discount_total: string;
+  shipping_fee: string;
+  total_amount: string;
+  total_items_count: number;
+  payment: AdminOrderPaymentSummary | null;
+  refunds: AdminOrderRefundSummary[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminOrderListParams {
+  page?: number;
+  page_size?: number;
+  /** Exact Order.STATUS_CHOICES value (PENDING/CONFIRMED/PROCESSING/SHIPPED/DELIVERED/CANCELLED). */
+  status?: string;
+  /** Exact Payment.STATUS_CHOICES value. */
+  payment_status?: string;
+  /** Matches order_number, case-insensitive (StaffOrderListAPIView). */
+  search?: string;
+  seller_id?: number;
+  shop_id?: number;
+  /** ISO yyyy-mm-dd, inclusive. */
+  start_date?: string;
+  /** ISO yyyy-mm-dd, inclusive. */
+  end_date?: string;
+}
+
+/**
+ * GET /api/staff/orders/
+ * Requires 'orders.staff.view' (CanViewStaffOrders; superuser / SUPER_ADMINISTRATOR bypass).
+ */
+export async function getAdminOrders(
+  token: string,
+  params?: AdminOrderListParams
+): Promise<PaginatedResponse<AdminOrderListItem>> {
+  const searchParams = new URLSearchParams();
+  if (params) {
+    if (params.page) searchParams.set("page", String(params.page));
+    if (params.page_size) searchParams.set("page_size", String(params.page_size));
+    if (params.status) searchParams.set("status", params.status);
+    if (params.payment_status) searchParams.set("payment_status", params.payment_status);
+    if (params.search) searchParams.set("search", params.search);
+    if (params.seller_id) searchParams.set("seller_id", String(params.seller_id));
+    if (params.shop_id) searchParams.set("shop_id", String(params.shop_id));
+    if (params.start_date) searchParams.set("start_date", params.start_date);
+    if (params.end_date) searchParams.set("end_date", params.end_date);
+  }
+  const queryString = searchParams.toString();
+  return adminRequest<PaginatedResponse<AdminOrderListItem>>(
+    `/api/staff/orders/${queryString ? `?${queryString}` : ""}`,
+    token
+  );
+}
+
+/**
+ * GET /api/staff/orders/<id>/
+ * Requires 'orders.staff.view'. StaffOrderDetailAPIView accepts either the
+ * numeric pk or the order_number as the lookup; the console always uses the
+ * numeric id, matching every other module's `[id]` route convention.
+ */
+export async function getAdminOrderDetail(
+  token: string,
+  id: number | string
+): Promise<AdminOrderDetail> {
+  return adminRequest<AdminOrderDetail>(`/api/staff/orders/${id}/`, token);
+}
+
+/** Exactly the `status` choices StaffOrderStatusUpdateSerializer accepts — never PENDING, which is create-only. */
+export type AdminOrderStatusValue =
+  | "CONFIRMED"
+  | "PROCESSING"
+  | "SHIPPED"
+  | "DELIVERED"
+  | "CANCELLED";
+
+export interface AdminOrderStatusPayload {
+  status: AdminOrderStatusValue;
+  /** Optional operational note; StaffOrderStatusUpdateSerializer also accepts an equivalent 'reason' alias, unused here. */
+  note?: string;
+}
+
+/**
+ * POST /api/staff/orders/<id>/status/
+ * Requires 'orders.staff.update' (CanUpdateStaffOrders). The backend validates
+ * the transition against Order.VALID_TRANSITIONS via order.can_transition_to()
+ * independently of anything the client believes is allowed, and executes it
+ * through OrderService.transition_order_status() (atomic inventory
+ * release/finalization + payment refund/cancellation where applicable).
+ * Returns the full StaffOrderDetailSerializer representation of the updated order.
+ */
+export async function updateAdminOrderStatus(
+  token: string,
+  id: number | string,
+  payload: AdminOrderStatusPayload
+): Promise<AdminOrderDetail> {
+  return adminRequest<AdminOrderDetail>(`/api/staff/orders/${id}/status/`, token, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
