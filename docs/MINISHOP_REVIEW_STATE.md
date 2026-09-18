@@ -39,20 +39,22 @@ See [Future Review Procedure](#future-review-procedure) at the end.
 | Item | Value |
 |---|---|
 | Backend | Django 5.2 + Django REST Framework |
-| Database | **MySQL 8 required** — `config/settings.py:102-110` raises `RuntimeError` unless `DATABASE_URL` is a `mysql://` URL |
-| Auth | `rest_framework_simplejwt` (access 60 min, refresh 7 days, rotation on, **no blacklist**) — `settings.py:192-198` |
+| Database | **MySQL 8 required** — `config/settings/base.py:106-121` (`database_config_from_url`) raises `RuntimeError` unless the URL is a `mysql://` one, and `:142-143` raises unless `DATABASE_URL` is set at all |
+| Auth | `rest_framework_simplejwt` (access 60 min, refresh 7 days, rotation on, **no blacklist**) — `config/settings/base.py:210-216` |
 | Frontend | Next.js 16 (Turbopack) + React 19 + TypeScript + Tailwind v4 |
 | Ports | Django `8001`, Next.js `3000` |
 | Python venv | **`backend/venv/`** — use this one. The repo-root `.venv/` exists but lacks `reportlab`, so `manage.py` fails there. |
 | Currency | `৳` (Bangladeshi Taka) everywhere in UI — never `$`/`USD`/`BDT` |
-| DRF defaults | JWT + Session auth; `PageNumberPagination`, `PAGE_SIZE = 12` (`settings.py:182-189`) |
+| DRF defaults | JWT + Session auth; `PageNumberPagination`, `PAGE_SIZE = 12` (`config/settings/base.py:200-207`) |
 
 **Commands**
 
 ```bash
 # backend (from backend/)
 venv/Scripts/python.exe manage.py check
-venv/Scripts/python.exe manage.py test --noinput --keepdb      # --noinput matters: a stale test DB otherwise blocks on a prompt
+venv/Scripts/python.exe manage.py test --settings=config.settings.test --parallel --keepdb --noinput
+#   --settings=config.settings.test is what makes the suite fast (see §15)
+#   --noinput matters: a stale test DB otherwise blocks on a prompt
 venv/Scripts/python.exe manage.py seed_rbac
 
 # frontend (from frontend/)
@@ -404,7 +406,7 @@ Guards: `SellerGuard` (fetches `/api/sellers/dashboard/`, renders "Seller Accoun
 - ~~The Django-admin order actions call `OrderService.transition_order_status()` with no permission of their own (#15)~~ — **fixed 2026-09-17**; they now declare `allowed_permissions = ("change",)`.
 - ~~The equivalent Django-admin **seller and shop** lifecycle actions declare no `allowed_permissions` (#16)~~ — **fixed 2026-09-18**; all eight now declare it, and the shared `ReasonRequiredActionMixin` re-checks `has_change_permission()`. With #15 and #16 done, **all three** ModelAdmins that declare custom actions are guarded — the class is closed project-wide.
 - API-driven seller lifecycle transitions are not audited (#6).
-- Dev-posture settings: `DEBUG = True`, a hardcoded `SECRET_KEY` committed in `settings.py`, and a 4-character minimum password. Must change before any production deployment.
+- Dev-posture settings: `DEBUG = True` (`config/settings/dev.py`), a hardcoded `SECRET_KEY` committed in `config/settings/base.py`, and a 4-character minimum password. Must change before any production deployment.
 - Access tokens cannot be revoked (no blacklist); "logout" is client-side only.
 - JWTs are stored in `localStorage`, so they are reachable by XSS.
 
@@ -484,10 +486,67 @@ Full suite and `tsc`/`npm run build` not re-run — no frontend files changed, a
 
 Full ~500-test suite not re-run — the change touches exactly two one-line edits (`sellers/admin.py`, `shops/admin.py`) plus new tests in an already-comprehensively-covered area; the 152-test regression pass above covers every module that registers, tests, or exercises either changed `ModelAdmin`. `tsc`/`npm run build` not run — no frontend files touched.
 
+**Re-run 2026-09-18 (Phase 2A — settings split + fast test suite)** — full suite, both before and after:
+
+| Check | Result |
+|---|---|
+| `manage.py check` (default `config.settings.dev`) | **Pass** — "System check identified no issues (0 silenced)" |
+| `manage.py check --settings=config.settings.test` | **Pass** — same |
+| `manage.py makemigrations --check --dry-run` | **Pass** — "No changes detected" |
+| **Full suite BEFORE** (serial, old settings — the ~92 min baseline at the top of this section) | `Ran 462 tests in 5509s` (**91.8 min**, 11.9 s/test) — `FAILED (failures=1)` |
+| **Full suite AFTER** — `--settings=config.settings.test --parallel --keepdb --noinput` | **`Ran 512 tests in 785.179s`** (**13.1 min**, 1.53 s/test) — `FAILED (failures=1)`, the single failure being the pre-existing #14. 511 pass. |
+| **Final verification re-run**, same command | **`Ran 512 tests in 808.436s`** (**13.5 min**) — `FAILED (failures=1)`, same single #14. Run-to-run spread of ~3% comes from network latency to the remote database, which varied between 54 and 167 ms per query across the session. |
+| Same, `--parallel 32` | **`Ran 512 tests in 610.369s`** (**10.2 min**) — `FAILED (failures=1)`, same one |
+| Same, `--parallel 8` | `Ran 512 tests in 1157.943s` (19.3 min) — `FAILED (failures=1)`, same one |
+| Control subset (29 tests: `rbac.test_registration cart shop.test_admin_metrics`), serial, **old** settings | `Ran 29 tests in 174.410s` — `OK` |
+| Same subset, serial, **test** settings | `Ran 29 tests in 150.691s` — `OK` (−13.6%: the hasher change alone) |
+| `npx tsc --noEmit` | **Pass** — exit 0 |
+| `npm run build` | **Pass** — exit 0 |
+
+**Same pass/fail set before and after, confirmed**: exactly one failure in every full run, always
+`shop.test_admin_site.AdminRegistrySmokeTests.test_dashboard_renders_taka_not_dollar` (Known Issue #14). No test
+changed status in either direction, and no test became flaky under parallel execution across three full runs at
+8/16/32 workers.
+
+**Where the time actually goes — measured, and not what the roadmap assumed.** The Phase 2A plan attributed most
+of the 92 minutes to PBKDF2. It is a real cost (~0.95 s per hash at Django 5.2's 1.2M-iteration default, times 178
+`create_user`/`create_superuser` call sites) but it is **not** the main one:
+
+- **CPU utilisation during a test run is 5%** (`cart`, 17 tests: `WALL=91.3 USER=4.16 SYS=0.43 CPU=5%`). The suite
+  spends ~95% of its wall clock blocked on the network, not computing.
+- A trivial `SELECT 1` against the configured database costs **54–167 ms round-trip**, because `backend/.env` points
+  at a **remote** MySQL (`51.79.176.212`, ~83 ms ping RTT). That per-query latency, multiplied by the number of
+  queries a test issues, is the dominant term.
+- Removing the hashing cost alone bought 13.6% on a serial control subset. Everything else came from parallelism.
+
+**The suite has a hard floor of ~9.2 minutes on this remote database, measured directly.** Django's parallel
+runner partitions work by `TestCase` **class** (`partition_suite_by_case`), so no single class can ever be split
+across workers — the longest class is a floor no worker count beats. Two modules were timed on their own, each
+run with `--parallel` so their own classes were spread across 16 workers:
+
+| Module (run alone, `--parallel --keepdb`) | Result |
+|---|---|
+| `shop.tests` (33 tests, 7 classes) | `Ran 33 tests in 551.270s` — **9.2 min** — `OK` |
+| `sellers` (17 tests, 2 classes) | `Ran 17 tests in 546.190s` — **9.1 min** — `OK` |
+| `shop.test_seller_product` (23 tests) | `Ran 23 tests in 93.835s` — 1.6 min — `OK` |
+
+Because those modules' classes already ran concurrently, ~550 s is the cost of a **single** `TestCase` class, i.e.
+individual tests in them cost ~60 s each — hundreds of database round-trips apiece. That, not the worker count,
+is what sets the floor. It is consistent with the whole-suite scaling actually observed (8 → 1158 s, 16 → 785 s,
+32 → 610 s): the 32-worker run at 610 s is already within ~1 min of the floor, so **no worker count reaches the
+10-minute target on this remote database.** Closing the gap means either a local MySQL (see below) or making
+those individual test classes issue fewer queries — a test change, explicitly out of scope for this phase.
+
 **Environment notes for whoever runs these next**
+- **Use the test settings.** `--settings=config.settings.test` is what makes the suite fast; without it you are back to ~92 minutes. Full command:
+  `manage.py test --settings=config.settings.test --parallel --keepdb --noinput`.
 - Always pass `--noinput`; a stale `test_minishop` database otherwise blocks on an interactive prompt and an unattended run hangs forever.
-- `--keepdb` saves several minutes of migration replay.
-- The suite is **very slow** on this MySQL setup (~4 tests/minute observed). Budget an hour for a full run, or target specific modules.
+- `--keepdb` saves several minutes of migration replay — and, under `--parallel`, saves re-cloning one test database per worker.
+- **`tblib` must be installed** (it is now in `requirements.txt`). Django ships worker failures back to the parent process by pickling them, and tracebacks are not picklable without it. Because #14 always fails, a `--parallel` run **without** `tblib` does not merely lose the traceback — it aborts the entire run with `TypeError: cannot pickle 'traceback' object` and reports nothing.
+- **The first `--parallel` run is slow and later ones are not.** Django clones the test database once per worker via `mysqldump | mysql`; against this remote server that measured ~55 s per clone (~15 min for 16 workers), paid once. `--keepdb` reuses the clones forever after. Budget for it, and do not mistake it for the suite being slow.
+- The suite is now ~1.5 s/test (was ~11.9 s/test). Budget ~13 min for a full run at the default worker count, not an hour.
+- **The biggest remaining lever is a local MySQL.** The suite is round-trip-bound against the remote `DATABASE_URL`; `TEST_DATABASE_URL` overrides the database for test runs only (still MySQL — SQLite would silently no-op `select_for_update()`). It was not usable on this machine: the local MariaDB grants the `rokon` account privileges on two unrelated schemas only and cannot `CREATE DATABASE`, which Django requires to build a test database.
+- Worker count: the test settings default `DJANGO_TEST_PROCESSES` to 4x the core count (16 here) because the suite is I/O-bound rather than CPU-bound. `--parallel 32` reaches 10.2 min at the cost of 32 cloned databases. On a *local* database the workload becomes CPU-bound and a lower count is better.
 - Use `backend/venv/`, not the repo-root `.venv/` (missing `reportlab`).
 
 ---
@@ -585,7 +644,8 @@ Reconstructed from source, tests and git history. Backend work was tracked as **
 
 ## 20. Current Project State
 
-**Last completed change:** `/admin/payments` Management Console module (Phase 1K) — Next.js Payments list + detail with permission-gated verify (mark paid/failed) and refund (full or partial) actions, built entirely on the existing `/api/staff/payments/` API. Zero backend changes. A feature, not a fix.
+**Last completed change:** **Phase 2A — settings split + fast test suite** (infrastructure, no application behaviour change). `config/settings.py` became `config/settings/{base,dev,test}`; the full suite went from ~92 min to 13.1 min at the default worker count (10.2 min at `--parallel 32`), same pass/fail set. `tblib` added — without it `--parallel` aborted outright on the known #14 failure. See §15 and §21.
+**Preceding change:** `/admin/payments` Management Console module (Phase 1K) — Next.js Payments list + detail with permission-gated verify (mark paid/failed) and refund (full or partial) actions, built entirely on the existing `/api/staff/payments/` API. Zero backend changes. A feature, not a fix.
 **Preceding change:** Post-Orders architecture & security audit (2026-09-18, no code changes beyond this file) — re-verified the Orders console against live source, re-confirmed all four prior security fixes and RBAC/seller/shop rules are unchanged (zero backend diff since `ce7cf2a`), re-checked every open Known Issue, found one new low-severity issue (#17), and set **Payments** as the next task on stronger evidence than before.
 **Preceding change:** `/admin/orders` Management Console module (Phase 1J) — Next.js Orders list + detail with permission-gated status-transition actions, built entirely on the existing `/api/staff/orders/` API. Zero backend changes. A feature, not a fix.
 **Preceding change:** Post-security-fix architecture & roadmap audit (no code changes beyond this file).
@@ -609,6 +669,23 @@ Reconstructed from source, tests and git history. Backend work was tracked as **
 ---
 
 ## 21. Review History
+
+### 2026-09-18 — Phase 2A: split settings, make the test suite fast (infrastructure)
+
+- **Scope**: Phase 2A of `docs/FUTURE_PLAN.md`, and nothing else — split `backend/config/settings.py` into `base`/`dev`/`test` and make the test settings cheap to run. Settings and test configuration only: no application behaviour change, no move to SQLite, no production hardening (that is Phase 2N), no edits to any test's content, no later phase started.
+- **Read before changing anything**: `task/Master_Prompt.md`, this file (§1, §15, §16, §18, §20), `docs/FUTURE_PLAN.md` Phase 2A, and the live `config/settings.py`, `manage.py`, `config/wsgi.py`, `config/asgi.py`, `backend/.env`, `backend/requirements.txt`, plus Django 5.2's own `test/runner.py` and `db/backends/mysql/creation.py` (to establish how `--parallel` resolves its worker count and how it clones test databases, rather than assuming).
+- **Roadmap evidence re-verified against source, not trusted**: 512 test methods across 25 modules — matches. 21 migrations — matches. No `PASSWORD_HASHERS` override anywhere — matches. `create_user`/`create_superuser` call sites: **178 in test modules** (the roadmap said 176; there are 5 more in application code, which is where the discrepancy comes from). Git baseline confirmed: HEAD `fe347ef`, working tree clean apart from the untracked `docs/FUTURE_PLAN.md`.
+- **The split**: `config/settings.py` (201 lines) became `config/settings/` — `base.py` (everything shared), `dev.py` (`DEBUG = True` + `ALLOWED_HOSTS`, i.e. the historical behaviour), `test.py`, `hashers.py`, and an intentionally empty `__init__.py` (it is imported before whichever environment module is selected, so anything defined there would leak into all of them). `BASE_DIR` had to absorb the extra directory level (`parent.parent` → `parent.parent.parent`). The MySQL URL parsing became a shared `database_config_from_url()` function so `dev` and `test` cannot drift apart in how they read a URL. `manage.py`, `wsgi.py` and `asgi.py` now default to `config.settings.dev`.
+- **Equivalence proven mechanically, not by eye.** A throwaway script imported the pre-split module (restored from git at a path preserving its `BASE_DIR`) alongside `config.settings.dev` and diffed every upper-case attribute. Result: **zero missing, zero added, zero changed** — `dev` is value-for-value identical to the old `config/settings.py`, `BASE_DIR` included. Against `test` the only differences are the three intended ones: `DEBUG` (`True` → `False`, which Django's runner forces anyway), plus the added `PASSWORD_HASHERS` and the worker-count default.
+- **Why a low-iteration PBKDF2 subclass and not the usual `MD5PasswordHasher` swap.** `shop/test_staff_orders.py:363` guards against credential-hash leakage with `assertNotIn("pbkdf2", raw_json.lower())` (and `assertNotIn("argon2", ...)`). Under an MD5 hasher a leaked hash would start `md5$`, so that assertion would pass **whether or not a hash leaked** — the speed-up would have silently blinded an existing security test. `config/settings/hashers.py::FastPBKDF2PasswordHasher` subclasses `PBKDF2PasswordHasher` with `iterations = 1` instead: same algorithm, same `pbkdf2_sha256$` prefix, assertion still meaningful, same speed benefit. Also a useful side effect — because the algorithm name is unchanged, hashes written at the default work factor still verify correctly.
+- **`--parallel` was entirely non-functional on this suite before this phase, and that is now fixed.** Django transports worker-process failures back to the parent by pickling them, and tracebacks are not picklable without `tblib`. Since Known Issue #14 fails on every run, the first `--parallel` attempt did not merely lose a traceback — it **aborted the whole run** with `TypeError: cannot pickle 'traceback' object` after ~70 s of testing, reporting no results at all. `tblib>=3.0` is now in `requirements.txt` and installed in `backend/venv/`. Without it the phase's own target command cannot work, so this is a required part of the change, not an optional extra.
+- **Measured, with the roadmap's premise partly corrected.** Phase 2A assumed PBKDF2 was most of the 92 minutes. It is real but secondary: on a 29-test serial control subset the hasher change alone moved 174.4 s → 150.7 s (**−13.6%**). The dominant cost is database round-trip latency — CPU utilisation during a test run is **5%**, and a trivial `SELECT 1` against the configured remote MySQL costs 54–167 ms. See §15 for the full table and the floor analysis.
+- **Result: `Ran 512 tests in 785.179s` (13.1 min) at the default worker count, down from `Ran 462 tests in 5509s` (91.8 min) — a 7.0x improvement, and 7.8x per test (11.9 s/test → 1.53 s/test).** The final verification re-run of the same command gave `Ran 512 tests in 808.436s` (13.5 min); the ~3% spread is network latency to the remote database. `--parallel 32` reaches **610.4 s (10.2 min)**. **The phase's stated "under 10 minutes" target was NOT met on this machine** — see the next bullet.
+- **Why <10 min is not reachable here, stated plainly.** Django's parallel runner partitions by `TestCase` **class**, so the longest single class is an unsplittable floor. Measured directly by timing two modules on their own, each with `--parallel` so their own classes were already spread across workers: `shop.tests` 551.3 s and `sellers` 546.2 s — single-class costs, ~60 s per individual test. **The floor is therefore ~9.2 min**, and the 32-worker whole-suite run (610.4 s) is already within a minute of it. Three full runs (8 workers → 1157.9 s, 16 → 785.2 s, 32 → 610.4 s) show the same picture from the other direction. No worker count clears 10 minutes. The real lever is the database's location, not the settings — `backend/.env` points at a remote MySQL and the suite is round-trip-bound. `config.settings.test` therefore supports `TEST_DATABASE_URL` to point test runs at a different (still MySQL) server. It could not be exercised here: the local MariaDB grants the `rokon` account privileges on two unrelated schemas only, with no `CREATE DATABASE`, which Django requires. **Recommended follow-up: grant that privilege locally, or give CI a local MySQL service in Phase 2B — either should clear the target with room to spare.**
+- **Same pass/fail set, confirmed across three full runs.** Every full run reported exactly one failure, always `shop.test_admin_site.AdminRegistrySmokeTests.test_dashboard_renders_taka_not_dollar` (#14, which Phase 2B fixes). 511 tests pass. No test changed status in either direction; none became flaky under parallel execution at 8, 16 or 32 workers. `manage.py check` clean under both settings modules, `makemigrations --check` reports no changes, `npx tsc --noEmit` and `npm run build` both exit 0.
+- **Files changed**: `backend/config/settings.py` **deleted**, replaced by `backend/config/settings/{__init__,base,dev,test,hashers}.py`; `backend/manage.py`, `backend/config/wsgi.py`, `backend/config/asgi.py` (settings module default); `backend/requirements.txt` (`tblib`); `backend/README.md` (Settings + Running Tests sections); `docs/FUTURE_PLAN.md` (Phase 2A marked done); this file (§1, §15, §20, this entry).
+- **Not touched**: every application module — no model, migration, view, serializer, permission, service, admin class or template changed, and no test's content changed. `SECRET_KEY`, `DEBUG = True` for development, `ALLOWED_HOSTS`, CORS origins and the 4-character password minimum were all carried over **unchanged** into the split; hardening them is Phase 2N and was deliberately left alone. Known Issue #14 was left failing (Phase 2B). No later phase was started.
+
 
 ### 2026-09-18 — Task #8: lock down direct seller/shop status editing (fix, Known Issue #22)
 

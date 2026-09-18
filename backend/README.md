@@ -59,11 +59,57 @@ Then open:
 - **Storefront:** http://127.0.0.1:8000/
 - **Admin panel:** http://127.0.0.1:8000/admin/
 
+## Settings
+
+`config/settings/` holds three modules. Select one with `--settings=` or
+`DJANGO_SETTINGS_MODULE`.
+
+| Module | Selected by | Notes |
+| --- | --- | --- |
+| `config.settings.base` | neither, directly | Shared configuration only. |
+| `config.settings.dev` | `manage.py`, `wsgi.py`, `asgi.py` (default) | `DEBUG = True`. Value-for-value identical to the pre-split `config/settings.py`. |
+| `config.settings.test` | the test suite | Same application behaviour as `dev`; only the cost of running it differs. |
+
 ## Running Tests
 
 ```bash
-python manage.py test shop
+python manage.py test --settings=config.settings.test --parallel --keepdb --noinput
 ```
+
+- `--settings=config.settings.test` — low-iteration password hashing, and a
+  default worker count for a bare `--parallel`. Without it the suite still
+  passes, just far more slowly.
+- `--keepdb` — reuses the test database instead of replaying 21 migrations.
+- `--noinput` — required for unattended runs: a stale `test_minishop` database
+  otherwise blocks on an interactive prompt and the run hangs forever.
+- `--parallel` — one worker per `DJANGO_TEST_PROCESSES`, which the test settings
+  default to 4x the core count because the suite is database-round-trip-bound
+  rather than CPU-bound. Pass `--parallel N` to override. **Requires `tblib`**
+  (in `requirements.txt`): Django returns worker-process failures to the parent
+  by pickling them, and tracebacks cannot be pickled without it — so a parallel
+  run without `tblib` aborts with `TypeError: cannot pickle 'traceback' object`
+  the moment any test fails, rather than reporting the failure.
+
+Single app or module, same flags:
+
+```bash
+python manage.py test shop --settings=config.settings.test --keepdb --noinput
+```
+
+### Pointing the suite at a different MySQL
+
+The suite's wall clock is dominated by database round-trip time, so it runs
+dramatically faster against a local MySQL than a remote one. `TEST_DATABASE_URL`
+overrides `DATABASE_URL` for test runs only:
+
+```bash
+TEST_DATABASE_URL=mysql://user:pass@127.0.0.1:3306/minishop \
+    python manage.py test --settings=config.settings.test --parallel --keepdb --noinput
+```
+
+It must be MySQL. The suite's concurrency tests rely on real
+`SELECT ... FOR UPDATE` row locking, which SQLite accepts and silently ignores —
+they would report green there while testing nothing.
 
 ## Project Structure
 
