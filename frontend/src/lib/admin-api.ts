@@ -1661,3 +1661,169 @@ export async function updateAdminOrderStatus(
     body: JSON.stringify(payload),
   });
 }
+
+// ==============================================================================
+// STAFF PAYMENT OPERATIONS (Phase 1K)
+// ==============================================================================
+//
+// Backed entirely by the existing shop/urls.py "api/staff/payments/..." routes
+// (StaffPaymentListAPIView / StaffPaymentDetailAPIView / StaffPaymentVerifyAPIView
+// / StaffPaymentRefundAPIView), mirroring PaymentSerializer / RefundSerializer /
+// PaymentVerifySerializer / RefundCreateSerializer in shop/serializers.py
+// field-for-field. No endpoint is invented; every mutation still goes through
+// PaymentService (process_payment_success / process_payment_failure /
+// process_refund) server-side, which remains the sole authority on payment
+// state transitions and refund eligibility/amount validation.
+
+/** Mirrors RefundSerializer exactly. */
+export interface AdminRefund {
+  id: number;
+  refund_number: string;
+  order_id: number;
+  order_number: string;
+  payment_id: number;
+  payment_number: string;
+  amount: string;
+  currency: string;
+  reason: string;
+  /** Refund.STATUS_CHOICES: PENDING | COMPLETED | FAILED. */
+  status: string;
+  processed_by_name: string;
+  transaction_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * Mirrors PaymentSerializer exactly — used for BOTH the list and detail staff
+ * endpoints (unlike Orders, there is no separate concise/detail pair). Notably
+ * carries no customer name/email/phone: the serializer only exposes
+ * `order_id`/`order_number`, so the console cannot show customer identity on
+ * a payment without a second request to the Orders API.
+ */
+export interface AdminPayment {
+  id: number;
+  payment_number: string;
+  order_id: number;
+  order_number: string;
+  /** Payment.METHOD_CHOICES: CASH_ON_DELIVERY | BKASH | NAGAD | ROCKET | CARD | ONLINE. */
+  payment_method: string;
+  /** Payment.STATUS_CHOICES: PENDING | PROCESSING | PAID | FAILED | CANCELLED | REFUNDED | PARTIALLY_REFUNDED. */
+  status: string;
+  amount: string;
+  currency: string;
+  transaction_id: string;
+  provider: string;
+  failure_reason: string;
+  /** Non-sensitive transaction metadata (model field docstring); never a card number, CVV, or gateway secret. */
+  metadata: Record<string, unknown>;
+  is_paid: boolean;
+  /** Server-computed: amount minus completed refunds, floored at 0. Authoritative — never recomputed client-side. */
+  refundable_amount: string;
+  refunds: AdminRefund[];
+  paid_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminPaymentListParams {
+  page?: number;
+  page_size?: number;
+  /** Exact Payment.STATUS_CHOICES value. */
+  status?: string;
+  /** Exact Payment.METHOD_CHOICES value. */
+  payment_method?: string;
+  /** Matches order_number, case-insensitive (StaffPaymentListAPIView) — the only search the backend supports. */
+  order_number?: string;
+}
+
+/**
+ * GET /api/staff/payments/
+ * Requires 'payments.view' (CanViewPayment; superuser / SUPER_ADMINISTRATOR bypass).
+ */
+export async function getAdminPayments(
+  token: string,
+  params?: AdminPaymentListParams
+): Promise<PaginatedResponse<AdminPayment>> {
+  const searchParams = new URLSearchParams();
+  if (params) {
+    if (params.page) searchParams.set("page", String(params.page));
+    if (params.page_size) searchParams.set("page_size", String(params.page_size));
+    if (params.status) searchParams.set("status", params.status);
+    if (params.payment_method) searchParams.set("payment_method", params.payment_method);
+    if (params.order_number) searchParams.set("order_number", params.order_number);
+  }
+  const queryString = searchParams.toString();
+  return adminRequest<PaginatedResponse<AdminPayment>>(
+    `/api/staff/payments/${queryString ? `?${queryString}` : ""}`,
+    token
+  );
+}
+
+/**
+ * GET /api/staff/payments/<id>/
+ * Requires 'payments.view'.
+ */
+export async function getAdminPaymentDetail(token: string, id: number | string): Promise<AdminPayment> {
+  return adminRequest<AdminPayment>(`/api/staff/payments/${id}/`, token);
+}
+
+/** Exactly the `status` choices PaymentVerifySerializer accepts — never PENDING/PROCESSING/CANCELLED, which this endpoint cannot set. */
+export type AdminPaymentVerifyStatus = "PAID" | "FAILED";
+
+export interface AdminPaymentVerifyPayload {
+  status: AdminPaymentVerifyStatus;
+  /** Only meaningful (and only stored) when status is PAID — PaymentService.process_payment_success writes it, process_payment_failure does not read it. */
+  transaction_id?: string;
+  /** Only meaningful when status is FAILED — becomes Payment.failure_reason. */
+  reason?: string;
+}
+
+/**
+ * POST /api/staff/payments/<id>/verify/
+ * Requires 'payments.verify' or 'payments.process' (CanVerifyPayment). The
+ * backend independently validates the transition via
+ * payment.can_transition_to() and rejects verifying a payment on a cancelled
+ * order — nothing here decides eligibility. Returns the full updated payment
+ * (PaymentSerializer), so callers can replace their local copy wholesale
+ * rather than merging individual fields.
+ */
+export async function verifyAdminPayment(
+  token: string,
+  id: number | string,
+  payload: AdminPaymentVerifyPayload
+): Promise<AdminPayment> {
+  return adminRequest<AdminPayment>(`/api/staff/payments/${id}/verify/`, token, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export interface AdminRefundCreatePayload {
+  /** Omit for a full refund of the remaining refundable amount — RefundCreateSerializer / PaymentService.process_refund default to that when absent. */
+  amount?: number;
+  reason?: string;
+}
+
+/**
+ * POST /api/staff/payments/<id>/refund/
+ * Requires 'payments.refund' or 'orders.refund' (CanRefundPayment).
+ * PaymentService.process_refund is the sole authority on refund eligibility
+ * (payment must be PAID or PARTIALLY_REFUNDED) and amount validation (> 0,
+ * <= the server-computed remaining refundable amount) — this call never
+ * pre-validates either. Returns only the created Refund (201), NOT the
+ * updated Payment — callers must re-fetch the payment (getAdminPaymentDetail)
+ * to observe its new status/refundable_amount, exactly as the rest of this
+ * module already does wherever a mutation's response is a different resource
+ * than the one displayed.
+ */
+export async function refundAdminPayment(
+  token: string,
+  id: number | string,
+  payload: AdminRefundCreatePayload
+): Promise<AdminRefund> {
+  return adminRequest<AdminRefund>(`/api/staff/payments/${id}/refund/`, token, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
