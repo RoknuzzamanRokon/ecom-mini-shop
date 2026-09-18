@@ -1,6 +1,6 @@
 # MiniShop — Future Plan
 
-**Created:** 2026-09-18 · **Baseline commit:** `fe347ef` · **Status:** Phase 2A done (2026-09-18); everything after it still proposed
+**Created:** 2026-09-18 · **Baseline commit:** `fe347ef` · **Status:** Phases 2A and 2B done (2026-09-18/19); everything after them still proposed
 
 This is a **roadmap**, not a spec. Each phase below is sized to become one spec
 and one commit, written in the same format as `task/task*.md`.
@@ -112,6 +112,28 @@ and add the repository's first CI workflow.
 
 **Done when.** CI runs backend tests + `tsc --noEmit` + `next build` on push, and
 the backend job is green with zero failures.
+
+**Status: DONE 2026-09-19.**
+
+- **#14 fixed on the template side, with no test modified.** `templates/admin/index.html:80`
+  now emits the literal `৳` instead of `&#2547;` — the direction AGENTS.md commandment 1
+  asks for, and the one that lets the assertion pass exactly as written. **The open question
+  above is answered: the second assertion passes.** The rendered dashboard contains zero `$`
+  characters (checked against the full body, then confirmed by running the test).
+- **Suite is green: `Ran 512 tests in 923.766s … OK` — 512 passed, 0 failed, 0 errors.**
+  First fully green full-suite run on record. No other test changed status, so no new Known
+  Issue was raised.
+- **`npm run typecheck`** (`tsc --noEmit`) added to `frontend/package.json`; exit 0.
+  `npm run build` exit 0, 42/42 static pages.
+- **`.github/workflows/ci.yml`** — backend job against a **MySQL 8 service container**
+  (not SQLite: `select_for_update()` must stay real), which installs `requirements.txt`,
+  asserts `tblib` imports, runs both `manage.py check` variants plus `makemigrations
+  --check`, then the suite with `--parallel 4 --noinput`; frontend job runs `npm ci`,
+  `npm run typecheck`, `npm run build` on Node 20. Verification only — no deploy, Docker,
+  publish or release step.
+- **Caveat, stated plainly: the workflow has never been executed.** GitHub Actions cannot
+  run in this environment. It was validated by parsing the YAML and by confirming every
+  command it invokes is green locally. Its first real run will be on the next push.
 
 ---
 

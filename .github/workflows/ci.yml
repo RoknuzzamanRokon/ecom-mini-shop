@@ -1,0 +1,121 @@
+name: CI
+
+# Build-and-test only. No deploy, no publish, no release, no container push.
+on:
+  push:
+  pull_request:
+
+jobs:
+  backend:
+    name: Backend tests (MySQL 8)
+    runs-on: ubuntu-latest
+
+    services:
+      # MySQL, deliberately — not SQLite. The suite's inventory and order tests
+      # rely on real `SELECT ... FOR UPDATE` row locking, which SQLite accepts
+      # and silently ignores; running them there would report green while
+      # testing nothing. 8.0 matches the development server (8.0.46).
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: minishop
+          MYSQL_DATABASE: minishop
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+          --health-start-period=30s
+
+    env:
+      # config/settings/base.py refuses to start without this and rejects any
+      # non-MySQL scheme. backend/.env is gitignored, so CI supplies it here.
+      DATABASE_URL: mysql://root:minishop@127.0.0.1:3306/minishop
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install MySQL client and build headers
+        # mysql-client provides `mysqldump` and `mysql`, which Django shells out
+        # to when --parallel clones the test database once per worker.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            mysql-client libmysqlclient-dev pkg-config
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Confirm tblib is available
+        # Django returns test failures from parallel workers to the parent by
+        # pickling them, and tracebacks are not picklable without tblib. Without
+        # it a --parallel run does not merely lose a traceback: it aborts with
+        # "TypeError: cannot pickle 'traceback' object" the moment any test
+        # fails, reporting nothing. It ships in requirements.txt; this step
+        # fails loudly if that ever stops being true.
+        run: python -c "import tblib; print('tblib', tblib.__version__)"
+
+      - name: Wait for MySQL to accept connections
+        run: |
+          for i in $(seq 1 30); do
+            if mysqladmin ping -h 127.0.0.1 -P 3306 -uroot -pminishop --silent; then
+              echo "MySQL is accepting connections"
+              exit 0
+            fi
+            echo "waiting for MySQL ($i/30)"
+            sleep 2
+          done
+          echo "MySQL did not become ready in time"
+          exit 1
+
+      - name: Django system checks
+        working-directory: backend
+        run: |
+          python manage.py check
+          python manage.py check --settings=config.settings.test
+          python manage.py makemigrations --check --dry-run
+
+      - name: Backend test suite
+        working-directory: backend
+        # --parallel 4, not a bare --parallel: config.settings.test defaults to
+        # 4x the core count, which suits the high-latency remote database used
+        # in development. Against this job's local MySQL the suite is CPU-bound
+        # instead, so one worker per core is the right number.
+        # No --keepdb: the service container starts empty on every run.
+        run: python manage.py test --settings=config.settings.test --parallel 4 --noinput
+
+  frontend:
+    name: Frontend typecheck and build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: frontend
+        run: npm run typecheck
+
+      - name: Build
+        working-directory: frontend
+        run: npm run build

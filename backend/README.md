@@ -96,6 +96,17 @@ Single app or module, same flags:
 python manage.py test shop --settings=config.settings.test --keepdb --noinput
 ```
 
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every push and pull request: the backend suite
+against a MySQL 8 service container, then `npm run typecheck` and `npm run build`
+for the frontend. It is verification only — no deploy, publish or release step.
+
+CI supplies `DATABASE_URL` as an environment variable (there is no `.env` in a
+fresh checkout) and runs the suite with `--parallel 4` rather than the settings
+default, because against a local database the suite is CPU-bound rather than
+round-trip-bound.
+
 ### Pointing the suite at a different MySQL
 
 The suite's wall clock is dominated by database round-trip time, so it runs
