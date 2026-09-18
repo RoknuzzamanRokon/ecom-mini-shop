@@ -1,8 +1,12 @@
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from audit.services import AuditService
+from audit.utils import get_client_ip
 
 from .models import SellerProfile
 from .permissions import (
@@ -146,8 +150,19 @@ class SellerApproveView(APIView):
     permission_classes = [CanApproveSeller]
 
     def post(self, request, pk):
-        seller = get_object_or_404(SellerProfile, pk=pk)
-        approve_seller(seller, request.user)
+        with transaction.atomic():
+            seller = get_object_or_404(SellerProfile, pk=pk)
+            previous_state = {"status": seller.status}
+            approve_seller(seller, request.user)
+            AuditService.log(
+                action="ADMIN_SELLER_APPROVE",
+                target=seller,
+                actor=request.user,
+                seller=seller,
+                previous_state=previous_state,
+                new_state={"status": seller.status},
+                ip_address=get_client_ip(request),
+            )
         return Response(
             {"message": f"Seller '{seller.business_name}' approved successfully.", "seller": SellerProfileSerializer(seller).data},
             status=status.HTTP_200_OK,
@@ -167,7 +182,19 @@ class SellerRejectView(APIView):
         serializer.is_valid(raise_exception=True)
         reason = serializer.validated_data["reason"]
 
-        reject_seller(seller, request.user, reason)
+        with transaction.atomic():
+            previous_state = {"status": seller.status}
+            reject_seller(seller, request.user, reason)
+            AuditService.log(
+                action="ADMIN_SELLER_REJECT",
+                target=seller,
+                actor=request.user,
+                seller=seller,
+                reason=reason,
+                previous_state=previous_state,
+                new_state={"status": seller.status},
+                ip_address=get_client_ip(request),
+            )
         return Response(
             {"message": f"Seller '{seller.business_name}' rejected.", "seller": SellerProfileSerializer(seller).data},
             status=status.HTTP_200_OK,
@@ -187,7 +214,19 @@ class SellerSuspendView(APIView):
         serializer.is_valid(raise_exception=True)
         reason = serializer.validated_data["reason"]
 
-        suspend_seller(seller, request.user, reason)
+        with transaction.atomic():
+            previous_state = {"status": seller.status}
+            suspend_seller(seller, request.user, reason)
+            AuditService.log(
+                action="ADMIN_SELLER_SUSPEND",
+                target=seller,
+                actor=request.user,
+                seller=seller,
+                reason=reason,
+                previous_state=previous_state,
+                new_state={"status": seller.status},
+                ip_address=get_client_ip(request),
+            )
         return Response(
             {"message": f"Seller '{seller.business_name}' suspended.", "seller": SellerProfileSerializer(seller).data},
             status=status.HTTP_200_OK,
@@ -206,7 +245,18 @@ class SellerReactivateView(APIView):
         if not seller.is_suspended:
             raise ValidationError("Only suspended sellers can be reactivated.")
 
-        reactivate_seller(seller, request.user)
+        with transaction.atomic():
+            previous_state = {"status": seller.status}
+            reactivate_seller(seller, request.user)
+            AuditService.log(
+                action="ADMIN_SELLER_REACTIVATE",
+                target=seller,
+                actor=request.user,
+                seller=seller,
+                previous_state=previous_state,
+                new_state={"status": seller.status},
+                ip_address=get_client_ip(request),
+            )
         return Response(
             {"message": f"Seller '{seller.business_name}' reactivated.", "seller": SellerProfileSerializer(seller).data},
             status=status.HTTP_200_OK,

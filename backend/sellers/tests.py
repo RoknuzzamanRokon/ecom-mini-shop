@@ -5,6 +5,7 @@ from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from audit.models import AuditLog
 from rbac.models import Role
 from rbac.services import assign_user_role
 from sellers.models import SellerProfile
@@ -319,3 +320,207 @@ class SellerSystemTests(TestCase):
         self.assertTrue(response.data["has_seller_profile"])
         self.assertEqual(response.data["capabilities"]["seller_type"], SellerProfile.TYPE_FULL_SHOP_OWNER)
         self.assertTrue(response.data["is_operational"])
+
+
+class SellerLifecycleAuditTests(TestCase):
+    """
+    Known Issue #6: the seller lifecycle DRF endpoints (approve/reject/suspend/
+    reactivate) previously performed no audit logging, unlike their Django-admin
+    equivalents (sellers/admin.py) and the /api/admin/sellers/<pk>/status/
+    endpoint (shop/admin_views.py:AdminSellerStatusAPIView), both of which log
+    via AuditService.log(action="ADMIN_SELLER_<ACTION>", ...). These tests
+    verify the same convention now applies to /api/sellers/<pk>/approve|reject|
+    suspend|reactivate/, and that a rejected/failed request never creates a
+    misleading "successful" audit record.
+    """
+
+    def setUp(self):
+        call_command("seed_rbac")
+        self.client = APIClient()
+
+        self.applicant = User.objects.create_user(
+            username="lifecycle_seller",
+            email="lifecycle_seller@example.com",
+            password="TestPassword123!",
+        )
+        self.other_user = User.objects.create_user(
+            username="lifecycle_bystander",
+            email="lifecycle_bystander@example.com",
+            password="TestPassword123!",
+        )
+        self.staff_admin = User.objects.create_user(
+            username="lifecycle_staff_admin",
+            email="lifecycle_admin@example.com",
+            password="TestPassword123!",
+            is_staff=True,
+        )
+        assign_user_role(self.staff_admin, Role.ROLE_ADMINISTRATOR)
+        self.finance_user = User.objects.create_user(
+            username="lifecycle_finance",
+            email="lifecycle_finance@example.com",
+            password="TestPassword123!",
+            is_staff=True,
+        )
+        assign_user_role(self.finance_user, Role.ROLE_FINANCE)
+
+    def _create_seller(self, status_value=SellerProfile.STATUS_PENDING, **extra):
+        return SellerProfile.objects.create(
+            user=self.applicant,
+            seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+            business_name="Audit Trail Traders",
+            status=status_value,
+            **extra,
+        )
+
+    def _logs_for(self, seller, action):
+        return AuditLog.objects.filter(
+            action=action, target_type="SellerProfile", target_id=str(seller.pk)
+        )
+
+    def test_approve_creates_audit_record(self):
+        seller = self._create_seller(status_value=SellerProfile.STATUS_PENDING)
+        self.client.force_authenticate(user=self.staff_admin)
+
+        response = self.client.post(f"/api/sellers/{seller.pk}/approve/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        logs = self._logs_for(seller, "ADMIN_SELLER_APPROVE")
+        self.assertEqual(logs.count(), 1)
+        log = logs.first()
+        seller.refresh_from_db()
+        self.assertEqual(log.actor, self.staff_admin)
+        self.assertEqual(log.seller_id, seller.pk)
+        self.assertEqual(log.target_repr, str(seller))
+        self.assertEqual(log.metadata["previous_state"], {"status": SellerProfile.STATUS_PENDING})
+        self.assertEqual(log.metadata["new_state"], {"status": SellerProfile.STATUS_ACTIVE})
+
+    def test_reject_creates_audit_record_with_reason(self):
+        seller = self._create_seller(status_value=SellerProfile.STATUS_PENDING)
+        self.client.force_authenticate(user=self.staff_admin)
+
+        reason = "Incomplete trade license documentation."
+        response = self.client.post(
+            f"/api/sellers/{seller.pk}/reject/", {"reason": reason}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        logs = self._logs_for(seller, "ADMIN_SELLER_REJECT")
+        self.assertEqual(logs.count(), 1)
+        log = logs.first()
+        self.assertEqual(log.actor, self.staff_admin)
+        self.assertEqual(log.seller_id, seller.pk)
+        self.assertEqual(log.reason, reason)
+        self.assertEqual(log.metadata["previous_state"], {"status": SellerProfile.STATUS_PENDING})
+        self.assertEqual(log.metadata["new_state"], {"status": SellerProfile.STATUS_REJECTED})
+
+    def test_suspend_creates_audit_record_with_reason(self):
+        seller = self._create_seller(status_value=SellerProfile.STATUS_ACTIVE)
+        self.client.force_authenticate(user=self.staff_admin)
+
+        reason = "Policy violation: counterfeit product reports."
+        response = self.client.post(
+            f"/api/sellers/{seller.pk}/suspend/", {"reason": reason}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        logs = self._logs_for(seller, "ADMIN_SELLER_SUSPEND")
+        self.assertEqual(logs.count(), 1)
+        log = logs.first()
+        self.assertEqual(log.actor, self.staff_admin)
+        self.assertEqual(log.seller_id, seller.pk)
+        self.assertEqual(log.reason, reason)
+        self.assertEqual(log.metadata["previous_state"], {"status": SellerProfile.STATUS_ACTIVE})
+        self.assertEqual(log.metadata["new_state"], {"status": SellerProfile.STATUS_SUSPENDED})
+
+    def test_reactivate_creates_audit_record(self):
+        seller = self._create_seller(
+            status_value=SellerProfile.STATUS_SUSPENDED,
+            suspension_reason="Temporary hold pending review.",
+        )
+        self.client.force_authenticate(user=self.staff_admin)
+
+        response = self.client.post(f"/api/sellers/{seller.pk}/reactivate/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        logs = self._logs_for(seller, "ADMIN_SELLER_REACTIVATE")
+        self.assertEqual(logs.count(), 1)
+        log = logs.first()
+        self.assertEqual(log.actor, self.staff_admin)
+        self.assertEqual(log.seller_id, seller.pk)
+        self.assertEqual(log.metadata["previous_state"], {"status": SellerProfile.STATUS_SUSPENDED})
+        self.assertEqual(log.metadata["new_state"], {"status": SellerProfile.STATUS_ACTIVE})
+
+    def test_unauthorized_approve_creates_no_audit_record(self):
+        """An unauthenticated/unauthorized/under-permissioned request must not be audited as a success."""
+        seller = self._create_seller(status_value=SellerProfile.STATUS_PENDING)
+
+        self.client.force_authenticate(user=None)
+        anon_resp = self.client.post(f"/api/sellers/{seller.pk}/approve/")
+        self.assertEqual(anon_resp.status_code, status.HTTP_401_UNAUTHORIZED)
+
+        self.client.force_authenticate(user=self.other_user)
+        forbidden_resp = self.client.post(f"/api/sellers/{seller.pk}/approve/")
+        self.assertEqual(forbidden_resp.status_code, status.HTTP_403_FORBIDDEN)
+
+        self.client.force_authenticate(user=self.finance_user)
+        no_permission_resp = self.client.post(f"/api/sellers/{seller.pk}/approve/")
+        self.assertEqual(no_permission_resp.status_code, status.HTTP_403_FORBIDDEN)
+
+        seller.refresh_from_db()
+        self.assertEqual(seller.status, SellerProfile.STATUS_PENDING)
+        self.assertEqual(self._logs_for(seller, "ADMIN_SELLER_APPROVE").count(), 0)
+
+    def test_invalid_transition_creates_no_audit_record(self):
+        """Reactivating a non-suspended seller is rejected before any mutation or audit write."""
+        seller = self._create_seller(status_value=SellerProfile.STATUS_ACTIVE)
+        self.client.force_authenticate(user=self.staff_admin)
+
+        response = self.client.post(f"/api/sellers/{seller.pk}/reactivate/")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        seller.refresh_from_db()
+        self.assertEqual(seller.status, SellerProfile.STATUS_ACTIVE)
+        self.assertEqual(self._logs_for(seller, "ADMIN_SELLER_REACTIVATE").count(), 0)
+
+    def test_missing_reason_creates_no_audit_record(self):
+        """Suspend/reject without a reason is rejected by the serializer before any audit write."""
+        seller = self._create_seller(status_value=SellerProfile.STATUS_ACTIVE)
+        self.client.force_authenticate(user=self.staff_admin)
+
+        response = self.client.post(f"/api/sellers/{seller.pk}/suspend/", {}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        seller.refresh_from_db()
+        self.assertEqual(seller.status, SellerProfile.STATUS_ACTIVE)
+        self.assertEqual(self._logs_for(seller, "ADMIN_SELLER_SUSPEND").count(), 0)
+
+    def test_nonexistent_seller_creates_no_audit_record(self):
+        """A 404 on a nonexistent seller must never reach the audit-logging step."""
+        self.client.force_authenticate(user=self.staff_admin)
+        before_count = AuditLog.objects.filter(action="ADMIN_SELLER_APPROVE").count()
+
+        response = self.client.post("/api/sellers/999999/approve/")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        after_count = AuditLog.objects.filter(action="ADMIN_SELLER_APPROVE").count()
+        self.assertEqual(before_count, after_count)
+
+    def test_full_lifecycle_produces_exactly_one_log_per_transition(self):
+        """No duplicate logging anywhere in the call chain: one audit row per successful API call."""
+        seller = self._create_seller(status_value=SellerProfile.STATUS_PENDING)
+        self.client.force_authenticate(user=self.staff_admin)
+
+        self.client.post(f"/api/sellers/{seller.pk}/approve/")
+        self.client.post(
+            f"/api/sellers/{seller.pk}/suspend/",
+            {"reason": "Routine compliance check."},
+            format="json",
+        )
+        self.client.post(f"/api/sellers/{seller.pk}/reactivate/")
+
+        seller_logs = AuditLog.objects.filter(target_type="SellerProfile", target_id=str(seller.pk))
+        self.assertEqual(seller_logs.count(), 3)
+        self.assertEqual(
+            list(seller_logs.order_by("created_at").values_list("action", flat=True)),
+            ["ADMIN_SELLER_APPROVE", "ADMIN_SELLER_SUSPEND", "ADMIN_SELLER_REACTIVATE"],
+        )
