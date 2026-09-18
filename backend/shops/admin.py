@@ -15,7 +15,7 @@ class ShopAdmin(ReasonRequiredActionMixin, StatusBadgeMixin, admin.ModelAdmin):
     list_filter = ('status', 'created_at')
     search_fields = ('name', 'slug', 'owner__user__username', 'phone')
     readonly_fields = (
-        'reviewed_by', 'reviewed_at', 'approved_at', 
+        'status', 'reviewed_by', 'reviewed_at', 'approved_at',
         'suspended_at', 'created_at', 'updated_at', 'location_display'
     )
     actions = ['approve_and_activate', 'suspend_shops', 'reject_shops', 'reactivate_shops']

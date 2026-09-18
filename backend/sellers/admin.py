@@ -14,7 +14,7 @@ class SellerProfileAdmin(ReasonRequiredActionMixin, StatusBadgeMixin, admin.Mode
     list_filter = ('status', 'seller_type', 'created_at')
     search_fields = ('user__username', 'user__email', 'business_name', 'business_email', 'tax_id')
     readonly_fields = (
-        'reviewed_by', 'reviewed_at', 'approved_at', 
+        'status', 'reviewed_by', 'reviewed_at', 'approved_at',
         'suspended_at', 'created_at', 'updated_at'
     )
     actions = ['approve_and_activate', 'suspend_sellers', 'reject_sellers', 'reactivate_sellers']

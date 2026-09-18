@@ -251,3 +251,246 @@ class AdminLifecycleActionAuthorizationTests(TestCase):
                     offered = model_admin.get_actions(request)
                     for name in action_names:
                         self.assertEqual(name in offered, expected)
+
+
+class AdminChangeFormStatusLockdownTests(TestCase):
+    """
+    Known Issue #22: the plain Django-admin *change form* for SellerProfile and
+    Shop left `status` directly editable -- a bypass around every lifecycle
+    method (approve/reject/suspend/reactivate) and the AuditService trail those
+    methods write through, reachable with nothing more than the ordinary
+    Django `change` permission on either model (no `allowed_permissions`-style
+    action gate applies to the change form itself).
+
+    `status` is now listed in both ModelAdmins' `readonly_fields`. Django
+    excludes readonly fields from the generated ModelForm entirely (they are
+    added to the form's `exclude` list in `ModelAdmin.get_form()`), so this is
+    a server-side exclusion, not a template/widget-only restriction. These
+    tests prove that by POSTing a complete, otherwise-valid change-form
+    submission with a crafted `status` value directly to the change view and
+    asserting the *persisted* value in the database afterwards -- while also
+    asserting an unrelated field in the same submission genuinely did change,
+    so a validation failure of the whole request could not produce a false
+    pass.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        seller_ct = ContentType.objects.get_for_model(SellerProfile)
+        shop_ct = ContentType.objects.get_for_model(Shop)
+        change_seller = Permission.objects.get(content_type=seller_ct, codename="change_sellerprofile")
+        change_shop = Permission.objects.get(content_type=shop_ct, codename="change_shop")
+
+        # Holds only the ordinary Django "change" permission on both models --
+        # exactly the account the audit found could bypass the lifecycle
+        # controls through the plain change form.
+        cls.editor_staff = User.objects.create_user(
+            username="lockdown_editor",
+            email="lockdown_editor@minishop.com",
+            password="Password123!",
+            is_staff=True,
+        )
+        cls.editor_staff.user_permissions.add(change_seller, change_shop)
+
+        cls.superuser = User.objects.create_superuser(
+            username="lockdown_superuser",
+            email="lockdown_super@minishop.com",
+            password="Password123!",
+        )
+
+    # -- fixtures ------------------------------------------------------------
+
+    def _make_seller(self, status=SellerProfile.STATUS_PENDING, **extra):
+        user = User.objects.create_user(
+            username=f"lockdown_seller_{User.objects.count()}",
+            email=f"lockdown_seller_{User.objects.count()}@minishop.com",
+            password="Password123!",
+        )
+        return SellerProfile.objects.create(
+            user=user,
+            seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+            business_name="Lockdown Test Seller",
+            status=status,
+            **extra,
+        )
+
+    def _make_shop(self, status=Shop.STATUS_ACTIVE, **extra):
+        owner = self._make_seller(SellerProfile.STATUS_ACTIVE)
+        return Shop.objects.create(
+            owner=owner,
+            name="Lockdown Test Shop",
+            slug=f"lockdown-test-shop-{Shop.objects.count()}",
+            status=status,
+            **extra,
+        )
+
+    # -- crafted change-form POSTs --------------------------------------------
+
+    def _seller_post_data(self, seller, *, business_name, status):
+        """A complete, otherwise-valid SellerProfileAdmin change-form body."""
+        return {
+            "user": str(seller.user_id),
+            "seller_type": seller.seller_type,
+            "status": status,
+            "business_name": business_name,
+            "business_email": "",
+            "business_phone": "",
+            "tax_id": "",
+            "description": "",
+            "rejection_reason": "",
+            "suspension_reason": "",
+            "_save": "Save",
+        }
+
+    def _shop_post_data(self, shop, *, name, status):
+        """A complete, otherwise-valid ShopAdmin change-form body."""
+        return {
+            "owner": str(shop.owner_id),
+            "name": name,
+            "slug": shop.slug,
+            "description": "",
+            "phone": "",
+            "address": "",
+            "location": "POINT(90.4125000 23.8103000)",
+            "rejection_reason": "",
+            "suspension_reason": "",
+            "_save": "Save",
+        }
+
+    def test_crafted_post_cannot_change_seller_status(self):
+        """A POST that legitimately updates business_name while also smuggling
+        a different `status` must persist the name change but leave status
+        exactly where it started -- proving the exclusion is server-side."""
+        for user in (self.editor_staff, self.superuser):
+            with self.subTest(user=user.username):
+                seller = self._make_seller(status=SellerProfile.STATUS_PENDING)
+                url = reverse("admin:sellers_sellerprofile_change", args=[seller.pk])
+                client = Client()
+                client.force_login(user)
+
+                response = client.post(
+                    url,
+                    self._seller_post_data(
+                        seller,
+                        business_name="Renamed By Crafted POST",
+                        status=SellerProfile.STATUS_ACTIVE,
+                    ),
+                )
+
+                # A 302 redirect means the form validated and saved; a 200
+                # would mean it was redisplayed with errors, which would make
+                # the "status unchanged" assertion below a false pass.
+                self.assertEqual(response.status_code, 302)
+
+                seller.refresh_from_db()
+                self.assertEqual(seller.business_name, "Renamed By Crafted POST")
+                self.assertEqual(seller.status, SellerProfile.STATUS_PENDING)
+
+    def test_crafted_post_cannot_change_shop_status(self):
+        for user in (self.editor_staff, self.superuser):
+            with self.subTest(user=user.username):
+                shop = self._make_shop(status=Shop.STATUS_ACTIVE)
+                url = reverse("admin:shops_shop_change", args=[shop.pk])
+                client = Client()
+                client.force_login(user)
+
+                response = client.post(
+                    url,
+                    self._shop_post_data(
+                        shop,
+                        name="Renamed Shop By Crafted POST",
+                        status=Shop.STATUS_SUSPENDED,
+                    ),
+                )
+
+                self.assertEqual(response.status_code, 302)
+
+                shop.refresh_from_db()
+                self.assertEqual(shop.name, "Renamed Shop By Crafted POST")
+                self.assertEqual(shop.status, Shop.STATUS_ACTIVE)
+
+    def test_status_field_excluded_from_generated_form(self):
+        """Pins the actual mechanism: `status` must not be a field on the
+        ModelAdmin's generated form at all, for either model -- not merely
+        rendered as read-only. This is what makes the crafted-POST tests above
+        a server-side guarantee rather than a coincidence of this request."""
+        seller = self._make_seller()
+        shop = self._make_shop()
+        request = RequestFactory().get("/admin/")
+        request.user = self.superuser
+
+        seller_admin = admin.site._registry[SellerProfile]
+        shop_admin = admin.site._registry[Shop]
+
+        seller_form_class = seller_admin.get_form(request, obj=seller)
+        shop_form_class = shop_admin.get_form(request, obj=shop)
+
+        self.assertNotIn("status", seller_form_class.base_fields)
+        self.assertNotIn("status", shop_form_class.base_fields)
+        self.assertIn("status", seller_admin.get_readonly_fields(request, seller))
+        self.assertIn("status", shop_admin.get_readonly_fields(request, shop))
+
+    # -- lifecycle actions must still be the working, audited path -----------
+
+    def test_seller_lifecycle_actions_still_work_and_are_still_audited(self):
+        """The guarded path this lockdown pushes everyone toward must remain
+        fully functional: permission-gated, business-logic-enforced, and
+        audited -- unchanged by locking the change form."""
+        self._assert_lifecycle_actions_allowed_and_audited(
+            self.editor_staff,
+            "admin:sellers_sellerprofile_changelist",
+            SELLER_ACTIONS,
+            self._make_seller,
+        )
+
+    def test_shop_lifecycle_actions_still_work_and_are_still_audited(self):
+        self._assert_lifecycle_actions_allowed_and_audited(
+            self.editor_staff,
+            "admin:shops_shop_changelist",
+            SHOP_ACTIONS,
+            self._make_shop,
+        )
+
+    #: action name (as declared on the ModelAdmin) -> AuditLog `action` it writes.
+    _AUDIT_ACTION_NAMES = {
+        "approve_and_activate": "APPROVE",
+        "reject_sellers": "REJECT",
+        "suspend_sellers": "SUSPEND",
+        "reactivate_sellers": "REACTIVATE",
+        "reject_shops": "REJECT",
+        "suspend_shops": "SUSPEND",
+        "reactivate_shops": "REACTIVATE",
+    }
+
+    def _post_action(self, user, url_name, action, obj, needs_reason):
+        client = Client()
+        client.force_login(user)
+        payload = {
+            "action": action,
+            "index": "0",
+            helpers.ACTION_CHECKBOX_NAME: [str(obj.pk)],
+        }
+        if needs_reason:
+            payload["apply_reason"] = "1"
+            payload["reason"] = REASON
+        return client.post(reverse(url_name), payload, follow=True)
+
+    def _assert_lifecycle_actions_allowed_and_audited(self, user, url_name, cases, make):
+        for action, start, extra, authorized_status, needs_reason in cases:
+            with self.subTest(action=action):
+                obj = make(start, **extra)
+                model_prefix = "SELLER" if isinstance(obj, SellerProfile) else "SHOP"
+                audit_action = f"ADMIN_{model_prefix}_{self._AUDIT_ACTION_NAMES[action]}"
+
+                self._post_action(user, url_name, action, obj, needs_reason)
+
+                obj.refresh_from_db()
+                self.assertEqual(obj.status, authorized_status)
+                self.assertTrue(
+                    AuditLog.objects.filter(
+                        action=audit_action,
+                        target_type=type(obj).__name__,
+                        target_id=str(obj.pk),
+                        actor=user,
+                    ).exists()
+                )
