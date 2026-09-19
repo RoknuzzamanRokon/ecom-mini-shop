@@ -1,6 +1,6 @@
 # MiniShop — Future Plan
 
-**Created:** 2026-09-18 · **Baseline commit:** `fe347ef` · **Status:** Phases 2A and 2B done (2026-09-18/19); everything after them still proposed
+**Created:** 2026-09-18 · **Baseline commit:** `fe347ef` · **Status:** Phases 2A, 2B and 2C done (2026-09-18/19); everything after them still proposed
 
 This is a **roadmap**, not a spec. Each phase below is sized to become one spec
 and one commit, written in the same format as `task/task*.md`.
@@ -167,6 +167,38 @@ over succeeded refunds.
 
 **Done when.** A test proves a ৳10,000 payment with a ৳1 partial refund reports
 ৳9,999 revenue, not ৳0 and not ৳10,000; and revenue stays `Decimal` end to end.
+
+**Status: DONE 2026-09-19.** Recorded as Known Issue #25 (now fixed).
+
+Revenue is `Sum(Payment.amount)` over captured statuses — the paid pair widened with
+`PARTIALLY_REFUNDED` and `REFUNDED`, all of which genuinely captured money, since
+`Payment.VALID_TRANSITIONS` reaches either only from `PAID` — **minus**
+`Sum(Refund.amount)` over `COMPLETED` refunds on those same payments. Scoping the
+refund side to the same status set is what keeps a fully-refunded payment at exactly
+0 rather than negative. Only `COMPLETED` counts, because that is what
+`PaymentService.process_refund` itself treats as money gone; no refund status was
+invented and no refund logic duplicated.
+
+The refund total is a **separate** aggregate on `Refund`, not a join into the payment
+aggregate, which would have fanned out one payment row per refund row and silently
+inflated every `Count()` beside it.
+
+`Decimal` end to end — both sides `Coalesce` to `Decimal("0.00")`, and the `float()`
+cast is gone. The wire format is unchanged: DRF's JSON encoder renders a `Decimal` as
+a JSON number, so `admin-api.ts`'s `total_revenue: number` still holds. **No frontend
+file changed.** The `paid` count was left alone, as instructed, and that asymmetry is
+now pinned by a test.
+
+14 tests added; the key one was proven to fail against the pre-fix code with
+`Decimal('0.00') != Decimal('9999.00')`. Full suite `Ran 538 tests in 799.683s … OK`,
+`tsc` and `next build` both exit 0.
+
+**Found along the way, recorded not fixed — Known Issue #26:** a payment accepts only
+one partial refund that leaves a balance, because
+`Payment.VALID_TRANSITIONS[PARTIALLY_REFUNDED]` has no self-edge, so a second partial
+refund raises `ValidationError`. That contradicts `process_refund`'s cumulative
+`remaining_refundable` design, but it is payment-lifecycle behaviour, outside this
+phase's metrics-only scope.
 
 ---
 

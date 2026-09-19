@@ -7,7 +7,9 @@ Single source of truth for both the Django admin dashboard
 
 Every counter is one `.aggregate()` per table using `Count(filter=Q(...))`,
 which compiles to `COUNT(CASE WHEN ... END)` -- one query per model rather
-than one per status.
+than one per status. Payments need two: refunds are aggregated separately on
+Refund, because joining them into the Payment aggregate would fan out its rows
+(see `refunded_amount_total`).
 """
 from decimal import Decimal
 
@@ -20,14 +22,34 @@ from django.utils import timezone
 from sellers.models import SellerProfile
 from shops.models import Shop
 
-from .models import Order, Payment, Product, ProductInventory
+from .models import Order, Payment, Product, ProductInventory, Refund
 
 # Kept in sync with shop.admin.LOW_STOCK_THRESHOLD; override in settings if needed.
 LOW_STOCK_THRESHOLD = getattr(settings, "LOW_STOCK_THRESHOLD", 10)
 
 # Statuses that count as realised revenue. "COMPLETED" is not a Payment choice
 # but is matched by the pre-existing console contract, so it is preserved here.
+# This tuple backs the `paid` *count*; revenue uses the wider tuple below.
 PAID_PAYMENT_STATUSES = (Payment.STATUS_PAID, "COMPLETED")
+
+# Payment statuses whose money was actually captured, before refunds are taken
+# off. Deliberately wider than PAID_PAYMENT_STATUSES: a partially- or fully-
+# refunded payment *was* paid first -- Payment.VALID_TRANSITIONS only reaches
+# either state from PAID -- so its captured amount belongs in the gross figure
+# and the refunded part is subtracted separately. Excluding those two statuses,
+# as summing over PAID_PAYMENT_STATUSES alone used to, is what let a single
+# taka of refund erase an entire payment from revenue.
+CAPTURED_PAYMENT_STATUSES = PAID_PAYMENT_STATUSES + (
+    Payment.STATUS_PARTIALLY_REFUNDED,
+    Payment.STATUS_REFUNDED,
+)
+
+# Only COMPLETED refunds moved money back out. This mirrors the authority for
+# refunds, PaymentService.process_refund, which computes remaining refundable
+# as `payment.amount - Sum(COMPLETED refunds)`: a PENDING or FAILED refund
+# reduces neither the refundable balance nor revenue. Refund.STATUS_* is the
+# existing lifecycle -- no new status is introduced here.
+SETTLED_REFUND_STATUSES = (Refund.STATUS_COMPLETED,)
 
 NEW_USER_WINDOW_DAYS = 30
 
@@ -103,8 +125,45 @@ def order_metrics():
     )
 
 
+def refunded_amount_total():
+    """
+    Money handed back to buyers, limited to payments whose capture counts
+    toward revenue.
+
+    Aggregated on Refund in a query of its own rather than joined into
+    `payment_metrics`: a Payment -> Refund join produces one payment row per
+    refund row, which would silently multiply every `Count()` in that aggregate
+    and the gross `Sum("amount")` along with them.
+
+    Returns a Decimal, never None -- Coalesce supplies Decimal("0.00") for an
+    empty table.
+    """
+    return Refund.objects.filter(
+        status__in=SETTLED_REFUND_STATUSES,
+        payment__status__in=CAPTURED_PAYMENT_STATUSES,
+    ).aggregate(
+        total=Coalesce(
+            Sum("amount"),
+            Value(Decimal("0.00")),
+            output_field=DecimalField(max_digits=14, decimal_places=2),
+        ),
+    )["total"]
+
+
 def payment_metrics():
-    return Payment.objects.aggregate(
+    """
+    Payment counters, plus revenue as money actually kept.
+
+    `revenue` is the captured amount minus everything refunded back out of it,
+    so a 10,000 payment carrying a 1,000 completed refund reports 9,000 -- not
+    0 (which is what filtering on PAID alone produced) and not 10,000 (which is
+    what merely widening that filter would produce).
+
+    Decimal end to end: both aggregates are Coalesce-guarded to Decimal("0.00")
+    rather than None, so the subtraction is Decimal arithmetic and no value
+    passes through float.
+    """
+    aggregates = Payment.objects.aggregate(
         total=Count("pk"),
         paid=Count("pk", filter=Q(status__in=PAID_PAYMENT_STATUSES)),
         pending=Count(
@@ -116,12 +175,16 @@ def payment_metrics():
             filter=Q(status__in=[Payment.STATUS_FAILED, Payment.STATUS_CANCELLED]),
         ),
         # Count() is never NULL; only Sum() needs the Coalesce guard.
-        revenue=Coalesce(
-            Sum("amount", filter=Q(status__in=PAID_PAYMENT_STATUSES)),
+        captured=Coalesce(
+            Sum("amount", filter=Q(status__in=CAPTURED_PAYMENT_STATUSES)),
             Value(Decimal("0.00")),
             output_field=DecimalField(max_digits=14, decimal_places=2),
         ),
     )
+    # Replaces `captured`, keeping the key order the dashboard template and the
+    # console payload already expect: total, paid, pending, failed, revenue.
+    aggregates["revenue"] = aggregates.pop("captured") - refunded_amount_total()
+    return aggregates
 
 
 def inventory_metrics():
@@ -158,11 +221,16 @@ def get_console_metrics():
 
     These seven keys are a published API contract consumed by
     frontend/src/lib/admin-api.ts -- do not rename or re-scope them.
+
+    `total_revenue` is a Decimal. DRF's JSON encoder renders a Decimal as a JSON
+    number, so the wire format is unchanged from when this cast to float here --
+    but the cast is gone, because rounding money through binary floating point
+    on the way out is exactly the kind of error this module should not make.
     """
     metrics = get_platform_metrics()
     return {
         "total_orders": metrics["orders"]["total"],
-        "total_revenue": float(metrics["payments"]["revenue"]),
+        "total_revenue": metrics["payments"]["revenue"],
         "pending_shops": metrics["shops"]["pending"],
         "pending_sellers": metrics["sellers"]["pending"],
         "total_shops": metrics["shops"]["total"],
