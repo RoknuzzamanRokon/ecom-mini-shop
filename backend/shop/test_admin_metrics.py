@@ -1,3 +1,4 @@
+import json
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -10,7 +11,7 @@ from rest_framework.test import APITestCase
 from cart.models import Cart, CartItem
 from customers.models import Address
 from points.models import SellerWallet
-from rbac.models import Role, UserRole
+from rbac.models import Permission, Role, UserPermission, UserRole
 from rbac.services import assign_user_role
 from shop.metrics import get_console_metrics, payment_metrics
 from shop.models import Category, Order, Payment, Product, Refund
@@ -24,6 +25,13 @@ User = get_user_model()
 
 class AdminMetricsAPITests(APITestCase):
     def setUp(self):
+        # Seed the real role -> permission grants. Phase 2D moved this endpoint
+        # from a role-code list to the 'reports.view' RBAC permission, so a role
+        # created bare by get_or_create below (carrying no permissions at all)
+        # no longer stands in for a real one. The roles and expectations here are
+        # unchanged; only the fixture is now realistic.
+        call_command("seed_rbac")
+
         # 1. Superuser / Admin
         self.admin_user = User.objects.create_superuser(
             username="admin_user",
@@ -381,3 +389,289 @@ class RefundAwareRevenueTests(TestCase):
             ]),
         )
         self.assertEqual(payload["total_revenue"], Decimal("10000.00"))
+
+
+class AdminMetricsAuthorizationTests(APITestCase):
+    """
+    Phase 2D: management access and revenue visibility are two separate gates.
+
+    Access is `reports.view` (CanViewPlatformMetrics), replacing an inline list of
+    seven role codes. Revenue is `payments.view`, enforced server-side by removing
+    the key from the payload — not by the dashboard declining to draw a card, which
+    left the figure readable straight from the network tab.
+    """
+
+    REVENUE_KEY = "total_revenue"
+    NON_REVENUE_KEYS = [
+        "total_orders",
+        "pending_shops",
+        "pending_sellers",
+        "total_shops",
+        "total_sellers",
+        "total_products",
+    ]
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_rbac")
+        cls.url = reverse("shop:admin_metrics")
+
+        # Holds reports.view AND payments.view -> sees revenue.
+        cls.finance_user = User.objects.create_user(
+            username="metrics_finance", email="fin@test.com", password="Password123!"
+        )
+        assign_user_role(cls.finance_user, Role.ROLE_FINANCE)
+
+        # Holds reports.view but NOT payments.view -> must not see revenue.
+        cls.ops_user = User.objects.create_user(
+            username="metrics_ops", email="ops@test.com", password="Password123!"
+        )
+        assign_user_role(cls.ops_user, Role.ROLE_OPERATION_MANAGER)
+
+        cls.support_user = User.objects.create_user(
+            username="metrics_support", email="sup@test.com", password="Password123!"
+        )
+        assign_user_role(cls.support_user, Role.ROLE_SUPPORT_TEAM)
+
+        # Holds both, via role rather than the superuser bypass.
+        cls.administrator = User.objects.create_user(
+            username="metrics_administrator", email="adm@test.com", password="Password123!"
+        )
+        assign_user_role(cls.administrator, Role.ROLE_ADMINISTRATOR)
+
+        cls.superuser = User.objects.create_superuser(
+            username="metrics_superuser", email="su@test.com", password="Password123!"
+        )
+
+        cls.customer = User.objects.create_user(
+            username="metrics_customer", email="cust@test.com", password="Password123!"
+        )
+        assign_user_role(cls.customer, Role.ROLE_CUSTOMER)
+
+    def _get(self, user):
+        self.client.force_authenticate(user=user)
+        return self.client.get(self.url)
+
+    def _assert_six_keys_intact(self, payload):
+        for key in self.NON_REVENUE_KEYS:
+            self.assertIn(key, payload, f"{key} must remain in the payload")
+
+    # --- access gate --------------------------------------------------------
+
+    def test_unauthenticated_rejected(self):
+        self.assertEqual(self.client.get(self.url).status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_customer_denied(self):
+        self.assertEqual(self._get(self.customer).status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_management_roles_still_granted_access(self):
+        for user in (self.superuser, self.administrator, self.ops_user,
+                     self.finance_user, self.support_user):
+            with self.subTest(user=user.username):
+                self.assertEqual(self._get(user).status_code, status.HTTP_200_OK)
+
+    # --- revenue visibility, proven on the HTTP response --------------------
+
+    def test_finance_user_receives_total_revenue(self):
+        res = self._get(self.finance_user)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertIn(self.REVENUE_KEY, res.data)
+        self._assert_six_keys_intact(res.data)
+        self.assertEqual(len(res.data), 7)
+
+    def test_administrator_receives_total_revenue(self):
+        res = self._get(self.administrator)
+        self.assertIn(self.REVENUE_KEY, res.data)
+
+    def test_superuser_receives_total_revenue(self):
+        res = self._get(self.superuser)
+        self.assertIn(self.REVENUE_KEY, res.data)
+
+    def test_operations_manager_gets_metrics_without_revenue(self):
+        """The core Phase 2D case: management access, no finance permission."""
+        res = self._get(self.ops_user)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertNotIn(self.REVENUE_KEY, res.data)
+        self._assert_six_keys_intact(res.data)
+        self.assertEqual(len(res.data), 6)
+
+    def test_support_user_gets_metrics_without_revenue(self):
+        res = self._get(self.support_user)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertNotIn(self.REVENUE_KEY, res.data)
+        self._assert_six_keys_intact(res.data)
+
+    def test_revenue_absent_from_serialized_body_not_merely_nulled(self):
+        """
+        The key is removed, not zeroed. A 0 would be indistinguishable from
+        genuinely zero revenue, and would still leak that the platform has none.
+        """
+        res = self._get(self.ops_user)
+        body = json.loads(res.content.decode("utf-8"))
+        self.assertNotIn(self.REVENUE_KEY, body)
+        self.assertIsNone(body.get(self.REVENUE_KEY))
+
+    def test_permission_drives_visibility_not_role_name(self):
+        """
+        Granting payments.view directly to the operations user flips revenue on,
+        proving the gate reads the RBAC permission rather than a role code.
+        """
+        self.assertNotIn(self.REVENUE_KEY, self._get(self.ops_user).data)
+
+        permission = Permission.objects.get(code="payments.view")
+        UserPermission.objects.create(user=self.ops_user, permission=permission)
+
+        self.assertIn(self.REVENUE_KEY, self._get(self.ops_user).data)
+
+
+class CustomerOrderStaffOverrideTests(APITestCase):
+    """
+    Phase 2D: the order-scoped staff override now reads the RBAC permission built
+    for it — 'orders.staff.view' / 'orders.staff.update' — instead of an inline
+    role-code tuple. Customer ownership isolation must be unchanged.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_rbac")
+
+        cls.owner = User.objects.create_user(
+            username="ord_owner", email="owner@test.com", password="Password123!"
+        )
+        assign_user_role(cls.owner, Role.ROLE_CUSTOMER)
+        cls.other_customer = User.objects.create_user(
+            username="ord_other", email="other@test.com", password="Password123!"
+        )
+        assign_user_role(cls.other_customer, Role.ROLE_CUSTOMER)
+
+        # Holds orders.staff.view + orders.staff.update.
+        cls.ops_user = User.objects.create_user(
+            username="ord_ops", email="ordops@test.com", password="Password123!"
+        )
+        assign_user_role(cls.ops_user, Role.ROLE_OPERATION_MANAGER)
+
+        # Seller-style role: holds neither staff order permission.
+        cls.sales_team_user = User.objects.create_user(
+            username="ord_sales", email="sales@test.com", password="Password123!"
+        )
+        assign_user_role(cls.sales_team_user, Role.ROLE_SALES_TEAM)
+
+        cls.address = Address.objects.create(
+            user=cls.owner,
+            label="Home",
+            recipient_name="Order Owner",
+            phone="01700000000",
+            address_line_1="5 Order Street",
+            city="Dhaka",
+            country="Bangladesh",
+            is_default=True,
+        )
+
+        cls.seller_user = User.objects.create_user(
+            username="ord_seller", email="ordseller@test.com", password="Password123!"
+        )
+        assign_user_role(cls.seller_user, Role.ROLE_SALES_TEAM)  # for products.create
+        cls.seller = SellerProfile.objects.create(
+            user=cls.seller_user,
+            seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+            status=SellerProfile.STATUS_ACTIVE,
+            business_name="Order Override Traders",
+        )
+        SellerWallet.objects.create(seller=cls.seller, balance=5000)
+        cls.shop = Shop.objects.create(
+            owner=cls.seller,
+            name="Order Override Shop",
+            slug="order-override-shop",
+            status=Shop.STATUS_ACTIVE,
+        )
+        cls.category = Category.objects.create(
+            name="Order Override Cat", slug="order-override-cat", is_active=True
+        )
+
+    def setUp(self):
+        self.product = ProductService.create_product(
+            seller=self.seller,
+            name=f"Override Product {self.id()}",
+            category=self.category,
+            shop=self.shop,
+            description="For staff override tests",
+            price=Decimal("1000.00"),
+            stock=50,
+            is_active=True,
+            actor=self.seller_user,
+        )
+        self.product.status = Product.STATUS_PUBLISHED
+        self.product.save()
+
+        cart, _ = Cart.objects.get_or_create(user=self.owner)
+        CartItem.objects.filter(cart=cart).delete()
+        CartItem.objects.create(cart=cart, product=self.product, quantity=1)
+        self.order = OrderService.create_order_from_cart(
+            user=self.owner, address_id=self.address.id
+        )
+
+    # --- payment lookup: orders.staff.view ---------------------------------
+
+    def _payment_url(self):
+        return f"/api/orders/{self.order.order_number}/payment/"
+
+    def test_owner_can_reach_own_order_payment(self):
+        self.client.force_authenticate(user=self.owner)
+        res = self.client.post(self._payment_url(), {"payment_method": "BKASH"})
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+
+    def test_unrelated_customer_gets_safe_404(self):
+        self.client.force_authenticate(user=self.other_customer)
+        res = self.client.get(self._payment_url())
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_staff_order_permission_holder_can_read_any_order_payment(self):
+        PaymentService.create_or_get_payment(order=self.order)
+        self.client.force_authenticate(user=self.ops_user)
+        res = self.client.get(self._payment_url())
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+    def test_role_without_staff_order_permission_gets_safe_404(self):
+        """SALES_TEAM holds no orders.staff.* permission, so no override."""
+        PaymentService.create_or_get_payment(order=self.order)
+        self.client.force_authenticate(user=self.sales_team_user)
+        res = self.client.get(self._payment_url())
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+    # --- cancel: orders.staff.update ---------------------------------------
+
+    def _cancel_url(self):
+        return f"/api/orders/{self.order.order_number}/cancel/"
+
+    def test_owner_can_cancel_own_order(self):
+        self.client.force_authenticate(user=self.owner)
+        res = self.client.post(self._cancel_url(), {"reason": "Changed my mind"})
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+
+    def test_unrelated_customer_cannot_cancel_and_gets_safe_404(self):
+        self.client.force_authenticate(user=self.other_customer)
+        res = self.client.post(self._cancel_url(), {"reason": "Not mine"})
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+        self.order.refresh_from_db()
+        self.assertNotEqual(self.order.status, Order.STATUS_CANCELLED)
+
+    def test_staff_update_permission_holder_can_cancel_any_order(self):
+        self.client.force_authenticate(user=self.ops_user)
+        res = self.client.post(self._cancel_url(), {"reason": "Operational cancellation"})
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.order.refresh_from_db()
+        self.assertEqual(self.order.status, Order.STATUS_CANCELLED)
+
+    def test_role_without_staff_update_permission_cannot_cancel(self):
+        """
+        SALES_TEAM holds neither 'orders.cancel' nor 'orders.staff.update', so the
+        view-level CanCancelOrder gate rejects it with 403 before the ownership
+        override is ever consulted. The unrelated-customer test above covers the
+        other path: a caller who *does* clear the view gate but holds no staff
+        permission gets the safe 404 instead.
+        """
+        self.client.force_authenticate(user=self.sales_team_user)
+        res = self.client.post(self._cancel_url(), {"reason": "Should not work"})
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.order.refresh_from_db()
+        self.assertNotEqual(self.order.status, Order.STATUS_CANCELLED)

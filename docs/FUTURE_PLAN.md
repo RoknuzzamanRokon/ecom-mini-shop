@@ -234,6 +234,37 @@ classes, and stop serving revenue to operators who should not see it.
 proves a management user without the finance permission receives a metrics payload
 with no `total_revenue` key; and every existing authorization test still passes.
 
+**Status: DONE 2026-09-19 — with one done-when condition deliberately not met.**
+
+- **Order sites converted (2 of 6).** `:422` (cancel) now uses `orders.staff.update`
+  via `CanUpdateStaffOrders`; the payment-lookup helper uses `orders.staff.view` via
+  `CanViewStaffOrders`. Both are the permissions written for exactly this check
+  ("view all customer orders across the platform (Staff)").
+- **Inventory sites NOT converted (4 of 6) — "no `is_staff_override` remains" is
+  therefore unmet, by decision.** There is no platform-wide inventory permission to
+  convert them to: the catalogue holds only `inventory.view`/`inventory.adjust`, and
+  a seller must already hold `inventory.view` to clear `CanViewInventory` and reach
+  the endpoint, so either one used as the override would hand every seller every
+  shop's stock. Adding a permission and granting it to roles was out of scope.
+  Recorded as **Known Issue #27**; each site carries a comment pointing at it.
+- **Metrics authorization** moved to `CanViewPlatformMetrics` (`reports.view`),
+  replacing an inline seven-role-code list plus an `is_staff` test and a check for
+  `"admin:access"` — a code that is not in `PERMISSIONS_DATA` and so never matched.
+- **Revenue gated server-side** on `payments.view` (reusing `CanViewPayment`): the
+  key is *removed* from the payload, not zeroed. Proven against the serialized HTTP
+  body, not the UI.
+- **No role grant changed.** `seed_rbac` is untouched.
+
+**Follow-up this created — Known Issue #28.** The console draws the revenue card on
+`payments.view` **or** `reports.view`, and `AdminStatCard` renders a missing value as
+`formatTaka(0)`. So a finance-less operator now sees a confident **৳0.00** rather than
+no card. The leak is genuinely closed — the value is absent from the response — but the
+display is misleading. The fix is one line in the frontend, which this phase was
+explicitly forbidden from touching.
+
+Verification: full suite `Ran 556 tests in 787.872s … OK` (0 failures);
+`makemigrations --check` clean; `npm run typecheck` and `npm run build` exit 0.
+
 ---
 
 ## Phase 2E — Retire the legacy template storefront

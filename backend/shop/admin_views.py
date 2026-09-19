@@ -57,7 +57,9 @@ from shop.admin_permissions import (
     CanViewAdminSellers,
     CanViewAdminShops,
     CanViewAdminUsers,
+    CanViewPlatformMetrics,
 )
+from shop.permissions import CanViewPayment
 from shop.admin_serializers import (
     PROTECTED_ROLE_CODES,
     AdminAuditLogSerializer,
@@ -1266,41 +1268,34 @@ class AdminMetricsAPIView(APIView):
     GET /api/admin/metrics/
     Returns aggregated platform metrics for the Next.js management console:
     - total_orders: platform-wide order count
-    - total_revenue: platform-wide revenue from completed/paid transactions (৳)
+    - total_revenue: platform-wide revenue, net of refunds (৳) -- **omitted
+      entirely unless the caller holds 'payments.view'**; see below
     - pending_shops: shops awaiting approval
     - pending_sellers: seller applications awaiting verification
     - total_shops: total registered shops
     - total_sellers: total registered sellers
     - total_products: total active product catalog
-    Enforces strict management role or admin:access permission.
+
+    Access is gated by CanViewPlatformMetrics ('reports.view'), replacing an
+    inline seven-role-code check. Revenue is gated separately and server-side:
+    management access and money visibility are different questions, and a
+    management user without the finance permission never receives the figure at
+    all. Hiding the KPI card client-side is not a control -- the value was
+    previously readable straight from the network tab.
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanViewPlatformMetrics]
 
     def get(self, request):
-        user = request.user
-        role_codes = get_user_role_codes(user)
-        is_management = (
-            user.is_superuser
-            or user.is_staff
-            or bool(
-                role_codes.intersection(
-                    {
-                        Role.ROLE_SUPER_ADMINISTRATOR,
-                        Role.ROLE_ADMINISTRATOR,
-                        Role.ROLE_OPERATION_MANAGER,
-                        Role.ROLE_SALES_MANAGER,
-                        Role.ROLE_SALES_TEAM,
-                        Role.ROLE_FINANCE,
-                        Role.ROLE_SUPPORT_TEAM,
-                    }
-                )
-            )
-            or has_user_permission(user, "admin:access")
-        )
-        if not is_management:
-            raise PermissionDenied("You do not have management portal permissions.")
+        payload = get_console_metrics()
 
-        return Response(get_console_metrics(), status=status.HTTP_200_OK)
+        # 'payments.view' is the existing permission gating the staff payment
+        # surface that revenue is derived from; CanViewPayment is reused rather
+        # than re-deriving the rule. The key is removed, not zeroed or nulled --
+        # a 0 would be indistinguishable from genuinely zero revenue.
+        if not CanViewPayment().has_permission(request, self):
+            payload.pop("total_revenue", None)
+
+        return Response(payload, status=status.HTTP_200_OK)
 
 
 # ==============================================================================

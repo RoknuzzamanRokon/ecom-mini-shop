@@ -235,3 +235,28 @@ class CanViewAdminAuditLogs(BasePermission):
             or has_user_permission(user, "roles.admin.view")
         )
 
+
+
+class CanViewPlatformMetrics(BasePermission):
+    """
+    Allows reading the management-console metrics payload.
+
+    'reports.view' is the existing RBAC permission for platform reporting, held by
+    ADMINISTRATOR, OPERATION_MANAGER, SALES_MANAGER, FINANCE and SUPPORT_TEAM. It
+    replaces an inline list of seven role codes that AdminMetricsAPIView.get()
+    used to assemble by hand, together with an `is_staff` flag test and a check
+    for "admin:access" -- a permission code that is not in PERMISSIONS_DATA and
+    therefore never matched anything.
+
+    No role grant changed: this expresses the existing gate through the RBAC
+    system instead of re-deriving it from role codes at the call site.
+    """
+    message = "You do not have management portal permissions."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
+            return True
+        return has_user_permission(user, "reports.view")

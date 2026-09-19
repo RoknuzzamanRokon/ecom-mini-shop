@@ -416,17 +416,12 @@ class OrderCancelAPIView(APIView):
         if not order:
             raise NotFound("Order not found.")
 
-        # Strict customer ownership isolation (User B receives safe 404 for User A's order)
+        # Strict customer ownership isolation (User B receives safe 404 for User A's order).
+        # The staff override is the RBAC permission built for it: cancelling is a
+        # platform-wide order status transition, which is what 'orders.staff.update'
+        # grants. Previously this re-listed role codes inline.
         user = request.user
-        role_codes = get_user_role_codes(user)
-        is_staff_override = (
-            user.is_superuser
-            or user.is_staff
-            or Role.ROLE_SUPER_ADMINISTRATOR in role_codes
-            or Role.ROLE_ADMINISTRATOR in role_codes
-            or Role.ROLE_OPERATION_MANAGER in role_codes
-        )
-        if order.user != user and not is_staff_override:
+        if order.user != user and not CanUpdateStaffOrders().has_permission(request, self):
             raise NotFound("Order not found.")
 
         serializer = OrderCancelSerializer(data=request.data)
@@ -773,7 +768,12 @@ class SellerInventoryDetailAPIView(APIView):
     def get(self, request, product_id):
         product = get_object_or_404(Product, pk=product_id)
 
-        # Check ownership or staff permission via RBAC
+        # NOTE (Phase 2D): this role-code override was deliberately left as-is.
+        # There is no platform-wide inventory permission in the RBAC catalogue --
+        # only 'inventory.view'/'inventory.adjust', which sellers must already
+        # hold to reach this endpoint (CanViewInventory), so neither can express
+        # "staff, not scoped to one shop" without handing every seller access to
+        # every shop's stock. Recorded as Known Issue #27.
         role_codes = get_user_role_codes(request.user)
         is_staff_override = (
             request.user.is_superuser
@@ -817,7 +817,12 @@ class SellerInventoryAdjustAPIView(APIView):
     def _handle_adjustment(self, request, product_id):
         product = get_object_or_404(Product, pk=product_id)
 
-        # Check ownership or staff permission via RBAC
+        # NOTE (Phase 2D): this role-code override was deliberately left as-is.
+        # There is no platform-wide inventory permission in the RBAC catalogue --
+        # only 'inventory.view'/'inventory.adjust', which sellers must already
+        # hold to reach this endpoint (CanViewInventory), so neither can express
+        # "staff, not scoped to one shop" without handing every seller access to
+        # every shop's stock. Recorded as Known Issue #27.
         role_codes = get_user_role_codes(request.user)
         is_staff_override = (
             request.user.is_superuser
@@ -870,6 +875,12 @@ class SellerInventoryListAPIView(generics.ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
+        # NOTE (Phase 2D): this role-code override was deliberately left as-is.
+        # There is no platform-wide inventory permission in the RBAC catalogue --
+        # only 'inventory.view'/'inventory.adjust', which sellers must already
+        # hold to reach this endpoint (CanViewInventory), so neither can express
+        # "staff, not scoped to one shop" without handing every seller access to
+        # every shop's stock. Recorded as Known Issue #27.
         role_codes = get_user_role_codes(user)
         is_staff_override = (
             user.is_superuser
@@ -908,6 +919,12 @@ class SellerInventoryTransactionsAPIView(generics.ListAPIView):
         product = get_object_or_404(Product, pk=product_id)
         user = self.request.user
 
+        # NOTE (Phase 2D): this role-code override was deliberately left as-is.
+        # There is no platform-wide inventory permission in the RBAC catalogue --
+        # only 'inventory.view'/'inventory.adjust', which sellers must already
+        # hold to reach this endpoint (CanViewInventory), so neither can express
+        # "staff, not scoped to one shop" without handing every seller access to
+        # every shop's stock. Recorded as Known Issue #27.
         role_codes = get_user_role_codes(user)
         is_staff_override = (
             user.is_superuser
@@ -933,7 +950,7 @@ class SellerInventoryTransactionsAPIView(generics.ListAPIView):
 # Task 15: Payment & Refund API Views
 # ==============================================================================
 
-def _get_customer_order_or_404(request, kwargs):
+def _get_customer_order_or_404(request, kwargs, view=None):
     lookup = (
         kwargs.get("order_number")
         or kwargs.get("pk")
@@ -953,16 +970,11 @@ def _get_customer_order_or_404(request, kwargs):
     if not order:
         raise NotFound("Order not found.")
 
+    # Staff override via the RBAC permission meant for it -- 'orders.staff.view'
+    # is defined as "view all customer orders across the platform (Staff)".
+    # Previously this re-listed role codes inline.
     user = request.user
-    role_codes = get_user_role_codes(user)
-    is_staff_override = (
-        user.is_superuser
-        or user.is_staff
-        or Role.ROLE_SUPER_ADMINISTRATOR in role_codes
-        or Role.ROLE_ADMINISTRATOR in role_codes
-        or Role.ROLE_OPERATION_MANAGER in role_codes
-    )
-    if order.user != user and not is_staff_override:
+    if order.user != user and not CanViewStaffOrders().has_permission(request, view):
         raise NotFound("Order not found.")
 
     return order
@@ -978,7 +990,7 @@ class CustomerOrderPaymentAPIView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
-        order = _get_customer_order_or_404(request, kwargs)
+        order = _get_customer_order_or_404(request, kwargs, view=self)
         payment = order.current_payment
         if not payment:
             raise NotFound("No payment record found for this order.")
@@ -987,7 +999,7 @@ class CustomerOrderPaymentAPIView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request, *args, **kwargs):
-        order = _get_customer_order_or_404(request, kwargs)
+        order = _get_customer_order_or_404(request, kwargs, view=self)
 
         serializer = PaymentInitiateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
