@@ -3,6 +3,7 @@ from typing import Any, List, Optional
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Sum
 
 from audit.services import AuditService
 from shop.models import InventoryTransaction, Order, OrderItem, Product, ProductInventory
@@ -222,6 +223,45 @@ class InventoryService:
         )
 
     @classmethod
+    def _order_reserved_quantity(cls, order: Order, product: Product) -> int:
+        """
+        Units of `product` that *this* order still holds reserved, according to the
+        immutable InventoryTransaction ledger.
+
+        An order only ever owns the units its own RESERVATION rows took out of
+        available stock, minus whatever has since been released or sold back out of
+        that reservation. Orders created outside the reservation flow -- the legacy
+        storefront checkout in shop/views.py writes Order/OrderItem rows directly and
+        never reserves -- have no RESERVATION row and therefore own nothing.
+
+        Without this bound, releasing such an order would hand back stock that a
+        *different* order is holding, inventing availability and opening an oversell
+        path.
+        """
+        totals = {
+            row["transaction_type"]: row["total"] or 0
+            for row in (
+                InventoryTransaction.objects.filter(
+                    order=order,
+                    product=product,
+                    transaction_type__in=[
+                        InventoryTransaction.TYPE_RESERVATION,
+                        InventoryTransaction.TYPE_RELEASE,
+                        InventoryTransaction.TYPE_SALE,
+                    ],
+                )
+                .values("transaction_type")
+                .annotate(total=Sum("quantity"))
+            )
+        }
+        reserved = totals.get(InventoryTransaction.TYPE_RESERVATION, 0)
+        consumed = (
+            totals.get(InventoryTransaction.TYPE_RELEASE, 0)
+            + totals.get(InventoryTransaction.TYPE_SALE, 0)
+        )
+        return max(0, reserved - consumed)
+
+    @classmethod
     def release_order_reservation(
         cls,
         order: Order,
@@ -232,6 +272,8 @@ class InventoryService:
         """
         Atomically releases reserved stock back to available stock when an order is CANCELLED.
         Enforces idempotency: does not release twice if already released.
+        Releases only what this order itself reserved -- an order with no RESERVATION
+        ledger entry releases nothing, so it cannot free another order's stock.
         """
         # Idempotency check: did we already record a RELEASE transaction for this order?
         already_released = InventoryTransaction.objects.filter(
@@ -245,6 +287,7 @@ class InventoryService:
 
         order_items = list(order.items.select_for_update().select_related("product"))
         released_count = 0
+        unreserved_count = 0
 
         for item in order_items:
             product = item.product
@@ -254,8 +297,24 @@ class InventoryService:
             cls.get_or_create_inventory(product)
             inventory = ProductInventory.objects.select_for_update().get(product=product)
 
-            # Release up to item.quantity or remaining reserved_quantity
-            qty = min(inventory.reserved_quantity, item.quantity)
+            # Never give back more than this order itself reserved. `reserved_quantity`
+            # is shared across every open order for the product, so bounding by it alone
+            # lets a reservation-less order release someone else's stock.
+            owned_reserved = cls._order_reserved_quantity(order, product)
+            if owned_reserved <= 0:
+                unreserved_count += 1
+                logger.warning(
+                    "Order %s has no outstanding reservation for product %s (id=%d); "
+                    "releasing 0 units and leaving reserved_quantity=%d untouched.",
+                    order.order_number,
+                    product.name,
+                    product.id,
+                    inventory.reserved_quantity,
+                )
+                continue
+
+            # Release up to item.quantity, this order's own reservation, or remaining reserved_quantity
+            qty = min(inventory.reserved_quantity, item.quantity, owned_reserved)
             if qty <= 0:
                 continue
 
@@ -296,11 +355,17 @@ class InventoryService:
             metadata={
                 "order_number": order.order_number,
                 "released_items_count": released_count,
+                "unreserved_items_count": unreserved_count,
                 "note": note,
             },
             ip_address=ip_address,
         )
-        logger.info("Released inventory reservation for order %s (%d items)", order.order_number, released_count)
+        logger.info(
+            "Released inventory reservation for order %s (%d items released, %d items without reservation)",
+            order.order_number,
+            released_count,
+            unreserved_count,
+        )
 
     @classmethod
     def finalize_order_delivery(

@@ -449,6 +449,166 @@ class InventoryTests(APITestCase):
         self.assertEqual(self.product_a.inventory.available_quantity, 20)
         self.assertEqual(self.product_a.inventory.reserved_quantity, 0)
 
+    def _create_reservation_less_order(self, product, quantity):
+        """
+        Builds an order the way the legacy storefront checkout (shop/views.py:111) does:
+        Order + OrderItem rows written directly, with no call into InventoryService and
+        therefore no RESERVATION ledger entry.
+        """
+        order = Order.objects.create(
+            order_number=f"LEGACY-{product.id}-{quantity}",
+            user=self.customer_user,
+            customer_name="Legacy Buyer",
+            phone="01711000001",
+            address="House 9, Road 2, Banani",
+            city="Dhaka",
+            total_amount=product.price * quantity,
+        )
+        OrderItem.objects.create(
+            order=order,
+            product=product,
+            product_name=product.name,
+            price=product.price,
+            quantity=quantity,
+            subtotal=product.price * quantity,
+        )
+        self.assertFalse(
+            InventoryTransaction.objects.filter(
+                order=order,
+                transaction_type=InventoryTransaction.TYPE_RESERVATION,
+            ).exists(),
+            "Fixture is only meaningful if the order has no RESERVE ledger entry.",
+        )
+        return order
+
+    def test_reservation_less_order_cancellation_cannot_release_another_orders_stock(self):
+        """
+        An order with no RESERVE ledger entry must release nothing on cancellation.
+        Bounding the release by reserved_quantity alone would hand it stock that a
+        different order is holding, inventing availability and allowing an oversell.
+        """
+        # Order A: a real reservation through the cart/order flow.
+        cart, _ = Cart.objects.get_or_create(user=self.customer_user)
+        CartItem.objects.create(cart=cart, product=self.product_a, quantity=5)
+        order_a = OrderService.create_order_from_cart(
+            user=self.customer_user,
+            address_id=self.address.id,
+        )
+
+        self.product_a.inventory.refresh_from_db()
+        self.assertEqual(self.product_a.inventory.available_quantity, 15)
+        self.assertEqual(self.product_a.inventory.reserved_quantity, 5)
+
+        # Order B: same product, no reservation at all.
+        order_b = self._create_reservation_less_order(self.product_a, quantity=4)
+
+        OrderService.transition_order_status(
+            order=order_b,
+            new_status=Order.STATUS_CANCELLED,
+            actor=self.admin_user,
+            note="Cancelling a reservation-less legacy order",
+        )
+
+        # Order A's reservation is untouched, and nothing moved back to available.
+        self.product_a.inventory.refresh_from_db()
+        self.assertEqual(self.product_a.inventory.available_quantity, 15)
+        self.assertEqual(self.product_a.inventory.reserved_quantity, 5)
+        self.assertEqual(self.product_a.inventory.sold_quantity, 0)
+        self.product_a.refresh_from_db()
+        self.assertEqual(self.product_a.stock, 15)
+
+        # Order B wrote no RELEASE row; Order A's RESERVATION row still stands.
+        self.assertFalse(
+            InventoryTransaction.objects.filter(
+                order=order_b,
+                transaction_type=InventoryTransaction.TYPE_RELEASE,
+            ).exists()
+        )
+        reserve_tx = InventoryTransaction.objects.filter(
+            order=order_a,
+            product=self.product_a,
+            transaction_type=InventoryTransaction.TYPE_RESERVATION,
+        ).first()
+        self.assertIsNotNone(reserve_tx)
+        self.assertEqual(reserve_tx.quantity, 5)
+
+        # Order A can still release its own reservation normally afterwards.
+        OrderService.transition_order_status(
+            order=order_a,
+            new_status=Order.STATUS_CANCELLED,
+            actor=self.admin_user,
+        )
+        self.product_a.inventory.refresh_from_db()
+        self.assertEqual(self.product_a.inventory.available_quantity, 20)
+        self.assertEqual(self.product_a.inventory.reserved_quantity, 0)
+        self.product_a.refresh_from_db()
+        self.assertEqual(self.product_a.stock, 20)
+
+    def test_reservation_less_order_cancellation_is_noop_with_no_other_reservation(self):
+        """A reservation-less cancellation must not inflate available stock out of thin air."""
+        order = self._create_reservation_less_order(self.product_b, quantity=3)
+
+        inventory = InventoryService.get_or_create_inventory(self.product_b)
+        self.assertEqual(inventory.available_quantity, 10)
+        self.assertEqual(inventory.reserved_quantity, 0)
+
+        OrderService.transition_order_status(
+            order=order,
+            new_status=Order.STATUS_CANCELLED,
+            actor=self.admin_user,
+        )
+
+        inventory.refresh_from_db()
+        self.assertEqual(inventory.available_quantity, 10)
+        self.assertEqual(inventory.reserved_quantity, 0)
+        self.product_b.refresh_from_db()
+        self.assertEqual(self.product_b.stock, 10)
+        self.assertFalse(
+            InventoryTransaction.objects.filter(
+                order=order,
+                transaction_type=InventoryTransaction.TYPE_RELEASE,
+            ).exists()
+        )
+
+    def test_release_is_bounded_by_the_orders_own_reservation(self):
+        """
+        Two orders reserve the same product. Cancelling the smaller one releases exactly
+        its own units, never the larger order's reservation.
+        """
+        cart, _ = Cart.objects.get_or_create(user=self.customer_user)
+        CartItem.objects.create(cart=cart, product=self.product_a, quantity=7)
+        order_big = OrderService.create_order_from_cart(
+            user=self.customer_user,
+            address_id=self.address.id,
+        )
+
+        CartItem.objects.create(cart=cart, product=self.product_a, quantity=2)
+        order_small = OrderService.create_order_from_cart(
+            user=self.customer_user,
+            address_id=self.address.id,
+        )
+
+        self.product_a.inventory.refresh_from_db()
+        self.assertEqual(self.product_a.inventory.available_quantity, 11)
+        self.assertEqual(self.product_a.inventory.reserved_quantity, 9)
+
+        OrderService.transition_order_status(
+            order=order_small,
+            new_status=Order.STATUS_CANCELLED,
+            actor=self.admin_user,
+        )
+
+        self.product_a.inventory.refresh_from_db()
+        self.assertEqual(self.product_a.inventory.available_quantity, 13)
+        self.assertEqual(self.product_a.inventory.reserved_quantity, 7)
+
+        release_tx = InventoryTransaction.objects.filter(
+            order=order_small,
+            transaction_type=InventoryTransaction.TYPE_RELEASE,
+        ).first()
+        self.assertIsNotNone(release_tx)
+        self.assertEqual(release_tx.quantity, 2)
+
     # --- 6. Order Delivery & Sale Finalization ---
 
     def test_order_delivery_finalizes_sale(self):
