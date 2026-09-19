@@ -1,0 +1,28 @@
+{% extends "admin/change_form.html" %}
+{% load static %}
+
+{% comment %}
+  Resolves for rbac.Role only (admin/<app_label>/<model_name>/change_form.html),
+  and for both the add and the change view, so the permission board is the same
+  control whether a role is being created or edited.
+
+  Unlike the user console this does NOT replace {% block content %}: the stock
+  change form already lays out four small fields and one fieldset, which is
+  exactly what this page is. All it adds is the board's stylesheet, the shared
+  board behaviour, and the body class the stylesheet is scoped to.
+{% endcomment %}
+
+{% block extrahead %}{{ block.super }}
+  {% comment %}
+    Same file the user console uses. It keys off data-pm-* attributes rather
+    than class names, so it drives the search, the rail, the select-all cascade
+    and the live counters on this board with nothing added for it.
+  {% endcomment %}
+  <script src="{% static 'js/admin_user_permission.js' %}" defer></script>
+{% endblock %}
+
+{% block extrastyle %}{{ block.super }}
+  <link rel="stylesheet" href="{% static 'css/admin_role_permission.css' %}">
+{% endblock %}
+
+{% block bodyclass %}{{ block.super }} mp-roleform{% endblock %}

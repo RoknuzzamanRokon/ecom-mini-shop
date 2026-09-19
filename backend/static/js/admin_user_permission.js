@@ -184,6 +184,11 @@
 
     function apply(inputs, checked) {
       inputs.forEach(function (input) {
+        // A disabled box is one the operator may not change (a role-inherited
+        // grant, or a permission they cannot delegate). It stays in the counted
+        // set so the totals stay honest, but no cascade may move it -- and it
+        // would submit nothing anyway, so flipping it here would only lie.
+        if (input.disabled) return;
         if (input.checked !== checked) input.checked = checked;
       });
       refresh();
@@ -415,8 +420,11 @@
   }
 
   ready(function () {
-    var root = document.querySelector(".mp-shell");
-    if (!root) return;
+    // The user console wraps its form in .mp-shell; the role form is the stock
+    // change form with a board in one fieldset, so there is nothing to wrap.
+    // Every initialiser below bails out on its own when its markup is absent,
+    // which is what lets one file serve both pages.
+    var root = document.querySelector(".mp-shell") || document.body;
 
     initTabs(root);
     initSuperuser(root);

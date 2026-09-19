@@ -266,6 +266,7 @@ RESOURCE_META = {
     "profile": ("Profile", "person", 130),
     "address": ("Addresses", "home_pin", 140),
     "cart": ("Carts", "shopping_cart", 150),
+    "reviews": ("Reviews", "reviews", 160),
 }
 
 WILDCARD_CODE = "*"
@@ -447,5 +448,137 @@ class MiniShopPermissionWidget(_ProjectTemplateWidget):
                 "name": name,
                 "attrs": final_attrs,
                 "board": {"sections": sections, **meta},
+            }
+        }
+
+
+# ==============================================================================
+# Role permission board
+# ==============================================================================
+# The two boards above answer "what does this ACCOUNT hold". This one answers
+# "what does this ROLE grant" -- the other end of the same relation, edited on
+# /admin/rbac/role/add/ and /admin/rbac/role/<pk>/change/.
+#
+# It replaces a TabularInline over RolePermission: one <select> of the whole
+# catalogue per row, one row per grant, and no way to read what a role covers
+# without opening every row. The board renders the catalogue itself, grouped by
+# rbac.Permission.resource, so a grant is a tick and the shape of the role is
+# legible at a glance.
+#
+# Delegation: MiniShop's rule is "you may only give away what you already hold"
+# (rbac.services.get_delegatable_permission_codes), which the role API already
+# enforces. This board applies the same rule -- a code outside the actor's own
+# effective set renders locked -- and RoleAdmin.save_related re-checks it, since
+# the lock is an affordance and not the boundary.
+
+
+def build_role_permission_sections(selected_pks, delegatable_codes=None):
+    """
+    The rbac.Permission catalogue grouped by resource, for one role.
+
+    `selected_pks` is whatever the field currently holds: the role's saved
+    grants on a fresh GET, or the operator's unsaved ticks when a bound form
+    re-renders after a validation error.
+
+    `delegatable_codes` of None means the actor may delegate anything (a
+    wildcard holder, which is the usual case here); passing a set locks every
+    code outside it. Locked rows still carry their real checkbox so the board
+    reports the role truthfully -- they are `disabled`, which submits nothing
+    and which save_related turns into "leave this grant exactly as it was".
+    """
+    # Imported here for the same reason the boards above do it: widgets.py is
+    # imported from admin.py while the app registry is still loading.
+    from .models import Permission
+
+    selected = {str(pk) for pk in selected_pks if pk not in (None, "")}
+
+    sections = {}
+    for permission in Permission.objects.all():
+        bucket = sections.setdefault(
+            permission.resource, {"permissions": [], "granted": 0, "locked": 0}
+        )
+        granted = str(permission.pk) in selected
+        locked = (
+            delegatable_codes is not None and permission.code not in delegatable_codes
+        )
+        if granted:
+            bucket["granted"] += 1
+        if locked:
+            bucket["locked"] += 1
+        bucket["permissions"].append(
+            {
+                "pk": permission.pk,
+                "code": permission.code,
+                "name": permission.name,
+                "description": permission.description,
+                # `action` is free text on rbac.Permission ("approve",
+                # "admin_manage"), not Django's fixed four, so it is shown as a
+                # tag rather than used to build columns.
+                "action": permission.action.replace("_", " "),
+                "granted": granted,
+                "locked": locked,
+            }
+        )
+
+    rendered = []
+    for resource, bucket in sections.items():
+        label, icon, weight = RESOURCE_META.get(
+            resource,
+            (resource.replace("_", " ").capitalize(), "folder", DEFAULT_WEIGHT),
+        )
+        rendered.append(
+            {
+                "key": resource,
+                "label": label,
+                "icon": icon,
+                "weight": weight,
+                "permissions": bucket["permissions"],
+                "granted": bucket["granted"],
+                "locked": bucket["locked"],
+                "total": len(bucket["permissions"]),
+            }
+        )
+    rendered.sort(key=lambda section: (section["weight"], section["label"]))
+    return rendered
+
+
+class RolePermissionWidget(_ProjectTemplateWidget):
+    """
+    Editable board for the permissions one Role grants.
+
+    Every checkbox is `name="<field>" value="<rbac.Permission pk>"`, so the
+    field round-trips through ModelMultipleChoiceField exactly as a stock
+    CheckboxSelectMultiple would; the resource grouping, the rail, the search
+    box and the select-all controls are markup only and submit nothing.
+    """
+
+    template_name = "admin/widgets/role_permission_matrix.html"
+
+    def __init__(self, delegatable_codes=None, attrs=None):
+        # None == "may delegate anything"; see build_role_permission_sections.
+        self.delegatable_codes = delegatable_codes
+        super().__init__(attrs)
+
+    def get_context(self, name, value, attrs):
+        final_attrs = self.build_attrs(self.attrs, attrs)
+        base_id = final_attrs.get("id") or "id_%s" % name
+
+        sections = build_role_permission_sections(
+            value or [], delegatable_codes=self.delegatable_codes
+        )
+        for section in sections:
+            for permission in section["permissions"]:
+                permission["input_name"] = name
+                permission["id"] = "%s_%s" % (base_id, permission["pk"])
+
+        return {
+            "widget": {
+                "name": name,
+                "attrs": final_attrs,
+                "sections": sections,
+                "granted": sum(section["granted"] for section in sections),
+                "locked": sum(section["locked"] for section in sections),
+                "total": sum(section["total"] for section in sections),
+                "restricted": self.delegatable_codes is not None,
             }
         }

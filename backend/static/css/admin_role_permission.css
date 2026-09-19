@@ -1,0 +1,600 @@
+/* ==========================================================================
+   MINISHOP ADMIN - ROLE PERMISSION BOARD  (/admin/rbac/role/add|change/ only)
+   --------------------------------------------------------------------------
+   Loaded by templates/admin/rbac/role/change_form.html, after
+   admin/css/base.css -> dark_mode.css -> nav_sidebar.css -> japanese_admin.css
+   -> admin/css/forms.css. Everything is scoped to body.mp-roleform, set by that
+   template's bodyclass block, so no other change form is affected.
+
+   What this replaces: a TabularInline over RolePermission -- one <select> of
+   the whole catalogue per grant, one row per grant, and no way to read the
+   shape of a role without opening every row. The board renders the catalogue
+   instead, grouped by rbac.Permission.resource, so a grant is a tick.
+
+   This file is deliberately standalone rather than reusing
+   admin_user_permission.css: that sheet scopes its variables to
+   body.mp-userform and documents itself as belonging to the user console. Only
+   the JS is shared, and it keys off data-pm-* attributes, never class names.
+
+   Colour language, same as the user console:
+     grant  = green   -> a capability this role hands out
+     gold   = focus, and anything that needs a second look
+   ========================================================================== */
+
+body.mp-roleform {
+  /* Height of the sticky #header, measured; the rail pins below it. */
+  --rp-head-offset: 53px;
+
+  --rp-grant: #0E7C4A;
+  --rp-grant-soft: rgba(14, 124, 74, 0.10);
+  --rp-grant-line: rgba(14, 124, 74, 0.35);
+  --rp-radius: 14px;
+  --rp-radius-sm: 9px;
+}
+
+[data-theme="dark"] body.mp-roleform,
+body.mp-roleform.theme-dark {
+  --rp-grant: #10B981;
+  --rp-grant-soft: rgba(16, 185, 129, 0.14);
+  --rp-grant-line: rgba(16, 185, 129, 0.40);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) body.mp-roleform {
+    --rp-grant: #10B981;
+    --rp-grant-soft: rgba(16, 185, 129, 0.14);
+    --rp-grant-line: rgba(16, 185, 129, 0.40);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   1. PAGE SHELL
+   japanese_admin.css caps #content at 1400px, which leaves the board's rail and
+   its card grid fighting for the same 900px. The cap is lifted here only.
+   -------------------------------------------------------------------------- */
+body.mp-roleform #content {
+  width: auto !important;
+  max-width: 1560px !important;
+  padding: 18px clamp(14px, 1.5vw, 30px) 30px !important;
+  box-sizing: border-box !important;
+}
+
+body.mp-roleform { accent-color: var(--rp-grant); }
+
+/* The board carries its own heading, counter and hint, so Django's field label
+   and the flex row it sits in would only repeat them. The fieldset keeps its
+   <h2> and description -- those are the card's title and hint. */
+body.mp-roleform .rp-fieldset .form-row > div > .flex-container { display: block; }
+body.mp-roleform .rp-fieldset .flex-container > label { display: none; }
+body.mp-roleform .rp-fieldset .form-row { padding: 0 !important; border: 0 !important; }
+body.mp-roleform .rp-fieldset.module { padding: 0 !important; background: none !important; box-shadow: none !important; border: 0 !important; }
+body.mp-roleform .rp-fieldset > .fieldset-heading {
+  margin: 0 0 6px !important;
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.6px !important;
+  text-transform: uppercase !important;
+  color: var(--jp-text-ink) !important;
+  background: none !important;
+  padding: 0 !important;
+  border: 0 !important;
+}
+body.mp-roleform .rp-fieldset > .description {
+  margin: 0 0 14px !important;
+  padding: 0 !important;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--jp-text-ink-muted);
+  max-width: 76ch;
+}
+
+/* Django's forms.css lays out an `aligned` fieldset as a 160px label column
+   next to its inputs, through three rules that reach into this board:
+   `.aligned label` (the fixed column), `form .aligned ul` (which indents any
+   list by that column) and `.aligned ul label` (display:inline, which outranks
+   a bare `.rp-perm > label` on specificity). The board's labels are cards and
+   section heads rather than form-row labels, so that geometry is taken back
+   here. It is also why every rule below carries the body.mp-roleform prefix:
+   without it half of them lose the cascade to those three. */
+body.mp-roleform .rp-board label {
+  width: auto;
+  min-width: 0;
+  float: none;
+}
+
+body.mp-roleform .rp-board ul {
+  margin-left: 0;
+  padding-left: 0;
+}
+
+body.mp-roleform .rp-board label:not(.vCheckboxLabel):after { content: none; }
+
+/* --------------------------------------------------------------------------
+   2. SHARED: CHECKBOX BOX
+   The real <input> stays in the DOM and stays focusable; .rp-box is what gets
+   painted, so the tick renders identically in every browser and both themes.
+   -------------------------------------------------------------------------- */
+body.mp-roleform .rp-box {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  border: 1.5px solid var(--jp-border-line);
+  background: var(--jp-bg-surface);
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+
+[data-theme="dark"] body.mp-roleform .rp-box { border-color: rgba(255, 255, 255, 0.22); }
+
+body.mp-roleform .rp-box::after {
+  content: "";
+  width: 4.5px;
+  height: 8.5px;
+  border: 2px solid #FFFFFF;
+  border-top: 0;
+  border-left: 0;
+  transform: rotate(42deg) translateY(-1px) scale(0.55);
+  opacity: 0;
+  transition: transform 0.14s ease, opacity 0.14s ease;
+}
+
+body.mp-roleform .rp-input,
+body.mp-roleform .rp-check input[type="checkbox"],
+body.mp-roleform .rp-selectall input[type="checkbox"] {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+body.mp-roleform .rp-input:checked + label .rp-box,
+body.mp-roleform .rp-check input:checked + .rp-box,
+body.mp-roleform .rp-selectall input:checked + .rp-box {
+  background: var(--rp-grant);
+  border-color: var(--rp-grant);
+}
+
+body.mp-roleform .rp-input:checked + label .rp-box::after,
+body.mp-roleform .rp-check input:checked + .rp-box::after,
+body.mp-roleform .rp-selectall input:checked + .rp-box::after {
+  opacity: 1;
+  transform: rotate(42deg) translateY(-1px) scale(1);
+}
+
+/* Indeterminate: some but not all of the section granted -> a dash, not a tick. */
+body.mp-roleform .rp-check input:indeterminate + .rp-box,
+body.mp-roleform .rp-selectall input:indeterminate + .rp-box {
+  background: var(--rp-grant);
+  border-color: var(--rp-grant);
+}
+
+body.mp-roleform .rp-check input:indeterminate + .rp-box::after,
+body.mp-roleform .rp-selectall input:indeterminate + .rp-box::after {
+  width: 9px;
+  height: 0;
+  border: 0;
+  border-top: 2px solid #FFFFFF;
+  transform: none;
+  opacity: 1;
+}
+
+body.mp-roleform .rp-input:focus-visible + label .rp-box,
+body.mp-roleform .rp-check input:focus-visible + .rp-box,
+body.mp-roleform .rp-selectall input:focus-visible + .rp-box {
+  box-shadow: 0 0 0 3px rgba(186, 134, 48, 0.38);
+  border-color: var(--jp-kinari-gold);
+}
+
+body.mp-roleform .rp-check {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* --------------------------------------------------------------------------
+   3. BOARD
+   -------------------------------------------------------------------------- */
+/* The real constraint on this board is the nav sidebar (294px when open),
+   which no viewport media query can observe, so the stacking rules at the
+   bottom key off the board's own width instead.
+
+   The container is declared on the form row rather than on .rp-board itself.
+   `container-type` brings layout and size containment with it, and with that on
+   .rp-board -- a bordered element with overflow:hidden -- the whole card came
+   back unpainted in Chrome while still reporting a correct 1158x3384 box. The
+   row is the same width as the board and paints nothing of its own, so the
+   query measures the same number with the containment off the card. */
+body.mp-roleform .rp-fieldset .form-row {
+  container-type: inline-size;
+  container-name: rpboard;
+}
+
+body.mp-roleform .rp-board {
+  background: var(--jp-bg-surface);
+  border: 1px solid var(--jp-border-line);
+  border-radius: var(--rp-radius);
+  box-shadow: var(--jp-card-shadow);
+  overflow: hidden;
+}
+
+/* Toolbar: filter + counter + select all */
+body.mp-roleform .rp-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--jp-border-line);
+  background: var(--jp-bg-surface-sunken);
+}
+
+body.mp-roleform .rp-search {
+  position: relative;
+  flex: 1 1 260px;
+  min-width: 200px;
+  display: flex;
+  align-items: center;
+}
+
+body.mp-roleform .rp-search .material-symbols-outlined {
+  position: absolute;
+  left: 11px;
+  font-size: 18px;
+  color: var(--jp-text-ink-muted);
+  pointer-events: none;
+}
+
+body.mp-roleform .rp-search input[type="search"] {
+  width: 100%;
+  box-sizing: border-box;
+  margin: 0 !important;
+  padding: 9px 12px 9px 35px !important;
+  border-radius: var(--rp-radius-sm) !important;
+  border: 1px solid var(--jp-border-line) !important;
+  background: var(--jp-bg-surface) !important;
+  font-size: 13px !important;
+  color: var(--jp-text-ink) !important;
+}
+
+body.mp-roleform .rp-toolbar-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-left: auto;
+}
+
+body.mp-roleform .rp-counter {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--jp-text-ink-muted);
+  white-space: nowrap;
+}
+
+body.mp-roleform .rp-counter b { font-size: 14px; font-weight: 800; color: var(--rp-grant); }
+body.mp-roleform .rp-counter-sep { margin: 0 2px; opacity: 0.5; }
+
+body.mp-roleform .rp-selectall {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px 7px 11px;
+  border-radius: var(--rp-radius-sm);
+  border: 1px solid var(--jp-border-line);
+  background: var(--jp-bg-surface);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--jp-text-ink);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.15s ease;
+}
+
+body.mp-roleform .rp-selectall:hover { border-color: var(--jp-kinari-gold); }
+
+/* Delegation notice: only rendered when something on the board is locked. */
+body.mp-roleform .rp-note {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 0;
+  padding: 11px 18px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--jp-kinari-gold);
+  background: var(--jp-kinari-gold-bg);
+  border-bottom: 1px solid var(--jp-border-line);
+}
+
+body.mp-roleform .rp-note .material-symbols-outlined { font-size: 17px; flex: 0 0 auto; }
+
+/* --------------------------------------------------------------------------
+   4. RAIL + GRID
+   -------------------------------------------------------------------------- */
+body.mp-roleform .rp-body {
+  display: grid;
+  grid-template-columns: 206px minmax(0, 1fr);
+  align-items: stretch;
+}
+
+/* Stretches to the board's full height so the sunken column is painted all the
+   way down; the sticky <nav> travels inside it. min-width:0 matters in the
+   stacked layout below, where this and .rp-grid share one 1fr column. */
+body.mp-roleform .rp-rail-col {
+  background: var(--jp-bg-surface-sunken);
+  border-right: 1px solid var(--jp-border-line);
+  min-width: 0;
+}
+
+body.mp-roleform .rp-rail {
+  position: sticky;
+  top: calc(var(--rp-head-offset) + 16px);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 10px;
+  max-height: calc(100vh - var(--rp-head-offset) - 40px);
+  overflow: auto;
+}
+
+body.mp-roleform .rp-rail-link {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 10px;
+  border-radius: var(--rp-radius-sm);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--jp-text-ink-body);
+  text-decoration: none;
+  border-left: 3px solid transparent;
+}
+
+body.mp-roleform .rp-rail-link .material-symbols-outlined {
+  font-size: 18px;
+  color: var(--jp-text-ink-muted);
+  flex: 0 0 auto;
+}
+
+body.mp-roleform .rp-rail-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.mp-roleform .rp-rail-count {
+  flex: 0 0 auto;
+  min-width: 20px;
+  text-align: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  background: var(--jp-bg-surface);
+  border: 1px solid var(--jp-border-line);
+  color: var(--jp-text-ink-muted);
+}
+
+body.mp-roleform .rp-rail-link:hover {
+  background: var(--jp-bg-surface);
+  color: var(--jp-text-ink);
+}
+
+body.mp-roleform .rp-rail-link.is-current {
+  background: var(--jp-bg-surface);
+  border-left-color: var(--jp-kinari-gold);
+  color: var(--jp-text-ink);
+}
+
+body.mp-roleform .rp-rail-link.is-current .material-symbols-outlined { color: var(--jp-kinari-gold); }
+body.mp-roleform .rp-rail-link[hidden] { display: none !important; }
+
+body.mp-roleform .rp-rail-link.has-grants .rp-rail-count {
+  background: var(--rp-grant-soft);
+  border-color: var(--rp-grant-line);
+  color: var(--rp-grant);
+}
+
+body.mp-roleform .rp-grid { padding: 6px 18px 18px; min-width: 0; }
+
+/* --------------------------------------------------------------------------
+   5. SECTION
+   -------------------------------------------------------------------------- */
+body.mp-roleform .rp-section {
+  padding: 16px 0;
+  border-bottom: 1px solid var(--jp-border-line-subtle);
+  scroll-margin-top: calc(var(--rp-head-offset) + 20px);
+}
+
+body.mp-roleform .rp-section:last-of-type { border-bottom: 0; }
+body.mp-roleform .rp-section[hidden] { display: none !important; }
+
+body.mp-roleform .rp-section-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 11px;
+}
+
+body.mp-roleform .rp-section-icon { font-size: 19px; color: var(--jp-kinari-gold); }
+
+body.mp-roleform .rp-section-title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--jp-text-ink);
+}
+
+body.mp-roleform .rp-section-key {
+  font: 600 11px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--jp-text-ink-muted);
+  opacity: 0.8;
+}
+
+body.mp-roleform .rp-chip {
+  margin-left: auto;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  background: var(--jp-bg-surface-sunken);
+  border: 1px solid var(--jp-border-line);
+  color: var(--jp-text-ink-muted);
+}
+
+body.mp-roleform .rp-section.has-grants .rp-chip {
+  background: var(--rp-grant-soft);
+  border-color: var(--rp-grant-line);
+  color: var(--rp-grant);
+}
+
+/* --------------------------------------------------------------------------
+   6. PERMISSION CARDS
+   One card per rbac.Permission. The whole card is the <label>, so the hit area
+   is the card and not an 18px box.
+   -------------------------------------------------------------------------- */
+body.mp-roleform .rp-perms {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(258px, 1fr));
+  gap: 8px;
+}
+
+body.mp-roleform .rp-perm { position: relative; margin: 0; padding: 0; list-style: none; }
+body.mp-roleform .rp-perm[hidden] { display: none !important; }
+
+body.mp-roleform .rp-perm > label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  border-radius: var(--rp-radius-sm);
+  border: 1px solid var(--jp-border-line);
+  background: var(--jp-bg-surface);
+  cursor: pointer;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+
+body.mp-roleform .rp-perm > label:hover {
+  border-color: var(--jp-kinari-gold);
+  background: var(--jp-bg-surface-sunken);
+}
+
+body.mp-roleform .rp-input:checked + label {
+  background: var(--rp-grant-soft);
+  border-color: var(--rp-grant-line);
+}
+
+body.mp-roleform .rp-perm-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+
+body.mp-roleform .rp-perm-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+body.mp-roleform .rp-perm-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--jp-text-ink);
+  line-height: 1.35;
+}
+
+body.mp-roleform .rp-perm-action {
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--jp-text-ink-muted);
+  background: var(--jp-bg-surface-sunken);
+  border: 1px solid var(--jp-border-line);
+  white-space: nowrap;
+}
+
+body.mp-roleform .rp-input:checked + label .rp-perm-action {
+  color: var(--rp-grant);
+  background: transparent;
+  border-color: var(--rp-grant-line);
+}
+
+body.mp-roleform .rp-perm-code {
+  font: 600 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--jp-text-ink-muted);
+  word-break: break-all;
+}
+
+body.mp-roleform .rp-perm-desc {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--jp-text-ink-muted);
+  opacity: 0.85;
+}
+
+/* Locked: a permission the operator does not hold and therefore may not grant.
+   The checkbox is `disabled`, so it submits nothing and the cascade skips it. */
+body.mp-roleform .rp-perm.is-locked > label {
+  cursor: not-allowed;
+  opacity: 0.66;
+  border-style: dashed;
+}
+
+body.mp-roleform .rp-perm.is-locked > label:hover {
+  border-color: var(--jp-border-line);
+  background: var(--jp-bg-surface);
+}
+
+body.mp-roleform .rp-perm-lock { font-size: 13px; color: var(--jp-kinari-gold); }
+
+body.mp-roleform .rp-blank {
+  margin: 18px 0;
+  font-size: 12.5px;
+  color: var(--jp-text-ink-muted);
+}
+
+body.mp-roleform .rp-blank[hidden] { display: none !important; }
+
+/* --------------------------------------------------------------------------
+   7. NARROW BOARD
+   Keyed off the board's own width: with the nav sidebar open there is no
+   viewport width at which the two-column body still reads.
+   -------------------------------------------------------------------------- */
+@container rpboard (max-width: 760px) {
+  body.mp-roleform .rp-body { grid-template-columns: 1fr; }
+
+  body.mp-roleform .rp-rail-col {
+    border-right: 0;
+    border-bottom: 1px solid var(--jp-border-line);
+  }
+
+  body.mp-roleform .rp-rail {
+    position: static;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    max-height: none;
+    padding: 9px 12px;
+  }
+
+  body.mp-roleform .rp-rail-link {
+    border-left: 0;
+    border-bottom: 3px solid transparent;
+    white-space: nowrap;
+  }
+
+  body.mp-roleform .rp-rail-link.is-current { border-bottom-color: var(--jp-kinari-gold); }
+  body.mp-roleform .rp-rail-label { overflow: visible; }
+
+  body.mp-roleform .rp-perms { grid-template-columns: 1fr; }
+}

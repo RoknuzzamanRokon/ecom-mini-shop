@@ -1,0 +1,149 @@
+{% load i18n %}
+{% comment %}
+  Board markup for rbac.widgets.RolePermissionWidget.
+
+  Every checkbox keeps the field's own name/value pair
+  (name="role_permissions", value="<rbac.Permission pk>"), so as far as the POST
+  and ModelMultipleChoiceField are concerned this is a plain
+  CheckboxSelectMultiple. The rail, the search box, the section heads and the
+  two select-all controls carry no name and submit nothing -- a browser with JS
+  off still gets a usable (if unassisted) list of checkboxes.
+
+  Behaviour is static/js/admin_user_permission.js, keyed off the data-pm-*
+  attributes below, the same file that drives the user page's boards. It
+  deliberately does NOT carry data-pm-hero: there is no hero gauge on this page.
+
+  Locked rows (a permission the operator may not delegate) render `disabled`.
+  They stay inside the counted set so the board reports the role truthfully,
+  and the JS skips disabled inputs when a select-all cascades.
+{% endcomment %}
+<div class="rp-board" data-pm-board data-total="{{ widget.total }}">
+
+  <div class="rp-toolbar">
+    <div class="rp-search">
+      <span class="material-symbols-outlined" aria-hidden="true">search</span>
+      <input type="search"
+             data-pm-search
+             placeholder="{% translate 'Filter by permission, code or resource…' %}"
+             aria-label="{% translate 'Filter permissions' %}"
+             autocomplete="off">
+    </div>
+
+    <div class="rp-toolbar-meta">
+      <span class="rp-counter">
+        <b data-pm-count>{{ widget.granted }}</b>
+        <span class="rp-counter-sep">/</span>
+        <span class="rp-counter-total">{{ widget.total }}</span>
+        {% translate 'granted' %}
+      </span>
+      <label class="rp-selectall" title="{% translate 'Tick every permission currently listed' %}">
+        <input type="checkbox" data-pm-all>
+        <span class="rp-box" aria-hidden="true"></span>
+        <span>{% translate 'Select all' %}</span>
+      </label>
+    </div>
+  </div>
+
+  {% if widget.restricted %}
+    <p class="rp-note">
+      <span class="material-symbols-outlined" aria-hidden="true">lock</span>
+      <span>
+        {% blocktranslate trimmed count counter=widget.locked %}
+          One permission is locked because you do not hold it yourself. A role can
+          only be given permissions its editor already has.
+        {% plural %}
+          {{ counter }} permissions are locked because you do not hold them
+          yourself. A role can only be given permissions its editor already has.
+        {% endblocktranslate %}
+      </span>
+    </p>
+  {% endif %}
+
+  <div class="rp-body">
+
+    {% comment %}
+      The column wrapper paints the rail's full-height background; the <nav>
+      inside stays short enough for position:sticky to have somewhere to travel.
+    {% endcomment %}
+    <div class="rp-rail-col">
+      <nav class="rp-rail" aria-label="{% translate 'Permission sections' %}">
+        {% for section in widget.sections %}
+          <a class="rp-rail-link{% if section.granted %} has-grants{% endif %}"
+             href="#rp-sec-{{ section.key }}"
+             data-pm-rail="{{ section.key }}"
+             data-search="{{ section.label|lower }} {{ section.key }}">
+            <span class="material-symbols-outlined" aria-hidden="true">{{ section.icon }}</span>
+            <span class="rp-rail-label">{{ section.label }}</span>
+            <span class="rp-rail-count" data-pm-rail-count>{{ section.granted }}</span>
+          </a>
+        {% endfor %}
+      </nav>
+    </div>
+
+    <div class="rp-grid">
+      {% for section in widget.sections %}
+        <section class="rp-section{% if section.granted %} has-grants{% endif %}"
+                 id="rp-sec-{{ section.key }}"
+                 data-pm-section="{{ section.key }}"
+                 data-search="{{ section.label|lower }} {{ section.key }}">
+
+          <header class="rp-section-head">
+            <label class="rp-check"
+                   title="{% blocktranslate with name=section.label %}Toggle every {{ name }} permission{% endblocktranslate %}">
+              <input type="checkbox" data-pm-section-all
+                     aria-label="{% blocktranslate with name=section.label %}Toggle every {{ name }} permission{% endblocktranslate %}">
+              <span class="rp-box" aria-hidden="true"></span>
+            </label>
+            <span class="material-symbols-outlined rp-section-icon" aria-hidden="true">{{ section.icon }}</span>
+            <h3 class="rp-section-title">{{ section.label }}</h3>
+            <span class="rp-section-key">{{ section.key }}</span>
+            <span class="rp-chip" data-pm-section-count>{{ section.granted }}/{{ section.total }}</span>
+          </header>
+
+          <ul class="rp-perms">
+            {% for permission in section.permissions %}
+              <li class="rp-perm{% if permission.locked %} is-locked{% endif %}"
+                  data-pm-row
+                  data-search="{{ permission.code|lower }} {{ permission.name|lower }} {{ permission.action|lower }}">
+                <input type="checkbox"
+                       class="rp-input"
+                       name="{{ permission.input_name }}"
+                       value="{{ permission.pk }}"
+                       id="{{ permission.id }}"
+                       data-pm-perm
+                       {% if permission.granted %}checked{% endif %}
+                       {% if permission.locked %}disabled{% endif %}>
+                <label for="{{ permission.id }}">
+                  <span class="rp-box" aria-hidden="true"></span>
+                  <span class="rp-perm-text">
+                    <span class="rp-perm-head">
+                      <span class="rp-perm-name">{{ permission.name }}</span>
+                      <span class="rp-perm-action">{{ permission.action }}</span>
+                      {% if permission.locked %}
+                        <span class="material-symbols-outlined rp-perm-lock"
+                              aria-hidden="true"
+                              title="{% translate 'You cannot grant a permission you do not hold' %}">lock</span>
+                      {% endif %}
+                    </span>
+                    <code class="rp-perm-code">{{ permission.code }}</code>
+                    {% if permission.description %}
+                      <span class="rp-perm-desc">{{ permission.description }}</span>
+                    {% endif %}
+                  </span>
+                </label>
+              </li>
+            {% endfor %}
+          </ul>
+        </section>
+      {% empty %}
+        <p class="rp-blank">
+          {% translate 'No permissions exist yet. Run manage.py seed_rbac to load the catalogue.' %}
+        </p>
+      {% endfor %}
+
+      <p class="rp-blank" data-pm-empty hidden>
+        {% translate 'Nothing matches that filter.' %}
+      </p>
+    </div>
+  </div>
+</div>

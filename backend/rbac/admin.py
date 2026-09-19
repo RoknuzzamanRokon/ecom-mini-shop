@@ -7,17 +7,27 @@ from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.contrib.auth.forms import UserChangeForm as BaseUserChangeForm
 from django.utils.translation import gettext_lazy as _
 from .models import Permission, Role, RolePermission, UserPermission, UserRole
-from .services import get_user_role_codes
+from .services import (
+    get_delegatable_permission_codes,
+    get_user_role_codes,
+    has_wildcard_delegation,
+)
 from .widgets import (
     GroupCardsWidget,
     MiniShopPermissionWidget,
     PermissionMatrixWidget,
+    RolePermissionWidget,
     render_minishop_permission_board,
 )
 
 #: Field name for the direct-grant board. Not a model field on auth.User --
 #: it is handled by MiniShopUserChangeForm and persisted in save_related().
 DIRECT_PERMS_FIELD = "minishop_direct_permissions"
+
+#: Field name for the role permission board. Role.permissions goes through
+#: RolePermission, which keeps it out of the ModelForm entirely, so this is a
+#: plain declared field on RoleAdminForm persisted in RoleAdmin.save_related().
+ROLE_PERMS_FIELD = "role_permissions"
 
 
 def can_edit_minishop_permissions(user):
@@ -64,10 +74,54 @@ class MiniShopUserChangeForm(BaseUserChangeForm):
             )
 
 
-class RolePermissionInline(admin.TabularInline):
-    model = RolePermission
-    extra = 1
-    autocomplete_fields = ["permission"]
+class RoleAdminForm(forms.ModelForm):
+    """
+    Adds the permission board to the role add/change form.
+
+    `Role.permissions` is a ManyToManyField through RolePermission, which Django
+    leaves out of the generated ModelForm, so the board is a declared field:
+    nothing is written on form.save(), and RoleAdmin.save_related() diffs the
+    submitted set against the RolePermission rows.
+
+    Diffing rather than clearing-and-recreating is deliberate -- an untouched
+    grant keeps its original `created_at`, so the table stays a record of when
+    each permission was actually added to the role.
+    """
+
+    #: Set per request by RoleAdmin.get_form; None means "no delegation limit",
+    #: which is also the safe default for a form built outside the admin.
+    actor = None
+
+    role_permissions = forms.ModelMultipleChoiceField(
+        queryset=Permission.objects.none(),
+        required=False,
+        label=_("Permissions"),
+    )
+
+    class Meta:
+        model = Role
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        field = self.fields[ROLE_PERMS_FIELD]
+        field.queryset = Permission.objects.all()
+
+        # "You may only give away what you already hold" -- the same boundary
+        # rbac.services applies to the role API. A wildcard holder (superuser /
+        # SUPER_ADMINISTRATOR) is unrestricted, which is the usual case here;
+        # everyone else gets the codes outside their own effective set locked.
+        delegatable = None
+        if self.actor is not None and not has_wildcard_delegation(self.actor):
+            delegatable = get_delegatable_permission_codes(self.actor)
+        field.widget = RolePermissionWidget(delegatable_codes=delegatable)
+
+        if self.instance and self.instance.pk:
+            self.initial[ROLE_PERMS_FIELD] = list(
+                RolePermission.objects.filter(role=self.instance).values_list(
+                    "permission_id", flat=True
+                )
+            )
 
 
 @admin.register(Role)
@@ -76,7 +130,86 @@ class RoleAdmin(admin.ModelAdmin):
     list_editable = ("is_active",)
     search_fields = ("code", "name", "description")
     list_filter = ("is_active", "created_at")
-    inlines = [RolePermissionInline]
+    form = RoleAdminForm
+
+    # The board replaces the RolePermission inline it used to carry: that was a
+    # <select> of the whole catalogue per grant, one row at a time, with the
+    # shape of the role readable only by opening every row. Individual rows are
+    # still listed and auditable under RolePermissionAdmin.
+    fieldsets = (
+        (None, {
+            "fields": ("code", "name", "description", "is_active"),
+        }),
+        (_("Role permissions"), {
+            "fields": (ROLE_PERMS_FIELD,),
+            # Routing key for admin_role_permission.css; see that file's §1.
+            "classes": ("rp-fieldset",),
+            "description": _(
+                "Everything this role grants. Ticking a permission here gives it "
+                "to every account holding the role, across the MiniShop API and "
+                "the Management Console."
+            ),
+        }),
+    )
+
+    def get_form(self, request, obj=None, **kwargs):
+        """
+        Hand the form the operator, for the delegation boundary.
+
+        modelform_factory builds a fresh subclass on every call, so setting the
+        attribute here cannot leak between requests.
+        """
+        form = super().get_form(request, obj, **kwargs)
+        form.actor = request.user
+        return form
+
+    def save_related(self, request, form, formsets, change):
+        """
+        Reconcile RolePermission with what the board submitted.
+
+        Re-checked server-side: the locked checkboxes are a UI affordance, not
+        the security boundary. A hand-crafted POST reaches here, so the actor's
+        delegatable set is applied to BOTH directions -- they can neither add a
+        permission they do not hold nor drop one, since a locked checkbox is
+        disabled and a disabled checkbox submits nothing, which would otherwise
+        read as "revoke it".
+        """
+        super().save_related(request, form, formsets, change)
+
+        if ROLE_PERMS_FIELD not in form.fields:
+            return
+
+        role = form.instance
+        submitted = {p.pk for p in form.cleaned_data.get(ROLE_PERMS_FIELD, [])}
+        existing = set(
+            RolePermission.objects.filter(role=role).values_list(
+                "permission_id", flat=True
+            )
+        )
+
+        if not has_wildcard_delegation(request.user):
+            delegatable_ids = set(
+                Permission.objects.filter(
+                    code__in=get_delegatable_permission_codes(request.user)
+                ).values_list("id", flat=True)
+            )
+            submitted &= delegatable_ids
+            submitted |= existing - delegatable_ids
+
+        added = submitted - existing
+        removed = existing - submitted
+
+        if added:
+            RolePermission.objects.bulk_create(
+                [
+                    RolePermission(role=role, permission_id=permission_id)
+                    for permission_id in sorted(added)
+                ]
+            )
+        if removed:
+            RolePermission.objects.filter(
+                role=role, permission_id__in=removed
+            ).delete()
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
