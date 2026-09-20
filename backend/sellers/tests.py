@@ -1,7 +1,12 @@
+import threading
+import time
+from unittest import mock
+
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
-from django.test import TestCase
+from django.db import connection
+from django.test import TestCase, TransactionTestCase
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -9,7 +14,7 @@ from audit.models import AuditLog
 from rbac.models import Role
 from rbac.services import assign_user_role
 from sellers.models import SellerProfile
-from sellers.services import get_seller_capabilities
+from sellers.services import approve_seller, get_seller_capabilities
 
 User = get_user_model()
 
@@ -524,3 +529,151 @@ class SellerLifecycleAuditTests(TestCase):
             list(seller_logs.order_by("created_at").values_list("action", flat=True)),
             ["ADMIN_SELLER_APPROVE", "ADMIN_SELLER_SUSPEND", "ADMIN_SELLER_REACTIVATE"],
         )
+
+
+class SellerLifecycleConcurrencyTests(TransactionTestCase):
+    """
+    Known Issue #23 -- the TOCTOU window on audited seller status transitions.
+
+    The four lifecycle endpoints captured `previous_state = {"status": seller.status}`
+    from an *unlocked* read. Two concurrent transitions on one seller could therefore
+    both record the same `previous_state`, even though only one of them can actually
+    have followed it -- and the later write silently clobbered the earlier one.
+
+    This proves the row lock serialises the two requests and leaves an audit chain in
+    which every entry's `previous_state` is the state its predecessor committed.
+
+    Requires MySQL, per Phase 2A's testing boundary: the assertion is about real
+    InnoDB row-lock behaviour across two connections, which SQLite cannot demonstrate.
+    """
+
+    def setUp(self):
+        call_command("seed_rbac")
+        self.applicant = User.objects.create_user(
+            username="concurrent_applicant",
+            email="concurrent_applicant@example.com",
+            password="TestPassword123!",
+        )
+        self.staff_a = User.objects.create_user(
+            username="concurrent_staff_a",
+            email="concurrent_staff_a@example.com",
+            password="TestPassword123!",
+            is_staff=True,
+        )
+        assign_user_role(self.staff_a, Role.ROLE_ADMINISTRATOR)
+        self.staff_b = User.objects.create_user(
+            username="concurrent_staff_b",
+            email="concurrent_staff_b@example.com",
+            password="TestPassword123!",
+            is_staff=True,
+        )
+        assign_user_role(self.staff_b, Role.ROLE_ADMINISTRATOR)
+
+    @staticmethod
+    def _post_in_thread(results, key, user, url, payload=None):
+        """Runs one lifecycle request on its own DB connection."""
+        connection.close()
+        try:
+            client = APIClient()
+            client.force_authenticate(user=user)
+            results[key] = client.post(url, payload or {}, format="json")
+        except Exception as exc:  # surfaced in the main thread below
+            results[key] = exc
+        finally:
+            connection.close()
+
+    def test_concurrent_transitions_keep_the_audit_chain_consistent(self):
+        if connection.vendor != "mysql":
+            self.skipTest(
+                f"Row-lock serialisation is only meaningful on MySQL; this run is on "
+                f"'{connection.vendor}'. Not asserting concurrency correctness."
+            )
+
+        seller = SellerProfile.objects.create(
+            user=self.applicant,
+            seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+            business_name="Concurrent Lifecycle Traders",
+            status=SellerProfile.STATUS_PENDING,
+        )
+
+        holding_lock = threading.Event()
+        may_proceed = threading.Event()
+        real_approve_seller = approve_seller
+
+        def approve_while_holding_the_lock(seller_obj, staff_user):
+            # Called from inside SellerApproveView's atomic block, after the locked
+            # read and after previous_state was captured. Blocking here keeps the
+            # row lock held while the suspend request tries to take it.
+            holding_lock.set()
+            may_proceed.wait(timeout=30)
+            return real_approve_seller(seller_obj, staff_user)
+
+        results = {}
+        with mock.patch("sellers.views.approve_seller", approve_while_holding_the_lock):
+            approver = threading.Thread(
+                target=self._post_in_thread,
+                args=(results, "approve", self.staff_a, f"/api/sellers/{seller.pk}/approve/"),
+            )
+            approver.start()
+            self.assertTrue(
+                holding_lock.wait(timeout=30),
+                "the approve request never reached the service call",
+            )
+
+            suspender = threading.Thread(
+                target=self._post_in_thread,
+                args=(
+                    results,
+                    "suspend",
+                    self.staff_b,
+                    f"/api/sellers/{seller.pk}/suspend/",
+                    {"reason": "Concurrent suspension raised during review"},
+                ),
+            )
+            suspender.start()
+            # Long enough for the suspend request to reach the row lock and block on
+            # it. The assertion below is order-independent, so an unlucky machine
+            # changes which transition lands first, not whether the test passes.
+            time.sleep(0.5)
+            may_proceed.set()
+
+            approver.join(timeout=30)
+            suspender.join(timeout=30)
+
+        self.assertFalse(approver.is_alive(), "the approve request never finished")
+        self.assertFalse(suspender.is_alive(), "the suspend request never finished")
+
+        for key in ("approve", "suspend"):
+            outcome = results.get(key)
+            self.assertNotIsInstance(outcome, Exception, f"{key} raised {outcome!r}")
+            self.assertIsNotNone(outcome, f"{key} produced no response")
+            self.assertEqual(outcome.status_code, status.HTTP_200_OK)
+
+        logs = list(
+            AuditLog.objects.filter(
+                target_type="SellerProfile",
+                target_id=str(seller.pk),
+                action__in=("ADMIN_SELLER_APPROVE", "ADMIN_SELLER_SUSPEND"),
+            ).order_by("id")
+        )
+        self.assertEqual(len(logs), 2, "expected exactly one audit entry per transition")
+
+        # The real assertion: walk the chain. Every entry must claim a previous_state
+        # equal to what the entry before it committed, starting from the seller's
+        # initial status. Against the unlocked code both entries claim PENDING and
+        # this fails on the second one.
+        expected_previous = SellerProfile.STATUS_PENDING
+        for position, entry in enumerate(logs):
+            self.assertEqual(
+                entry.metadata["previous_state"],
+                {"status": expected_previous},
+                f"audit entry {position} ({entry.action}) claims previous_state "
+                f"{entry.metadata['previous_state']}, which was never the committed "
+                f"state immediately before it; expected {{'status': "
+                f"'{expected_previous}'}}",
+            )
+            expected_previous = entry.metadata["new_state"]["status"]
+
+        # ...and the end of the chain must be what is actually in the database.
+        seller.refresh_from_db()
+        self.assertEqual(seller.status, expected_previous)

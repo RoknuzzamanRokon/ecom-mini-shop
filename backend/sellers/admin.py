@@ -1,7 +1,8 @@
 from django.contrib import admin
+from django.db import transaction
 from django.db.models import Count
 
-from audit.admin_mixins import ReasonRequiredActionMixin, StatusBadgeMixin
+from audit.admin_mixins import CONFIRM_FLAG, ReasonRequiredActionMixin, StatusBadgeMixin
 from .models import SellerProfile
 from .services import approve_seller, suspend_seller, reject_seller, reactivate_seller
 
@@ -59,19 +60,43 @@ class SellerProfileAdmin(ReasonRequiredActionMixin, StatusBadgeMixin, admin.Mode
     def audit_context(self, obj):
         return {'seller': obj}
 
-    def approve_and_activate(self, request, queryset):
-        self.run_simple_action(
-            request, queryset,
-            verb='Approved and activated',
-            perform=approve_seller,
-            audit_action='ADMIN_SELLER_APPROVE',
+    def _locked_sellers(self, queryset):
+        """
+        Re-reads the selected sellers under SELECT ... FOR UPDATE, materialised
+        immediately so nothing lazy can escape the caller's atomic block.
+
+        Known Issue #23: the mixin captures `previous_state` from `obj.status`, so
+        the rows it iterates must already be locked -- otherwise the audit trail can
+        record a `previous_state` that was never the committed value. The lock is
+        applied here rather than inside `ReasonRequiredActionMixin`, because that
+        mixin is shared with `ShopAdmin` and shops are out of this phase's scope.
+
+        `list()` matters: `run_reason_action` puts the queryset into a
+        TemplateResponse context, and a TemplateResponse renders *after* the view
+        returns. A lazy select_for_update() queryset evaluated there would be
+        outside the transaction and would raise TransactionManagementError.
+
+        Ordered by pk so two overlapping bulk actions always take their locks in the
+        same sequence and cannot deadlock against one another.
+        """
+        pks = list(queryset.values_list('pk', flat=True))
+        return list(
+            SellerProfile.objects.select_for_update().filter(pk__in=pks).order_by('pk')
         )
+
+    def approve_and_activate(self, request, queryset):
+        with transaction.atomic():
+            self.run_simple_action(
+                request, self._locked_sellers(queryset),
+                verb='Approved and activated',
+                perform=approve_seller,
+                audit_action='ADMIN_SELLER_APPROVE',
+            )
     approve_and_activate.short_description = "Approve and activate selected sellers"
     approve_and_activate.allowed_permissions = ('change',)
 
     def suspend_sellers(self, request, queryset):
-        return self.run_reason_action(
-            request, queryset,
+        options = dict(
             action_name='suspend_sellers',
             title='Suspend sellers',
             verb='Suspended',
@@ -80,12 +105,20 @@ class SellerProfileAdmin(ReasonRequiredActionMixin, StatusBadgeMixin, admin.Mode
             perform=suspend_seller,
             audit_action='ADMIN_SELLER_SUSPEND',
         )
+        # Only the confirming POST mutates; the first pass just renders the reason
+        # form, and taking row locks to draw a page would serialise readers for no
+        # reason.
+        if request.POST.get(CONFIRM_FLAG):
+            with transaction.atomic():
+                return self.run_reason_action(
+                    request, self._locked_sellers(queryset), **options
+                )
+        return self.run_reason_action(request, queryset, **options)
     suspend_sellers.short_description = "Suspend selected sellers (reason required)"
     suspend_sellers.allowed_permissions = ('change',)
 
     def reject_sellers(self, request, queryset):
-        return self.run_reason_action(
-            request, queryset,
+        options = dict(
             action_name='reject_sellers',
             title='Reject sellers',
             verb='Rejected',
@@ -94,15 +127,22 @@ class SellerProfileAdmin(ReasonRequiredActionMixin, StatusBadgeMixin, admin.Mode
             perform=reject_seller,
             audit_action='ADMIN_SELLER_REJECT',
         )
+        if request.POST.get(CONFIRM_FLAG):
+            with transaction.atomic():
+                return self.run_reason_action(
+                    request, self._locked_sellers(queryset), **options
+                )
+        return self.run_reason_action(request, queryset, **options)
     reject_sellers.short_description = "Reject selected sellers (reason required)"
     reject_sellers.allowed_permissions = ('change',)
 
     def reactivate_sellers(self, request, queryset):
-        self.run_simple_action(
-            request, queryset,
-            verb='Reactivated',
-            perform=reactivate_seller,
-            audit_action='ADMIN_SELLER_REACTIVATE',
-        )
+        with transaction.atomic():
+            self.run_simple_action(
+                request, self._locked_sellers(queryset),
+                verb='Reactivated',
+                perform=reactivate_seller,
+                audit_action='ADMIN_SELLER_REACTIVATE',
+            )
     reactivate_sellers.short_description = "Reactivate selected sellers"
     reactivate_sellers.allowed_permissions = ('change',)

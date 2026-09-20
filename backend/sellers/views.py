@@ -151,7 +151,13 @@ class SellerApproveView(APIView):
 
     def post(self, request, pk):
         with transaction.atomic():
-            seller = get_object_or_404(SellerProfile, pk=pk)
+            # Known Issue #23: the row must be read under SELECT ... FOR UPDATE, or
+            # `previous_state` below is captured from a value another transaction may
+            # already have overwritten by the time this one writes. Same pattern as
+            # the sibling AdminSellerStatusAPIView._update_status
+            # (shop/admin_views.py:744). get_object_or_404 is kept so the 404 body is
+            # unchanged -- the sibling raises DRF NotFound with a different detail.
+            seller = get_object_or_404(SellerProfile.objects.select_for_update(), pk=pk)
             previous_state = {"status": seller.status}
             approve_seller(seller, request.user)
             AuditService.log(
@@ -177,12 +183,15 @@ class SellerRejectView(APIView):
     permission_classes = [CanApproveSeller]
 
     def post(self, request, pk):
-        seller = get_object_or_404(SellerProfile, pk=pk)
-        serializer = SellerActionReasonSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        reason = serializer.validated_data["reason"]
-
         with transaction.atomic():
+            # Locked read first, so a missing seller still 404s ahead of a bad reason's
+            # 400, exactly as before. Serializer validation is in-memory and adds no
+            # measurable time to the lock hold.
+            seller = get_object_or_404(SellerProfile.objects.select_for_update(), pk=pk)
+            serializer = SellerActionReasonSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            reason = serializer.validated_data["reason"]
+
             previous_state = {"status": seller.status}
             reject_seller(seller, request.user, reason)
             AuditService.log(
@@ -209,12 +218,12 @@ class SellerSuspendView(APIView):
     permission_classes = [CanSuspendSeller]
 
     def post(self, request, pk):
-        seller = get_object_or_404(SellerProfile, pk=pk)
-        serializer = SellerActionReasonSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        reason = serializer.validated_data["reason"]
-
         with transaction.atomic():
+            seller = get_object_or_404(SellerProfile.objects.select_for_update(), pk=pk)
+            serializer = SellerActionReasonSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            reason = serializer.validated_data["reason"]
+
             previous_state = {"status": seller.status}
             suspend_seller(seller, request.user, reason)
             AuditService.log(
@@ -241,11 +250,15 @@ class SellerReactivateView(APIView):
     permission_classes = [CanSuspendSeller]
 
     def post(self, request, pk):
-        seller = get_object_or_404(SellerProfile, pk=pk)
-        if not seller.is_suspended:
-            raise ValidationError("Only suspended sellers can be reactivated.")
-
         with transaction.atomic():
+            # The is_suspended gate moves inside the lock with the read it depends on.
+            # Checking it against an unlocked row is the same TOCTOU as #23: the seller
+            # could be reactivated by a concurrent request between the check and the
+            # write. The rule itself is unchanged, and 404 still precedes 400.
+            seller = get_object_or_404(SellerProfile.objects.select_for_update(), pk=pk)
+            if not seller.is_suspended:
+                raise ValidationError("Only suspended sellers can be reactivated.")
+
             previous_state = {"status": seller.status}
             reactivate_seller(seller, request.user)
             AuditService.log(
