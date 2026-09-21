@@ -10,6 +10,7 @@ import {
   getSellerWallet,
 } from "@/lib/api";
 import { SellerShop, Product, SellerOrder, SellerWallet } from "@/lib/types";
+import { getAuthToken } from "@/lib/auth";
 
 export default function SellerDashboardPage() {
   const { seller, dashboardData } = useSeller();
@@ -22,12 +23,7 @@ export default function SellerDashboardPage() {
   const [loadingMetrics, setLoadingMetrics] = useState(true);
 
   useEffect(() => {
-    const token =
-      typeof window !== "undefined"
-        ? localStorage.getItem("minishop_token") ||
-          localStorage.getItem("token") ||
-          localStorage.getItem("access_token")
-        : null;
+    const token = getAuthToken();
 
     if (!token) return;
 

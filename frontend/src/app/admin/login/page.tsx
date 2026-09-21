@@ -4,6 +4,7 @@ import React, { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { loginUser, getCurrentUser } from "@/lib/api";
+import { clearTokens, setTokens } from "@/lib/auth";
 import { isManagementUser } from "@/lib/admin-auth";
 
 export default function AdminLoginPage() {
@@ -55,21 +56,18 @@ function AdminLoginForm() {
 
       // 3. Reject non-management users
       if (!isManagementUser(userData)) {
-        // Purge tokens immediately
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("minishop_token");
-          localStorage.removeItem("minishop_refresh_token");
-        }
+        // Purge tokens immediately, through the shared accessor (Phase 2J) so
+        // the legacy access-token keys it also clears cannot leave a
+        // non-management session half-signed-in.
+        clearTokens();
         setError("Access denied: You do not have management portal permissions.");
         setLoading(false);
         return;
       }
 
-      // 4. Store tokens in local storage for session persistence
-      if (typeof window !== "undefined") {
-        localStorage.setItem("minishop_token", tokens.access);
-        localStorage.setItem("minishop_refresh_token", tokens.refresh);
-      }
+      // 4. Store tokens for session persistence, through the shared accessor
+      //    (Phase 2J) rather than raw localStorage literals.
+      setTokens(tokens.access, tokens.refresh);
 
       // 5. Redirect to management dashboard or preserved destination
       // Using window.location.href to ensure full AuthContext state rehydration on navigation

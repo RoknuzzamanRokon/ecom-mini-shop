@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { getSellerOrders, updateSellerOrderStatus } from "@/lib/api";
 import { SellerOrder } from "@/lib/types";
+import { getAuthToken } from "@/lib/auth";
 
 const ORDER_STATUSES = [
   "ALL",
@@ -39,12 +40,7 @@ export default function SellerOrdersPage() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const fetchOrdersList = useCallback(async () => {
-    const token =
-      typeof window !== "undefined"
-        ? localStorage.getItem("minishop_token") ||
-          localStorage.getItem("token") ||
-          localStorage.getItem("access_token")
-        : null;
+    const token = getAuthToken();
     if (!token) return;
 
     try {
@@ -94,12 +90,7 @@ export default function SellerOrdersPage() {
   const handleStatusSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!updatingOrder) return;
-    const token =
-      typeof window !== "undefined"
-        ? localStorage.getItem("minishop_token") ||
-          localStorage.getItem("token") ||
-          localStorage.getItem("access_token")
-        : null;
+    const token = getAuthToken();
     if (!token) return;
 
     setUpdatingLoading(true);

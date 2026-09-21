@@ -9,6 +9,9 @@ import {
   removeCartItemApi,
   clearCartApi,
 } from "@/lib/api";
+// Phase 2J: the byte-identical copy of this reader that used to live below is
+// gone; the three legacy access-token keys are resolved in one place now.
+import { getAuthToken } from "@/lib/auth";
 
 interface CartContextType {
   items: CartItem[];
@@ -27,16 +30,6 @@ interface CartContextType {
 }
 
 const CartContext = createContext<CartContextType | undefined>(undefined);
-
-function getAuthToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return (
-    localStorage.getItem("minishop_token") ||
-    localStorage.getItem("token") ||
-    localStorage.getItem("access_token") ||
-    null
-  );
-}
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);

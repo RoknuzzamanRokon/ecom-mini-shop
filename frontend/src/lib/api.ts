@@ -1,7 +1,67 @@
 import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse, Favorite, PasswordChangePayload, SellerProfile, SellerDashboardData, SellerShop, SellerWallet, PointTransaction, Review, ReviewCreatePayload, ReviewUpdatePayload } from "./types";
 
+import { refreshTokenOnce } from "./auth";
+
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
+
+/**
+ * ==========================================================================
+ * AUTHENTICATED CUSTOMER REQUEST WRAPPER (Phase 2J)
+ * ==========================================================================
+ *
+ * The one place an authenticated customer/seller/staff request is sent, so a
+ * mid-session access-token expiry is recovered once, here, instead of
+ * surfacing as a generic error in every page that happens to be open.
+ *
+ *   401 -> refreshTokenOnce() -> retry once with the new token -> return it
+ *
+ * It returns the raw `Response` rather than a parsed body on purpose. Every
+ * function below already has its own status handling and error message —
+ * `getMyProductReview` maps 404 to null, `removeFavorite` tolerates 404,
+ * `createSellerProduct` raises `InsufficientPointsError` from a 400 body — and
+ * Phase 2J is meant to centralize transport, not rewrite that logic.
+ *
+ * Two deliberate non-behaviours:
+ *
+ *  - It never sets `Content-Type`. `createSellerProduct` posts `FormData` and
+ *    must let the browser write its own multipart boundary; call sites that
+ *    send JSON pass the header themselves, exactly as before.
+ *  - With no token it sends a plain unauthenticated request and does not
+ *    refresh. `createOrder` and `getOrderDetail` take an optional token, and a
+ *    401 on a request that carried no credentials is not an expired session.
+ *
+ * `retried` is internal. The retry recurses exactly once and the recursive
+ * call is passed `true`, so a second 401 is returned to the caller as-is —
+ * there is no third request.
+ */
+async function customerRequest(
+  endpoint: string,
+  token?: string | null,
+  options: RequestInit = {},
+  retried = false
+): Promise<Response> {
+  const headers: Record<string, string> = {
+    ...((options.headers as Record<string, string>) || {}),
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const res = await fetch(`${API_BASE_URL}${endpoint}`, { ...options, headers });
+
+  if (res.status === 401 && token && !retried) {
+    const refreshed = await refreshTokenOnce();
+    if (refreshed) {
+      return customerRequest(endpoint, refreshed, options, true);
+    }
+    // Refresh failed. Tokens are already cleared and AuthContext already
+    // notified by refreshTokenOnce(); hand the original 401 back so the
+    // caller's existing error path runs unchanged.
+  }
+
+  return res;
+}
 
 export function formatImageUrl(url?: string | null): string {
   if (!url) return "/placeholder.svg";
@@ -342,16 +402,12 @@ export async function createOrder(
   },
   token?: string | null
 ): Promise<Order> {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
-
-  const res = await fetch(`${API_BASE_URL}/api/orders/`, {
+  // `token` is optional here: a guest checkout posts without one. The wrapper
+  // only attaches Authorization and only refreshes on 401 when a token is
+  // actually supplied, so the unauthenticated path is unchanged.
+  const res = await customerRequest(`/api/orders/`, token, {
     method: "POST",
-    headers,
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
   });
 
@@ -368,10 +424,7 @@ export async function getUserOrders(
   token: string,
   page: number = 1
 ): Promise<PaginatedResponse<Order>> {
-  const res = await fetch(`${API_BASE_URL}/api/orders/?page=${page}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+  const res = await customerRequest(`/api/orders/?page=${page}`, token, {
     cache: "no-store",
   });
 
@@ -388,12 +441,8 @@ export async function getOrderDetail(
   token?: string | null
 ): Promise<Order | null> {
   try {
-    const headers: Record<string, string> = {};
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
-    const res = await fetch(`${API_BASE_URL}/api/orders/${orderNumber}/`, {
-      headers,
+    // Optional token, as in createOrder — no token means no interception.
+    const res = await customerRequest(`/api/orders/${orderNumber}/`, token, {
       cache: "no-store",
     });
     if (!res.ok) throw new Error("Order not found");
@@ -415,10 +464,7 @@ export async function getSellerProducts(
   if (params?.q) query.set("q", params.q);
   if (params?.page) query.set("page", params.page.toString());
 
-  const res = await fetch(`${API_BASE_URL}/api/products/mine/?${query.toString()}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+  const res = await customerRequest(`/api/products/mine/?${query.toString()}`, token, {
     cache: "no-store",
   });
 
@@ -459,7 +505,9 @@ export async function createSellerProduct(
   }
 ): Promise<Product> {
   const { image, ...rest } = data;
-  const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+  // Authorization is attached by customerRequest. Content-Type stays
+  // conditional: FormData must set its own multipart boundary.
+  const headers: Record<string, string> = {};
   let body: FormData | string;
 
   if (image) {
@@ -474,7 +522,7 @@ export async function createSellerProduct(
     body = JSON.stringify(rest);
   }
 
-  const res = await fetch(`${API_BASE_URL}/api/products/mine/`, {
+  const res = await customerRequest(`/api/products/mine/`, token, {
     method: "POST",
     headers,
     body,
@@ -500,11 +548,7 @@ export async function createSellerProduct(
  * Customer Profile & Address API Methods (Task 8)
  */
 export async function getCustomerProfile(token: string): Promise<CustomerProfile> {
-  const res = await fetch(`${API_BASE_URL}/api/profile/me/`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+  const res = await customerRequest(`/api/profile/me/`, token);
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
     throw new Error(errorData.detail || "Failed to fetch customer profile");
@@ -516,11 +560,10 @@ export async function updateCustomerProfile(
   data: Partial<CustomerProfile>,
   token: string
 ): Promise<CustomerProfile> {
-  const res = await fetch(`${API_BASE_URL}/api/profile/me/`, {
+  const res = await customerRequest(`/api/profile/me/`, token, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(data),
   });
@@ -532,11 +575,7 @@ export async function updateCustomerProfile(
 }
 
 export async function getCustomerAddresses(token: string): Promise<Address[]> {
-  const res = await fetch(`${API_BASE_URL}/api/addresses/`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+  const res = await customerRequest(`/api/addresses/`, token);
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
     throw new Error(errorData.detail || "Failed to fetch addresses");
@@ -548,11 +587,10 @@ export async function createCustomerAddress(
   data: AddressInput,
   token: string
 ): Promise<Address> {
-  const res = await fetch(`${API_BASE_URL}/api/addresses/`, {
+  const res = await customerRequest(`/api/addresses/`, token, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(data),
   });
@@ -568,11 +606,10 @@ export async function updateCustomerAddress(
   data: Partial<AddressInput>,
   token: string
 ): Promise<Address> {
-  const res = await fetch(`${API_BASE_URL}/api/addresses/${id}/`, {
+  const res = await customerRequest(`/api/addresses/${id}/`, token, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(data),
   });
@@ -584,11 +621,8 @@ export async function updateCustomerAddress(
 }
 
 export async function deleteCustomerAddress(id: number, token: string): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/api/addresses/${id}/`, {
+  const res = await customerRequest(`/api/addresses/${id}/`, token, {
     method: "DELETE",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
@@ -597,11 +631,8 @@ export async function deleteCustomerAddress(id: number, token: string): Promise<
 }
 
 export async function setDefaultCustomerAddress(id: number, token: string): Promise<Address> {
-  const res = await fetch(`${API_BASE_URL}/api/addresses/${id}/set-default/`, {
+  const res = await customerRequest(`/api/addresses/${id}/set-default/`, token, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
@@ -611,11 +642,7 @@ export async function setDefaultCustomerAddress(id: number, token: string): Prom
 }
 
 export async function getCart(token: string): Promise<BackendCart> {
-  const res = await fetch(`${API_BASE_URL}/api/cart/`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+  const res = await customerRequest(`/api/cart/`, token);
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
     throw new Error(errorData.detail || "Failed to fetch cart");
@@ -628,11 +655,10 @@ export async function addToCartApi(
   quantity: number,
   token: string
 ): Promise<BackendCart> {
-  const res = await fetch(`${API_BASE_URL}/api/cart/items/`, {
+  const res = await customerRequest(`/api/cart/items/`, token, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ product_id: productId, quantity }),
   });
@@ -648,11 +674,10 @@ export async function updateCartItemApi(
   quantity: number,
   token: string
 ): Promise<BackendCart> {
-  const res = await fetch(`${API_BASE_URL}/api/cart/items/${itemId}/`, {
+  const res = await customerRequest(`/api/cart/items/${itemId}/`, token, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ quantity }),
   });
@@ -667,11 +692,8 @@ export async function removeCartItemApi(
   itemId: number,
   token: string
 ): Promise<BackendCart> {
-  const res = await fetch(`${API_BASE_URL}/api/cart/items/${itemId}/`, {
+  const res = await customerRequest(`/api/cart/items/${itemId}/`, token, {
     method: "DELETE",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
@@ -681,11 +703,8 @@ export async function removeCartItemApi(
 }
 
 export async function clearCartApi(token: string): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/api/cart/`, {
+  const res = await customerRequest(`/api/cart/`, token, {
     method: "DELETE",
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
@@ -701,10 +720,7 @@ export async function getSellerOrders(
   const query = new URLSearchParams({ page: page.toString() });
   if (status) query.set("status", status);
 
-  const res = await fetch(`${API_BASE_URL}/api/seller/orders/?${query.toString()}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+  const res = await customerRequest(`/api/seller/orders/?${query.toString()}`, token, {
     cache: "no-store",
   });
 
@@ -720,10 +736,7 @@ export async function getSellerOrderDetail(
   orderNumber: string,
   token: string
 ): Promise<SellerOrder> {
-  const res = await fetch(`${API_BASE_URL}/api/seller/orders/${orderNumber}/`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+  const res = await customerRequest(`/api/seller/orders/${orderNumber}/`, token, {
     cache: "no-store",
   });
 
@@ -741,11 +754,10 @@ export async function updateSellerOrderStatus(
   token: string,
   note?: string
 ): Promise<SellerOrder> {
-  const res = await fetch(`${API_BASE_URL}/api/seller/orders/${orderNumber}/status/`, {
+  const res = await customerRequest(`/api/seller/orders/${orderNumber}/status/`, token, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ status, note }),
   });
@@ -763,10 +775,7 @@ export async function getSellerProductInventory(
   productId: number,
   token: string
 ): Promise<ProductInventory> {
-  const res = await fetch(`${API_BASE_URL}/api/seller/inventory/${productId}/`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+  const res = await customerRequest(`/api/seller/inventory/${productId}/`, token, {
     cache: "no-store",
   });
 
@@ -783,11 +792,10 @@ export async function adjustSellerProductStock(
   payload: InventoryAdjustmentPayload,
   token: string
 ): Promise<ProductInventory> {
-  const res = await fetch(`${API_BASE_URL}/api/seller/inventory/${productId}/adjust/`, {
+  const res = await customerRequest(`/api/seller/inventory/${productId}/adjust/`, token, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(payload),
   });
@@ -806,11 +814,10 @@ export async function cancelCustomerOrder(
   token: string,
   reason?: string
 ): Promise<Order> {
-  const res = await fetch(`${API_BASE_URL}/api/orders/${orderNumber}/cancel/`, {
+  const res = await customerRequest(`/api/orders/${orderNumber}/cancel/`, token, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ reason }),
   });
@@ -825,11 +832,7 @@ export async function cancelCustomerOrder(
 }
 
 export async function getOrderPayment(orderNumber: string, token: string): Promise<Payment> {
-  const res = await fetch(`${API_BASE_URL}/api/orders/${orderNumber}/payment/`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+  const res = await customerRequest(`/api/orders/${orderNumber}/payment/`, token);
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
     throw new Error(errorData.detail || "Failed to fetch order payment");
@@ -842,11 +845,10 @@ export async function initiateOrderPayment(
   payload: PaymentInitiatePayload,
   token: string
 ): Promise<Payment> {
-  const res = await fetch(`${API_BASE_URL}/api/orders/${orderNumber}/payment/`, {
+  const res = await customerRequest(`/api/orders/${orderNumber}/payment/`, token, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(payload),
   });
@@ -867,11 +869,7 @@ export async function getStaffPayments(
   if (params?.order_number) query.set("order_number", params.order_number);
   if (params?.page) query.set("page", params.page.toString());
 
-  const res = await fetch(`${API_BASE_URL}/api/staff/payments/?${query.toString()}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+  const res = await customerRequest(`/api/staff/payments/?${query.toString()}`, token);
   if (!res.ok) throw new Error("Failed to fetch staff payments");
   return await res.json();
 }
@@ -881,11 +879,10 @@ export async function verifyStaffPayment(
   payload: PaymentVerifyPayload,
   token: string
 ): Promise<Payment> {
-  const res = await fetch(`${API_BASE_URL}/api/staff/payments/${paymentId}/verify/`, {
+  const res = await customerRequest(`/api/staff/payments/${paymentId}/verify/`, token, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(payload),
   });
@@ -901,11 +898,10 @@ export async function refundStaffPayment(
   payload: RefundCreatePayload,
   token: string
 ): Promise<Refund> {
-  const res = await fetch(`${API_BASE_URL}/api/staff/payments/${paymentId}/refund/`, {
+  const res = await customerRequest(`/api/staff/payments/${paymentId}/refund/`, token, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(payload),
   });
@@ -935,11 +931,7 @@ export async function getStaffOrders(
   if (params?.page) query.set("page", params.page.toString());
   if (params?.page_size) query.set("page_size", params.page_size.toString());
 
-  const res = await fetch(`${API_BASE_URL}/api/staff/orders/?${query.toString()}`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+  const res = await customerRequest(`/api/staff/orders/?${query.toString()}`, token);
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
     throw new Error(errorData.detail || "Failed to fetch staff orders");
@@ -951,11 +943,7 @@ export async function getStaffOrderDetail(
   orderNumberOrId: string | number,
   token: string
 ): Promise<StaffOrderDetail> {
-  const res = await fetch(`${API_BASE_URL}/api/staff/orders/${orderNumberOrId}/`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
-  });
+  const res = await customerRequest(`/api/staff/orders/${orderNumberOrId}/`, token);
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
     throw new Error(errorData.detail || "Failed to fetch staff order details");
@@ -968,11 +956,10 @@ export async function updateStaffOrderStatus(
   payload: StaffOrderStatusUpdatePayload,
   token: string
 ): Promise<StaffOrderDetail> {
-  const res = await fetch(`${API_BASE_URL}/api/staff/orders/${orderNumberOrId}/status/`, {
+  const res = await customerRequest(`/api/staff/orders/${orderNumberOrId}/status/`, token, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(payload),
   });
@@ -1029,10 +1016,7 @@ export async function refreshAccessToken(
 }
 
 export async function getCurrentUser(token: string): Promise<AuthUser> {
-  const res = await fetch(`${API_BASE_URL}/api/auth/me/`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-    },
+  const res = await customerRequest(`/api/auth/me/`, token, {
     cache: "no-store",
   });
 
@@ -1085,8 +1069,7 @@ export async function registerCustomer(
  * Favorites / Wishlist
  */
 export async function getFavorites(token: string): Promise<Favorite[]> {
-  const res = await fetch(`${API_BASE_URL}/api/favorites/`, {
-    headers: { Authorization: `Bearer ${token}` },
+  const res = await customerRequest(`/api/favorites/`, token, {
     cache: "no-store",
   });
   if (!res.ok) throw new Error("Failed to fetch favorites");
@@ -1094,11 +1077,10 @@ export async function getFavorites(token: string): Promise<Favorite[]> {
 }
 
 export async function addFavorite(productId: number, token: string): Promise<Favorite> {
-  const res = await fetch(`${API_BASE_URL}/api/favorites/`, {
+  const res = await customerRequest(`/api/favorites/`, token, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({ product_id: productId }),
   });
@@ -1107,9 +1089,8 @@ export async function addFavorite(productId: number, token: string): Promise<Fav
 }
 
 export async function removeFavorite(productId: number, token: string): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/api/favorites/${productId}/`, {
+  const res = await customerRequest(`/api/favorites/${productId}/`, token, {
     method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok && res.status !== 404) throw new Error("Failed to remove favorite");
 }
@@ -1133,8 +1114,7 @@ export async function getMyProductReview(
   productId: number,
   token: string
 ): Promise<Review | null> {
-  const res = await fetch(`${API_BASE_URL}/api/reviews/mine/?product_id=${productId}`, {
-    headers: { Authorization: `Bearer ${token}` },
+  const res = await customerRequest(`/api/reviews/mine/?product_id=${productId}`, token, {
     cache: "no-store",
   });
   if (res.status === 404) return null;
@@ -1146,11 +1126,10 @@ export async function createReview(
   payload: ReviewCreatePayload,
   token: string
 ): Promise<Review> {
-  const res = await fetch(`${API_BASE_URL}/api/reviews/`, {
+  const res = await customerRequest(`/api/reviews/`, token, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(payload),
   });
@@ -1169,11 +1148,10 @@ export async function updateReview(
   payload: ReviewUpdatePayload,
   token: string
 ): Promise<Review> {
-  const res = await fetch(`${API_BASE_URL}/api/reviews/${reviewId}/`, {
+  const res = await customerRequest(`/api/reviews/${reviewId}/`, token, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(payload),
   });
@@ -1186,9 +1164,8 @@ export async function updateReview(
 }
 
 export async function deleteReview(reviewId: number, token: string): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/api/reviews/${reviewId}/`, {
+  const res = await customerRequest(`/api/reviews/${reviewId}/`, token, {
     method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok && res.status !== 404) throw new Error("Failed to delete review");
 }
@@ -1200,11 +1177,10 @@ export async function changePassword(
   payload: PasswordChangePayload,
   token: string
 ): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/api/auth/change-password/`, {
+  const res = await customerRequest(`/api/auth/change-password/`, token, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(payload),
   });
@@ -1229,9 +1205,8 @@ export async function uploadAvatar(
 ): Promise<CustomerProfile> {
   const formData = new FormData();
   formData.append("avatar", file);
-  const res = await fetch(`${API_BASE_URL}/api/profile/me/`, {
+  const res = await customerRequest(`/api/profile/me/`, token, {
     method: "PATCH",
-    headers: { Authorization: `Bearer ${token}` },
     body: formData,
   });
   if (!res.ok) throw new Error("Failed to upload avatar");
@@ -1243,8 +1218,7 @@ export async function uploadAvatar(
 // ---------------------------------------------------------------------------
 
 export async function getSellerProfile(token: string): Promise<SellerProfile> {
-  const res = await fetch(`${API_BASE_URL}/api/sellers/me/`, {
-    headers: { Authorization: `Bearer ${token}` },
+  const res = await customerRequest(`/api/sellers/me/`, token, {
     cache: "no-store",
   });
   if (!res.ok) {
@@ -1255,8 +1229,7 @@ export async function getSellerProfile(token: string): Promise<SellerProfile> {
 }
 
 export async function getSellerDashboard(token: string): Promise<SellerDashboardData> {
-  const res = await fetch(`${API_BASE_URL}/api/sellers/dashboard/`, {
-    headers: { Authorization: `Bearer ${token}` },
+  const res = await customerRequest(`/api/sellers/dashboard/`, token, {
     cache: "no-store",
   });
   if (!res.ok) {
@@ -1276,11 +1249,10 @@ export async function updateSellerProfile(
     description?: string;
   }
 ): Promise<SellerProfile> {
-  const res = await fetch(`${API_BASE_URL}/api/sellers/me/`, {
+  const res = await customerRequest(`/api/sellers/me/`, token, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify(data),
   });
@@ -1292,8 +1264,7 @@ export async function updateSellerProfile(
 }
 
 export async function getSellerShops(token: string): Promise<SellerShop[]> {
-  const res = await fetch(`${API_BASE_URL}/api/shops/mine/`, {
-    headers: { Authorization: `Bearer ${token}` },
+  const res = await customerRequest(`/api/shops/mine/`, token, {
     cache: "no-store",
   });
   if (!res.ok) {
@@ -1305,8 +1276,7 @@ export async function getSellerShops(token: string): Promise<SellerShop[]> {
 }
 
 export async function getSellerShopDetail(token: string, id: number): Promise<SellerShop> {
-  const res = await fetch(`${API_BASE_URL}/api/shops/mine/${id}/`, {
-    headers: { Authorization: `Bearer ${token}` },
+  const res = await customerRequest(`/api/shops/mine/${id}/`, token, {
     cache: "no-store",
   });
   if (!res.ok) {
@@ -1322,14 +1292,14 @@ export async function updateSellerShop(
   data: FormData | Record<string, any>
 ): Promise<SellerShop> {
   const isFormData = typeof FormData !== "undefined" && data instanceof FormData;
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${token}`,
-  };
+  // Authorization is attached by customerRequest; Content-Type stays
+  // conditional so FormData keeps its own multipart boundary.
+  const headers: Record<string, string> = {};
   if (!isFormData) {
     headers["Content-Type"] = "application/json";
   }
 
-  const res = await fetch(`${API_BASE_URL}/api/shops/mine/${id}/update/`, {
+  const res = await customerRequest(`/api/shops/mine/${id}/update/`, token, {
     method: "PATCH",
     headers,
     body: isFormData ? data : JSON.stringify(data),
@@ -1345,9 +1315,8 @@ export async function submitSellerShopForReview(
   token: string,
   id: number
 ): Promise<{ message: string; shop: SellerShop }> {
-  const res = await fetch(`${API_BASE_URL}/api/shops/mine/${id}/submit/`, {
+  const res = await customerRequest(`/api/shops/mine/${id}/submit/`, token, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -1357,8 +1326,7 @@ export async function submitSellerShopForReview(
 }
 
 export async function getSellerProductDetail(token: string, id: number): Promise<Product> {
-  const res = await fetch(`${API_BASE_URL}/api/products/mine/${id}/`, {
-    headers: { Authorization: `Bearer ${token}` },
+  const res = await customerRequest(`/api/products/mine/${id}/`, token, {
     cache: "no-store",
   });
   if (!res.ok) {
@@ -1374,7 +1342,9 @@ export async function updateSellerProduct(
   data: Record<string, any>
 ): Promise<Product> {
   const hasImageFile = typeof File !== "undefined" && data.image instanceof File;
-  const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+  // Authorization is attached by customerRequest; Content-Type stays
+  // conditional so FormData keeps its own multipart boundary.
+  const headers: Record<string, string> = {};
   let body: FormData | string;
 
   if (hasImageFile) {
@@ -1389,7 +1359,7 @@ export async function updateSellerProduct(
     body = JSON.stringify(data);
   }
 
-  const res = await fetch(`${API_BASE_URL}/api/products/mine/${id}/`, {
+  const res = await customerRequest(`/api/products/mine/${id}/`, token, {
     method: "PATCH",
     headers,
     body,
@@ -1402,9 +1372,8 @@ export async function updateSellerProduct(
 }
 
 export async function deleteSellerProduct(token: string, id: number): Promise<void> {
-  const res = await fetch(`${API_BASE_URL}/api/products/mine/${id}/`, {
+  const res = await customerRequest(`/api/products/mine/${id}/`, token, {
     method: "DELETE",
-    headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -1413,8 +1382,7 @@ export async function deleteSellerProduct(token: string, id: number): Promise<vo
 }
 
 export async function getSellerWallet(token: string): Promise<SellerWallet> {
-  const res = await fetch(`${API_BASE_URL}/api/points/wallet/`, {
-    headers: { Authorization: `Bearer ${token}` },
+  const res = await customerRequest(`/api/points/wallet/`, token, {
     cache: "no-store",
   });
   if (!res.ok) {
@@ -1429,8 +1397,7 @@ export async function getSellerPointHistory(
   type?: string
 ): Promise<PointTransaction[]> {
   const query = type ? `?type=${encodeURIComponent(type)}` : "";
-  const res = await fetch(`${API_BASE_URL}/api/points/history/${query}`, {
-    headers: { Authorization: `Bearer ${token}` },
+  const res = await customerRequest(`/api/points/history/${query}`, token, {
     cache: "no-store",
   });
   if (!res.ok) {

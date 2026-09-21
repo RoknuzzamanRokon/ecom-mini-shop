@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { getSellerWallet, getSellerPointHistory } from "@/lib/api";
 import { SellerWallet, PointTransaction } from "@/lib/types";
+import { getAuthToken } from "@/lib/auth";
 
 const TXN_TYPES = [
   "ALL",
@@ -22,12 +23,7 @@ export default function SellerWalletPage() {
   const [error, setError] = useState<string | null>(null);
 
   const fetchWalletData = useCallback(async () => {
-    const token =
-      typeof window !== "undefined"
-        ? localStorage.getItem("minishop_token") ||
-          localStorage.getItem("token") ||
-          localStorage.getItem("access_token")
-        : null;
+    const token = getAuthToken();
     if (!token) return;
 
     try {

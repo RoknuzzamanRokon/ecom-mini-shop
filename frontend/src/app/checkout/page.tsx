@@ -16,6 +16,7 @@ import {
   createCustomerAddress,
 } from "@/lib/api";
 import { Address } from "@/lib/types";
+import { getAuthToken } from "@/lib/auth";
 
 export default function CheckoutPage() {
   const router = useRouter();
@@ -48,12 +49,7 @@ export default function CheckoutPage() {
       return;
     }
 
-    const token =
-      typeof window !== "undefined"
-        ? localStorage.getItem("minishop_token") ||
-          localStorage.getItem("token") ||
-          localStorage.getItem("access_token")
-        : null;
+    const token = getAuthToken();
 
     if (!token) return;
 
@@ -109,12 +105,7 @@ export default function CheckoutPage() {
     setError(null);
 
     try {
-      const token =
-        typeof window !== "undefined"
-          ? localStorage.getItem("minishop_token") ||
-            localStorage.getItem("token") ||
-            localStorage.getItem("access_token")
-          : null;
+      const token = getAuthToken();
 
       let orderPayload: Parameters<typeof createOrder>[0];
 
@@ -279,7 +270,7 @@ export default function CheckoutPage() {
                   <span>
                     Already have an account?{" "}
                     <Link
-                      href="/login?redirect=/checkout"
+                      href="/login?next=/checkout"
                       className="text-primary font-semibold hover:underline"
                     >
                       Sign in

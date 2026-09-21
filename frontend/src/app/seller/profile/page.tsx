@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { useSeller } from "@/components/seller/SellerGuard";
 import { updateSellerProfile } from "@/lib/api";
+import { getAuthToken } from "@/lib/auth";
 
 export default function SellerProfilePage() {
   const { seller, refreshDashboard } = useSeller();
@@ -39,12 +40,7 @@ export default function SellerProfilePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const token =
-      typeof window !== "undefined"
-        ? localStorage.getItem("minishop_token") ||
-          localStorage.getItem("token") ||
-          localStorage.getItem("access_token")
-        : null;
+    const token = getAuthToken();
 
     if (!token) return;
 

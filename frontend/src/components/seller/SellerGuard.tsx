@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { getSellerDashboard } from "@/lib/api";
+import { getAuthToken } from "@/lib/auth";
 import { SellerDashboardData, SellerProfile, SellerCapabilities } from "@/lib/types";
 
 interface SellerContextType {
@@ -36,12 +37,7 @@ export default function SellerGuard({ children }: { children: React.ReactNode })
   const [isNotSeller, setIsNotSeller] = useState(false);
 
   const fetchDashboard = useCallback(async () => {
-    const token =
-      typeof window !== "undefined"
-        ? localStorage.getItem("minishop_token") ||
-          localStorage.getItem("token") ||
-          localStorage.getItem("access_token")
-        : null;
+    const token = getAuthToken();
 
     if (!token) {
       setLoading(false);
@@ -75,7 +71,7 @@ export default function SellerGuard({ children }: { children: React.ReactNode })
     if (authLoading) return;
 
     if (!isAuthenticated) {
-      router.push("/login?redirect=/seller");
+      router.push("/login?next=/seller");
       return;
     }
 

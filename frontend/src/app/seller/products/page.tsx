@@ -15,6 +15,7 @@ import {
   formatImageUrl,
 } from "@/lib/api";
 import { Product, SellerShop, Category } from "@/lib/types";
+import { getAuthToken } from "@/lib/auth";
 
 const STATUS_BADGE_STYLES: Record<string, string> = {
   DRAFT: "bg-surface-alt text-ink-muted",
@@ -77,12 +78,7 @@ export default function SellerProductsPage() {
   });
 
   const fetchProductsList = useCallback(async () => {
-    const token =
-      typeof window !== "undefined"
-        ? localStorage.getItem("minishop_token") ||
-          localStorage.getItem("token") ||
-          localStorage.getItem("access_token")
-        : null;
+    const token = getAuthToken();
     if (!token) return;
 
     try {
@@ -110,12 +106,7 @@ export default function SellerProductsPage() {
 
   // Load available shops and categories for form select menus
   useEffect(() => {
-    const token =
-      typeof window !== "undefined"
-        ? localStorage.getItem("minishop_token") ||
-          localStorage.getItem("token") ||
-          localStorage.getItem("access_token")
-        : null;
+    const token = getAuthToken();
     if (!token) return;
 
     getSellerShops(token).then((res) => setShops(res)).catch(() => {});
@@ -129,12 +120,7 @@ export default function SellerProductsPage() {
   }, []);
 
   const refreshWalletBalance = useCallback(() => {
-    const token =
-      typeof window !== "undefined"
-        ? localStorage.getItem("minishop_token") ||
-          localStorage.getItem("token") ||
-          localStorage.getItem("access_token")
-        : null;
+    const token = getAuthToken();
     if (!token) return;
     getSellerWallet(token)
       .then((res) => {
@@ -202,12 +188,7 @@ export default function SellerProductsPage() {
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const token =
-      typeof window !== "undefined"
-        ? localStorage.getItem("minishop_token") ||
-          localStorage.getItem("token") ||
-          localStorage.getItem("access_token")
-        : null;
+    const token = getAuthToken();
     if (!token) return;
 
     if (!myShop) {
@@ -259,12 +240,7 @@ export default function SellerProductsPage() {
   const handleEditSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingProduct) return;
-    const token =
-      typeof window !== "undefined"
-        ? localStorage.getItem("minishop_token") ||
-          localStorage.getItem("token") ||
-          localStorage.getItem("access_token")
-        : null;
+    const token = getAuthToken();
     if (!token) return;
 
     setSubmittingModal(true);
@@ -294,12 +270,7 @@ export default function SellerProductsPage() {
 
   const handleDeleteConfirm = async () => {
     if (!deletingProduct) return;
-    const token =
-      typeof window !== "undefined"
-        ? localStorage.getItem("minishop_token") ||
-          localStorage.getItem("token") ||
-          localStorage.getItem("access_token")
-        : null;
+    const token = getAuthToken();
     if (!token) return;
 
     setSubmittingModal(true);

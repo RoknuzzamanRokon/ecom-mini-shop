@@ -1,4 +1,5 @@
 import { PaginatedResponse } from "./types";
+import { refreshTokenOnce } from "./auth";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
 
@@ -82,10 +83,31 @@ export class AdminApiError extends Error {
   }
 }
 
+/**
+ * The single interception point for every management-console request.
+ *
+ * Phase 2J added the 401 recovery here: a console module that has been open
+ * past the 60-minute access-token lifetime used to show a generic error panel
+ * and need a page reload.
+ *
+ *   401 -> refreshTokenOnce() -> retry once with the new token
+ *
+ * `refreshTokenOnce` is the same coordinator `api.ts` uses, deliberately — one
+ * shared single-flight refresh, not one per API layer, so a dashboard firing
+ * several requests at once still produces a single refresh. It reaches
+ * `/api/auth/token/refresh/` through `api.ts`'s plain `fetch`, never through
+ * this function, so the refresh cannot re-enter the interceptor.
+ *
+ * `retried` is internal and the retry recurses exactly once with it set, so a
+ * second 401 becomes an `AdminApiError` immediately — there is no third
+ * request. Everything else here (network-error wrapping, `extractErrorMessage`,
+ * `AdminApiError` status/body, JSON parsing) is unchanged.
+ */
 async function adminRequest<T>(
   endpoint: string,
   token: string,
-  options: RequestInit = {}
+  options: RequestInit = {},
+  retried = false
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
   const headers: Record<string, string> = {
@@ -104,6 +126,16 @@ async function adminRequest<T>(
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : "Network error";
     throw new AdminApiError(`Network request failed: ${msg}`, 0);
+  }
+
+  if (res.status === 401 && !retried) {
+    const refreshed = await refreshTokenOnce();
+    if (refreshed) {
+      return adminRequest<T>(endpoint, refreshed, options, true);
+    }
+    // Refresh failed: tokens are already cleared and AuthProvider already
+    // notified. Fall through so the caller sees the original 401 as the
+    // AdminApiError it has always received.
   }
 
   if (!res.ok) {

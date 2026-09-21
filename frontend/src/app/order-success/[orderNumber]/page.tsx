@@ -8,6 +8,7 @@ import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import { Order } from "@/lib/types";
 import { getOrderDetail } from "@/lib/api";
+import { getAuthToken } from "@/lib/auth";
 
 export default function OrderSuccessPage() {
   const params = useParams();
@@ -17,12 +18,7 @@ export default function OrderSuccessPage() {
   useEffect(() => {
     async function load() {
       if (orderNumber) {
-        const token =
-          typeof window !== "undefined"
-            ? localStorage.getItem("minishop_token") ||
-              localStorage.getItem("token") ||
-              localStorage.getItem("access_token")
-            : null;
+        const token = getAuthToken();
         const data = await getOrderDetail(orderNumber, token);
         if (data) setOrder(data);
       }

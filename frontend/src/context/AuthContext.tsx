@@ -9,14 +9,13 @@ import React, {
 } from "react";
 import { AuthUser } from "@/lib/types";
 import { loginUser, refreshAccessToken, getCurrentUser } from "@/lib/api";
-
-// ---------------------------------------------------------------------------
-// Storage keys — `minishop_token` is intentionally the same key that
-// CartContext.getAuthToken() already checks so cart becomes backend-aware
-// automatically after login.
-// ---------------------------------------------------------------------------
-const TOKEN_KEY = "minishop_token";
-const REFRESH_KEY = "minishop_refresh_token";
+import {
+  clearTokens,
+  getAuthToken,
+  getRefreshToken,
+  onAuthCleared,
+  setTokens,
+} from "@/lib/auth";
 
 interface AuthContextType {
   user: AuthUser | null;
@@ -29,28 +28,11 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-function getStoredToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(TOKEN_KEY);
-}
-
-function getStoredRefresh(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(REFRESH_KEY);
-}
-
-function storeTokens(access: string, refresh: string) {
-  localStorage.setItem(TOKEN_KEY, access);
-  localStorage.setItem(REFRESH_KEY, refresh);
-}
-
-function clearTokens() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(REFRESH_KEY);
-}
-
+// Token storage lives in lib/auth.ts (Phase 2J). The four private helpers that
+// used to sit here — getStoredToken / getStoredRefresh / storeTokens /
+// clearTokens — were one of four independent readers of the same localStorage
+// keys; they now come from the one shared accessor that api.ts, admin-api.ts
+// and CartContext also use. Storage mechanism and key names are unchanged.
 // ---------------------------------------------------------------------------
 // Provider
 // ---------------------------------------------------------------------------
@@ -62,7 +44,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Restore session on mount
   // -----------------------------------------------------------------------
   const initialize = useCallback(async () => {
-    const token = getStoredToken();
+    const token = getAuthToken();
     if (!token) {
       setIsLoading(false);
       return;
@@ -74,11 +56,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(userData);
     } catch {
       // Access token may be expired — try refresh
-      const refresh = getStoredRefresh();
+      const refresh = getRefreshToken();
       if (refresh) {
         try {
           const tokens = await refreshAccessToken(refresh);
-          storeTokens(tokens.access, tokens.refresh);
+          setTokens(tokens.access, tokens.refresh);
           const userData = await getCurrentUser(tokens.access);
           setUser(userData);
         } catch {
@@ -104,7 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // -----------------------------------------------------------------------
   const login = useCallback(async (username: string, password: string) => {
     const tokens = await loginUser(username, password);
-    storeTokens(tokens.access, tokens.refresh);
+    setTokens(tokens.access, tokens.refresh);
 
     const userData = await getCurrentUser(tokens.access);
     setUser(userData);
@@ -118,6 +100,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearTokens();
     setUser(null);
   }, []);
+
+  // -----------------------------------------------------------------------
+  // A mid-session refresh failure clears the tokens inside lib/auth.ts, which
+  // has no access to this state. Without this subscription `isAuthenticated`
+  // would stay true against a session that no longer exists, which is exactly
+  // the "falsely authenticated" state Phase 2J exists to remove. The tokens
+  // are already gone by the time this fires, so it only has to reset state —
+  // calling `logout()` keeps that in one place.
+  // -----------------------------------------------------------------------
+  useEffect(() => onAuthCleared(logout), [logout]);
 
   const isAuthenticated = user !== null;
 
