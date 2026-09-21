@@ -1287,31 +1287,6 @@ class AdminSellerCreationTests(APITestCase):
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("reason", res.data)
 
-    def test_seller_self_registration_still_works(self):
-        """The shared-service refactor must not disturb the existing endpoint."""
-        fresh = User.objects.create_user(
-            username="sc_selfreg", email="sc_selfreg@minishop.com", password="SelfPassword123!"
-        )
-        self.client.force_authenticate(user=fresh)
-        res = self.client.post(
-            "/api/sellers/register/",
-            data={"business_name": "Self Registered", "seller_type": SellerProfile.TYPE_FULL_SHOP_OWNER},
-            format="json",
-        )
-        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
-
-        seller = SellerProfile.objects.get(user=fresh)
-        self.assertEqual(seller.status, SellerProfile.STATUS_PENDING)
-        self.assertEqual(seller.business_name, "Self Registered")
-
-        # Still refuses a second profile for the same account.
-        duplicate = self.client.post(
-            "/api/sellers/register/",
-            data={"business_name": "Second Attempt"},
-            format="json",
-        )
-        self.assertEqual(duplicate.status_code, status.HTTP_400_BAD_REQUEST)
-
 
 class AdminShopCreationTests(APITestCase):
     """Phase 1H: POST /api/admin/shops/ creates a Shop and assigns an existing seller as owner."""

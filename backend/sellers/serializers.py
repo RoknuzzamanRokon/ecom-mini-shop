@@ -50,43 +50,6 @@ class SellerProfileSerializer(serializers.ModelSerializer):
         ]
 
 
-class SellerRegistrationSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = SellerProfile
-        fields = [
-            "seller_type",
-            "business_name",
-            "business_email",
-            "business_phone",
-            "tax_id",
-            "description",
-        ]
-
-    def validate_seller_type(self, value):
-        valid_types = [c[0] for c in SellerProfile.SELLER_TYPE_CHOICES]
-        if value not in valid_types:
-            raise serializers.ValidationError(
-                f"Invalid seller type '{value}'. Supported types: {valid_types}"
-            )
-        return value
-
-    def validate(self, attrs):
-        user = self.context["request"].user
-        if hasattr(user, "seller_profile"):
-            raise serializers.ValidationError(
-                "A seller profile already exists for this user account."
-            )
-        return attrs
-
-    def create(self, validated_data):
-        from .services import create_seller_profile
-
-        # Self-registration always targets the requesting user; validate() above
-        # already rejected a duplicate profile, and the shared service re-checks
-        # it so the invariant holds for every caller.
-        return create_seller_profile(self.context["request"].user, **validated_data)
-
-
 class SellerProfileUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = SellerProfile

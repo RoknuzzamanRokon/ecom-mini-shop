@@ -6,7 +6,6 @@ from .views import (
     SellerListView,
     SellerMeView,
     SellerReactivateView,
-    SellerRegistrationView,
     SellerRejectView,
     SellerSuspendView,
 )
@@ -15,7 +14,6 @@ app_name = "sellers"
 
 urlpatterns = [
     path("", SellerListView.as_view(), name="seller-list"),
-    path("register/", SellerRegistrationView.as_view(), name="seller-register"),
     path("me/", SellerMeView.as_view(), name="seller-me"),
     path("dashboard/", SellerDashboardView.as_view(), name="seller-dashboard"),
     path("<int:pk>/", SellerDetailView.as_view(), name="seller-detail"),

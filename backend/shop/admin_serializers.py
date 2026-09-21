@@ -376,10 +376,11 @@ class AdminSellerCreateSerializer(serializers.Serializer):
     Admin-governed SellerProfile creation for an EXISTING user
     (POST /api/admin/sellers/).
 
-    Distinct from SellerRegistrationSerializer, which always targets
-    request.user and cannot express "create a profile for someone else". The
-    business field set is identical on purpose; only `user_id` and the
-    governance `reason` are added.
+    This is the only serializer that creates a SellerProfile. It superseded
+    the self-registration serializer, which always targeted request.user and
+    could not express "create a profile for someone else"; that endpoint was
+    removed in Phase 2L (Known Issue #5). `user_id` and the governance `reason`
+    are what distinguish an administered creation from the old self-service one.
 
     Seller-type validity, the initial status and the one-profile-per-user rule
     are NOT re-implemented here — they belong to SellerProfile.full_clean() and

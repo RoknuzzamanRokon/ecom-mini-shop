@@ -7,6 +7,7 @@ from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.db import connection
 from django.test import TestCase, TransactionTestCase
+from django.urls import NoReverseMatch, reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -69,46 +70,39 @@ class SellerSystemTests(TestCase):
         )
         assign_user_role(self.finance_user, Role.ROLE_FINANCE)
 
-    def test_seller_creation(self):
-        """Authenticated user can register as a seller; status defaults to PENDING."""
+    def test_seller_self_registration_endpoint_is_gone(self):
+        """
+        Phase 2L (Known Issue #5): sellers are provisioned by authorized
+        management, never by themselves. The route is removed outright rather
+        than kept routed for an explicit 403 — unlike shop self-creation
+        (invariant 4), nothing ever called this one, so there is no client to
+        give a distinguishable answer to.
+        """
+        with self.assertRaises(NoReverseMatch):
+            reverse("sellers:seller-register")
+
         self.client.force_authenticate(user=self.user_a)
-        payload = {
-            "seller_type": SellerProfile.TYPE_FULL_SHOP_OWNER,
-            "business_name": "Apex Electronics",
-            "business_email": "contact@apexelectronics.com",
-            "business_phone": "+8801700000001",
-            "tax_id": "TIN-987654321",
-            "description": "Premium electronics and gadgets retailer.",
-        }
-        response = self.client.post("/api/sellers/register/", payload, format="json")
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["business_name"], "Apex Electronics")
-        self.assertEqual(response.data["seller_type"], SellerProfile.TYPE_FULL_SHOP_OWNER)
-        self.assertEqual(response.data["status"], SellerProfile.STATUS_PENDING)
-        self.assertFalse(response.data["is_operational"])
-        self.assertFalse(response.data["is_suspended"])
-
-        # Check DB state
-        profile = SellerProfile.objects.get(user=self.user_a)
-        self.assertEqual(profile.business_name, "Apex Electronics")
-        self.assertEqual(profile.status, SellerProfile.STATUS_PENDING)
-
-        # Disallow duplicate registration
-        duplicate_response = self.client.post("/api/sellers/register/", payload, format="json")
-        self.assertEqual(duplicate_response.status_code, status.HTTP_400_BAD_REQUEST)
+        response = self.client.post(
+            "/api/sellers/register/",
+            {
+                "seller_type": SellerProfile.TYPE_FULL_SHOP_OWNER,
+                "business_name": "Apex Electronics",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertFalse(SellerProfile.objects.filter(user=self.user_a).exists())
 
     def test_seller_invalid_type(self):
-        """Invalid seller type must be rejected by both API and Model clean()."""
-        self.client.force_authenticate(user=self.user_a)
-        payload = {
-            "seller_type": "UNKNOWN_CUSTOM_TYPE",
-            "business_name": "Invalid Seller Inc.",
-        }
-        response = self.client.post("/api/sellers/register/", payload, format="json")
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("seller_type", response.data)
+        """
+        Invalid seller type must be rejected by the model itself.
 
-        # Direct model instantiation validation
+        This used to assert the same rejection twice — once through
+        POST /api/sellers/register/ and once through the model. The endpoint
+        was removed in Phase 2L; the API-level assertion now lives on the
+        surviving creation path, in
+        shop.test_admin_governance.AdminSellerCreationTests.
+        """
         invalid_profile = SellerProfile(
             user=self.user_b,
             seller_type="INVALID_TYPE",

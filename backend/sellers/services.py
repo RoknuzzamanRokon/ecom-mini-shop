@@ -8,11 +8,14 @@ def create_seller_profile(user, **fields) -> SellerProfile:
     """
     Creates a SellerProfile for `user` in the PENDING state.
 
-    The single creation path for the domain, shared by seller self-registration
-    (SellerRegistrationSerializer, where the target is always request.user) and
-    by admin creation on behalf of an existing account. Centralising it means
-    the initial status and the one-profile-per-user rule cannot diverge between
-    the two entry points.
+    The single creation path for the domain. Seller self-registration was
+    removed in Phase 2L (Known Issue #5), so the one API caller left is admin
+    creation on behalf of an existing account
+    (AdminSellerListAPIView.post -> AdminSellerCreateSerializer): sellers are
+    provisioned by authorized management, never by themselves. This stays a
+    service rather than being folded into that view so the initial status and
+    the one-profile-per-user rule live in one place for every caller, including
+    seeds, management commands and tests.
 
     WHO may create a profile for WHOM is deliberately not decided here — that is
     an authorization question, answered by the calling view's permission class.

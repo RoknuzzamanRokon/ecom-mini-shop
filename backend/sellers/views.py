@@ -20,7 +20,6 @@ from .serializers import (
     SellerActionReasonSerializer,
     SellerProfileSerializer,
     SellerProfileUpdateSerializer,
-    SellerRegistrationSerializer,
 )
 from .services import (
     approve_seller,
@@ -29,21 +28,6 @@ from .services import (
     reject_seller,
     suspend_seller,
 )
-
-
-class SellerRegistrationView(generics.CreateAPIView):
-    """
-    Allows an authenticated user to submit an application for a seller account.
-    """
-    permission_classes = [permissions.IsAuthenticated]
-    serializer_class = SellerRegistrationSerializer
-
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data, context={"request": request})
-        serializer.is_valid(raise_exception=True)
-        seller = serializer.save()
-        output_serializer = SellerProfileSerializer(seller)
-        return Response(output_serializer.data, status=status.HTTP_201_CREATED)
 
 
 class SellerMeView(generics.RetrieveUpdateAPIView):
