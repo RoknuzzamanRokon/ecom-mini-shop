@@ -28,13 +28,6 @@
         <span class="text-[11px] text-price-old line-through">${{ product.old_price }}</span>
         {% endif %}
       </div>
-      <form action="{% url 'shop:cart_add' product.id %}" method="post">
-        {% csrf_token %}
-        <input name="next" type="hidden" value="{{ request.path }}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}"/>
-        <button class="bg-primary hover:bg-primary-hover text-on-primary p-1.5 rounded-md transition-colors shadow-sm" title="Add to Cart" type="submit">
-          <span class="material-symbols-outlined text-[16px] block">add_shopping_cart</span>
-        </button>
-      </form>
     </div>
   </div>
 </div>

@@ -4,16 +4,15 @@ A simple, functional e-commerce website built with Django, converted from a stat
 HTML/Tailwind UI reference (`main_ui.html`) into a dynamic app backed by the Django ORM
 and SQLite.
 
-**Flow:** Products → Product Details → Add to Cart → Cart → Checkout → Order Success
-(Cash on Delivery).
+**Flow:** the server-rendered pages here are the catalogue only — Products → Product
+Details. The cart/checkout/order-success storefront was retired on 2026-09-21
+(Phase 2E); the Next.js app is the customer storefront and checkout surface, and it
+talks to the DRF API under `/api/`.
 
 ## Features
 
 - Product catalog with categories, search (by product or category name), and pagination
-- Product detail pages with quantity selector
-- Session-based shopping cart (add / increase / decrease / remove, live cart badge)
-- Checkout with form validation and Cash on Delivery orders
-- Order success page with order summary
+- Product detail pages
 - Django admin for managing categories, products, and orders
 
 ## Tech Stack
@@ -126,16 +125,15 @@ they would report green there while testing nothing.
 
 ```
 config/                Django project settings, root URLs
-shop/                  Main app: models, views, urls, cart, admin
+shop/                  Main app: models, views, urls, services, API views, admin
   management/commands/  seed_demo_data, seed_showcase commands
   migrations/
 templates/
   base.html            Base layout (header, footer, messages)
-  shop/                Page templates (product list/detail, cart, checkout, order success)
+  shop/                Page templates (product list, product detail)
   shop/partials/       Reusable partials (navbar, category sidebar, hot deal, product card, footer)
 static/
   css/style.css        Minimal custom CSS (Tailwind utility classes handle most styling)
-  js/cart.js           Quantity selector behavior
 media/products/        Uploaded/generated product images (created at runtime, gitignored)
 main_ui.html           Original static HTML design reference
 ```

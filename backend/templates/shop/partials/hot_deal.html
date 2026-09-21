@@ -23,17 +23,5 @@
       <span class="text-xs text-price-old line-through">${{ hot_deal.old_price }}</span>
       {% endif %}
     </div>
-    <form action="{% url 'shop:cart_add' hot_deal.id %}" method="post">
-      {% csrf_token %}
-      <input name="next" type="hidden" value="{{ request.path }}"/>
-      <div class="flex rounded-md overflow-hidden shadow-sm">
-        <div class="bg-accent px-2.5 py-1.5 flex items-center justify-center text-on-accent">
-          <span class="material-symbols-outlined text-[16px]">shopping_cart</span>
-        </div>
-        <button class="flex-1 bg-primary hover:bg-primary-hover text-on-primary text-xs font-semibold py-1.5 px-3 transition-colors text-center uppercase tracking-wider" type="submit">
-          Add to cart
-        </button>
-      </div>
-    </form>
   </div>
 </div>

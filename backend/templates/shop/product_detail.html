@@ -73,25 +73,6 @@
           <span class="text-danger flex items-center gap-1"><span class="material-symbols-outlined text-[16px]">cancel</span> Out of stock</span>
           {% endif %}
         </div>
-
-        {% if product.in_stock %}
-        <form action="{% url 'shop:cart_add' product.id %}" class="flex items-center gap-3" method="post">
-          {% csrf_token %}
-          <div class="flex items-center h-11 border border-line rounded-md overflow-hidden shrink-0" data-quantity-selector>
-            <button aria-label="Decrease quantity" class="w-10 h-full flex items-center justify-center text-ink-muted hover:bg-surface-alt transition-colors" data-quantity-decrease type="button">
-              <span class="material-symbols-outlined text-[16px]">remove</span>
-            </button>
-            <input class="w-14 h-full text-center text-base font-semibold tabular-nums text-ink border-x border-line outline-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none" data-quantity-input max="{{ product.stock }}" min="1" name="quantity" type="number" value="1"/>
-            <button aria-label="Increase quantity" class="w-10 h-full flex items-center justify-center text-ink-muted hover:bg-surface-alt transition-colors" data-quantity-increase type="button">
-              <span class="material-symbols-outlined text-[16px]">add</span>
-            </button>
-          </div>
-          <button class="flex-1 h-11 inline-flex items-center justify-center gap-2 bg-primary hover:bg-primary-hover text-on-primary font-bold text-xs uppercase tracking-wider px-6 rounded shadow-sm transition-all" type="submit">
-            <span class="material-symbols-outlined text-[18px]">add_shopping_cart</span>
-            <span>Add to Cart</span>
-          </button>
-        </form>
-        {% endif %}
       </div>
 
       <div class="grid grid-cols-3 gap-2 mt-5 pt-5 border-t border-line-subtle">
