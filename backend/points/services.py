@@ -1,5 +1,7 @@
 import logging
 from django.db import transaction
+from django.db.models import F, Q, Sum
+from django.db.models.functions import Coalesce
 from .models import PointTransaction, ProductCreationCost, SellerWallet
 
 logger = logging.getLogger(__name__)
@@ -61,6 +63,32 @@ class PointService:
         Centralized source retrieved from ProductCreationCost model / settings fallback.
         """
         return ProductCreationCost.get_cost()
+
+    @classmethod
+    def get_ledger_totals(cls, seller) -> dict:
+        """
+        Lifetime points credited and debited for a seller, aggregated from the
+        PointTransaction ledger in a single query.
+
+        Deliberately NOT stored on SellerWallet. The ledger is the one source of
+        truth for point movement; a stored total would be a second one, free to
+        drift from the transactions that justify it.
+
+        The credit/debit split is taken from `balance_after` vs `balance_before`
+        rather than from a hand-maintained list of transaction types. That is the
+        same rule `PointTransaction.__str__` already uses, and it means a newly
+        added transaction type is classified correctly without this method being
+        touched. `amount` is always positive, so the direction cannot be read
+        from it.
+        """
+        return PointTransaction.objects.filter(seller=seller).aggregate(
+            total_earned=Coalesce(
+                Sum("amount", filter=Q(balance_after__gte=F("balance_before"))), 0
+            ),
+            total_spent=Coalesce(
+                Sum("amount", filter=Q(balance_after__lt=F("balance_before"))), 0
+            ),
+        )
 
     @classmethod
     def credit(

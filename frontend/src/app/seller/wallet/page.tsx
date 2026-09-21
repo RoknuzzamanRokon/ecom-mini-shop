@@ -201,7 +201,7 @@ export default function SellerWalletPage() {
                       </td>
 
                       <td className="py-3 px-4 text-ink-body">
-                        {txn.description || "Point transaction"}
+                        {txn.reason || "Point transaction"}
                       </td>
 
                       <td className="py-3 px-4 text-right text-ink-muted font-mono">

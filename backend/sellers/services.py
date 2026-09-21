@@ -40,6 +40,13 @@ def create_seller_profile(user, **fields) -> SellerProfile:
 def get_seller_capabilities(seller: SellerProfile) -> dict:
     """
     Returns capability flags determined by seller type.
+
+    Known Issue #4: `can_create_shop` is False for **every** seller type, including
+    FULL_SHOP_OWNER and LIMITED_SHOP_OWNER. Sellers do not create shops on this
+    platform -- shop creation is a management action, and seller self-service is
+    hard-denied with a 403. This flag previously claimed True for the two shop-owner
+    types, which contradicted the enforced policy and misled any UI that trusted it.
+    The fix is to report the truth here, not to relax the restriction.
     """
     capabilities = {
         "can_create_shop": False,
@@ -49,15 +56,12 @@ def get_seller_capabilities(seller: SellerProfile) -> dict:
     }
 
     if seller.seller_type == SellerProfile.TYPE_FULL_SHOP_OWNER:
-        capabilities["can_create_shop"] = True
         capabilities["can_manage_products"] = True
         capabilities["has_full_catalog"] = True
     elif seller.seller_type == SellerProfile.TYPE_LIMITED_SHOP_OWNER:
-        capabilities["can_create_shop"] = True
         capabilities["can_manage_products"] = True
         capabilities["has_full_catalog"] = False
     elif seller.seller_type == SellerProfile.TYPE_PRODUCT_OWNER:
-        capabilities["can_create_shop"] = False
         capabilities["can_manage_products"] = True
         capabilities["has_full_catalog"] = True
 

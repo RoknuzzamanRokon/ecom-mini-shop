@@ -712,22 +712,50 @@ export interface SellerShop {
   updated_at: string;
 }
 
+// Mirrors points/serializers.py::SellerWalletSerializer field-for-field.
+// It previously declared `seller_name` (the serializer returns `business_name`)
+// and `total_earned`/`total_spent`, which the serializer did not return at all --
+// so the wallet tiles read undefined and rendered +0/-0 forever while `tsc`
+// stayed silent. Keep this in step with the serializer; a field here that the
+// backend does not send is invisible to the type checker.
 export interface SellerWallet {
   id: number;
   seller_id: number;
-  seller_name: string;
+  business_name: string;
   balance: number;
   total_earned: number;
   total_spent: number;
+  product_creation_cost: number;
   created_at: string;
   updated_at: string;
 }
 
+// Mirrors points/serializers.py::PointTransactionSerializer field-for-field.
+// It previously declared `description`; the serializer exposes `reason`, so every
+// ledger row fell back to the literal "Point transaction".
+export type PointTransactionType =
+  | "BONUS"
+  | "ADMIN_CREDIT"
+  | "ADMIN_DEBIT"
+  | "PRODUCT_CREATION"
+  | "REFUND"
+  | "ADJUSTMENT";
+
 export interface PointTransaction {
   id: number;
+  wallet_id: number;
+  seller_id: number;
+  business_name: string;
+  transaction_type: PointTransactionType | string;
+  transaction_type_display: string;
   amount: number;
-  transaction_type: "BONUS" | "ADMIN_CREDIT" | "ADMIN_DEBIT" | "PRODUCT_CREATION" | "REFUND" | "ADJUSTMENT" | string;
-  description: string;
+  balance_before: number;
+  balance_after: number;
+  reason: string;
+  reference_type: string;
+  reference_id: string;
+  actor_id: number | null;
+  actor_username: string | null;
   created_at: string;
 }
 

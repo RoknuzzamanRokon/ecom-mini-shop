@@ -16,8 +16,6 @@ import {
 } from "@/lib/api";
 import { Product, SellerShop, Category } from "@/lib/types";
 
-const PRODUCT_CREATION_COST = 5;
-
 const STATUS_BADGE_STYLES: Record<string, string> = {
   DRAFT: "bg-surface-alt text-ink-muted",
   SUBMITTED: "bg-primary/15 text-primary",
@@ -43,6 +41,10 @@ export default function SellerProductsPage() {
   const [shops, setShops] = useState<SellerShop[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  // Known Issue #11: the cost used to be a hardcoded 5 here. ProductCreationCost is
+  // admin-configurable and the backend charges from it, so the UI reads it from the
+  // wallet payload instead of keeping its own copy to fall out of date.
+  const [creationCost, setCreationCost] = useState<number | null>(null);
 
   // Modals
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -119,7 +121,10 @@ export default function SellerProductsPage() {
     getSellerShops(token).then((res) => setShops(res)).catch(() => {});
     getCategories().then((res) => setCategories(res)).catch(() => {});
     getSellerWallet(token)
-      .then((res) => setWalletBalance(res.balance))
+      .then((res) => {
+        setWalletBalance(res.balance);
+        setCreationCost(res.product_creation_cost);
+      })
       .catch(() => {});
   }, []);
 
@@ -132,7 +137,10 @@ export default function SellerProductsPage() {
         : null;
     if (!token) return;
     getSellerWallet(token)
-      .then((res) => setWalletBalance(res.balance))
+      .then((res) => {
+        setWalletBalance(res.balance);
+        setCreationCost(res.product_creation_cost);
+      })
       .catch(() => {});
   }, []);
 
@@ -592,13 +600,13 @@ export default function SellerProductsPage() {
               </button>
             </div>
 
-            {isAddOpen && walletBalance !== null && walletBalance < PRODUCT_CREATION_COST && (
+            {isAddOpen && walletBalance !== null && creationCost !== null && walletBalance < creationCost && (
               <div className="p-3.5 rounded-xl bg-accent/10 border border-accent/30 text-accent text-xs space-y-1">
                 <p className="font-bold flex items-center gap-1.5">
                   <span className="material-symbols-outlined text-[18px]">error</span>
                   Insufficient points
                 </p>
-                <p>You need {PRODUCT_CREATION_COST} points to create a product.</p>
+                <p>You need {creationCost} points to create a product.</p>
                 <p>Available points: {walletBalance}</p>
                 <p>Please contact an authorized administrator to add points.</p>
               </div>
@@ -611,13 +619,15 @@ export default function SellerProductsPage() {
                   <span>Product Creation Cost</span>
                 </span>
                 <span className="font-bold text-right">
-                  {walletBalance !== null ? (
+                  {walletBalance !== null && creationCost !== null ? (
                     <>
-                      Available: {walletBalance} · Cost: {PRODUCT_CREATION_COST} · After:{" "}
-                      {Math.max(walletBalance - PRODUCT_CREATION_COST, 0)}
+                      Available: {walletBalance} · Cost: {creationCost} · After:{" "}
+                      {Math.max(walletBalance - creationCost, 0)}
                     </>
+                  ) : creationCost !== null ? (
+                    <>Cost: {creationCost} points</>
                   ) : (
-                    <>Cost: {PRODUCT_CREATION_COST} points</>
+                    <>Loading cost...</>
                   )}
                 </span>
               </div>
@@ -801,7 +811,10 @@ export default function SellerProductsPage() {
                   type="submit"
                   disabled={
                     submittingModal ||
-                    (isAddOpen && walletBalance !== null && walletBalance < PRODUCT_CREATION_COST)
+                    (isAddOpen &&
+                      walletBalance !== null &&
+                      creationCost !== null &&
+                      walletBalance < creationCost)
                   }
                   className="px-5 py-2 rounded-lg bg-primary hover:bg-primary-hover disabled:opacity-50 text-on-primary font-bold text-xs uppercase tracking-wider shadow-sm transition-all flex items-center gap-2 cursor-pointer disabled:cursor-not-allowed"
                 >

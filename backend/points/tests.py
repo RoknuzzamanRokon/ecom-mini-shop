@@ -9,7 +9,7 @@ from django.test import TestCase, TransactionTestCase
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from points.models import PointTransaction, SellerWallet
+from points.models import PointTransaction, ProductCreationCost, SellerWallet
 from points.services import (
     InsufficientPointsError,
     InvalidAmountError,
@@ -349,6 +349,239 @@ class PointSystemUnitAndAPITests(TestCase):
         )
         self.assertEqual(overdraft_resp.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(PointService.get_balance(self.seller_a), 110)
+
+
+class SellerWalletContractTests(TestCase):
+    """
+    Known Issues #3 and #11. The seller wallet page read `wallet.total_earned` /
+    `wallet.total_spent`, which `SellerWalletSerializer` never returned, and
+    `txn.description`, which `PointTransactionSerializer` never returned either --
+    so the tiles showed +0/-0 forever and every ledger row read "Point transaction".
+    The seller products page hardcoded a creation cost of 5 while the backend
+    charged the configurable `ProductCreationCost`.
+
+    These tests pin the API contract the frontend types now mirror.
+    """
+
+    def setUp(self):
+        call_command("seed_rbac")
+        self.client = APIClient()
+        self.user = User.objects.create_user(
+            username="wallet_contract_seller",
+            email="wallet_contract@example.com",
+            password="TestPassword123!",
+        )
+        self.seller = SellerProfile.objects.create(
+            user=self.user,
+            seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+            business_name="Contract Traders",
+            status=SellerProfile.STATUS_ACTIVE,
+        )
+
+    def _fund_and_spend(self):
+        """Credits 100 + 40, debits 30 + 25. Balance 85, earned 140, spent 55."""
+        PointService.credit(
+            seller=self.seller, amount=100,
+            transaction_type=PointTransaction.TYPE_BONUS,
+            reason="Welcome bonus",
+        )
+        PointService.credit(
+            seller=self.seller, amount=40,
+            transaction_type=PointTransaction.TYPE_ADMIN_CREDIT,
+            reason="Staff top-up for campaign",
+        )
+        PointService.debit(
+            seller=self.seller, amount=30,
+            transaction_type=PointTransaction.TYPE_PRODUCT_CREATION,
+            reason="Listing fee for six products",
+        )
+        PointService.debit(
+            seller=self.seller, amount=25,
+            transaction_type=PointTransaction.TYPE_ADMIN_DEBIT,
+            reason="Correction for a duplicate credit",
+        )
+
+    def _wallet_payload(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get("/api/points/wallet/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        return response.data
+
+    # --- #3: wallet totals -------------------------------------------------
+
+    def test_wallet_totals_are_zero_with_an_empty_ledger(self):
+        payload = self._wallet_payload()
+        self.assertEqual(payload["balance"], 0)
+        self.assertEqual(payload["total_earned"], 0)
+        self.assertEqual(payload["total_spent"], 0)
+
+    def test_balance_is_unchanged_and_totals_come_from_the_ledger(self):
+        self._fund_and_spend()
+        payload = self._wallet_payload()
+        self.assertEqual(payload["balance"], 85)
+        self.assertEqual(payload["total_earned"], 140)
+        self.assertEqual(payload["total_spent"], 55)
+        # The wallet stores only the balance; the totals must reconcile with it.
+        self.assertEqual(
+            payload["total_earned"] - payload["total_spent"], payload["balance"]
+        )
+
+    def test_totals_are_aggregated_from_transactions_not_stored_on_the_wallet(self):
+        """
+        The decisive one: SellerWallet must carry no total columns, and deleting a
+        ledger row must move the totals. A stored total would not budge.
+        """
+        self._fund_and_spend()
+
+        wallet_columns = {f.name for f in SellerWallet._meta.get_fields()}
+        self.assertNotIn("total_earned", wallet_columns)
+        self.assertNotIn("total_spent", wallet_columns)
+
+        self.assertEqual(self._wallet_payload()["total_spent"], 55)
+
+        PointTransaction.objects.filter(
+            seller=self.seller, transaction_type=PointTransaction.TYPE_ADMIN_DEBIT
+        ).delete()
+
+        payload = self._wallet_payload()
+        self.assertEqual(payload["total_spent"], 30, "totals must follow the ledger")
+        self.assertEqual(payload["total_earned"], 140)
+        # Balance is the wallet's own column and is deliberately untouched by this.
+        self.assertEqual(payload["balance"], 85)
+
+    def test_totals_are_scoped_to_the_requesting_seller(self):
+        self._fund_and_spend()
+        other_user = User.objects.create_user(
+            username="wallet_contract_other", password="TestPassword123!"
+        )
+        other_seller = SellerProfile.objects.create(
+            user=other_user,
+            seller_type=SellerProfile.TYPE_PRODUCT_OWNER,
+            business_name="Unrelated Traders",
+            status=SellerProfile.STATUS_ACTIVE,
+        )
+        PointService.credit(
+            seller=other_seller, amount=999,
+            transaction_type=PointTransaction.TYPE_BONUS,
+            reason="Someone else's money",
+        )
+        payload = self._wallet_payload()
+        self.assertEqual(payload["total_earned"], 140)
+        self.assertEqual(payload["total_spent"], 55)
+
+    def test_service_totals_classify_by_balance_direction_not_by_type(self):
+        """
+        A REFUND credits and an ADJUSTMENT can go either way, so the split is taken
+        from balance_after vs balance_before rather than a list of type names.
+        """
+        PointService.credit(
+            seller=self.seller, amount=10,
+            transaction_type=PointTransaction.TYPE_REFUND,
+            reason="Refund for a rejected product",
+        )
+        PointService.debit(
+            seller=self.seller, amount=4,
+            transaction_type=PointTransaction.TYPE_ADJUSTMENT,
+            reason="Downward adjustment",
+        )
+        totals = PointService.get_ledger_totals(self.seller)
+        self.assertEqual(totals["total_earned"], 10)
+        self.assertEqual(totals["total_spent"], 4)
+
+    # --- #3: transaction reason -------------------------------------------
+
+    def test_history_exposes_reason_and_no_description_field(self):
+        self._fund_and_spend()
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get("/api/points/history/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.data["results"] if isinstance(response.data, dict) else response.data
+        self.assertEqual(len(rows), 4)
+        for row in rows:
+            self.assertIn("reason", row)
+            self.assertNotIn("description", row)
+            self.assertTrue(row["reason"].strip())
+        self.assertEqual(
+            {row["reason"] for row in rows},
+            {
+                "Welcome bonus",
+                "Staff top-up for campaign",
+                "Listing fee for six products",
+                "Correction for a duplicate credit",
+            },
+        )
+
+    # --- #11: configured product creation cost -----------------------------
+
+    def test_wallet_exposes_the_configured_product_creation_cost(self):
+        self.assertEqual(
+            self._wallet_payload()["product_creation_cost"],
+            PointService.get_product_creation_cost(),
+        )
+
+    def test_product_creation_cost_follows_the_admin_configured_value(self):
+        """The UI must track ProductCreationCost, not a hardcoded 5."""
+        config, _ = ProductCreationCost.objects.get_or_create(pk=1)
+        config.required_points = 5
+        config.save()
+        self.assertEqual(self._wallet_payload()["product_creation_cost"], 5)
+
+        config.required_points = 12
+        config.save()
+        self.assertEqual(self._wallet_payload()["product_creation_cost"], 12)
+        self.assertEqual(PointService.get_product_creation_cost(), 12)
+
+        config.required_points = 5
+        config.save()
+
+    # --- contract shape ----------------------------------------------------
+
+    def test_wallet_payload_shape_matches_the_frontend_type(self):
+        payload = self._wallet_payload()
+        self.assertEqual(
+            set(payload.keys()),
+            {
+                "id",
+                "seller_id",
+                "business_name",
+                "balance",
+                "total_earned",
+                "total_spent",
+                "product_creation_cost",
+                "created_at",
+                "updated_at",
+            },
+        )
+        # The TS type used to declare `seller_name`, which never existed.
+        self.assertNotIn("seller_name", payload)
+        self.assertEqual(payload["business_name"], "Contract Traders")
+
+    def test_transaction_payload_shape_matches_the_frontend_type(self):
+        self._fund_and_spend()
+        self.client.force_authenticate(user=self.user)
+        response = self.client.get("/api/points/history/")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        rows = response.data["results"] if isinstance(response.data, dict) else response.data
+        self.assertEqual(
+            set(rows[0].keys()),
+            {
+                "id",
+                "wallet_id",
+                "seller_id",
+                "business_name",
+                "transaction_type",
+                "transaction_type_display",
+                "amount",
+                "balance_before",
+                "balance_after",
+                "reason",
+                "reference_type",
+                "reference_id",
+                "actor_id",
+                "actor_username",
+                "created_at",
+            },
+        )
 
 
 class PointConcurrencyTests(TransactionTestCase):

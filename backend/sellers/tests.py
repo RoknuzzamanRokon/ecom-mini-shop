@@ -14,6 +14,7 @@ from audit.models import AuditLog
 from rbac.models import Role
 from rbac.services import assign_user_role
 from sellers.models import SellerProfile
+from shops.models import Shop
 from sellers.services import approve_seller, get_seller_capabilities
 
 User = get_user_model()
@@ -289,7 +290,10 @@ class SellerSystemTests(TestCase):
             status=SellerProfile.STATUS_ACTIVE,
         )
         caps_full = get_seller_capabilities(seller_full)
-        self.assertTrue(caps_full["can_create_shop"])
+        # Known Issue #4: this asserted True until Phase 2H. Sellers do not create
+        # shops -- SellerShopCreateView hard-denies with 403 -- so reporting True
+        # here was the capability matrix contradicting the enforced policy.
+        self.assertFalse(caps_full["can_create_shop"])
         self.assertTrue(caps_full["can_manage_products"])
         self.assertTrue(caps_full["has_full_catalog"])
 
@@ -301,7 +305,7 @@ class SellerSystemTests(TestCase):
             status=SellerProfile.STATUS_ACTIVE,
         )
         caps_limited = get_seller_capabilities(seller_limited)
-        self.assertTrue(caps_limited["can_create_shop"])
+        self.assertFalse(caps_limited["can_create_shop"])
         self.assertTrue(caps_limited["can_manage_products"])
         self.assertFalse(caps_limited["has_full_catalog"])
 
@@ -529,6 +533,69 @@ class SellerLifecycleAuditTests(TestCase):
             list(seller_logs.order_by("created_at").values_list("action", flat=True)),
             ["ADMIN_SELLER_APPROVE", "ADMIN_SELLER_SUSPEND", "ADMIN_SELLER_REACTIVATE"],
         )
+
+
+class SellerShopCapabilityTests(TestCase):
+    """
+    Known Issue #4. `get_seller_capabilities` claimed `can_create_shop: True` for
+    FULL_SHOP_OWNER and LIMITED_SHOP_OWNER while `SellerShopCreateView` hard-denied
+    every seller with 403. The capability matrix must describe the policy that is
+    actually enforced; the fix is to report False, never to relax the restriction.
+    """
+
+    def setUp(self):
+        call_command("seed_rbac")
+        self.client = APIClient()
+
+    def _seller(self, seller_type, username):
+        user = User.objects.create_user(
+            username=username,
+            email=f"{username}@example.com",
+            password="TestPassword123!",
+        )
+        return user, SellerProfile.objects.create(
+            user=user,
+            seller_type=seller_type,
+            business_name=f"{username} Trading",
+            status=SellerProfile.STATUS_ACTIVE,
+        )
+
+    def test_every_seller_type_reports_can_create_shop_false(self):
+        for seller_type, _label in SellerProfile.SELLER_TYPE_CHOICES:
+            with self.subTest(seller_type=seller_type):
+                _user, seller = self._seller(seller_type, f"cap_{seller_type.lower()}")
+                caps = get_seller_capabilities(seller)
+                self.assertFalse(
+                    caps["can_create_shop"],
+                    f"{seller_type} must not claim it can create a shop",
+                )
+
+    def test_shop_creation_is_still_hard_denied_for_every_seller_type(self):
+        """The capability now tells the truth because the 403 is still there."""
+        for seller_type, _label in SellerProfile.SELLER_TYPE_CHOICES:
+            with self.subTest(seller_type=seller_type):
+                user, _seller = self._seller(seller_type, f"denied_{seller_type.lower()}")
+                self.client.force_authenticate(user=user)
+                response = self.client.post(
+                    "/api/shops/mine/create/", {"name": "Attempted Self-Service Shop"}
+                )
+                self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+                self.assertEqual(Shop.objects.filter(owner=_seller).count(), 0)
+
+    def test_other_capability_flags_are_unchanged(self):
+        """Only can_create_shop moved; the rest of the matrix is as it was."""
+        expectations = {
+            SellerProfile.TYPE_FULL_SHOP_OWNER: (True, True),
+            SellerProfile.TYPE_LIMITED_SHOP_OWNER: (True, False),
+            SellerProfile.TYPE_PRODUCT_OWNER: (True, True),
+        }
+        for seller_type, (manage_products, full_catalog) in expectations.items():
+            with self.subTest(seller_type=seller_type):
+                _user, seller = self._seller(seller_type, f"flags_{seller_type.lower()}")
+                caps = get_seller_capabilities(seller)
+                self.assertEqual(caps["can_manage_products"], manage_products)
+                self.assertEqual(caps["has_full_catalog"], full_catalog)
+                self.assertEqual(caps["seller_type"], seller_type)
 
 
 class SellerLifecycleConcurrencyTests(TransactionTestCase):
