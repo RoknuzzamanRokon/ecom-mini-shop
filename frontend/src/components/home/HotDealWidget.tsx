@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Product } from "@/lib/types";
 import { useCart } from "@/context/CartContext";
 import { formatImageUrl } from "@/lib/api";
+import StarRating from "@/components/reviews/StarRating";
 
 interface HotDealWidgetProps {
   deal: Product | null;
@@ -132,12 +133,11 @@ export default function HotDealWidget({ deal }: HotDealWidgetProps) {
         >
           {deal.name}
         </Link>
-        <div className="flex items-center justify-center gap-0.5 text-star my-1">
-          <span className="material-symbols-outlined fill-active text-[14px]">star</span>
-          <span className="material-symbols-outlined fill-active text-[14px]">star</span>
-          <span className="material-symbols-outlined fill-active text-[14px]">star</span>
-          <span className="material-symbols-outlined fill-active text-[14px]">star</span>
-          <span className="material-symbols-outlined text-[14px]">star</span>
+        <div className="flex items-center justify-center gap-1 my-1">
+          <StarRating rating={deal.average_rating ?? 0} size={14} />
+          {(deal.review_count ?? 0) > 0 && (
+            <span className="text-[11px] text-ink-muted">({deal.review_count})</span>
+          )}
         </div>
         <div className="flex items-center justify-center gap-2 mb-3">
           <span className="text-base font-bold text-primary">৳{deal.price}</span>

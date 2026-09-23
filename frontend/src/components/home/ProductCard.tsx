@@ -7,6 +7,7 @@ import { Product } from "@/lib/types";
 import { useCart } from "@/context/CartContext";
 import { formatImageUrl } from "@/lib/api";
 import FavoriteButton from "@/components/product/FavoriteButton";
+import StarRating from "@/components/reviews/StarRating";
 
 interface ProductCardProps {
   product: Product;
@@ -18,6 +19,8 @@ export default function ProductCard({ product, viewMode = "grid" }: ProductCardP
   const [imgSrc, setImgSrc] = useState(formatImageUrl(product.image_url || product.image));
 
   const badgeUpper = (product.badge || "").toUpperCase();
+  const averageRating = product.average_rating ?? 0;
+  const reviewCount = product.review_count ?? 0;
 
   const getBadgeClass = (badge: string) => {
     switch (badge) {
@@ -95,12 +98,11 @@ export default function ProductCard({ product, viewMode = "grid" }: ProductCardP
                   <span className="text-xs text-price-old line-through">৳{product.old_price}</span>
                 )}
               </div>
-              <div className="flex items-center gap-0.5 text-star">
-                <span className="material-symbols-outlined fill-active text-[13px]">star</span>
-                <span className="material-symbols-outlined fill-active text-[13px]">star</span>
-                <span className="material-symbols-outlined fill-active text-[13px]">star</span>
-                <span className="material-symbols-outlined fill-active text-[13px]">star</span>
-                <span className="material-symbols-outlined fill-active text-[13px]">star</span>
+              <div className="flex items-center gap-1">
+                <StarRating rating={averageRating} size={13} />
+                {reviewCount > 0 && (
+                  <span className="text-[11px] text-ink-muted">({reviewCount})</span>
+                )}
               </div>
             </div>
 
@@ -172,12 +174,11 @@ export default function ProductCard({ product, viewMode = "grid" }: ProductCardP
         </Link>
 
         {/* Stars Rating */}
-        <div className="flex items-center gap-0.5 text-star my-1">
-          <span className="material-symbols-outlined fill-active text-[13px]">star</span>
-          <span className="material-symbols-outlined fill-active text-[13px]">star</span>
-          <span className="material-symbols-outlined fill-active text-[13px]">star</span>
-          <span className="material-symbols-outlined fill-active text-[13px]">star</span>
-          <span className="material-symbols-outlined fill-active text-[13px]">star</span>
+        <div className="flex items-center gap-1 my-1">
+          <StarRating rating={averageRating} size={13} />
+          {reviewCount > 0 && (
+            <span className="text-[11px] text-ink-muted">({reviewCount})</span>
+          )}
         </div>
 
         {/* Price & Action */}

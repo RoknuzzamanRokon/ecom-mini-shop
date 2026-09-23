@@ -12,30 +12,11 @@ import {
   deleteReview,
 } from "@/lib/api";
 import { Review } from "@/lib/types";
+import StarRating from "@/components/reviews/StarRating";
 
 interface ProductReviewsProps {
   productId: number;
   onReviewsChanged?: () => void;
-}
-
-function StarRow({ rating, size = 16 }: { rating: number; size?: number }) {
-  const rounded = Math.round(rating);
-  return (
-    <div className="flex items-center text-star">
-      {[1, 2, 3, 4, 5].map((n) => (
-        <span
-          key={n}
-          className="material-symbols-outlined"
-          style={{
-            fontSize: size,
-            fontVariationSettings: n <= rounded ? "'FILL' 1" : "'FILL' 0",
-          }}
-        >
-          star
-        </span>
-      ))}
-    </div>
-  );
 }
 
 function StarPicker({
@@ -224,7 +205,7 @@ export default function ProductReviews({ productId, onReviewsChanged }: ProductR
         <div className="p-4 rounded-lg bg-surface-alt/40 border border-line mb-6">
           <div className="flex items-center justify-between gap-3 flex-wrap">
             <div className="flex items-center gap-2">
-              <StarRow rating={myReview.rating} />
+              <StarRating rating={myReview.rating} size={16} />
               <span className="text-xs font-semibold text-ink-muted">Your review</span>
             </div>
             <div className="flex items-center gap-3">
@@ -316,7 +297,7 @@ export default function ProductReviews({ productId, onReviewsChanged }: ProductR
             <div key={review.id} className="py-4 first:pt-0">
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-2">
-                  <StarRow rating={review.rating} size={14} />
+                  <StarRating rating={review.rating} size={14} />
                   <span className="text-xs font-bold text-ink">{review.reviewer_name}</span>
                   {review.is_verified_purchase && (
                     <span className="inline-flex items-center px-1.5 py-0.2 rounded text-[9px] font-bold bg-success/10 text-success border border-success/30 uppercase">

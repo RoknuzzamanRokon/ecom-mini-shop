@@ -1,6 +1,6 @@
 # MiniShop — Review & Rating System Plan
 
-**Created:** 2026-09-23 · **Baseline commit:** `6179759` · **Status:** Task 0 done (existed before this plan); Tasks 1–12 not started
+**Created:** 2026-09-23 · **Baseline commit:** `6179759` · **Status:** Tasks 0–1 done; Tasks 2–12 not started
 
 This is the task list for the review & rating feature. Work through it **one task at a
 time, in order**. Each task is sized to be one commit. When a task is done, tick its
@@ -82,7 +82,7 @@ task that depends on them.
 | Task | Title | Side | Status |
 |---|---|---|---|
 | 0 | Product reviews (model, API, product-page UI) | full-stack | ✅ Done (`c4fb3b8`) |
-| 1 | Product cards show real star ratings | frontend | ⬜ Not started |
+| 1 | Product cards show real star ratings | frontend | ✅ Done |
 | 2 | Product review fixes | backend (+1 frontend line) | ⬜ Not started |
 | 3 | Rating summary + review sorting on the product page | full-stack | ⬜ Not started |
 | 4 | "Top Rated" product sort | full-stack | ⬜ Not started |
@@ -105,19 +105,40 @@ task that depends on them.
 
 **Goal.** Every product card shows its true average rating and review count.
 
-- [ ] Create `frontend/src/components/reviews/StarRating.tsx`: read-only stars from a
+- [x] Create `frontend/src/components/reviews/StarRating.tsx`: read-only stars from a
       number, with full / half (`star_half`) / empty icons, and a `size` prop. Use
       the `text-star` token (no palette colours).
-- [ ] `ProductCard.tsx:174-181`: replace the 5 hardcoded stars with
+- [x] `ProductCard.tsx:174-181`: replace the 5 hardcoded stars with
       `<StarRating rating={product.average_rating ?? 0} />` plus `(review_count)`.
       When `review_count` is 0, show muted empty stars with no count.
-- [ ] Use `StarRating` in the product page header (`product/[slug]/page.tsx:152-164`)
+- [x] Use `StarRating` in the product page header (`product/[slug]/page.tsx:152-164`)
       and in `ProductReviews.tsx` (`StarRow`), so the stars are drawn in one place.
 
 **Done when.** A product with no reviews shows empty stars on its card. A product
 rated 4 and 5 shows 4½ stars and `(2)`. `npm run build` passes.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done 2026-09-23
+
+- `StarRating` rounds to the nearest half star and clamps to 0–5. A rating of 0 (or
+  NaN) draws **faint outlines** (`text-ink-faint`), because 0 can only mean "no
+  reviews"; any real rating uses `text-star`. It has `role="img"` plus an
+  `aria-label` / `title` such as "Rated 4.5 out of 5".
+- **`star_half` does not get `fill-active`.** The glyph was rendered from the real
+  Material Symbols font: at FILL 0 its left half is already solid, which is the
+  half-star look. Full stars use the existing `fill-active` class, not inline
+  `fontVariationSettings`.
+- **Wider than planned:** the card's **list view** (`ProductCard.tsx:99-103`) and
+  `HotDealWidget.tsx:136-140` also had hardcoded stars (the hot deal showed a fixed
+  4/5). Both now use `StarRating`. `/api/hot-deal/` already returns the rating
+  fields, because it uses the annotated public queryset.
+- The product page header also shows the average as a number (e.g. `4.5`) next to
+  the stars when there are reviews.
+- Verified: the component was rendered with `react-dom/server` for 0, 1, 3.24, 3.25,
+  4.5, 5, 7 and NaN, and each gives the expected stars and colour. `npm run
+  typecheck` and `npm run build` pass. Not checked in a running browser.
+- Pre-existing, left alone: `npx eslint` reports `react-hooks/set-state-in-effect`
+  at `HotDealWidget.tsx:21`, on the image `useEffect` this task did not touch. CI
+  does not run lint.
 
 ---
 
@@ -391,6 +412,17 @@ venv/Scripts/python.exe manage.py test shop --settings=config.settings.test --ke
 npm run typecheck
 npm run build
 ```
+
+**Local environment notes (found in Task 1):**
+
+- **Do not pass `--parallel` on this machine.** Django clones the MySQL test database
+  for parallel workers by running `mysqldump`, which is not installed here. The run
+  dies with `FileNotFoundError: [WinError 2]` before any test starts. Run serially
+  (it is slower), or install the MySQL client tools.
+- If `npm run build` / `typecheck` fails with `TS2307` errors in
+  `.next/dev/types/validator.ts` about `src/app/account/...`, that is a stale
+  `next dev` cache from before commit `9c7f621` removed those pages. Delete
+  `frontend/.next/dev/types` (gitignored; `next dev` regenerates it) and rebuild.
 
 Then commit the task by itself (AGENTS.md commandment 9), for example
 `feat(reviews): show real star ratings on product cards`.

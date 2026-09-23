@@ -11,6 +11,7 @@ import ProductCard from "@/components/home/ProductCard";
 import ProductImageZoom from "@/components/product/ProductImageZoom";
 import FavoriteButton from "@/components/product/FavoriteButton";
 import ProductReviews from "@/components/product/ProductReviews";
+import StarRating from "@/components/reviews/StarRating";
 import { Product } from "@/lib/types";
 import { getProductDetail, formatImageUrl } from "@/lib/api";
 import { useCart } from "@/context/CartContext";
@@ -149,20 +150,12 @@ export default function ProductDetailPage() {
 
             {/* Rating */}
             <div className="flex items-center gap-2 mt-2.5">
-              <div className="flex items-center text-star">
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <span
-                    key={n}
-                    className="material-symbols-outlined text-[16px]"
-                    style={{
-                      fontVariationSettings:
-                        n <= Math.round(product.average_rating ?? 0) ? "'FILL' 1" : "'FILL' 0",
-                    }}
-                  >
-                    star
-                  </span>
-                ))}
-              </div>
+              <StarRating rating={product.average_rating ?? 0} size={16} />
+              {(product.review_count ?? 0) > 0 && (
+                <span className="text-xs font-bold text-ink">
+                  {(product.average_rating ?? 0).toFixed(1)}
+                </span>
+              )}
               <span className="text-xs font-semibold text-ink-muted">
                 {product.review_count
                   ? `${product.review_count} customer review${product.review_count === 1 ? "" : "s"}`
