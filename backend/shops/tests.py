@@ -711,3 +711,52 @@ class ShopSpatialAndNearbyTests(TestCase):
         # Malformed lat
         r7 = self.client.get("/api/shops/nearby/?lat=not_a_num&lng=90.4125&radius=5")
         self.assertEqual(r7.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class PublicShopSearchTests(TestCase):
+    """?q= on the public shop list: what the /shops search box sends."""
+
+    @classmethod
+    def setUpTestData(cls):
+        owner = User.objects.create_user(
+            username="search_owner", email="search_owner@example.com", password="TestPassword123!"
+        )
+        seller = SellerProfile.objects.create(
+            user=owner,
+            seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+            status=SellerProfile.STATUS_ACTIVE,
+            business_name="Search Test Co",
+        )
+        cls.books = Shop.objects.create(
+            owner=seller, name="Dhaka Books", slug="search-dhaka-books", status=Shop.STATUS_ACTIVE
+        )
+        cls.tea = Shop.objects.create(
+            owner=seller,
+            name="Tea Corner",
+            slug="search-tea-corner",
+            description="Fine teas, and books about tea",
+            status=Shop.STATUS_ACTIVE,
+        )
+        cls.shoes = Shop.objects.create(
+            owner=seller,
+            name="Shoe Hub",
+            slug="search-shoe-hub",
+            address="Road 5, Chattogram",
+            status=Shop.STATUS_ACTIVE,
+        )
+        cls.hidden = Shop.objects.create(
+            owner=seller, name="Hidden Books", slug="search-hidden-books", status=Shop.STATUS_PENDING
+        )
+
+    def _slugs(self, query):
+        res = APIClient().get(f"/api/shops/{query}")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        return {s["slug"] for s in res.data["results"]}
+
+    def test_q_matches_name_description_and_address_of_public_shops_only(self):
+        # "books" hits a name and a description; the pending "Hidden Books" stays hidden
+        self.assertEqual(self._slugs("?q=books"), {self.books.slug, self.tea.slug})
+        self.assertEqual(self._slugs("?q=chattogram"), {self.shoes.slug})
+
+    def test_without_q_every_public_shop_is_listed(self):
+        self.assertEqual(self._slugs(""), {self.books.slug, self.tea.slug, self.shoes.slug})

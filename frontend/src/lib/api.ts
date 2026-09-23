@@ -360,7 +360,9 @@ export async function getShops(params?: {
   ordering?: "-rating";
 }): Promise<PaginatedResponse<Shop>> {
   const query = new URLSearchParams();
-  if (params?.search) query.set("search", params.search);
+  // PublicShopListView reads the search term from `q` (not `search`, unlike the
+  // product list, which accepts both).
+  if (params?.search) query.set("q", params.search);
   if (params?.page) query.set("page", params.page.toString());
   if (params?.page_size) query.set("page_size", params.page_size.toString());
   if (params?.ordering) query.set("ordering", params.ordering);
