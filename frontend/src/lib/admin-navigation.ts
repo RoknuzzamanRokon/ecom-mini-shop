@@ -70,6 +70,13 @@ export const ADMIN_PERMISSIONS = {
   /** GET /api/admin/customers/ -> CanViewAdminCustomers */
   customersView: ["customers.admin.view"],
 
+  /**
+   * /api/admin/reviews/<product|shop>/ (list, hide, unhide) -> CanModerateReviews.
+   * One permission covers reading and moderating; seeded to ADMINISTRATOR and
+   * SUPPORT_TEAM (SUPER_ADMINISTRATOR holds every code).
+   */
+  reviewsModerate: ["reviews.moderate"],
+
   /** GET /api/admin/users/ -> CanViewAdminUsers */
   usersView: ["users.admin.view"],
   /** Mutations on /api/admin/users/ -> CanManageAdminUsers */
@@ -207,6 +214,14 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     section: "Marketplace",
     requiredPermissions: ADMIN_PERMISSIONS.categoriesManage,
     description: "Maintain catalog taxonomy and hero banners.",
+  },
+  {
+    href: "/admin/reviews",
+    label: "Reviews",
+    icon: "reviews",
+    section: "Marketplace",
+    requiredPermissions: ADMIN_PERMISSIONS.reviewsModerate,
+    description: "Hide or restore abusive product and shop reviews.",
   },
   {
     href: "/admin/orders",

@@ -14,6 +14,7 @@ import {
 } from "@/lib/api";
 import { MyReviews, Review } from "@/lib/types";
 import { PRODUCT_REVIEWS_ANCHOR } from "@/components/product/ProductReviews";
+import HiddenReviewNotice from "@/components/reviews/HiddenReviewNotice";
 import { ReviewInput } from "@/components/reviews/ReviewSection";
 import { SHOP_REVIEWS_ANCHOR } from "@/components/reviews/ShopReviews";
 import StarPicker from "@/components/reviews/StarPicker";
@@ -352,6 +353,7 @@ function MyReviewRow({ review, title, href, imageUrl, fallbackIcon, onSave, onDe
               )}
             </div>
             {review.comment && <p className="text-sm text-ink-body mt-1.5">{review.comment}</p>}
+            {review.is_hidden && <HiddenReviewNotice reason={review.hidden_reason} />}
             <div className="flex items-center gap-3 mt-2">
               <button
                 type="button"

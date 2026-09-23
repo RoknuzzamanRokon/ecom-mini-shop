@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional, Tuple
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.db.models import Count, QuerySet
+from django.utils import timezone
 
 from audit.services import AuditService
 from .models import Address, CustomerProfile, Review, ShopReview
@@ -536,3 +537,69 @@ class ShopReviewService:
             ip_address=ip_address,
         )
         review.delete()
+
+
+class ReviewModerationError(Exception):
+    """Raised for a moderation action that doesn't apply, e.g. hiding a hidden review."""
+    pass
+
+
+class ReviewModerationService:
+    """
+    Staff hide/restore for product and shop reviews. A hidden review stays in
+    the database and visible to its author; it is only removed from public
+    lists and rating aggregates (see ReviewQuerySet.visible()).
+    """
+
+    AUDIT_PREFIX = {Review: "REVIEW", ShopReview: "SHOP_REVIEW"}
+
+    @classmethod
+    def _lock(cls, model, pk: int):
+        """Row-locks the review for the rest of the transaction; DoesNotExist propagates."""
+        return model.objects.select_for_update().get(pk=pk)
+
+    @classmethod
+    def _audit(cls, review, action: str, actor, reason: str, ip_address, previous, new):
+        shop = review.shop if isinstance(review, ShopReview) else review.product.shop
+        AuditService.log(
+            action=f"{cls.AUDIT_PREFIX[type(review)]}_{action}",
+            target=review,
+            actor=actor,
+            shop=shop,
+            reason=reason or None,
+            previous_state={"is_hidden": previous},
+            new_state={"is_hidden": new},
+            metadata={"author_id": review.user_id, "rating": review.rating},
+            ip_address=ip_address,
+        )
+
+    @classmethod
+    @transaction.atomic
+    def hide(cls, model, pk: int, actor, reason: str, ip_address: Optional[str] = None):
+        """Hides a review from the public. `reason` is required and kept on the review."""
+        review = cls._lock(model, pk)
+        if review.is_hidden:
+            raise ReviewModerationError("This review is already hidden.")
+        review.is_hidden = True
+        review.hidden_reason = reason
+        review.hidden_by = actor
+        review.hidden_at = timezone.now()
+        # updated_at is left alone: it records the author's last edit.
+        review.save(update_fields=["is_hidden", "hidden_reason", "hidden_by", "hidden_at"])
+        cls._audit(review, "HIDDEN", actor, reason, ip_address, previous=False, new=True)
+        return review
+
+    @classmethod
+    @transaction.atomic
+    def unhide(cls, model, pk: int, actor, reason: str = "", ip_address: Optional[str] = None):
+        """Restores a hidden review, clearing the moderation fields."""
+        review = cls._lock(model, pk)
+        if not review.is_hidden:
+            raise ReviewModerationError("This review is not hidden.")
+        review.is_hidden = False
+        review.hidden_reason = ""
+        review.hidden_by = None
+        review.hidden_at = None
+        review.save(update_fields=["is_hidden", "hidden_reason", "hidden_by", "hidden_at"])
+        cls._audit(review, "UNHIDDEN", actor, reason, ip_address, previous=True, new=False)
+        return review

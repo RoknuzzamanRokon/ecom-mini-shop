@@ -827,3 +827,55 @@ class AdminAuditLogSerializer(serializers.ModelSerializer):
             else:
                 sanitized[k] = v
         return sanitized
+
+
+# ==============================================================================
+# REVIEW MODERATION
+# ==============================================================================
+
+class AdminReviewSerializer(serializers.Serializer):
+    """
+    A product or shop review as the moderation console sees it. One serializer
+    serves both review models: `review_type` and `target` say which kind and
+    what was reviewed. Unlike the public serializer, this names the author by
+    username and always includes hidden reviews.
+    """
+    id = serializers.IntegerField(read_only=True)
+    review_type = serializers.SerializerMethodField()
+    rating = serializers.IntegerField(read_only=True)
+    comment = serializers.CharField(read_only=True)
+    is_verified_purchase = serializers.BooleanField(read_only=True)
+    is_hidden = serializers.BooleanField(read_only=True)
+    hidden_reason = serializers.CharField(read_only=True)
+    hidden_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    hidden_by_username = serializers.CharField(
+        source="hidden_by.username", read_only=True, default=None
+    )
+    author = serializers.SerializerMethodField()
+    target = serializers.SerializerMethodField()
+    created_at = serializers.DateTimeField(read_only=True)
+    updated_at = serializers.DateTimeField(read_only=True)
+
+    def get_review_type(self, obj):
+        return "shop" if hasattr(obj, "shop_id") else "product"
+
+    def get_author(self, obj):
+        return {"id": obj.user_id, "username": obj.user.username}
+
+    def get_target(self, obj):
+        target = obj.shop if hasattr(obj, "shop_id") else obj.product
+        return {"id": target.id, "name": target.name, "slug": target.slug}
+
+
+class AdminReviewHideSerializer(serializers.Serializer):
+    reason = serializers.CharField(
+        max_length=500,
+        error_messages={
+            "required": "A reason is required when hiding a review.",
+            "blank": "A reason is required when hiding a review.",
+        },
+    )
+
+
+class AdminReviewUnhideSerializer(serializers.Serializer):
+    reason = serializers.CharField(max_length=500, required=False, allow_blank=True, default="")

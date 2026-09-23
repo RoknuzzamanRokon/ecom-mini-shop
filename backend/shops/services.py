@@ -3,13 +3,16 @@ from typing import Any, Optional, Tuple
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
-from django.db.models import Avg, Count
+from django.db.models import Avg, Count, Q
 from django.db.models.expressions import RawSQL
 from django.utils import timezone
 
 from sellers.models import SellerProfile
 from shops.fields import Point
 from .models import Shop
+
+# Reviews that count publicly: everything a moderator has not hidden.
+VISIBLE_REVIEWS = Q(customer_reviews__is_hidden=False)
 
 
 class ShopError(Exception):
@@ -225,8 +228,9 @@ class ShopService:
         return Shop.objects.filter(
             status__in=[Shop.STATUS_APPROVED, Shop.STATUS_ACTIVE]
         ).annotate(
-            average_rating=Avg("customer_reviews__rating"),
-            review_count=Count("customer_reviews", distinct=True),
+            # Hidden (moderated) reviews never count toward public ratings.
+            average_rating=Avg("customer_reviews__rating", filter=VISIBLE_REVIEWS),
+            review_count=Count("customer_reviews", filter=VISIBLE_REVIEWS, distinct=True),
         )
 
     @classmethod

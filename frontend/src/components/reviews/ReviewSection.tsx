@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { getAuthToken } from "@/lib/auth";
 import { PaginatedResponse, RatingBreakdown, Review, ReviewOrdering } from "@/lib/types";
+import HiddenReviewNotice from "@/components/reviews/HiddenReviewNotice";
 import RatingSummary from "@/components/reviews/RatingSummary";
 import StarPicker from "@/components/reviews/StarPicker";
 import StarRating from "@/components/reviews/StarRating";
@@ -267,6 +268,7 @@ export default function ReviewSection({
           {myReview.comment && (
             <p className="text-sm text-ink-body mt-2">{myReview.comment}</p>
           )}
+          {myReview.is_hidden && <HiddenReviewNotice reason={myReview.hidden_reason} />}
         </div>
       ) : (
         <form

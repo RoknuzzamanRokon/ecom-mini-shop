@@ -188,7 +188,36 @@ class Favorite(models.Model):
         return f"{self.user.username} -> {self.product.name}"
 
 
-class Review(models.Model):
+class ReviewQuerySet(models.QuerySet):
+    def visible(self):
+        """Reviews the public may see: everything a moderator has not hidden."""
+        return self.filter(is_hidden=False)
+
+
+class ReviewModeration(models.Model):
+    """
+    Staff moderation state shared by product and shop reviews. A hidden review
+    is kept (not deleted) but left out of every public list and every rating
+    average, count and breakdown; its author still sees it, marked as hidden.
+    """
+    is_hidden = models.BooleanField(default=False)
+    hidden_reason = models.CharField(max_length=500, blank=True)
+    hidden_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="hidden_%(class)ss",
+    )
+    hidden_at = models.DateTimeField(null=True, blank=True)
+
+    objects = ReviewQuerySet.as_manager()
+
+    class Meta:
+        abstract = True
+
+
+class Review(ReviewModeration):
     """
     Customer rating and comment for a product. related_name is deliberately
     "customer_reviews", not "reviews" — Product already has reviewed_by/
@@ -242,7 +271,7 @@ class Review(models.Model):
         return f"{self.user.username} rated {self.product.name}: {self.rating}/5"
 
 
-class ShopReview(models.Model):
+class ShopReview(ReviewModeration):
     """
     Customer rating and comment for a shop as a whole, independent of the
     shop's product reviews. related_name on the shop FK is "customer_reviews",

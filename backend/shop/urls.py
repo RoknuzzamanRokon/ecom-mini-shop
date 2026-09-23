@@ -72,5 +72,8 @@ urlpatterns = [
     path("api/admin/customers/<int:pk>/", api_views.AdminCustomerDetailAPIView.as_view(), name="admin_customers_detail"),
     path("api/admin/metrics/", api_views.AdminMetricsAPIView.as_view(), name="admin_metrics"),
     path("api/admin/audit-logs/", api_views.AdminAuditLogListAPIView.as_view(), name="admin_audit_logs_list"),
+    path("api/admin/reviews/<str:review_type>/", api_views.AdminReviewListAPIView.as_view(), name="admin_reviews_list"),
+    path("api/admin/reviews/<str:review_type>/<int:pk>/hide/", api_views.AdminReviewHideAPIView.as_view(), name="admin_reviews_hide"),
+    path("api/admin/reviews/<str:review_type>/<int:pk>/unhide/", api_views.AdminReviewUnhideAPIView.as_view(), name="admin_reviews_unhide"),
 ]
 

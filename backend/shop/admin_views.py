@@ -22,7 +22,8 @@ from rest_framework.views import APIView
 from .metrics import get_console_metrics
 from audit.models import AuditLog
 from audit.services import AuditService
-from customers.models import CustomerProfile
+from customers.models import CustomerProfile, Review, ShopReview
+from customers.services import ReviewModerationError, ReviewModerationService
 from rbac.models import Permission, Role, RolePermission, UserRole
 from rbac.services import (
     assign_user_role,
@@ -50,6 +51,7 @@ from shop.admin_permissions import (
     CanManageAdminSellers,
     CanManageAdminShops,
     CanManageAdminUsers,
+    CanModerateReviews,
     CanViewAdminAuditLogs,
     CanViewAdminCustomers,
     CanViewAdminProducts,
@@ -69,6 +71,9 @@ from shop.admin_serializers import (
     AdminCustomerListSerializer,
     AdminProductSerializer,
     AdminProductStatusUpdateSerializer,
+    AdminReviewHideSerializer,
+    AdminReviewSerializer,
+    AdminReviewUnhideSerializer,
     AdminSellerCreateSerializer,
     AdminRoleCreateSerializer,
     AdminRoleSerializer,
@@ -1376,3 +1381,105 @@ class AdminAuditLogListAPIView(APIView):
         return paginator.get_paginated_response(serializer.data)
 
 
+# ==============================================================================
+# 11. REVIEW MODERATION VIEWS
+# ==============================================================================
+
+# Product and shop review ids overlap, so the review type is part of every path.
+REVIEW_MODELS = {"product": Review, "shop": ShopReview}
+
+
+def _review_model(review_type):
+    model = REVIEW_MODELS.get(review_type)
+    if model is None:
+        raise NotFound("Unknown review type. Use 'product' or 'shop'.")
+    return model
+
+
+class AdminReviewListAPIView(APIView):
+    """
+    GET /api/admin/reviews/<product|shop>/?rating=1-5&hidden=true|false&search=
+    Every review of that type, hidden ones included, newest first. `search`
+    matches the comment, the author's username or the product/shop name.
+    """
+    permission_classes = [IsAuthenticated, CanModerateReviews]
+
+    def get(self, request, review_type):
+        model = _review_model(review_type)
+        target = "product" if model is Review else "shop"
+        qs = model.objects.select_related("user", "hidden_by", target).order_by("-created_at", "-id")
+
+        rating = request.query_params.get("rating", "").strip()
+        if rating in {"1", "2", "3", "4", "5"}:
+            qs = qs.filter(rating=int(rating))
+
+        hidden = request.query_params.get("hidden", "").strip().lower()
+        if hidden in ("true", "1"):
+            qs = qs.filter(is_hidden=True)
+        elif hidden in ("false", "0"):
+            qs = qs.filter(is_hidden=False)
+
+        search = request.query_params.get("search", "").strip()
+        if search:
+            qs = qs.filter(
+                Q(comment__icontains=search)
+                | Q(user__username__icontains=search)
+                | Q(**{f"{target}__name__icontains": search})
+            )
+
+        paginator = AdminPagination()
+        page = paginator.paginate_queryset(qs, request)
+        return paginator.get_paginated_response(AdminReviewSerializer(page, many=True).data)
+
+
+class AdminReviewHideAPIView(APIView):
+    """
+    POST /api/admin/reviews/<product|shop>/<int:pk>/hide/   {"reason": "..."}
+    Hides a review from every public list and rating; the author still sees it.
+    400 if it is already hidden or the reason is blank. Audited.
+    """
+    permission_classes = [IsAuthenticated, CanModerateReviews]
+
+    def post(self, request, review_type, pk):
+        model = _review_model(review_type)
+        serializer = AdminReviewHideSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            review = ReviewModerationService.hide(
+                model,
+                pk,
+                actor=request.user,
+                reason=serializer.validated_data["reason"],
+                ip_address=get_client_ip(request),
+            )
+        except model.DoesNotExist:
+            raise NotFound("Review not found.")
+        except ReviewModerationError as e:
+            raise DRFValidationError(str(e))
+        return Response(AdminReviewSerializer(review).data, status=status.HTTP_200_OK)
+
+
+class AdminReviewUnhideAPIView(APIView):
+    """
+    POST /api/admin/reviews/<product|shop>/<int:pk>/unhide/   {"reason": "..."} (optional)
+    Restores a hidden review. 400 if it is not hidden. Audited.
+    """
+    permission_classes = [IsAuthenticated, CanModerateReviews]
+
+    def post(self, request, review_type, pk):
+        model = _review_model(review_type)
+        serializer = AdminReviewUnhideSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            review = ReviewModerationService.unhide(
+                model,
+                pk,
+                actor=request.user,
+                reason=serializer.validated_data["reason"],
+                ip_address=get_client_ip(request),
+            )
+        except model.DoesNotExist:
+            raise NotFound("Review not found.")
+        except ReviewModerationError as e:
+            raise DRFValidationError(str(e))
+        return Response(AdminReviewSerializer(review).data, status=status.HTTP_200_OK)

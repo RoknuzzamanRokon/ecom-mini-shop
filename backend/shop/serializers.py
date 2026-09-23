@@ -140,7 +140,7 @@ class ProductDetailSerializer(ProductListSerializer):
         ]
 
     def get_rating_breakdown(self, obj):
-        return rating_breakdown(obj.customer_reviews.all())
+        return rating_breakdown(obj.customer_reviews.visible())
 
     def get_all_image_urls(self, obj):
         request = self.context.get("request")

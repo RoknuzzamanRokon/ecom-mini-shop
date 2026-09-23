@@ -51,7 +51,7 @@ class PublicShopDetailSerializer(PublicShopSerializer):
         read_only_fields = fields
 
     def get_rating_breakdown(self, obj):
-        return rating_breakdown(obj.customer_reviews.all())
+        return rating_breakdown(obj.customer_reviews.visible())
 
 
 class NearbyShopSerializer(serializers.ModelSerializer):

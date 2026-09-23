@@ -658,6 +658,98 @@ export async function updateAdminProductStatus(
 }
 
 // ==============================================================================
+// REVIEW MODERATION
+// ==============================================================================
+
+/**
+ * Product and shop review ids overlap, so every review endpoint is addressed by
+ * type: /api/admin/reviews/<product|shop>/...
+ */
+export type AdminReviewType = "product" | "shop";
+
+/** Mirrors AdminReviewSerializer in shop/admin_serializers.py field-for-field. */
+export interface AdminReview {
+  id: number;
+  review_type: AdminReviewType;
+  rating: number;
+  comment: string;
+  is_verified_purchase: boolean;
+  is_hidden: boolean;
+  hidden_reason: string;
+  hidden_at: string | null;
+  hidden_by_username: string | null;
+  author: { id: number; username: string };
+  /** The reviewed product or shop. */
+  target: { id: number; name: string; slug: string };
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AdminReviewListParams {
+  page?: number;
+  /** "1".."5"; anything else is ignored by the backend. */
+  rating?: string;
+  /** "true" = hidden only, "false" = visible only, omitted = both. */
+  hidden?: "true" | "false";
+  /** Matches the comment, the author's username, or the product/shop name. */
+  search?: string;
+}
+
+/**
+ * GET /api/admin/reviews/<type>/
+ * Requires 'reviews.moderate' (CanModerateReviews). Includes hidden reviews.
+ */
+export async function getAdminReviews(
+  token: string,
+  type: AdminReviewType,
+  params?: AdminReviewListParams
+): Promise<PaginatedResponse<AdminReview>> {
+  const searchParams = new URLSearchParams();
+  if (params?.page) searchParams.set("page", String(params.page));
+  if (params?.rating) searchParams.set("rating", params.rating);
+  if (params?.hidden) searchParams.set("hidden", params.hidden);
+  if (params?.search) searchParams.set("search", params.search);
+  const queryString = searchParams.toString();
+  return adminRequest<PaginatedResponse<AdminReview>>(
+    `/api/admin/reviews/${type}/${queryString ? `?${queryString}` : ""}`,
+    token
+  );
+}
+
+/**
+ * POST /api/admin/reviews/<type>/<id>/hide/
+ * `reason` is required (400 when blank); 400 too if it is already hidden.
+ * Returns the updated review.
+ */
+export async function hideAdminReview(
+  token: string,
+  type: AdminReviewType,
+  id: number,
+  reason: string
+): Promise<AdminReview> {
+  return adminRequest<AdminReview>(`/api/admin/reviews/${type}/${id}/hide/`, token, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
+  });
+}
+
+/**
+ * POST /api/admin/reviews/<type>/<id>/unhide/
+ * 400 if the review is not hidden. Returns the updated review.
+ */
+export async function unhideAdminReview(
+  token: string,
+  type: AdminReviewType,
+  id: number,
+  reason?: string
+): Promise<AdminReview> {
+  return adminRequest<AdminReview>(`/api/admin/reviews/${type}/${id}/unhide/`, token, {
+    method: "POST",
+    body: JSON.stringify({ reason: reason ?? "" }),
+  });
+}
+
+// ==============================================================================
 // CATEGORY GOVERNANCE (Phase 1E)
 // ==============================================================================
 

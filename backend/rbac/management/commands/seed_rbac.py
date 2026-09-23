@@ -77,6 +77,7 @@ PERMISSIONS_DATA = [
     ("inventory.adjust", "Adjust Inventory", "inventory", "adjust", "Can adjust product inventory and stock levels"),
     # Reviews
     ("reviews.create", "Create Reviews", "reviews", "create", "Can submit product ratings and reviews"),
+    ("reviews.moderate", "Moderate Reviews", "reviews", "moderate", "Can hide and restore product and shop reviews"),
     # Admin Governance Permissions
     ("users.admin.view", "View Admin Users", "users", "admin_view", "Can view admin user accounts"),
     ("users.admin.manage", "Manage Admin Users", "users", "admin_manage", "Can manage admin users, roles, and statuses"),
@@ -160,6 +161,7 @@ ROLE_PERMISSIONS_MAPPING = {
         "products.admin.manage",
         "categories.admin.manage",
         "customers.admin.view",
+        "reviews.moderate",
     ],
     Role.ROLE_OPERATION_MANAGER: [
         "products.view", "products.approve", "products.reject", "products.publish",
@@ -211,6 +213,8 @@ ROLE_PERMISSIONS_MAPPING = {
         "address.view",
         "cart.view",
         "inventory.view",
+        # Support handles complaints, which includes abusive reviews.
+        "reviews.moderate",
     ],
     Role.ROLE_CUSTOMER: [
         "profile.view", "profile.update",

@@ -260,3 +260,16 @@ class CanViewPlatformMetrics(BasePermission):
         if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
             return True
         return has_user_permission(user, "reports.view")
+
+
+class CanModerateReviews(BasePermission):
+    """Allows listing, hiding and restoring product and shop reviews."""
+    message = "You do not have permission to moderate reviews ('reviews.moderate' required)."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
+            return True
+        return has_user_permission(user, "reviews.moderate")

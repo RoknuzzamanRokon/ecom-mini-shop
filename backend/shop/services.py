@@ -24,6 +24,9 @@ from .models import Category, Order, OrderItem, Product
 
 logger = logging.getLogger(__name__)
 
+# Reviews that count publicly: everything a moderator has not hidden.
+VISIBLE_REVIEWS = Q(customer_reviews__is_hidden=False)
+
 
 class ProductServiceError(Exception):
     """Base exception for product domain services."""
@@ -319,8 +322,9 @@ class ProductService:
             .select_related("category", "shop", "shop__owner")
             .prefetch_related("images")
             .annotate(
-                average_rating=Avg("customer_reviews__rating"),
-                review_count=Count("customer_reviews", distinct=True),
+                # Hidden (moderated) reviews never count toward public ratings.
+                average_rating=Avg("customer_reviews__rating", filter=VISIBLE_REVIEWS),
+                review_count=Count("customer_reviews", filter=VISIBLE_REVIEWS, distinct=True),
             )
         )
 

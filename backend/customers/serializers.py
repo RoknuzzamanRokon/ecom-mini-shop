@@ -191,6 +191,9 @@ class FavoriteCreateSerializer(serializers.Serializer):
 class ReviewSerializer(serializers.ModelSerializer):
     """
     Read serializer for a product review.
+    is_hidden / hidden_reason matter only to the author: public lists never
+    include hidden reviews, and unhiding clears the reason, so every public row
+    carries false / "".
     """
     user_id = serializers.IntegerField(source="user.id", read_only=True)
     reviewer_name = serializers.SerializerMethodField()
@@ -204,6 +207,8 @@ class ReviewSerializer(serializers.ModelSerializer):
             "rating",
             "comment",
             "is_verified_purchase",
+            "is_hidden",
+            "hidden_reason",
             "created_at",
             "updated_at",
         ]

@@ -245,7 +245,8 @@ class ProductReviewListAPIView(generics.ListAPIView):
     def get_queryset(self):
         product = ProductService.get_public_product_by_identifier(self.kwargs["product_id"])
         return (
-            Review.objects.filter(product=product)
+            Review.objects.visible()
+            .filter(product=product)
             .select_related("user__customer_profile")
             .order_by(*review_ordering(self.request.query_params.get("ordering")))
         )
@@ -1395,4 +1396,7 @@ from .admin_views import (
     AdminCustomerDetailAPIView,
     AdminMetricsAPIView,
     AdminAuditLogListAPIView,
+    AdminReviewListAPIView,
+    AdminReviewHideAPIView,
+    AdminReviewUnhideAPIView,
 )

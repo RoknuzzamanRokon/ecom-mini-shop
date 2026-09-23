@@ -128,6 +128,12 @@ export interface Review {
   rating: number;
   comment: string;
   is_verified_purchase: boolean;
+  /**
+   * Set by staff moderation. Public lists never contain hidden reviews, so
+   * this is only ever true on the author's own review.
+   */
+  is_hidden?: boolean;
+  hidden_reason?: string;
   created_at: string;
   updated_at: string;
 }

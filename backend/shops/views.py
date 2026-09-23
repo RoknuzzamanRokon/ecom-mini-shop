@@ -137,7 +137,8 @@ class PublicShopReviewListView(generics.ListAPIView):
             status__in=[Shop.STATUS_APPROVED, Shop.STATUS_ACTIVE],
         )
         return (
-            ShopReview.objects.filter(shop=shop)
+            ShopReview.objects.visible()
+            .filter(shop=shop)
             .select_related("user__customer_profile")
             .order_by(*review_ordering(self.request.query_params.get("ordering")))
         )

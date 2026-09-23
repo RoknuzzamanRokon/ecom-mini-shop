@@ -1,6 +1,6 @@
 # MiniShop — Review & Rating System Plan
 
-**Created:** 2026-09-23 · **Baseline commit:** `6179759` · **Status:** Tasks 0–11 done (the requested feature is complete); optional Task 12 not started
+**Created:** 2026-09-23 · **Baseline commit:** `6179759` · **Status:** All tasks (0–12) done, including both optional extras
 
 This is the task list for the review & rating feature. Work through it **one task at a
 time, in order**. Each task is sized to be one commit. When a task is done, tick its
@@ -93,7 +93,7 @@ task that depends on them.
 | 9 | Shop page: rating in header + reviews section | frontend | ✅ Done |
 | 10 | Shops list cards show rating | frontend | ✅ Done |
 | 11 | *(optional)* "My Reviews" page in profile | full-stack | ✅ Done |
-| 12 | *(optional)* Review moderation for staff | full-stack | ⬜ Not started |
+| 12 | *(optional)* Review moderation for staff | full-stack | ✅ Done |
 
 **The feature you asked for is complete after Task 10.** Tasks 11 and 12 are extras.
 
@@ -678,23 +678,107 @@ sort is done).
 
 **Goal.** Staff can hide abusive reviews without deleting them.
 
-- [ ] Add `is_hidden` (default `False`), `hidden_reason`, `hidden_by`, `hidden_at` to
+- [x] Add `is_hidden` (default `False`), `hidden_reason`, `hidden_by`, `hidden_at` to
       both `Review` and `ShopReview`, with a migration.
-- [ ] Hidden reviews are left out of every public list and of `average_rating`,
+- [x] Hidden reviews are left out of every public list and of `average_rating`,
       `review_count` and `rating_breakdown` (filter the annotations with
       `Q(customer_reviews__is_hidden=False)`). The author still sees their own review,
       marked "Hidden by moderator".
-- [ ] RBAC: seed a new `reviews.moderate` permission to SUPER_ADMINISTRATOR,
+- [x] RBAC: seed a new `reviews.moderate` permission to SUPER_ADMINISTRATOR,
       ADMINISTRATOR and SUPPORT_TEAM (`rbac/models.py:7-14`). Mirror it in `frontend/src/lib/admin-navigation.ts`
       `ADMIN_PERMISSIONS`.
-- [ ] Staff API: `GET /api/admin/reviews/?type=product|shop&rating=&hidden=&q=`,
+- [x] Staff API: `GET /api/admin/reviews/?type=product|shop&rating=&hidden=&q=`,
       `POST .../<id>/hide/` (reason required), `POST .../<id>/unhide/`. Each action
       writes an `AuditLog` entry.
-- [ ] Admin console: `/admin/reviews` module following the existing
+- [x] Admin console: `/admin/reviews` module following the existing
       `*Governance.tsx` pattern (filter bar, data table, confirm modal).
-- [ ] Tests: hidden reviews leave public lists and averages; permission gating; audit logged.
+- [x] Tests: hidden reviews leave public lists and averages; permission gating; audit logged.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done 2026-09-23
+
+- **Model** (`customers/models.py`, migration `0005_review_moderation`): an abstract
+  `ReviewModeration` base holds the four fields (`hidden_by` → `SET_NULL`,
+  `related_name="hidden_%(class)ss"`) plus `objects = ReviewQuerySet.as_manager()`,
+  whose **`.visible()`** means "not hidden". `Review` and `ShopReview` both extend it,
+  so the migration only adds fields, and existing reviews default to visible.
+- **Public reads**, six places, all filtered to visible reviews only:
+  - product and shop annotations use
+    `Avg/Count(..., filter=VISIBLE_REVIEWS)`, where
+    `VISIBLE_REVIEWS = Q(customer_reviews__is_hidden=False)` is defined in each service
+  - both breakdowns use `customer_reviews.visible()`
+  - both public lists use `.visible()`
+  - the Top Rated sorts (Tasks 4 and 10) use those annotations, so they follow.
+- **Author view:** `ReviewSerializer` gained `is_hidden` + `hidden_reason`, which
+  are always `false` / `""` in public rows, since hidden rows never appear there and
+  unhide clears the reason. The "mine" endpoints and `/api/profile/reviews/` still
+  return the author's hidden reviews. The frontend shows a `HiddenReviewNotice`
+  ("Hidden by a moderator … reason … editing won't make it visible again") in the
+  product/shop "Your review" card and on My Reviews. Editing a hidden review keeps it
+  hidden, and a second review is still 409.
+- **Service:** `ReviewModerationService.hide()` / `unhide()` in `customers/services.py`
+  runs in `transaction.atomic` with `select_for_update()` on the review. It raises
+  `ReviewModerationError` for hide-when-hidden and unhide-when-visible, and it never
+  touches `updated_at`, which stays "the author's last edit". Audit actions are
+  `REVIEW_HIDDEN` / `REVIEW_UNHIDDEN` / `SHOP_REVIEW_HIDDEN` /
+  `SHOP_REVIEW_UNHIDDEN`, with actor, **shop** (the product's shop for product
+  reviews), reason, `previous_state` / `new_state`, `author_id` and IP.
+- **Staff API — changed from the plan:** the review type is part of the **path**,
+  not a `?type=` query, because product and shop review ids overlap and a bare
+  `.../<id>/hide/` would be ambiguous:
+  - `GET /api/admin/reviews/<product|shop>/?rating=1-5&hidden=true|false&search=`
+    (`search`, matching the other admin lists, instead of the planned `q`)
+  - `POST /api/admin/reviews/<product|shop>/<id>/hide/` `{reason}`: blank → 400
+  - `POST /api/admin/reviews/<product|shop>/<id>/unhide/`
+  - Unknown type or id → 404; a double action → 400.
+  - They live in `shop/admin_views.py` with every other `/api/admin/` view,
+    re-exported through `api_views.py`, using `AdminPagination` (20 per page) and
+    one `AdminReviewSerializer` that serves both models (`review_type`,
+    `author {id, username}`, `target {id, name, slug}`, hidden fields).
+- **RBAC:** `reviews.moderate` is in the `seed_rbac` catalogue (resource `reviews`) and
+  granted to ADMINISTRATOR and SUPPORT_TEAM; SUPER_ADMINISTRATOR gets it through
+  `__ALL__`. The new `CanModerateReviews` class (`shop/admin_permissions.py`) follows
+  the existing ones (superuser / SUPER_ADMINISTRATOR bypass). No test pins role
+  permission sets or counts.
+- **Console:** `/admin/reviews`, in the "Marketplace" nav section, gated by
+  `ADMIN_PERMISSIONS.reviewsModerate`:
+  - Product / Shop tabs; search, rating and visibility filters kept in the URL
+    (debounced search), with the shared `AdminFilterBar`.
+  - `AdminDataTable` rows show stars + comment, the target (opening the public page in
+    a new tab), the author, a Visible / Hidden badge with the reason and moderator,
+    and the date.
+  - **Hide** (reason required) / **Restore** row actions use `AdminConfirmModal`, and
+    a backend error stays inside the modal.
+  - Operators without the permission get an access notice.
+  - Loading uses the fetch-result-keyed pattern, so it is lint-clean.
+- **Before using it on the dev database:** run `manage.py migrate customers` (Tasks 5
+  and 12) **and `manage.py seed_rbac`**, otherwise no staff account holds
+  `reviews.moderate` and the Reviews module is hidden from everyone but
+  superusers. `seed_rbac` is additive and idempotent.
+- New tests in `shop/test_review_moderation.py`:
+  - **Permissions (2):** guest 401; customer and SALES_TEAM 403; SUPPORT_TEAM,
+    ADMINISTRATOR and superuser 200; a denied hide changes nothing.
+  - **Actions (6):** blank reason 400; the hide fields plus an untouched
+    `updated_at` plus the full audit row; hiding twice 400; unhide clears
+    everything and audits `SHOP_REVIEW_*`; unhiding a visible review 400; unknown
+    type or id 404.
+  - **Public effect (4):** a hidden product review leaves the list, the detail
+    average/count/breakdown and the list row, then returns on unhide; the same for
+    shops; the author still sees `is_hidden` + reason on both "mine" endpoints and on
+    My Reviews; public rows carry `false` / `""`.
+  - **Admin list (2):** per-type rows with author/target; `hidden`, `rating` and
+    `search` (comment, username, target name) filters.
+  - `shop.test_review_moderation` **14/14 OK** in 241 s, on a throwaway
+    `test_minishop_task12` database. The existing review, admin-site and shops
+    modules are re-run after the commit against these shared-queryset changes; see
+    the commit report.
+- Verified (frontend): typecheck and `npm run build` pass (41 pages, including
+  `/admin/reviews`). All new and changed files lint clean, and `admin-api.ts` stays
+  at 0 messages. jsdom harness on the compiled page with the **real** shared admin
+  components (18/18): the access notice without the permission; the right action
+  per row; the reason gate on Hide; a backend error kept in the modal; the
+  hide/restore calls and row updates; rating, visibility and debounced-search
+  filters through the URL; the Shop tab. A notice check (2/2) plus the Task 8 (29),
+  9 (15) and 11 (20) harnesses all pass. Not checked in a real browser.
 
 ---
 
