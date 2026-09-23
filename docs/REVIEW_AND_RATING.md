@@ -1,6 +1,6 @@
 # MiniShop — Review & Rating System Plan
 
-**Created:** 2026-09-23 · **Baseline commit:** `6179759` · **Status:** Tasks 0–3 done; Tasks 4–12 not started
+**Created:** 2026-09-23 · **Baseline commit:** `6179759` · **Status:** Tasks 0–4 done; Tasks 5–12 not started
 
 This is the task list for the review & rating feature. Work through it **one task at a
 time, in order**. Each task is sized to be one commit. When a task is done, tick its
@@ -85,7 +85,7 @@ task that depends on them.
 | 1 | Product cards show real star ratings | frontend | ✅ Done |
 | 2 | Product review fixes | backend (+1 frontend line) | ✅ Done |
 | 3 | Rating summary + review sorting on the product page | full-stack | ✅ Done |
-| 4 | "Top Rated" product sort | full-stack | ⬜ Not started |
+| 4 | "Top Rated" product sort | full-stack | ✅ Done |
 | 5 | `ShopReview` model, migration, Django admin | backend | ⬜ Not started |
 | 6 | Shop review write API (create / mine / edit / delete) | backend | ⬜ Not started |
 | 7 | Shop review public list + shop rating aggregates | backend | ⬜ Not started |
@@ -250,18 +250,38 @@ Tests and build pass.
 
 **Goal.** Shoppers can sort the catalogue by rating.
 
-- [ ] Backend: add `rating` → `average_rating` and `-rating` → `-average_rating`
+- [x] Backend: add `rating` → `average_rating` and `-rating` → `-average_rating`
       (tie-break `-review_count`, then `-created_at`) to `ORDERING_MAP`
       (`shop/api_views.py:162`). Products with no reviews must sort **last** for
       `-rating`.
-- [ ] Frontend: add a "Top Rated" option to the shop page sort dropdown
+- [x] Frontend: add a "Top Rated" option to the shop page sort dropdown
       (`shop/[slug]/page.tsx:306-309`) and to any other catalogue sort control.
-- [ ] Tests: `?ordering=-rating` returns the highest-rated product first and
+- [x] Tests: `?ordering=-rating` returns the highest-rated product first and
       unreviewed products last.
 
 **Done when.** "Top Rated" sorts correctly. Tests and build pass.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done 2026-09-23
+
+- The rating sorts are a separate `RATING_ORDERINGS` map next to `ORDERING_MAP`,
+  because they are expressions, not field names:
+  `F("average_rating").desc(nulls_last=True)` (and `.asc(nulls_last=True)`), then
+  `-review_count`, then `-created_at`. MySQL has no `NULLS LAST`, so Django emulates
+  it with an `IS NULL` sort key.
+- **Unreviewed products sort last in both directions.** For lowest-first, plain
+  ascending order would have put unreviewed products first, which reads as "worst
+  rated". Accepted values: `-rating` / `rating_desc` (top rated), `rating` /
+  `rating_asc` (lowest first), matching the existing `price_asc` / `price_desc`
+  aliases.
+- Frontend: "Top Rated" (`-rating`) added to the shop page dropdown, which is the
+  **only** catalogue sort control (the home page has none). The offline demo fallback
+  in `getProducts()` ignores `ordering` for every sort, so it needed no change.
+- New tests (2, each with a `subTest` per alias): top rated → `[5.0, 4.0×2, 4.0×1,
+  none]`; lowest first → `[4.0×2, 4.0×1, 5.0, none]`. The tie between two 4.0
+  averages is decided by review count.
+- Verified: `shop.test_product_reviews` **37/37 OK** (35 existing + 2 new) in 690 s,
+  on a throwaway `test_minishop_task4` database, so the emulated `NULLS LAST` was
+  exercised on real MySQL. `npm run typecheck` and `npm run build` pass.
 
 ---
 

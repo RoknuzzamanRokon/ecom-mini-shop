@@ -2,7 +2,7 @@ import uuid
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Count, Q
+from django.db.models import Count, F, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, permissions, status
@@ -174,7 +174,20 @@ class ProductListAPIView(generics.ListAPIView):
             "-name": "-name",
             "name_desc": "-name",
         }
-        if ordering and ordering in ORDERING_MAP:
+        # Rating sorts use the average_rating annotation. A product with no
+        # reviews has a NULL average and sorts last in both directions; equal
+        # averages go to the more-reviewed product first.
+        top_rated = (F("average_rating").desc(nulls_last=True), "-review_count", "-created_at")
+        lowest_rated = (F("average_rating").asc(nulls_last=True), "-review_count", "-created_at")
+        RATING_ORDERINGS = {
+            "-rating": top_rated,
+            "rating_desc": top_rated,
+            "rating": lowest_rated,
+            "rating_asc": lowest_rated,
+        }
+        if ordering in RATING_ORDERINGS:
+            queryset = queryset.order_by(*RATING_ORDERINGS[ordering])
+        elif ordering and ordering in ORDERING_MAP:
             queryset = queryset.order_by(ORDERING_MAP[ordering])
         else:
             queryset = queryset.order_by("-created_at")

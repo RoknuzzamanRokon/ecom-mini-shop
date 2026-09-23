@@ -304,6 +304,7 @@ export default function ShopStorefrontPage() {
               className="bg-surface-alt border border-line rounded-lg px-3 py-2 text-xs font-medium text-ink focus:outline-hidden focus:border-primary cursor-pointer"
             >
               <option value="-created_at">Sort: Newest First</option>
+              <option value="-rating">Top Rated</option>
               <option value="price">Price: Low to High</option>
               <option value="-price">Price: High to Low</option>
               <option value="name">Name: A to Z</option>

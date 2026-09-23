@@ -516,3 +516,50 @@ class ReviewListOrderingTests(BaseProductReviewTestCase):
         self.assertEqual(
             self._ids("highest"), [tie.id, self.middle.id, self.oldest.id, self.newest.id]
         )
+
+
+class ProductRatingOrderingTests(BaseProductReviewTestCase):
+    """?ordering=-rating / rating on the public product list."""
+
+    def setUp(self):
+        super().setUp()
+        # A = 5.0 from 1 review, B = 4.0 from 2 reviews, D = 4.0 from 1 review,
+        # C = no reviews. B and D tie on average, so review_count decides.
+        self.a = self.product
+        self.b = self._product("rated-four-twice")
+        self.c = self._product("never-reviewed")
+        self.d = self._product("rated-four-once")
+        Review.objects.create(user=self.customer_a, product=self.a, rating=5)
+        Review.objects.create(user=self.customer_a, product=self.b, rating=4)
+        Review.objects.create(user=self.customer_b, product=self.b, rating=4)
+        Review.objects.create(user=self.customer_a, product=self.d, rating=4)
+
+    def _product(self, slug):
+        return Product.objects.create(
+            name=slug.replace("-", " ").title(),
+            slug=slug,
+            category=self.category,
+            shop=self.shop,
+            description="Rating ordering fixture",
+            price=Decimal("10.00"),
+            status=Product.STATUS_PUBLISHED,
+            is_active=True,
+        )
+
+    def _ids(self, ordering):
+        res = self.client.get(f"/api/products/?shop={self.shop.slug}&ordering={ordering}")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        results = res.data["results"] if "results" in res.data else res.data
+        return [p["id"] for p in results]
+
+    def test_top_rated_first_and_unreviewed_last(self):
+        expected = [self.a.id, self.b.id, self.d.id, self.c.id]
+        for ordering in ("-rating", "rating_desc"):
+            with self.subTest(ordering=ordering):
+                self.assertEqual(self._ids(ordering), expected)
+
+    def test_lowest_rated_first_and_unreviewed_still_last(self):
+        expected = [self.b.id, self.d.id, self.a.id, self.c.id]
+        for ordering in ("rating", "rating_asc"):
+            with self.subTest(ordering=ordering):
+                self.assertEqual(self._ids(ordering), expected)
