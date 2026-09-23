@@ -311,11 +311,9 @@ and the tests pass.
 - The migration has one `CreateModel` and depends on `customers.0003_review`,
   `shops.0002_alter_shop_location` and the user model. `makemigrations --check
   --dry-run` reports "No changes detected".
-- **Not applied to the development database.** `showmigrations customers` (read-only)
-  shows `[ ] 0004_shopreview` on the shared remote dev MySQL. Apply it with
-  `venv/Scripts/python.exe manage.py migrate customers` before using shop reviews in
-  the running app (Tasks 6–10 need the table). It only creates a table; reverse it
-  with `migrate customers 0003`.
+- **Applied to the development database on 2026-09-23** (after Task 12, at the
+  user's request), together with `0005_review_moderation`; see "Development database"
+  under §6. Reverse with `migrate customers 0003` if ever needed.
 - `ShopReviewAdmin` copies `ReviewAdmin`. Like it, the admin add form writes
   directly, bypassing the Task 6 service (no audit entry, no self-review check).
   Task 12 is where staff moderation gets a proper path.
@@ -564,8 +562,8 @@ at phone width. `npm run build` passes.
     ever called.
   - **Task 8 scenarios** still 29/29 after the `className` change.
 - **Not checked in a real browser**, including the header pill and scroll offset.
-  The dev database also still needs `migrate customers` (Task 5) before shop reviews
-  work end to end.
+  (The dev database now has the shop review table; see "Development database" under
+  §6.)
 
 ---
 
@@ -750,10 +748,11 @@ sort is done).
     a backend error stays inside the modal.
   - Operators without the permission get an access notice.
   - Loading uses the fetch-result-keyed pattern, so it is lint-clean.
-- **Before using it on the dev database:** run `manage.py migrate customers` (Tasks 5
-  and 12) **and `manage.py seed_rbac`**, otherwise no staff account holds
-  `reviews.moderate` and the Reviews module is hidden from everyone but
-  superusers. `seed_rbac` is additive and idempotent.
+- **On any other database** (a new environment or a teammate's copy): run
+  `manage.py migrate customers` (Tasks 5 and 12) **and `manage.py seed_rbac`**,
+  otherwise no staff account holds `reviews.moderate` and the Reviews module is
+  hidden from everyone but superusers. `seed_rbac` is additive and idempotent. The
+  shared dev database is already done; see "Development database" under §6.
 - New tests in `shop/test_review_moderation.py`:
   - **Permissions (2):** guest 401; customer and SALES_TEAM 403; SUPPORT_TEAM,
     ADMINISTRATOR and superuser 200; a denied hide changes nothing.
@@ -808,6 +807,25 @@ npm run build
   `.next/dev/types/validator.ts` about `src/app/account/...`, that is a stale
   `next dev` cache from before commit `9c7f621` removed those pages. Delete
   `frontend/.next/dev/types` (gitignored; `next dev` regenerates it) and rebuild.
+
+**Development database (the shared remote MySQL in `backend/.env`), updated
+2026-09-23 at the user's request:**
+
+- `manage.py migrate --plan` showed only `customers.0004_shopreview` and
+  `customers.0005_review_moderation` pending. Both applied OK.
+- `manage.py seed_rbac`: "2 permissions created (total 66), 0 roles created
+  (total 9), 6 new role-permission links". The two permissions were:
+  - `reviews.moderate` (Task 12) → ADMINISTRATOR, SUPPORT_TEAM,
+    SUPER_ADMINISTRATOR.
+  - **`reviews.create` → CUSTOMER, SUPER_ADMINISTRATOR.** This one dates from the
+    original product reviews commit `c4fb3b8`, and **had never been seeded on this
+    database**. So until this run, no customer could post a review in the running
+    app (`CanCreateReview` → 403). That fits the table holding **0 product reviews**
+    at this point.
+- The 9th role is a custom `MANAGER` role that is not in `seed_rbac`; the seed
+  leaves it alone.
+- **Lesson for future RBAC changes:** adding a code to `seed_rbac.py` does nothing
+  for an existing database until `seed_rbac` is run against it.
 
 Then commit the task by itself (AGENTS.md commandment 9), for example
 `feat(reviews): show real star ratings on product cards`.
