@@ -172,30 +172,6 @@ class CanCancelOrder(BasePermission):
 
 
 
-class IsOrderOwner(BasePermission):
-    """
-    Object-level permission enforcing that the order belongs to the authenticated customer.
-    Staff/Admin with appropriate permissions may view any order.
-    """
-    message = "You do not have permission to access this order."
-
-    def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated)
-
-    def has_object_permission(self, request, view, obj):
-        user = request.user
-        if not user or not user.is_authenticated:
-            return False
-
-        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
-            return True
-
-        if getattr(view, "allow_staff_override", False) and has_user_permission(user, "orders.view"):
-            return True
-
-        return obj.user == user
-
-
 class IsEligibleOrderSeller(BasePermission):
     """
     Enforces that the user has an active, operational SellerProfile.
@@ -301,35 +277,6 @@ class CanAdjustInventory(BasePermission):
         return has_user_permission(user, "inventory.adjust")
 
 
-class IsInventoryProductOwner(BasePermission):
-    """
-    Object-level permission enforcing that the product belongs to the seller's shop,
-    unless staff override is granted.
-    """
-    message = "You do not own the product associated with this inventory record."
-
-    def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated)
-
-    def has_object_permission(self, request, view, obj):
-        user = request.user
-        if not user or not user.is_authenticated:
-            return False
-
-        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
-            return True
-
-        if getattr(view, "allow_staff_override", False) and has_user_permission(user, "inventory.adjust"):
-            return True
-
-        if not hasattr(user, "seller_profile"):
-            return False
-
-        seller = user.seller_profile
-        product = getattr(obj, "product", obj)
-        return bool(product.shop and product.shop.owner == seller)
-
-
 class CanViewPayment(BasePermission):
     """
     Enforces that the user holds the 'payments.view' RBAC permission,
@@ -344,21 +291,6 @@ class CanViewPayment(BasePermission):
         if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
             return True
         return has_user_permission(user, "payments.view")
-
-
-class CanCreatePayment(BasePermission):
-    """
-    Enforces that the user holds the 'payments.create' RBAC permission.
-    """
-    message = "You do not have permission to initiate payments."
-
-    def has_permission(self, request, view):
-        user = request.user
-        if not user or not user.is_authenticated:
-            return False
-        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
-            return True
-        return has_user_permission(user, "payments.create")
 
 
 class CanVerifyPayment(BasePermission):

@@ -1,5 +1,5 @@
 from rest_framework.permissions import BasePermission
-from .services import has_user_permission, has_user_any_permission, get_user_role_codes
+from .services import has_user_permission, get_user_role_codes
 from .models import Role
 
 
@@ -42,23 +42,6 @@ def require_permission(permission_code: str):
 
     _ConfiguredPermission.__name__ = f"Require_{permission_code.replace('.', '_')}"
     return _ConfiguredPermission
-
-
-class HasAnyPermission(BasePermission):
-    """
-    Allows access if user holds AT LEAST ONE of the permissions defined in view.required_permissions.
-    """
-    message = "You do not have any of the required permissions to perform this action."
-
-    def has_permission(self, request, view):
-        if not request.user or not request.user.is_authenticated:
-            return False
-
-        required_list = getattr(view, "required_permissions", [])
-        if not required_list:
-            return True
-
-        return has_user_any_permission(request.user, *required_list)
 
 
 class HasObjectPermission(BasePermission):

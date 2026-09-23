@@ -26,7 +26,6 @@ from .permissions import (
     CanAdjustInventory,
     CanCancelOrder,
     CanCreateOrder,
-    CanCreatePayment,
     CanCreateProduct,
     CanDeleteProduct,
     CanRefundPayment,
@@ -41,8 +40,6 @@ from .permissions import (
     CanViewStaffOrders,
     IsEligibleOrderSeller,
     IsEligibleProductSeller,
-    IsInventoryProductOwner,
-    IsOrderOwner,
     IsProductOwner,
 )
 from .serializers import (

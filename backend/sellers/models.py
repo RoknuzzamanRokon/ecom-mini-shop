@@ -118,11 +118,6 @@ class SellerProfile(models.Model):
         super().save(*args, **kwargs)
 
     # Lifecycle State Transitions
-    def submit_for_review(self):
-        if self.status in (self.STATUS_PENDING, self.STATUS_REJECTED):
-            self.status = self.STATUS_UNDER_REVIEW
-            self.save(update_fields=["status", "updated_at"])
-
     def approve(self, staff_user):
         self.status = self.STATUS_APPROVED
         self.reviewed_by = staff_user
