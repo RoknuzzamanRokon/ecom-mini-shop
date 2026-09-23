@@ -1,6 +1,6 @@
 # MiniShop — Review & Rating System Plan
 
-**Created:** 2026-09-23 · **Baseline commit:** `6179759` · **Status:** Tasks 0–9 done; Tasks 10–12 not started
+**Created:** 2026-09-23 · **Baseline commit:** `6179759` · **Status:** Tasks 0–10 done (the requested feature is complete); optional Tasks 11–12 not started
 
 This is the task list for the review & rating feature. Work through it **one task at a
 time, in order**. Each task is sized to be one commit. When a task is done, tick its
@@ -91,7 +91,7 @@ task that depends on them.
 | 7 | Shop review public list + shop rating aggregates | backend | ✅ Done |
 | 8 | Shared review UI components (refactor) | frontend | ✅ Done |
 | 9 | Shop page: rating in header + reviews section | frontend | ✅ Done |
-| 10 | Shops list cards show rating | frontend | ⬜ Not started |
+| 10 | Shops list cards show rating | frontend | ✅ Done |
 | 11 | *(optional)* "My Reviews" page in profile | full-stack | ⬜ Not started |
 | 12 | *(optional)* Review moderation for staff | full-stack | ⬜ Not started |
 
@@ -573,15 +573,41 @@ at phone width. `npm run build` passes.
 
 **Goal.** `/shops` shows each shop's rating.
 
-- [ ] `shops/page.tsx`: under the shop name on each card, add `<StarRating>` +
+- [x] `shops/page.tsx`: under the shop name on each card, add `<StarRating>` +
       `4.3 (12)`. With no reviews, show muted "No reviews yet".
-- [ ] *(optional)* Backend `?ordering=-rating` on `PublicShopListView`, plus a
+- [x] *(optional)* Backend `?ordering=-rating` on `PublicShopListView`, plus a
       "Top Rated" sort on `/shops`.
 
 **Done when.** Shop cards show real ratings. Build passes (and tests, if the optional
 sort is done).
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done 2026-09-23 — optional sort included
+
+- Cards: `StarRating` (13 px) + **4.3** (12), or "No reviews yet" next to faint
+  empty stars, on a line directly under the shop name.
+- Backend: `PublicShopListView` accepts `?ordering=-rating` (alias `rating_desc`).
+  It orders by `F("average_rating").desc(nulls_last=True)`, then `-review_count`,
+  then `-created_at`, the same rule as the Task 4 product sort, so unrated shops go
+  last. Anything else stays newest first. Only top-rated is offered for shops; there
+  is no "lowest rated" option. The ordering is now applied **after** the `?q=`
+  filter rather than before; the result is the same, it just reads in the order it
+  runs.
+- Frontend: `getShops()` takes `ordering?: "-rating"`. `/shops` gains a "Sort: Newest
+  First / Top Rated" dropdown in its header row (`flex-wrap`, so it drops under the
+  title on phones), and changing it returns to page 1.
+- New tests (2) in `shop/test_shop_reviews.py`: top rated `[5.0, 4.0×2, 4.0×1,
+  unrated]` for both aliases; the default and unknown values stay newest first.
+  `shop.test_shop_reviews shops` **62/62 OK** (35 shop-review + 27 `shops` app) in
+  482 s, on a throwaway `test_minishop_task10` database.
+- Verified: typecheck and `npm run build` pass, and `shops/page.tsx` lints clean
+  (as it did before). jsdom check of the compiled `/shops` page with layout, image,
+  link and API stubbed (6/6): both cards render; the rated card has
+  `aria-label="Rated 4.3 out of 5"` and "4.3 (12)"; the unrated card has faint stars
+  and "No reviews yet"; the first load sends no ordering; picking Top Rated requests
+  `ordering: "-rating"` from page 1.
+- **Found while here, not part of this task:** the `/shops` search box does nothing.
+  `getShops()` sends `?search=`, but `PublicShopListView` only reads `?q=`, so every
+  search returns all shops. It is fixed in its own commit right after this one.
 
 ---
 

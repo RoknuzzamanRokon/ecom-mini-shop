@@ -426,3 +426,46 @@ class ShopRatingAggregateTests(BaseShopReviewAPITestCase):
         row = next(s for s in res.data["results"] if s["id"] == self.shop.id)
         self.assertEqual((row["average_rating"], row["review_count"]), (4.0, 1))
         self.assertNotIn("rating_breakdown", row)
+
+
+class ShopListRatingOrderingTests(BaseShopReviewAPITestCase):
+    """?ordering=-rating on the public shop list."""
+
+    def setUp(self):
+        super().setUp()
+        # A = 5.0 from 1 review, B = 4.0 from 2, D = 4.0 from 1, C = unrated.
+        # B and D tie on average, so review count decides.
+        self.a = self.shop
+        self.b = self._shop("shoprev-four-twice")
+        self.c = self._shop("shoprev-unrated")
+        self.d = self._shop("shoprev-four-once")
+        ShopReview.objects.create(user=self.customer, shop=self.a, rating=5)
+        ShopReview.objects.create(user=self.customer, shop=self.b, rating=4)
+        ShopReview.objects.create(user=self.other_customer, shop=self.b, rating=4)
+        ShopReview.objects.create(user=self.customer, shop=self.d, rating=4)
+
+    def _shop(self, slug):
+        return Shop.objects.create(
+            owner=self.seller, name=slug.replace("-", " ").title(), slug=slug, status=Shop.STATUS_ACTIVE
+        )
+
+    def _ids(self, query=""):
+        res = self.client.get(f"/api/shops/{query}")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        return [s["id"] for s in res.data["results"]]
+
+    def test_top_rated_first_and_unrated_last(self):
+        expected = [self.a.id, self.b.id, self.d.id, self.c.id]
+        for query in ("?ordering=-rating", "?ordering=rating_desc"):
+            with self.subTest(query=query):
+                self.assertEqual(self._ids(query), expected)
+
+    def test_default_and_unknown_ordering_stay_newest_first(self):
+        newest_first = list(
+            Shop.objects.filter(pk__in=[self.a.id, self.b.id, self.c.id, self.d.id])
+            .order_by("-created_at")
+            .values_list("id", flat=True)
+        )
+        for query in ("", "?ordering=bogus"):
+            with self.subTest(query=query):
+                self.assertEqual(self._ids(query), newest_first)

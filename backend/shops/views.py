@@ -1,4 +1,4 @@
-from django.db.models import Q
+from django.db.models import F, Q
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -41,14 +41,20 @@ from .services import (
 class PublicShopListView(generics.ListAPIView):
     """
     Public listing of approved/active shops.
-    Supports '?q=' query to search by name, description, or address.
+    Supports '?q=' query to search by name, description, or address, and
+    '?ordering=-rating' (alias 'rating_desc') for top rated first; anything
+    else lists newest first.
     Draft, pending, suspended, and rejected shops are strictly excluded.
     """
     permission_classes = [permissions.AllowAny]
     serializer_class = PublicShopSerializer
 
+    # Unrated shops have a NULL average and sort last; equal averages go to the
+    # shop with more reviews, then the newest.
+    TOP_RATED = (F("average_rating").desc(nulls_last=True), "-review_count", "-created_at")
+
     def get_queryset(self):
-        queryset = ShopService.get_public_shops_queryset().order_by("-created_at")
+        queryset = ShopService.get_public_shops_queryset()
 
         q = self.request.query_params.get("q")
         if q:
@@ -59,7 +65,9 @@ class PublicShopListView(generics.ListAPIView):
                 | Q(address__icontains=term)
             )
 
-        return queryset
+        if self.request.query_params.get("ordering") in ("-rating", "rating_desc"):
+            return queryset.order_by(*self.TOP_RATED)
+        return queryset.order_by("-created_at")
 
 
 class PublicNearbyShopListView(APIView):

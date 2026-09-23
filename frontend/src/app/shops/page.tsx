@@ -7,6 +7,7 @@ import Header from "@/components/layout/Header";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import Pagination from "@/components/home/Pagination";
+import StarRating from "@/components/reviews/StarRating";
 import { Category, Shop } from "@/lib/types";
 import { getCategories, getShops, formatImageUrl } from "@/lib/api";
 
@@ -17,6 +18,7 @@ export default function ShopsDirectoryPage() {
   const [shops, setShops] = useState<Shop[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [ordering, setOrdering] = useState<"newest" | "-rating">("newest");
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [totalPages, setTotalPages] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(true);
@@ -34,6 +36,7 @@ export default function ShopsDirectoryPage() {
         search: searchQuery || undefined,
         page: currentPage,
         page_size: PAGE_SIZE,
+        ordering: ordering === "-rating" ? "-rating" : undefined,
       });
       if (!isCancelled) {
         setShops(res.results);
@@ -46,11 +49,19 @@ export default function ShopsDirectoryPage() {
     return () => {
       isCancelled = true;
     };
-  }, [searchQuery, currentPage]);
+  }, [searchQuery, ordering, currentPage]);
 
   const handleSearch = (q: string) => {
     startTransition(() => {
       setSearchQuery(q);
+      setCurrentPage(1);
+    });
+  };
+
+  const handleOrderingChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value === "-rating" ? "-rating" : "newest";
+    startTransition(() => {
+      setOrdering(value);
       setCurrentPage(1);
     });
   };
@@ -74,16 +85,28 @@ export default function ShopsDirectoryPage() {
         </nav>
 
         {/* Page Header */}
-        <div className="flex items-center gap-3">
-          <span className="material-symbols-outlined text-[32px] text-accent">storefront</span>
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-black text-ink tracking-tight">
-              All Shops
-            </h1>
-            <p className="text-xs sm:text-sm text-ink-body mt-0.5">
-              {loading ? "Loading shops..." : `${totalCount} shop${totalCount === 1 ? "" : "s"} on the platform`}
-            </p>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <span className="material-symbols-outlined text-[32px] text-accent">storefront</span>
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-black text-ink tracking-tight">
+                All Shops
+              </h1>
+              <p className="text-xs sm:text-sm text-ink-body mt-0.5">
+                {loading ? "Loading shops..." : `${totalCount} shop${totalCount === 1 ? "" : "s"} on the platform`}
+              </p>
+            </div>
           </div>
+
+          <select
+            value={ordering}
+            onChange={handleOrderingChange}
+            aria-label="Sort shops"
+            className="bg-surface-alt border border-line rounded-lg px-3 py-2 text-xs font-medium text-ink focus:outline-hidden focus:border-primary cursor-pointer"
+          >
+            <option value="newest">Sort: Newest First</option>
+            <option value="-rating">Top Rated</option>
+          </select>
         </div>
 
         {/* Shop Grid */}
@@ -150,6 +173,18 @@ export default function ShopsDirectoryPage() {
                   <h3 className="text-sm font-bold text-ink truncate group-hover:text-primary transition-colors">
                     {shop.name}
                   </h3>
+
+                  <div className="flex items-center gap-1.5 text-[11px] text-ink-muted">
+                    <StarRating rating={shop.average_rating ?? 0} size={13} />
+                    {(shop.review_count ?? 0) > 0 ? (
+                      <span>
+                        <strong className="text-ink">{(shop.average_rating ?? 0).toFixed(1)}</strong>{" "}
+                        ({shop.review_count})
+                      </span>
+                    ) : (
+                      <span>No reviews yet</span>
+                    )}
+                  </div>
 
                   {shop.description && (
                     <p className="text-xs text-ink-body line-clamp-2 leading-relaxed">

@@ -356,11 +356,14 @@ export async function getShops(params?: {
   page?: number;
   page_size?: number;
   search?: string;
+  /** "-rating" for top rated first; omitted means newest first. */
+  ordering?: "-rating";
 }): Promise<PaginatedResponse<Shop>> {
   const query = new URLSearchParams();
   if (params?.search) query.set("search", params.search);
   if (params?.page) query.set("page", params.page.toString());
   if (params?.page_size) query.set("page_size", params.page_size.toString());
+  if (params?.ordering) query.set("ordering", params.ordering);
 
   try {
     const res = await fetch(`${API_BASE_URL}/api/shops/?${query.toString()}`, {
