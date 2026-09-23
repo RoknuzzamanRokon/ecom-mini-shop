@@ -1,6 +1,6 @@
 # MiniShop — Review & Rating System Plan
 
-**Created:** 2026-09-23 · **Baseline commit:** `6179759` · **Status:** Tasks 0–7 done; Tasks 8–12 not started
+**Created:** 2026-09-23 · **Baseline commit:** `6179759` · **Status:** Tasks 0–8 done; Tasks 9–12 not started
 
 This is the task list for the review & rating feature. Work through it **one task at a
 time, in order**. Each task is sized to be one commit. When a task is done, tick its
@@ -89,7 +89,7 @@ task that depends on them.
 | 5 | `ShopReview` model, migration, Django admin | backend | ✅ Done |
 | 6 | Shop review write API (create / mine / edit / delete) | backend | ✅ Done |
 | 7 | Shop review public list + shop rating aggregates | backend | ✅ Done |
-| 8 | Shared review UI components (refactor) | frontend | ⬜ Not started |
+| 8 | Shared review UI components (refactor) | frontend | ✅ Done |
 | 9 | Shop page: rating in header + reviews section | frontend | ⬜ Not started |
 | 10 | Shops list cards show rating | frontend | ⬜ Not started |
 | 11 | *(optional)* "My Reviews" page in profile | full-stack | ⬜ Not started |
@@ -458,18 +458,54 @@ the review list works, and the tests pass.
 
 **Goal.** Products and shops use the same review UI, so the code isn't written twice.
 
-- [ ] Move the stateful logic of `ProductReviews.tsx` into
+- [x] Move the stateful logic of `ProductReviews.tsx` into
       `components/reviews/ReviewSection.tsx`. It takes an adapter prop
       `{ list, getMine, create, update, remove }`, plus labels
       (e.g. "Share your experience with this shop…") and a `loginNext` path.
-- [ ] Move `StarPicker` to `components/reviews/StarPicker.tsx`.
-- [ ] `ProductReviews.tsx` becomes a thin wrapper that passes the product adapter.
-- [ ] **No visible change** on the product page. This task only moves code.
+- [x] Move `StarPicker` to `components/reviews/StarPicker.tsx`.
+- [x] `ProductReviews.tsx` becomes a thin wrapper that passes the product adapter.
+- [x] **No visible change** on the product page. This task only moves code.
 
 **Done when.** The product page reviews look and work exactly as before (check
 submit, edit, delete, paging, sort). `npm run build` passes.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done 2026-09-23
+
+- `ReviewSection` props: `adapter`, `loginNext`, `commentPlaceholder`,
+  `averageRating` / `reviewCount` / `ratingBreakdown`, `onReviewsChanged`, and an
+  optional DOM `id` (Task 9 uses `id="shop-reviews"`). It exports the `ReviewAdapter`
+  and `ReviewInput` types. The markup is copied class for class from the old
+  component.
+- **How to use it** (Task 9 must follow this): memoize the adapter with `useMemo` on
+  the reviewed item's id, since a new adapter object reloads the list. Mount it
+  with `key={id}`, so moving to another product or shop starts from clean state
+  instead of briefly showing the previous item's reviews. `ProductReviews` is now
+  ~40 lines that do exactly this.
+- **The three older lint errors are gone**, fixed rather than suppressed:
+  - The list result is stored with the key of its request (`page|ordering|reloadToken`),
+    so "loading" is derived from it (stored key ≠ current key), and state is only
+    set when a fetch settles.
+  - "My review" is stored with the `user.id` it was fetched for.
+  - The edit form is filled in the **Edit** click handler, instead of being synced
+    from an effect.
+  - `catch (err: any)` became `err instanceof Error`.
+  - A logged-in user with no stored token now falls back to the create form instead
+    of waiting forever on "Checking your review status…".
+- `StarPicker` uses the `fill-active` class (the same axes as the old inline
+  `fontVariationSettings`) and gains `aria-pressed` on the selected star.
+- Verified: typecheck, `npm run build`, and `npx eslint src/components/reviews/
+  src/components/product/ProductReviews.tsx` are clean. The two errors left under
+  `src/app/product/` and `src/components/product/` are in `product/[slug]/page.tsx:54`
+  and `ProductImageZoom.tsx:25`, neither touched here.
+- **Behaviour check (29/29):** the compiled `ReviewSection` was driven in jsdom with a
+  fake adapter and stubbed auth/router (harness in the session scratchpad, not
+  committed; the repo has no frontend test framework, which is out of scope per
+  `docs/FUTURE_PLAN.md`). Covered: guest login link with `?next=`; 12 per page with
+  Next/Previous; a sort change resets to page 1; empty-submit validation; create →
+  "Your review" card → Edit (prefilled) → Cancel → Save → Delete → empty form, with
+  the right adapter calls and `onReviewsChanged` each time; an existing review loaded
+  from `getMine`; list error → Retry; the no-token fallback. Not checked in a real
+  browser.
 
 ---
 
