@@ -1,6 +1,7 @@
 # MiniShop — Future Plan
 
-**Created:** 2026-09-18 · **Baseline commit:** `fe347ef` · **Status:** Phases 2A, 2B and 2C done (2026-09-18/19); everything after them still proposed
+**Created:** 2026-09-18 · **Baseline commit:** `fe347ef` · **Status:** Phases 2A, 2B and 2C done 
+(2026-09-18/19); everything after them still proposed
 
 This is a **roadmap**, not a spec. Each phase below is sized to become one spec
 and one commit, written in the same format as `task/task*.md`.
@@ -30,6 +31,10 @@ targeted test runs and partial evidence. Every phase after 2A is cheaper and
 better-verified because 2A happened.
 
 ---
+
+
+2A ✅ → 2B ✅ → 2C ✅ → 2D ← NEXT → 2F → 2G → 2H → 2E → 2L → 2I → 2J → 2K → 2M → 2N
+
 
 ## Phase 2A — Make the test suite fast
 
@@ -468,6 +473,32 @@ would bury 2J's auth logic — the part that actually needs review.
 **Done when.** Every route segment has appropriate boundaries and a forced fetch
 failure renders a real error state with a retry affordance.
 
+**Status: DONE 2026-09-23 — scope delivered, "Done when" corrected rather than
+met as originally worded.** Every route segment now has `loading.tsx`, `error.tsx`
+and `not-found.tsx` (root-level `global-error.tsx`/`error.tsx`/`loading.tsx`/
+`not-found.tsx`, plus segment-level boundaries for `product/[slug]`, `shop/[slug]`,
+`shops`, `seller`, `admin` and `profile`), a shared `RouteErrorState` presentation
+component, and the existing `notFound()` calls in `product/[slug]/page.tsx` and
+`shop/[slug]/page.tsx` are now backed by real `not-found.tsx` pages instead of an
+inline branch. A render-phase throw now reaches these boundaries with a working
+retry affordance. No data-fetching logic or library was touched, no client
+component was converted, and no route was restructured — the scope boundary held
+exactly as written.
+
+**The literal second half of "Done when" is not met, and cannot be met inside this
+phase's own scope boundary.** A reconciliation audit (2026-09-23) found that every
+`frontend/src/lib/api.ts` function the storefront actually fetches through
+(`getCategories`, `getProducts`, `getProductDetail`, `getProductById`,
+`getHotDeal`, `getShopDetail`, `getShops`, `getOrderDetail`) already caught its own
+fetch failure and resolved to demo data or `null` before this phase started — that
+is the "Change any data-fetching logic" this phase was told not to touch. A
+`useEffect` fetch that never rejects gives a route `error.tsx` nothing to catch, so
+a **forced network-level fetch failure still renders demo data or a `not-found.tsx`
+page, never `error.tsx`**, on the pages the original Evidence paragraph named. The
+boundaries built here are real and load-bearing for what they do catch — a genuine
+render-phase crash — just not for that specific failure mode. See the deferred
+follow-up under "Not in this roadmap" below.
+
 ---
 
 ## Phase 2L — Decide seller self-registration (#5)
@@ -544,7 +575,9 @@ split is its natural foundation.
 | `ALLOWED_HOSTS` localhost-only | `config/settings.py:42` |
 | CORS origins hardcoded to `localhost:3000` | `config/settings.py:175` |
 | Password minimum of 4 characters, no other validators | `config/settings.py:137-138` |
-| **No `LOGGING` config at all** — while 8 non-test modules call `logging.getLogger` | `audit/services.py`, `cart/services.py`, `customers/services.py`, `points/services.py`, `shop/{admin_views,inventory_service,payment_service,services}.py` |
+| **No `LOGGING` config at all** — while 8 non-test modules call `logging.getLogger` |
+ `audit/services.py`, `cart/services.py`, `customers/services.py`, `points/services.py`, 
+ `shop/{admin_views,inventory_service,payment_service,services}.py` |
 | No `SECURE_*` / HSTS / secure-cookie settings | absent from `config/settings.py` |
 | `.env` hand-parsed, no `python-dotenv` | `config/settings.py` |
 | Stale `backend/db.sqlite3` tracked, though settings require MySQL | repo root of `backend/` |
@@ -568,7 +601,26 @@ deliberately excluded — with reasons, so nobody re-discovers them as new.
   Same condition applies: any new refund caller that bypasses the service needs its
   own boundary check.
 
-**Deferred as cosmetic or mechanical:**
+**Deferred pending a fetch-error / demo-fallback policy decision:**
+- **Follow-up — Fetch Error Propagation / Demo Fallback Policy.** Phase 2K
+  (above) built route-level `error.tsx`/`loading.tsx`/`not-found.tsx` boundaries
+  but, by design, left `frontend/src/lib/api.ts` untouched — and that module
+  already converts most public-read fetch failures into demo data or `null`
+  before those boundaries can ever see them. Closing that gap is a page-by-page
+  product decision, not mechanical boilerplate: for each of `getCategories`,
+  `getProducts`, `getProductDetail`, `getProductById`, `getHotDeal`,
+  `getShopDetail`, `getShops`, `getOrderDetail`, decide whether a network failure
+  should (a) keep the demo fallback — an intentional offline/dev-mode experience
+  for the public catalogue, (b) surface a local inline error state (the pattern
+  `admin/products/page.tsx` already uses), or (c) propagate to the route's
+  `error.tsx` (needs a targeted `api.ts` change plus the calling page's
+  `useEffect`). Candidate files if approved: the eight `api.ts` functions above,
+  `frontend/src/app/page.tsx`, `product/[slug]/page.tsx`, `shop/[slug]/page.tsx`,
+  `shops/page.tsx`. Separately, authenticated dashboard pages that fetch through
+  `Promise.allSettled` (e.g. `seller/page.tsx`) currently discard a partial-fetch
+  failure with no error state at all, local or route-level, and may need its own
+  pass under the same policy. Not scheduled as a numbered phase until that policy
+  decision is made.
 - **#17** — `/admin/orders` list merges only `{id, status}` after an action, so
   `payment_status` goes stale until refetch. Fold into whoever next touches that page.
 - Accessibility sweep — roughly 250 decorative Material Symbols glyphs without
