@@ -3,7 +3,7 @@
 import React, { useEffect, useState, useTransition } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { notFound, useParams } from "next/navigation";
 import Header from "@/components/layout/Header";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
@@ -110,28 +110,11 @@ export default function ShopStorefrontPage() {
     );
   }
 
+  // No published shop under this slug is a 404, not a failure. The segment's
+  // not-found boundary owns that state; `error.tsx` stays reserved for a crash
+  // while rendering a shop that does exist.
   if (!shop) {
-    return (
-      <div className="min-h-screen flex flex-col bg-page">
-        <Header />
-        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-          <span className="material-symbols-outlined text-[64px] text-ink-muted/50 mb-2">
-            store
-          </span>
-          <h2 className="text-xl font-bold text-ink">Shop Not Found</h2>
-          <p className="text-sm text-ink-body mt-1">
-            The requested shop storefront could not be located or is not currently active.
-          </p>
-          <Link
-            href="/"
-            className="mt-4 bg-primary text-on-primary px-4 py-2 rounded-md font-semibold text-xs uppercase shadow-xs hover:bg-primary-hover transition-colors"
-          >
-            Back to Catalog
-          </Link>
-        </div>
-        <Footer />
-      </div>
-    );
+    notFound();
   }
 
   const memberSinceYear = shop.created_at

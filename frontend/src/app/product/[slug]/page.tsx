@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { notFound, useParams, useRouter } from "next/navigation";
 import Header from "@/components/layout/Header";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
@@ -65,26 +65,11 @@ export default function ProductDetailPage() {
     );
   }
 
+  // A slug with no product behind it is a 404, not a failure. Handing it to the
+  // segment's not-found boundary keeps that distinct from `error.tsx`, which is
+  // reserved for an actual crash while rendering an existing product.
   if (!product) {
-    return (
-      <div className="min-h-screen flex flex-col bg-page">
-        <Header />
-        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
-          <span className="material-symbols-outlined text-[64px] text-ink-muted/50 mb-2">
-            inventory_2
-          </span>
-          <h2 className="text-xl font-bold text-ink">Product Not Found</h2>
-          <p className="text-sm text-ink-body mt-1">The requested product could not be located.</p>
-          <Link
-            href="/"
-            className="mt-4 bg-primary text-on-primary px-4 py-2 rounded-md font-semibold text-xs uppercase"
-          >
-            Back to Store
-          </Link>
-        </div>
-        <Footer />
-      </div>
-    );
+    notFound();
   }
 
   const galleryImages =
