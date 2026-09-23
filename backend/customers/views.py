@@ -4,7 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Address, Favorite, Review
+from .models import Address, Favorite, Review, ShopReview
 from .permissions import (
     CanCreateAddress,
     CanCreateReview,
@@ -26,6 +26,8 @@ from .serializers import (
     ReviewCreateSerializer,
     ReviewSerializer,
     ReviewUpdateSerializer,
+    ShopReviewCreateSerializer,
+    ShopReviewSerializer,
 )
 from .services import (
     AddressService,
@@ -33,6 +35,7 @@ from .services import (
     ReviewAlreadyExistsError,
     ReviewService,
     SelfReviewError,
+    ShopReviewService,
 )
 
 
@@ -311,3 +314,96 @@ class MyProductReviewView(APIView):
         if not review:
             return Response({"detail": "No review found."}, status=status.HTTP_404_NOT_FOUND)
         return Response(ReviewSerializer(review).data)
+
+
+class ShopReviewCreateView(APIView):
+    """
+    Customer self-service shop review submission endpoint.
+    POST /api/shop-reviews/
+    """
+    permission_classes = [IsAuthenticated, CanCreateReview]
+
+    def post(self, request):
+        serializer = ShopReviewCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+
+        try:
+            review = ShopReviewService.create_review(
+                user=request.user,
+                shop_id=data["shop_id"],
+                rating=data["rating"],
+                comment=data.get("comment", ""),
+                ip_address=request.META.get("REMOTE_ADDR"),
+            )
+        except SelfReviewError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_403_FORBIDDEN)
+        except ReviewAlreadyExistsError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_409_CONFLICT)
+
+        return Response(ShopReviewSerializer(review).data, status=status.HTTP_201_CREATED)
+
+
+class ShopReviewDetailView(APIView):
+    """
+    Detail endpoint to modify or remove an individual shop review.
+    PATCH  /api/shop-reviews/<id>/
+    DELETE /api/shop-reviews/<id>/
+    """
+    permission_classes = [IsAuthenticated, IsReviewOwner]
+
+    def get_object(self, pk):
+        review = get_object_or_404(ShopReview, pk=pk)
+        self.check_object_permissions(self.request, review)
+        return review
+
+    def patch(self, request, pk):
+        review = self.get_object(pk)
+        serializer = ReviewUpdateSerializer(data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        updated_review = ShopReviewService.update_review(
+            review,
+            serializer.validated_data,
+            actor=request.user,
+            ip_address=request.META.get("REMOTE_ADDR"),
+        )
+        return Response(ShopReviewSerializer(updated_review).data)
+
+    def put(self, request, pk):
+        return self.patch(request, pk)
+
+    def delete(self, request, pk):
+        review = self.get_object(pk)
+        ShopReviewService.delete_review(
+            review,
+            actor=request.user,
+            ip_address=request.META.get("REMOTE_ADDR"),
+        )
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class MyShopReviewView(APIView):
+    """
+    Lets the frontend check whether the authenticated user already reviewed a
+    given shop, so it can render an edit form instead of a submit form.
+    GET /api/shop-reviews/mine/?shop_id=<id>
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        # Parse here: a non-numeric id reaching the ORM raises ValueError (a 500).
+        try:
+            shop_id = int(request.query_params.get("shop_id"))
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "shop_id query parameter is required and must be an integer."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        review = (
+            ShopReview.objects.filter(user=request.user, shop_id=shop_id)
+            .select_related("user__customer_profile")
+            .first()
+        )
+        if not review:
+            return Response({"detail": "No review found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(ShopReviewSerializer(review).data)

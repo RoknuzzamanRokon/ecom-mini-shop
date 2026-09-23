@@ -3,7 +3,8 @@ from rest_framework import serializers
 
 from shop.models import Product
 from shop.serializers import ProductListSerializer
-from .models import Address, CustomerProfile, Favorite, Review
+from shops.models import Shop
+from .models import Address, CustomerProfile, Favorite, Review, ShopReview
 
 
 class CustomerProfileSerializer(serializers.ModelSerializer):
@@ -238,8 +239,36 @@ class ReviewCreateSerializer(serializers.Serializer):
 
 class ReviewUpdateSerializer(serializers.Serializer):
     """
-    Partial-update serializer for a review's rating/comment. Ownership is
-    enforced at the view/permission layer, not here.
+    Partial-update serializer for a product or shop review's rating/comment.
+    Ownership is enforced at the view/permission layer, not here.
     """
     rating = serializers.IntegerField(min_value=1, max_value=5, required=False)
     comment = serializers.CharField(required=False, allow_blank=True, max_length=2000)
+
+
+class ShopReviewSerializer(ReviewSerializer):
+    """
+    Read serializer for a shop review: the same public fields and reviewer-name
+    rule as a product review.
+    """
+
+    class Meta(ReviewSerializer.Meta):
+        model = ShopReview
+
+
+class ShopReviewCreateSerializer(serializers.Serializer):
+    """
+    Accepts a shop id and resolves it against publicly visible shops only
+    (APPROVED/ACTIVE, the same rule as the public shop endpoints), so draft,
+    pending, rejected or suspended shops can never receive a review.
+    """
+    shop_id = serializers.IntegerField()
+    rating = serializers.IntegerField(min_value=1, max_value=5)
+    comment = serializers.CharField(required=False, allow_blank=True, max_length=2000, default="")
+
+    def validate_shop_id(self, value):
+        if not Shop.objects.filter(
+            pk=value, status__in=[Shop.STATUS_APPROVED, Shop.STATUS_ACTIVE]
+        ).exists():
+            raise serializers.ValidationError("Shop not found.")
+        return value

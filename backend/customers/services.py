@@ -5,7 +5,7 @@ from django.db import IntegrityError, transaction
 from django.db.models import Count, QuerySet
 
 from audit.services import AuditService
-from .models import Address, CustomerProfile, Review
+from .models import Address, CustomerProfile, Review, ShopReview
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -28,6 +28,22 @@ def review_ordering(value: Optional[str]) -> Tuple[str, ...]:
     return REVIEW_ORDERINGS.get(value or "", REVIEW_ORDERINGS[DEFAULT_REVIEW_ORDERING])
 
 
+def _apply_review_edits(review, data: Dict[str, Any]) -> Dict[str, Dict[str, str]]:
+    """
+    Copies rating/comment from `data` onto a product or shop review without
+    saving, and returns {field: {"old", "new"}} for the fields that changed.
+    """
+    changed_fields = {}
+    for field in ["rating", "comment"]:
+        if field in data:
+            old_val = getattr(review, field)
+            new_val = data[field]
+            if old_val != new_val:
+                changed_fields[field] = {"old": str(old_val), "new": str(new_val)}
+                setattr(review, field, new_val)
+    return changed_fields
+
+
 def rating_breakdown(reviews: QuerySet) -> Dict[str, int]:
     """
     Counts reviews per star level in one GROUP BY query, as
@@ -41,12 +57,12 @@ def rating_breakdown(reviews: QuerySet) -> Dict[str, int]:
 
 
 class ReviewAlreadyExistsError(Exception):
-    """Raised when a customer attempts to review a product they've already reviewed."""
+    """Raised when a customer attempts to review a product or shop they've already reviewed."""
     pass
 
 
 class SelfReviewError(Exception):
-    """Raised when a seller attempts to review a product from a shop they own."""
+    """Raised when a seller attempts to review their own shop or one of its products."""
     pass
 
 
@@ -382,15 +398,7 @@ class ReviewService:
         a super administrator editing someone else's review must be logged as
         themselves, not as the review's author.
         """
-        changed_fields = {}
-        for field in ["rating", "comment"]:
-            if field in data:
-                old_val = getattr(review, field)
-                new_val = data[field]
-                if old_val != new_val:
-                    changed_fields[field] = {"old": str(old_val), "new": str(new_val)}
-                    setattr(review, field, new_val)
-
+        changed_fields = _apply_review_edits(review, data)
         if changed_fields:
             review.save()
             AuditService.log(
@@ -420,6 +428,108 @@ class ReviewService:
             actor=actor or review.user,
             metadata={
                 "product_id": review.product_id,
+                "rating": review.rating,
+                "author_id": review.user_id,
+            },
+            ip_address=ip_address,
+        )
+        review.delete()
+
+
+class ShopReviewService:
+    """
+    Domain service for customer reviews of a shop as a whole. Mirrors
+    ReviewService; audit entries carry the shop automatically because
+    AuditService infers it from `target.shop`.
+    """
+
+    @classmethod
+    @transaction.atomic
+    def create_review(
+        cls,
+        user,
+        shop_id: int,
+        rating: int,
+        comment: str = "",
+        ip_address: Optional[str] = None,
+    ) -> ShopReview:
+        """
+        Creates a shop review. is_verified_purchase is computed once, here: the
+        user has a DELIVERED order containing an item sold by this shop. Raises
+        SelfReviewError if the user owns the shop, and ReviewAlreadyExistsError
+        if the user has already reviewed it.
+        """
+        from shop.models import Order, OrderItem
+        from shops.models import Shop
+
+        if Shop.objects.filter(pk=shop_id, owner__user=user).exists():
+            raise SelfReviewError("You cannot review your own shop.")
+
+        is_verified_purchase = OrderItem.objects.filter(
+            order__user=user,
+            order__status=Order.STATUS_DELIVERED,
+            shop_id=shop_id,
+        ).exists()
+
+        try:
+            review = ShopReview.objects.create(
+                user=user,
+                shop_id=shop_id,
+                rating=rating,
+                comment=comment,
+                is_verified_purchase=is_verified_purchase,
+            )
+        except IntegrityError:
+            raise ReviewAlreadyExistsError(
+                "You have already reviewed this shop. Edit your existing review instead."
+            )
+
+        AuditService.log(
+            action="SHOP_REVIEW_CREATED",
+            target=review,
+            actor=user,
+            metadata={"shop_id": shop_id, "rating": rating},
+            ip_address=ip_address,
+        )
+        return review
+
+    @classmethod
+    @transaction.atomic
+    def update_review(
+        cls,
+        review: ShopReview,
+        data: Dict[str, Any],
+        actor: Optional[Any] = None,
+        ip_address: Optional[str] = None,
+    ) -> ShopReview:
+        """Updates a shop review's rating/comment, logging whoever made the change."""
+        changed_fields = _apply_review_edits(review, data)
+        if changed_fields:
+            review.save()
+            AuditService.log(
+                action="SHOP_REVIEW_UPDATED",
+                target=review,
+                actor=actor or review.user,
+                metadata={"changed_fields": changed_fields, "author_id": review.user_id},
+                ip_address=ip_address,
+            )
+        return review
+
+    @classmethod
+    @transaction.atomic
+    def delete_review(
+        cls,
+        review: ShopReview,
+        actor: Optional[Any] = None,
+        ip_address: Optional[str] = None,
+    ) -> None:
+        """Deletes a shop review; `author_id` keeps the author on record."""
+        AuditService.log(
+            action="SHOP_REVIEW_DELETED",
+            target=review,
+            actor=actor or review.user,
+            metadata={
+                "shop_id": review.shop_id,
                 "rating": review.rating,
                 "author_id": review.user_id,
             },

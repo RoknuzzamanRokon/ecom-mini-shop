@@ -7,8 +7,11 @@ from .views import (
     FavoriteDetailView,
     FavoriteListCreateView,
     MyProductReviewView,
+    MyShopReviewView,
     ReviewDetailView,
     ReviewListCreateView,
+    ShopReviewCreateView,
+    ShopReviewDetailView,
 )
 
 app_name = "customers"
@@ -23,4 +26,7 @@ urlpatterns = [
     path("reviews/", ReviewListCreateView.as_view(), name="review-list-create"),
     path("reviews/mine/", MyProductReviewView.as_view(), name="review-mine"),
     path("reviews/<int:pk>/", ReviewDetailView.as_view(), name="review-detail"),
+    path("shop-reviews/", ShopReviewCreateView.as_view(), name="shop-review-create"),
+    path("shop-reviews/mine/", MyShopReviewView.as_view(), name="shop-review-mine"),
+    path("shop-reviews/<int:pk>/", ShopReviewDetailView.as_view(), name="shop-review-detail"),
 ]

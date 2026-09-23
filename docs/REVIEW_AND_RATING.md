@@ -1,6 +1,6 @@
 # MiniShop — Review & Rating System Plan
 
-**Created:** 2026-09-23 · **Baseline commit:** `6179759` · **Status:** Tasks 0–5 done; Tasks 6–12 not started
+**Created:** 2026-09-23 · **Baseline commit:** `6179759` · **Status:** Tasks 0–6 done; Tasks 7–12 not started
 
 This is the task list for the review & rating feature. Work through it **one task at a
 time, in order**. Each task is sized to be one commit. When a task is done, tick its
@@ -87,7 +87,7 @@ task that depends on them.
 | 3 | Rating summary + review sorting on the product page | full-stack | ✅ Done |
 | 4 | "Top Rated" product sort | full-stack | ✅ Done |
 | 5 | `ShopReview` model, migration, Django admin | backend | ✅ Done |
-| 6 | Shop review write API (create / mine / edit / delete) | backend | ⬜ Not started |
+| 6 | Shop review write API (create / mine / edit / delete) | backend | ✅ Done |
 | 7 | Shop review public list + shop rating aggregates | backend | ⬜ Not started |
 | 8 | Shared review UI components (refactor) | frontend | ⬜ Not started |
 | 9 | Shop page: rating in header + reviews section | frontend | ⬜ Not started |
@@ -336,7 +336,7 @@ and the tests pass.
 
 **Goal.** A logged-in customer can create, read back, edit and delete their shop review.
 
-- [ ] `customers/services.py`: `ShopReviewService.create_review / update_review /
+- [x] `customers/services.py`: `ShopReviewService.create_review / update_review /
       delete_review`, built like `ReviewService`, including Task 2's `actor` argument.
       - Verified purchase is set once at creation: the user has a `DELIVERED` order
         with an `OrderItem` whose `shop` is this shop (`OrderItem.shop` exists,
@@ -344,21 +344,55 @@ and the tests pass.
       - Raises `ReviewAlreadyExistsError` (409) and `SelfReviewError` when
         `shop.owner.user == user` (403).
       - Audit actions: `SHOP_REVIEW_CREATED`, `SHOP_REVIEW_UPDATED`, `SHOP_REVIEW_DELETED`.
-- [ ] `customers/serializers.py`: `ShopReviewSerializer` (read, same fields as
+- [x] `customers/serializers.py`: `ShopReviewSerializer` (read, same fields as
       `ReviewSerializer`), `ShopReviewCreateSerializer` (`shop_id` must be a public
       shop: `APPROVED` or `ACTIVE`), `ShopReviewUpdateSerializer`.
-- [ ] `customers/views.py` + `urls.py`:
+- [x] `customers/views.py` + `urls.py`:
       - `POST   /api/shop-reviews/` (`IsAuthenticated` + `CanCreateReview`)
       - `GET    /api/shop-reviews/mine/?shop_id=<id>` (404 if none, 400 on bad id)
       - `PATCH` / `DELETE /api/shop-reviews/<id>/` (`IsReviewOwner`)
-- [ ] Tests in `shop/test_shop_reviews.py`, covering the same cases as
+- [x] Tests in `shop/test_shop_reviews.py`, covering the same cases as
       `test_product_reviews.py`: create 201, duplicate 409, guest 401, no role 403,
       rating 0/6 → 400, non-public shop → 400, own shop → 403, verified purchase
       true/false, owner edit/delete, non-owner edit/delete → 403, mine 404/200/401.
 
 **Done when.** All endpoints behave as listed and the tests pass.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done 2026-09-23
+
+- Views: `ShopReviewCreateView`, `ShopReviewDetailView`, `MyShopReviewView` in
+  `customers/views.py`. URL names `customers:shop-review-create` / `-mine` /
+  `-detail`. The existing `CanCreateReview` and `IsReviewOwner` are reused
+  unchanged; both only look at `request.user` and `obj.user`.
+- **Less new code than planned:**
+  - `ShopReviewSerializer` subclasses `ReviewSerializer` and only swaps
+    `Meta.model`, so the public reviewer-name rule is defined once.
+  - **No `ShopReviewUpdateSerializer`:** `ReviewUpdateSerializer` already has
+    exactly the rating/comment fields, and the detail view reuses it.
+  - The rating/comment edit loop moved into one helper, `_apply_review_edits()`,
+    which both `ReviewService` and `ShopReviewService` call.
+- The public-shop check is `status__in=[APPROVED, ACTIVE]`, the same rule as
+  `PublicShopListView` / `PublicShopDetailView`. Draft, pending, rejected, suspended
+  and nonexistent shops all get `400 {"shop_id": ["Shop not found."]}`.
+- Audit entries get their `shop` FK automatically (`AuditService` infers it from
+  `target.shop`), so every `SHOP_REVIEW_*` row appears in that shop's audit history.
+  Update and delete log `actor=request.user` plus `author_id`, and all three record
+  the IP.
+- New tests (20) in three classes on a shared `BaseShopReviewAPITestCase`
+  (RBAC seed, customers, no-role user, superuser, a product sold by the shop, an
+  address):
+  - **Create (11):** 201, comment optional, 409, 401, 403 no role, 0/6 → 400,
+    pending/suspended/missing shop → 400, own shop → 403, verified true after a
+    delivered order, verified false without one, audit row has actor + shop.
+  - **Ownership (5):** owner edit (audited) and delete (audited), non-owner edit and
+    delete → 403, admin delete logged as the admin with `author_id`.
+  - **Mine (4):** 200 own; 404 when only *another* user has reviewed; 400
+    missing/non-numeric; 401 guest.
+- Verified: `shop.test_shop_reviews shop.test_product_reviews` **61/61 OK** (24 shop
+  + 37 product; product tests included because `ReviewService.update_review` now
+  goes through the shared helper) in 874 s, on a throwaway `test_minishop_task6`
+  database. `manage.py check` is clean and all three routes resolve to their views.
+  No frontend change.
 
 ---
 
