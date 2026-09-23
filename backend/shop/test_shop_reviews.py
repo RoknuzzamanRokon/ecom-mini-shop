@@ -1,16 +1,19 @@
+from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
-from django.db import IntegrityError, transaction
+from django.db import IntegrityError, connection, transaction
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from audit.models import AuditLog
 from cart.models import Cart, CartItem
-from customers.models import Address, ShopReview
+from customers.models import Address, Review, ShopReview
 from rbac.models import Role
 from rbac.services import assign_user_role
 from sellers.models import SellerProfile
@@ -302,3 +305,124 @@ class MyShopReviewAPITests(BaseShopReviewAPITestCase):
     def test_requires_authentication(self):
         res = self._mine(None, f"?shop_id={self.shop.id}")
         self.assertEqual(res.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class ShopReviewPublicListTests(BaseShopReviewAPITestCase):
+    def _list(self, slug=None, ordering=None):
+        url = f"/api/shops/{slug or self.shop.slug}/reviews/"
+        if ordering is not None:
+            url += f"?ordering={ordering}"
+        return self.client.get(url)
+
+    def _ids(self, ordering=None):
+        res = self._list(ordering=ordering)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        return [r["id"] for r in res.data["results"]]
+
+    def _age(self, review, days):
+        ShopReview.objects.filter(pk=review.pk).update(created_at=timezone.now() - timedelta(days=days))
+
+    def test_guest_sees_only_this_shops_reviews(self):
+        other_shop = Shop.objects.create(
+            owner=self.seller, name="Other Listed Shop", slug="shoprev-other-listed", status=Shop.STATUS_ACTIVE
+        )
+        ShopReview.objects.create(user=self.customer, shop=self.shop, rating=5, comment="Great")
+        ShopReview.objects.create(user=self.customer, shop=other_shop, rating=1)
+
+        res = self._list()
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data["count"], 1)
+        row = res.data["results"][0]
+        self.assertEqual((row["rating"], row["comment"]), (5, "Great"))
+        self.assertEqual(row["reviewer_name"], "shoprev_customer")
+
+    def test_non_public_or_unknown_shop_404s(self):
+        Shop.objects.create(
+            owner=self.seller, name="Hidden Shop", slug="shoprev-hidden", status=Shop.STATUS_PENDING
+        )
+        for slug in ("shoprev-hidden", "no-such-shop"):
+            with self.subTest(slug=slug):
+                self.assertEqual(self._list(slug=slug).status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_ordering_values_and_fallback(self):
+        # Oldest is rated 3, middle 5, newest 1, so every ordering gives a distinct result.
+        oldest = ShopReview.objects.create(user=self.customer, shop=self.shop, rating=3)
+        middle = ShopReview.objects.create(user=self.other_customer, shop=self.shop, rating=5)
+        newest = ShopReview.objects.create(user=self.no_role_user, shop=self.shop, rating=1)
+        self._age(oldest, 3)
+        self._age(middle, 2)
+        self._age(newest, 1)
+
+        expected = {
+            None: [newest.id, middle.id, oldest.id],
+            "newest": [newest.id, middle.id, oldest.id],
+            "oldest": [oldest.id, middle.id, newest.id],
+            "highest": [middle.id, oldest.id, newest.id],
+            "lowest": [newest.id, oldest.id, middle.id],
+            "bogus": [newest.id, middle.id, oldest.id],
+        }
+        for ordering, ids in expected.items():
+            with self.subTest(ordering=ordering):
+                self.assertEqual(self._ids(ordering), ids)
+
+    def test_query_count_does_not_grow_per_review(self):
+        ShopReview.objects.create(user=self.customer, shop=self.shop, rating=5)
+        with CaptureQueriesContext(connection) as one_review:
+            self._ids()
+        ShopReview.objects.create(user=self.other_customer, shop=self.shop, rating=4)
+        ShopReview.objects.create(user=self.no_role_user, shop=self.shop, rating=3)
+        with CaptureQueriesContext(connection) as three_reviews:
+            self.assertEqual(len(self._ids()), 3)
+        self.assertEqual(len(three_reviews), len(one_review))
+
+
+class ShopRatingAggregateTests(BaseShopReviewAPITestCase):
+    def _detail(self):
+        res = self.client.get(f"/api/shops/{self.shop.slug}/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        return res.data
+
+    def _rating(self):
+        data = self._detail()
+        return data["average_rating"], data["review_count"], data["rating_breakdown"]
+
+    def test_unreviewed_shop_reads_as_unrated(self):
+        self.assertEqual(
+            self._rating(), (0.0, 0, {"5": 0, "4": 0, "3": 0, "2": 0, "1": 0})
+        )
+
+    def test_aggregates_track_create_update_delete(self):
+        review_id = self._post(self.customer, rating=5).data["id"]
+        self.assertEqual(self._rating(), (5.0, 1, {"5": 1, "4": 0, "3": 0, "2": 0, "1": 0}))
+
+        self._post(self.other_customer, rating=2)
+        self.assertEqual(self._rating(), (3.5, 2, {"5": 1, "4": 0, "3": 0, "2": 1, "1": 0}))
+
+        # The first customer drops from 5 to 4: (4 + 2) / 2 = 3.0
+        self.client.force_authenticate(user=self.customer)
+        self.client.patch(f"/api/shop-reviews/{review_id}/", {"rating": 4})
+        self.assertEqual(self._rating(), (3.0, 2, {"5": 0, "4": 1, "3": 0, "2": 1, "1": 0}))
+
+        # ...then deletes it, leaving only the 2-star review
+        self.client.delete(f"/api/shop-reviews/{review_id}/")
+        self.assertEqual(self._rating(), (2.0, 1, {"5": 0, "4": 0, "3": 0, "2": 1, "1": 0}))
+
+    def test_average_is_rounded_to_one_decimal(self):
+        # (5 + 4 + 4) / 3 = 4.333...
+        for user, rating in ((self.customer, 5), (self.other_customer, 4), (self.no_role_user, 4)):
+            ShopReview.objects.create(user=user, shop=self.shop, rating=rating)
+        average, count, _ = self._rating()
+        self.assertEqual((average, count), (4.3, 3))
+
+    def test_product_reviews_do_not_count_toward_shop_rating(self):
+        Review.objects.create(user=self.customer, product=self.product, rating=1)
+        average, count, _ = self._rating()
+        self.assertEqual((average, count), (0.0, 0))
+
+    def test_list_has_rating_fields_but_not_breakdown(self):
+        ShopReview.objects.create(user=self.customer, shop=self.shop, rating=4)
+        res = self.client.get("/api/shops/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        row = next(s for s in res.data["results"] if s["id"] == self.shop.id)
+        self.assertEqual((row["average_rating"], row["review_count"]), (4.0, 1))
+        self.assertNotIn("rating_breakdown", row)

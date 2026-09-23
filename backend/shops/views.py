@@ -5,6 +5,9 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from customers.models import ShopReview
+from customers.serializers import ShopReviewSerializer
+from customers.services import review_ordering
 from .models import Shop
 from .permissions import (
     CanApproveShops,
@@ -14,6 +17,7 @@ from .permissions import (
 )
 from .serializers import (
     NearbyShopSerializer,
+    PublicShopDetailSerializer,
     PublicShopSerializer,
     SellerShopSerializer,
     SellerShopUpdateSerializer,
@@ -44,9 +48,7 @@ class PublicShopListView(generics.ListAPIView):
     serializer_class = PublicShopSerializer
 
     def get_queryset(self):
-        queryset = Shop.objects.filter(
-            status__in=[Shop.STATUS_APPROVED, Shop.STATUS_ACTIVE]
-        ).order_by("-created_at")
+        queryset = ShopService.get_public_shops_queryset().order_by("-created_at")
 
         q = self.request.query_params.get("q")
         if q:
@@ -103,12 +105,33 @@ class PublicShopDetailView(generics.RetrieveAPIView):
     Returns 404 for any shop that is not APPROVED or ACTIVE.
     """
     permission_classes = [permissions.AllowAny]
-    serializer_class = PublicShopSerializer
+    serializer_class = PublicShopDetailSerializer
     lookup_field = "slug"
 
     def get_queryset(self):
-        return Shop.objects.filter(
-            status__in=[Shop.STATUS_APPROVED, Shop.STATUS_ACTIVE]
+        return ShopService.get_public_shops_queryset()
+
+
+class PublicShopReviewListView(generics.ListAPIView):
+    """
+    Public listing of customer reviews for a single shop.
+    GET /api/shops/<slug>/reviews/?ordering=newest|oldest|highest|lowest
+    404s for shops that are not APPROVED/ACTIVE, exactly like PublicShopDetailView.
+    Unknown ordering values fall back to newest first.
+    """
+    permission_classes = [permissions.AllowAny]
+    serializer_class = ShopReviewSerializer
+
+    def get_queryset(self):
+        shop = get_object_or_404(
+            Shop,
+            slug=self.kwargs["slug"],
+            status__in=[Shop.STATUS_APPROVED, Shop.STATUS_ACTIVE],
+        )
+        return (
+            ShopReview.objects.filter(shop=shop)
+            .select_related("user__customer_profile")
+            .order_by(*review_ordering(self.request.query_params.get("ordering")))
         )
 
 

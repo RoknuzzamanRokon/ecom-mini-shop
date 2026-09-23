@@ -3,6 +3,7 @@ from typing import Any, Optional, Tuple
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.db.models import Avg, Count
 from django.db.models.expressions import RawSQL
 from django.utils import timezone
 
@@ -212,6 +213,21 @@ class ShopService:
         shop.location = Point(longitude=lng, latitude=lat)
         shop.save()
         return shop
+
+    @classmethod
+    def get_public_shops_queryset(cls):
+        """
+        Publicly visible (APPROVED/ACTIVE) shops, annotated with average_rating
+        and review_count from their customer shop reviews. The single source for
+        the public shop list and detail endpoints, so both report the same numbers.
+        average_rating is NULL for a shop with no reviews.
+        """
+        return Shop.objects.filter(
+            status__in=[Shop.STATUS_APPROVED, Shop.STATUS_ACTIVE]
+        ).annotate(
+            average_rating=Avg("customer_reviews__rating"),
+            review_count=Count("customer_reviews", distinct=True),
+        )
 
     @classmethod
     def get_nearby_shops(

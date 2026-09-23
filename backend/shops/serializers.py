@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from customers.services import rating_breakdown
 from .models import Shop
 from .services import validate_coordinates
 
@@ -8,9 +9,13 @@ class PublicShopSerializer(serializers.ModelSerializer):
     """
     Public shop representation for customer browsing.
     Excludes internal administrative and seller audit fields.
+    average_rating / review_count come from ShopService.get_public_shops_queryset();
+    a shop fetched without those annotations reads as unrated.
     """
     latitude = serializers.FloatField(read_only=True)
     longitude = serializers.FloatField(read_only=True)
+    average_rating = serializers.SerializerMethodField()
+    review_count = serializers.IntegerField(read_only=True, default=0)
 
     class Meta:
         model = Shop
@@ -26,9 +31,27 @@ class PublicShopSerializer(serializers.ModelSerializer):
             "latitude",
             "longitude",
             "status",
+            "average_rating",
+            "review_count",
             "created_at",
         ]
         read_only_fields = fields
+
+    def get_average_rating(self, obj):
+        value = getattr(obj, "average_rating", None)
+        return round(float(value), 1) if value is not None else 0.0
+
+
+class PublicShopDetailSerializer(PublicShopSerializer):
+    """Adds the per-star review counts, which only the detail endpoint pays for."""
+    rating_breakdown = serializers.SerializerMethodField()
+
+    class Meta(PublicShopSerializer.Meta):
+        fields = PublicShopSerializer.Meta.fields + ["rating_breakdown"]
+        read_only_fields = fields
+
+    def get_rating_breakdown(self, obj):
+        return rating_breakdown(obj.customer_reviews.all())
 
 
 class NearbyShopSerializer(serializers.ModelSerializer):

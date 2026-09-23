@@ -3,6 +3,7 @@ from .views import (
     PublicNearbyShopListView,
     PublicShopDetailView,
     PublicShopListView,
+    PublicShopReviewListView,
     SellerShopCreateView,
     SellerShopDetailView,
     SellerShopListView,
@@ -41,5 +42,6 @@ urlpatterns = [
 
     # Public browsing routes
     path("", PublicShopListView.as_view(), name="public-shop-list"),
+    path("<slug:slug>/reviews/", PublicShopReviewListView.as_view(), name="public-shop-reviews"),
     path("<slug:slug>/", PublicShopDetailView.as_view(), name="public-shop-detail"),
 ]

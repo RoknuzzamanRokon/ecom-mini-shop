@@ -1,6 +1,6 @@
 # MiniShop — Review & Rating System Plan
 
-**Created:** 2026-09-23 · **Baseline commit:** `6179759` · **Status:** Tasks 0–6 done; Tasks 7–12 not started
+**Created:** 2026-09-23 · **Baseline commit:** `6179759` · **Status:** Tasks 0–7 done; Tasks 8–12 not started
 
 This is the task list for the review & rating feature. Work through it **one task at a
 time, in order**. Each task is sized to be one commit. When a task is done, tick its
@@ -88,7 +88,7 @@ task that depends on them.
 | 4 | "Top Rated" product sort | full-stack | ✅ Done |
 | 5 | `ShopReview` model, migration, Django admin | backend | ✅ Done |
 | 6 | Shop review write API (create / mine / edit / delete) | backend | ✅ Done |
-| 7 | Shop review public list + shop rating aggregates | backend | ⬜ Not started |
+| 7 | Shop review public list + shop rating aggregates | backend | ✅ Done |
 | 8 | Shared review UI components (refactor) | frontend | ⬜ Not started |
 | 9 | Shop page: rating in header + reviews section | frontend | ⬜ Not started |
 | 10 | Shops list cards show rating | frontend | ⬜ Not started |
@@ -400,23 +400,57 @@ and the tests pass.
 
 **Goal.** Anyone can read a shop's reviews and see its rating.
 
-- [ ] `shops/views.py` + `urls.py`: `GET /api/shops/<slug>/reviews/`: `AllowAny`,
+- [x] `shops/views.py` + `urls.py`: `GET /api/shops/<slug>/reviews/`: `AllowAny`,
       paginated (12), 404 for non-public shops, same `?ordering=` values as Task 3.
       Place it before the catch-all `<slug:slug>/` route.
-- [ ] `PublicShopListView` and `PublicShopDetailView` querysets: annotate
+- [x] `PublicShopListView` and `PublicShopDetailView` querysets: annotate
       `average_rating=Avg("customer_reviews__rating")` and
       `review_count=Count("customer_reviews", distinct=True)`.
-- [ ] `PublicShopSerializer`: add `average_rating` (rounded to 1 decimal, `0.0` when
+- [x] `PublicShopSerializer`: add `average_rating` (rounded to 1 decimal, `0.0` when
       none) and `review_count`. Detail responses also get `rating_breakdown`.
-- [ ] If `ShopService.get_nearby_shops` can take the same annotation cheaply, add it
+- [x] If `ShopService.get_nearby_shops` can take the same annotation cheaply, add it
       to `NearbyShopSerializer` too. Otherwise note it here and skip.
-- [ ] Tests: guest can list; unknown or non-public shop → 404; average/count correct
+- [x] Tests: guest can list; unknown or non-public shop → 404; average/count correct
       after create/update/delete; fields present on list and detail; breakdown correct.
 
 **Done when.** `GET /api/shops/` and `GET /api/shops/<slug>/` include rating fields,
 the review list works, and the tests pass.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done 2026-09-23
+
+- New `ShopService.get_public_shops_queryset()` (`shops/services.py`), mirroring
+  `ProductService.get_public_products_queryset()`: it filters to APPROVED/ACTIVE and
+  annotates `average_rating` + `review_count`. `PublicShopListView` and
+  `PublicShopDetailView` both use it, so the public-shop rule and the rating numbers
+  are defined once.
+- Serializers: `PublicShopSerializer` gains `average_rating` (1 decimal, `0.0` when
+  unrated) and `review_count` (`default=0`, so an un-annotated shop reads as
+  unrated rather than crashing). A new `PublicShopDetailSerializer` subclass adds
+  `rating_breakdown`, using the same `customers.services.rating_breakdown()` as
+  products; only the detail endpoint pays for that extra query.
+- `PublicShopReviewListView` (`shops/views.py`): uses DRF's default pagination
+  (`PAGE_SIZE = 12`, the same as `PublicShopListView`) and the shared
+  `review_ordering()`, with `select_related("user__customer_profile")`. Route
+  `shops:public-shop-reviews` sits before `<slug:slug>/`. `nearby/` and `mine/`
+  still resolve to their own views (checked with `resolve()`).
+- **Nearby search skipped, on purpose.** `get_nearby_shops()` orders and filters on
+  `RawSQL` `ST_Distance_Sphere(...)` annotations. Adding `Avg`/`Count` would put those
+  raw expressions into a `GROUP BY` on a spatial query, and **nothing in the frontend
+  calls `/api/shops/nearby/`** (`grep -rn nearby frontend/src` finds nothing). Add it
+  when a caller needs it, with a test against real MySQL.
+- Decision D4 is now tested: a product review for one of the shop's products leaves
+  the shop at `0.0 / 0`.
+- New tests (9) in `shop/test_shop_reviews.py`:
+  - **Public list (4):** only this shop's reviews; pending/unknown shop → 404; every
+    ordering value plus missing/unknown fallback; query count flat from 1 to 3
+    reviews.
+  - **Aggregates (5):** unreviewed → `0.0 / 0 / zeros`; average/count/breakdown
+    through create → second review → edit → delete; 5+4+4 → `4.3`; product reviews
+    don't count (D4); list has the rating fields but no breakdown.
+- Verified: `shop.test_shop_reviews shops` **60/60 OK** (33 shop-review + 27 `shops`
+  app, including the existing `test_public_visibility_isolation`, which proves the
+  new shared queryset kept the APPROVED/ACTIVE-only rule) in 424 s, on a throwaway
+  `test_minishop_task7` database. `manage.py check` is clean. No frontend change.
 
 ---
 
