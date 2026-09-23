@@ -152,6 +152,20 @@ export interface ShopReviewCreatePayload {
   comment?: string;
 }
 
+/** The caller's own reviews, as returned by GET /api/profile/reviews/. */
+export interface MyProductReview extends Review {
+  product: { id: number; name: string; slug: string; image_url: string | null };
+}
+
+export interface MyShopReview extends Review {
+  shop: { id: number; name: string; slug: string; logo_url: string | null };
+}
+
+export interface MyReviews {
+  product_reviews: MyProductReview[];
+  shop_reviews: MyShopReview[];
+}
+
 export interface CartItem {
   id?: number;
   product: Product;

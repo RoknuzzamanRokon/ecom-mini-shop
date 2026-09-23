@@ -1,6 +1,6 @@
 # MiniShop — Review & Rating System Plan
 
-**Created:** 2026-09-23 · **Baseline commit:** `6179759` · **Status:** Tasks 0–10 done (the requested feature is complete); optional Tasks 11–12 not started
+**Created:** 2026-09-23 · **Baseline commit:** `6179759` · **Status:** Tasks 0–11 done (the requested feature is complete); optional Task 12 not started
 
 This is the task list for the review & rating feature. Work through it **one task at a
 time, in order**. Each task is sized to be one commit. When a task is done, tick its
@@ -92,7 +92,7 @@ task that depends on them.
 | 8 | Shared review UI components (refactor) | frontend | ✅ Done |
 | 9 | Shop page: rating in header + reviews section | frontend | ✅ Done |
 | 10 | Shops list cards show rating | frontend | ✅ Done |
-| 11 | *(optional)* "My Reviews" page in profile | full-stack | ⬜ Not started |
+| 11 | *(optional)* "My Reviews" page in profile | full-stack | ✅ Done |
 | 12 | *(optional)* Review moderation for staff | full-stack | ⬜ Not started |
 
 **The feature you asked for is complete after Task 10.** Tasks 11 and 12 are extras.
@@ -615,18 +615,62 @@ sort is done).
 
 **Goal.** A customer can see and manage everything they've reviewed in one place.
 
-- [ ] Backend: `GET /api/profile/reviews/` returns
+- [x] Backend: `GET /api/profile/reviews/` returns
       `{ product_reviews: [...], shop_reviews: [...] }` for the current user. Each item
       includes a small product or shop summary (name, slug, image or logo).
-- [ ] Frontend: `/profile/reviews` page with two tabs (Products / Shops). Each row has
+- [x] Frontend: `/profile/reviews` page with two tabs (Products / Shops). Each row has
       edit and delete, reusing `StarPicker`.
-- [ ] Add a "My Reviews" link to the profile sidebar (`profile/layout.tsx:15-19`).
-- [ ] On a delivered order's detail page, add a "Rate this product" link next to each
+- [x] Add a "My Reviews" link to the profile sidebar (`profile/layout.tsx:15-19`).
+- [x] On a delivered order's detail page, add a "Rate this product" link next to each
       item, going to `/product/<slug>#reviews`. Give the product review section
       `id="reviews"`; it has no anchor today.
-- [ ] Tests: only the caller's own reviews come back; guest → 401.
+- [x] Tests: only the caller's own reviews come back; guest → 401.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done 2026-09-23
+
+- Backend: `MyReviewsView` (`customers/views.py`, route `customers:my-reviews`),
+  `IsAuthenticated` only, like favorites, since it only returns the caller's own
+  data. It is unpaginated and ordered `-created_at, -id`. `MyProductReviewSerializer`
+  / `MyShopReviewSerializer` extend `ReviewSerializer` with `product {id, name, slug,
+  image_url}` / `shop {id, name, slug, logo_url}`, as absolute media URLs through a
+  small `_media_url()` helper. `select_related` keeps the query count flat.
+- Frontend: types `MyProductReview`, `MyShopReview`, `MyReviews`, and
+  `getMyReviews(token)`. The page (`app/profile/reviews/page.tsx`) has Products /
+  Shops tabs with counts. Each row has an image or logo (with a fallback icon), a
+  title linking to the review on its page, the date, stars, the verified badge and the
+  comment, plus inline **Edit** (`StarPicker` + textarea) and **Delete**. Edits and
+  deletes patch the loaded lists in place, with no refetch. Empty tabs link to
+  "Browse Products" / "Browse Shops". It uses the same fetch-result-keyed loading as
+  `ReviewSection`, so it is lint-clean.
+- The sidebar gains "My Reviews" (icon `reviews`) after Favorites.
+- **Anchors:**
+  - `ProductReviews` exports `PRODUCT_REVIEWS_ANCHOR = "reviews"` and passes
+    `id` + `scroll-mt-40`.
+  - The order detail page shows **"Rate this product"** only when the order is
+    `DELIVERED` and the item still has a `product_slug`.
+  - Order items carry no shop slug, so there is no "Rate this shop" link there.
+- **Hash scroll fix in `ReviewSection`:** the product and shop pages render their
+  review section only after their data loads, so on a jump to `/product/x#reviews`
+  the browser had nothing to scroll to. `ReviewSection` now calls `scrollIntoView()`
+  once on mount when `location.hash` matches its `id`. This also covers
+  `#shop-reviews` links from the My Reviews page.
+- New tests (4) in `shop/test_shop_reviews.py` (`MyReviewsAPITests`): guest → 401;
+  only the caller's product and shop reviews, with the summary fields; empty lists
+  for a user with none; newest first, with a flat query count from 1+0 to 2+2
+  reviews. `shop.test_shop_reviews` **39/39 OK** in 408 s, on a throwaway
+  `test_minishop_task11` database.
+- Verified: typecheck and `npm run build` pass (40 pages, including
+  `/profile/reviews`). The new page, layout, review components and `ProductReviews`
+  lint clean. The order detail page keeps its 2 older lint messages (lines 76, 96),
+  which were already present before this task. jsdom harness (20/20) on the compiled
+  page with the API stubbed: loading with the token; tab counts; row links
+  `#reviews` / `#shop-reviews`; image vs fallback; edit prefilled → save calls
+  `updateReview(id, input, token)` and keeps the product summary, with no refetch;
+  delete removes the row and updates the count; the shops tab; the empty state; error
+  → Retry; the hash scroll fires for `#reviews` and not without a hash. The Task 8
+  (29) and Task 9 (15) harnesses still pass.
+- Not covered: a review whose product or shop was later unpublished still appears,
+  and its link will 404. There is no availability flag yet.
 
 ---
 

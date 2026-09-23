@@ -1,4 +1,4 @@
-import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse, Favorite, PasswordChangePayload, SellerProfile, SellerDashboardData, SellerShop, SellerWallet, PointTransaction, Review, ReviewCreatePayload, ReviewOrdering, ReviewUpdatePayload, ShopReview, ShopReviewCreatePayload } from "./types";
+import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse, Favorite, PasswordChangePayload, SellerProfile, SellerDashboardData, SellerShop, SellerWallet, PointTransaction, Review, ReviewCreatePayload, ReviewOrdering, ReviewUpdatePayload, ShopReview, ShopReviewCreatePayload, MyReviews } from "./types";
 
 import { refreshTokenOnce } from "./auth";
 
@@ -1251,6 +1251,13 @@ export async function deleteShopReview(reviewId: number, token: string): Promise
     method: "DELETE",
   });
   if (!res.ok && res.status !== 404) throw new Error("Failed to delete review");
+}
+
+/** Every product and shop review the logged-in user has written. */
+export async function getMyReviews(token: string): Promise<MyReviews> {
+  const res = await customerRequest(`/api/profile/reviews/`, token, { cache: "no-store" });
+  if (!res.ok) throw new Error("Failed to fetch your reviews");
+  return await res.json();
 }
 
 /**

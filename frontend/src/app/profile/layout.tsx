@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { href: "/profile/track", label: "Current Orders", icon: "local_shipping", hint: "Track active deliveries" },
   { href: "/profile/orders", label: "Order History", icon: "receipt_long", hint: "Every order you placed" },
   { href: "/profile/favorites", label: "Favorites", icon: "favorite", hint: "Products you saved" },
+  { href: "/profile/reviews", label: "My Reviews", icon: "reviews", hint: "Ratings you have written" },
   { href: "/profile/addresses", label: "Addresses", icon: "location_on", hint: "Delivery locations" },
 ];
 

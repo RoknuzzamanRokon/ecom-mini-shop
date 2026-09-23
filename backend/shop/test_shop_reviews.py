@@ -469,3 +469,77 @@ class ShopListRatingOrderingTests(BaseShopReviewAPITestCase):
         for query in ("", "?ordering=bogus"):
             with self.subTest(query=query):
                 self.assertEqual(self._ids(query), newest_first)
+
+
+class MyReviewsAPITests(BaseShopReviewAPITestCase):
+    """GET /api/profile/reviews/: the caller's own product and shop reviews."""
+
+    URL = "/api/profile/reviews/"
+
+    def _get(self, user):
+        self.client.force_authenticate(user=user)
+        res = self.client.get(self.URL)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        return res.data
+
+    def _extra_product(self, slug):
+        return Product.objects.create(
+            name=slug.replace("-", " ").title(),
+            slug=slug,
+            category=self.category,
+            shop=self.shop,
+            description="My-reviews fixture",
+            price=Decimal("10.00"),
+            status=Product.STATUS_PUBLISHED,
+            is_active=True,
+        )
+
+    def test_guest_gets_401(self):
+        self.assertEqual(self.client.get(self.URL).status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_returns_only_the_callers_reviews_with_summaries(self):
+        mine_product = Review.objects.create(user=self.customer, product=self.product, rating=4, comment="Solid")
+        mine_shop = ShopReview.objects.create(user=self.customer, shop=self.shop, rating=5, comment="Fast")
+        Review.objects.create(user=self.other_customer, product=self.product, rating=1)
+        ShopReview.objects.create(user=self.other_customer, shop=self.shop, rating=1)
+
+        data = self._get(self.customer)
+        self.assertEqual([r["id"] for r in data["product_reviews"]], [mine_product.id])
+        self.assertEqual([r["id"] for r in data["shop_reviews"]], [mine_shop.id])
+
+        product_row = data["product_reviews"][0]
+        self.assertEqual((product_row["rating"], product_row["comment"]), (4, "Solid"))
+        self.assertEqual(
+            {k: product_row["product"][k] for k in ("id", "name", "slug")},
+            {"id": self.product.id, "name": "Shop Review Widget", "slug": "shoprev-widget"},
+        )
+        self.assertIn("image_url", product_row["product"])
+
+        shop_row = data["shop_reviews"][0]
+        self.assertEqual(
+            {k: shop_row["shop"][k] for k in ("id", "name", "slug")},
+            {"id": self.shop.id, "name": "Shop Review Test Shop", "slug": "shop-review-test-shop"},
+        )
+        self.assertIn("logo_url", shop_row["shop"])
+
+    def test_user_with_no_reviews_gets_empty_lists(self):
+        self.assertEqual(self._get(self.other_customer), {"product_reviews": [], "shop_reviews": []})
+
+    def test_newest_first_and_query_count_flat(self):
+        first = Review.objects.create(user=self.customer, product=self.product, rating=3)
+        with CaptureQueriesContext(connection) as one_each:
+            self._get(self.customer)
+
+        second_shop = Shop.objects.create(
+            owner=self.seller, name="Second Reviewed Shop", slug="shoprev-second", status=Shop.STATUS_ACTIVE
+        )
+        newest = Review.objects.create(user=self.customer, product=self._extra_product("shoprev-mine-2"), rating=5)
+        ShopReview.objects.create(user=self.customer, shop=self.shop, rating=4)
+        ShopReview.objects.create(user=self.customer, shop=second_shop, rating=2)
+        Review.objects.filter(pk=first.pk).update(created_at=timezone.now() - timedelta(days=1))
+
+        with CaptureQueriesContext(connection) as several:
+            data = self._get(self.customer)
+        self.assertEqual([r["id"] for r in data["product_reviews"]], [newest.id, first.id])
+        self.assertEqual(len(data["shop_reviews"]), 2)
+        self.assertEqual(len(several), len(one_each))

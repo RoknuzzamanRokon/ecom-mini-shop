@@ -272,3 +272,47 @@ class ShopReviewCreateSerializer(serializers.Serializer):
         ).exists():
             raise serializers.ValidationError("Shop not found.")
         return value
+
+
+def _media_url(request, file_field):
+    """Absolute URL for an image field when a request is available, else its relative URL."""
+    if not file_field or not hasattr(file_field, "url"):
+        return None
+    return request.build_absolute_uri(file_field.url) if request else file_field.url
+
+
+class MyProductReviewSerializer(ReviewSerializer):
+    """The caller's own product review, with enough of the product to show and link it."""
+    product = serializers.SerializerMethodField()
+
+    class Meta(ReviewSerializer.Meta):
+        fields = ReviewSerializer.Meta.fields + ["product"]
+        read_only_fields = fields
+
+    def get_product(self, obj):
+        product = obj.product
+        return {
+            "id": product.id,
+            "name": product.name,
+            "slug": product.slug,
+            "image_url": _media_url(self.context.get("request"), product.image),
+        }
+
+
+class MyShopReviewSerializer(ReviewSerializer):
+    """The caller's own shop review, with enough of the shop to show and link it."""
+    shop = serializers.SerializerMethodField()
+
+    class Meta(ReviewSerializer.Meta):
+        model = ShopReview
+        fields = ReviewSerializer.Meta.fields + ["shop"]
+        read_only_fields = fields
+
+    def get_shop(self, obj):
+        shop = obj.shop
+        return {
+            "id": shop.id,
+            "name": shop.name,
+            "slug": shop.slug,
+            "logo_url": _media_url(self.context.get("request"), shop.logo),
+        }

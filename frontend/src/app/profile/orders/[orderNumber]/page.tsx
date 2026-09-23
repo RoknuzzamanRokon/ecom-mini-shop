@@ -7,6 +7,7 @@ import { useParams, useRouter } from "next/navigation";
 import { Order } from "@/lib/types";
 import { cancelCustomerOrder, formatImageUrl, getOrderDetail } from "@/lib/api";
 import { getAuthToken } from "@/lib/auth";
+import { PRODUCT_REVIEWS_ANCHOR } from "@/components/product/ProductReviews";
 
 const TRACK_STEPS = ["PENDING", "CONFIRMED", "PROCESSING", "SHIPPED", "DELIVERED"];
 const CANCELLABLE_STATUSES = ["PENDING", "CONFIRMED", "PROCESSING"];
@@ -300,6 +301,18 @@ export default function CustomerOrderDetailPage() {
                       <span>·</span>
                       <span>Qty: <strong className="font-semibold text-ink">{item.quantity}</strong></span>
                     </div>
+
+                    {status === "DELIVERED" && item.product_slug && (
+                      <Link
+                        href={`/product/${item.product_slug}#${PRODUCT_REVIEWS_ANCHOR}`}
+                        className="inline-flex items-center gap-1 mt-2 text-xs font-bold uppercase tracking-wider text-primary hover:underline"
+                      >
+                        <span className="material-symbols-outlined fill-active text-star text-[14px]">
+                          star
+                        </span>
+                        Rate this product
+                      </Link>
+                    )}
                   </div>
 
                   <div className="text-right shrink-0">

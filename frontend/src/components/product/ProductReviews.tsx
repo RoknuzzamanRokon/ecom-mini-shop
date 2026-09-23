@@ -11,6 +11,9 @@ import {
 import { RatingBreakdown } from "@/lib/types";
 import ReviewSection, { ReviewAdapter } from "@/components/reviews/ReviewSection";
 
+/** DOM id of the product page's review section, e.g. `/product/<slug>#reviews`. */
+export const PRODUCT_REVIEWS_ANCHOR = "reviews";
+
 interface ProductReviewsProps {
   productId: number;
   /** Used to bring a guest back to this product after logging in. */
@@ -45,6 +48,9 @@ export default function ProductReviews({
   return (
     <ReviewSection
       key={productId}
+      id={PRODUCT_REVIEWS_ANCHOR}
+      // Clears the sticky Header + Navbar when jumped to via #reviews.
+      className="scroll-mt-40"
       adapter={adapter}
       loginNext={`/product/${productSlug}`}
       commentPlaceholder="Share your experience with this product (optional)..."

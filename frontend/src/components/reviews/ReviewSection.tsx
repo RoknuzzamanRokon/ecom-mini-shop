@@ -102,6 +102,15 @@ export default function ReviewSection({
 
   const listKey = `${page}|${ordering}|${reloadToken}`;
 
+  // Pages that load their data first (product, shop) render this section after
+  // navigation has finished, so the browser never scrolled to a "#<id>" in the
+  // URL. Do it once on mount.
+  useEffect(() => {
+    if (id && window.location.hash === `#${id}`) {
+      document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [id]);
+
   useEffect(() => {
     let cancelled = false;
     adapter

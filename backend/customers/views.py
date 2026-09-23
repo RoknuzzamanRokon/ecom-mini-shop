@@ -23,6 +23,8 @@ from .serializers import (
     CustomerProfileUpdateSerializer,
     FavoriteCreateSerializer,
     FavoriteSerializer,
+    MyProductReviewSerializer,
+    MyShopReviewSerializer,
     ReviewCreateSerializer,
     ReviewSerializer,
     ReviewUpdateSerializer,
@@ -407,3 +409,36 @@ class MyShopReviewView(APIView):
         if not review:
             return Response({"detail": "No review found."}, status=status.HTTP_404_NOT_FOUND)
         return Response(ShopReviewSerializer(review).data)
+
+
+class MyReviewsView(APIView):
+    """
+    Every product and shop review the authenticated user has written, for the
+    profile's "My Reviews" page. Unpaginated, like the favorites list: one
+    user's own reviews stay small.
+    GET /api/profile/reviews/
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        product_reviews = (
+            Review.objects.filter(user=request.user)
+            .select_related("product", "user__customer_profile")
+            .order_by("-created_at", "-id")
+        )
+        shop_reviews = (
+            ShopReview.objects.filter(user=request.user)
+            .select_related("shop", "user__customer_profile")
+            .order_by("-created_at", "-id")
+        )
+        context = {"request": request}
+        return Response(
+            {
+                "product_reviews": MyProductReviewSerializer(
+                    product_reviews, many=True, context=context
+                ).data,
+                "shop_reviews": MyShopReviewSerializer(
+                    shop_reviews, many=True, context=context
+                ).data,
+            }
+        )
