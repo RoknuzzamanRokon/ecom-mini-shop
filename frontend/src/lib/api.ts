@@ -1,4 +1,4 @@
-import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse, Favorite, PasswordChangePayload, SellerProfile, SellerDashboardData, SellerShop, SellerWallet, PointTransaction, Review, ReviewCreatePayload, ReviewOrdering, ReviewUpdatePayload } from "./types";
+import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse, Favorite, PasswordChangePayload, SellerProfile, SellerDashboardData, SellerShop, SellerWallet, PointTransaction, Review, ReviewCreatePayload, ReviewOrdering, ReviewUpdatePayload, ShopReview, ShopReviewCreatePayload } from "./types";
 
 import { refreshTokenOnce } from "./auth";
 
@@ -1166,6 +1166,83 @@ export async function updateReview(
 
 export async function deleteReview(reviewId: number, token: string): Promise<void> {
   const res = await customerRequest(`/api/reviews/${reviewId}/`, token, {
+    method: "DELETE",
+  });
+  if (!res.ok && res.status !== 404) throw new Error("Failed to delete review");
+}
+
+/**
+ * Shop reviews. Same response shapes and error handling as product reviews;
+ * the public list is addressed by shop slug, everything else by shop id.
+ */
+export async function getShopReviews(
+  shopSlug: string,
+  page = 1,
+  ordering: ReviewOrdering = "newest"
+): Promise<PaginatedResponse<ShopReview>> {
+  const res = await fetch(
+    `${API_BASE_URL}/api/shops/${shopSlug}/reviews/?page=${page}&ordering=${ordering}`,
+    { cache: "no-store" }
+  );
+  if (!res.ok) throw new Error("Failed to fetch shop reviews");
+  return await res.json();
+}
+
+export async function getMyShopReview(
+  shopId: number,
+  token: string
+): Promise<ShopReview | null> {
+  const res = await customerRequest(`/api/shop-reviews/mine/?shop_id=${shopId}`, token, {
+    cache: "no-store",
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error("Failed to fetch your shop review");
+  return await res.json();
+}
+
+export async function createShopReview(
+  payload: ShopReviewCreatePayload,
+  token: string
+): Promise<ShopReview> {
+  const res = await customerRequest(`/api/shop-reviews/`, token, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 409 && data.detail) throw new Error(data.detail);
+    const firstError =
+      data.rating?.[0] || data.comment?.[0] || data.shop_id?.[0] || data.detail;
+    throw new Error(firstError || "Failed to submit review");
+  }
+  return await res.json();
+}
+
+export async function updateShopReview(
+  reviewId: number,
+  payload: ReviewUpdatePayload,
+  token: string
+): Promise<ShopReview> {
+  const res = await customerRequest(`/api/shop-reviews/${reviewId}/`, token, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    const firstError = data.rating?.[0] || data.comment?.[0] || data.detail;
+    throw new Error(firstError || "Failed to update review");
+  }
+  return await res.json();
+}
+
+export async function deleteShopReview(reviewId: number, token: string): Promise<void> {
+  const res = await customerRequest(`/api/shop-reviews/${reviewId}/`, token, {
     method: "DELETE",
   });
   if (!res.ok && res.status !== 404) throw new Error("Failed to delete review");

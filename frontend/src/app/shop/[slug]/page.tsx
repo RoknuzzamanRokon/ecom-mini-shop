@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState, useTransition } from "react";
+import React, { useCallback, useEffect, useState, useTransition } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound, useParams } from "next/navigation";
@@ -9,6 +9,8 @@ import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import ProductCard from "@/components/home/ProductCard";
 import Pagination from "@/components/home/Pagination";
+import StarRating from "@/components/reviews/StarRating";
+import ShopReviews, { SHOP_REVIEWS_ANCHOR } from "@/components/reviews/ShopReviews";
 import { Category, Product, Shop } from "@/lib/types";
 import { getCategories, getProducts, getShopDetail, formatImageUrl } from "@/lib/api";
 
@@ -77,6 +79,15 @@ export default function ShopStorefrontPage() {
     };
   }, [slug, selectedCategory, searchQuery, ordering, currentPage]);
 
+  // After a review is added, edited or deleted, refetch the shop so the header
+  // rating and the summary bars catch up. A failed refetch keeps the shop on
+  // screen rather than falling through to the not-found state.
+  const refreshShop = useCallback(async () => {
+    if (!slug) return;
+    const shopData = await getShopDetail(slug);
+    if (shopData) setShop(shopData);
+  }, [slug]);
+
   const handleCategoryChange = (catSlug: string) => {
     startTransition(() => {
       setSelectedCategory(catSlug);
@@ -120,6 +131,8 @@ export default function ShopStorefrontPage() {
   const memberSinceYear = shop.created_at
     ? new Date(shop.created_at).getFullYear()
     : new Date().getFullYear();
+  const shopRating = shop.average_rating ?? 0;
+  const shopReviewCount = shop.review_count ?? 0;
 
   return (
     <div className="min-h-screen flex flex-col bg-page transition-colors duration-200">
@@ -206,6 +219,22 @@ export default function ShopStorefrontPage() {
 
                 {/* Shop Metadata Pills */}
                 <div className="flex items-center gap-4 flex-wrap mt-2.5 text-xs text-ink-muted font-medium">
+                  <a
+                    href={`#${SHOP_REVIEWS_ANCHOR}`}
+                    className="flex items-center gap-1.5 hover:text-primary transition-colors"
+                    title="See customer reviews"
+                  >
+                    <StarRating rating={shopRating} size={15} />
+                    {shopReviewCount > 0 ? (
+                      <span>
+                        <strong className="text-ink">{shopRating.toFixed(1)}</strong> ·{" "}
+                        {shopReviewCount} review{shopReviewCount === 1 ? "" : "s"}
+                      </span>
+                    ) : (
+                      <span>No reviews yet</span>
+                    )}
+                  </a>
+
                   <span className="flex items-center gap-1">
                     <span className="material-symbols-outlined text-[16px] text-primary">
                       inventory_2
@@ -396,6 +425,16 @@ export default function ShopStorefrontPage() {
             </>
           )}
         </section>
+
+        {/* Shop reviews: separate from the reviews of the shop's products */}
+        <ShopReviews
+          shopId={shop.id}
+          shopSlug={shop.slug}
+          averageRating={shop.average_rating}
+          reviewCount={shop.review_count}
+          ratingBreakdown={shop.rating_breakdown}
+          onReviewsChanged={refreshShop}
+        />
       </main>
 
       <Footer />

@@ -1,6 +1,6 @@
 # MiniShop — Review & Rating System Plan
 
-**Created:** 2026-09-23 · **Baseline commit:** `6179759` · **Status:** Tasks 0–8 done; Tasks 9–12 not started
+**Created:** 2026-09-23 · **Baseline commit:** `6179759` · **Status:** Tasks 0–9 done; Tasks 10–12 not started
 
 This is the task list for the review & rating feature. Work through it **one task at a
 time, in order**. Each task is sized to be one commit. When a task is done, tick its
@@ -90,7 +90,7 @@ task that depends on them.
 | 6 | Shop review write API (create / mine / edit / delete) | backend | ✅ Done |
 | 7 | Shop review public list + shop rating aggregates | backend | ✅ Done |
 | 8 | Shared review UI components (refactor) | frontend | ✅ Done |
-| 9 | Shop page: rating in header + reviews section | frontend | ⬜ Not started |
+| 9 | Shop page: rating in header + reviews section | frontend | ✅ Done |
 | 10 | Shops list cards show rating | frontend | ⬜ Not started |
 | 11 | *(optional)* "My Reviews" page in profile | full-stack | ⬜ Not started |
 | 12 | *(optional)* Review moderation for staff | full-stack | ⬜ Not started |
@@ -514,24 +514,58 @@ submit, edit, delete, paging, sort). `npm run build` passes.
 **Goal.** A shop page shows its rating at the top and its reviews at the bottom, and
 logged-in users can rate the shop.
 
-- [ ] `types.ts`: `ShopReview`, `ShopReviewCreatePayload`, `ShopReviewUpdatePayload`.
+- [x] `types.ts`: `ShopReview`, `ShopReviewCreatePayload`, `ShopReviewUpdatePayload`.
       `Shop` gets `average_rating?`, `review_count?`, `rating_breakdown?`.
-- [ ] `api.ts`: `getShopReviews(slug, page, ordering)`, `getMyShopReview(shopId, token)`
+- [x] `api.ts`: `getShopReviews(slug, page, ordering)`, `getMyShopReview(shopId, token)`
       (404 → `null`), `createShopReview`, `updateShopReview`, `deleteShopReview`.
       Authenticated calls go through the existing `customerRequest` wrapper.
-- [ ] `components/reviews/ShopReviews.tsx`: a `ReviewSection` wrapper with the shop adapter.
-- [ ] `shop/[slug]/page.tsx`:
+- [x] `components/reviews/ShopReviews.tsx`: a `ReviewSection` wrapper with the shop adapter.
+- [x] `shop/[slug]/page.tsx`:
       - In the metadata pills (`:207`), add `★ 4.3 · 12 reviews`. Clicking it scrolls to
         `#shop-reviews`. With no reviews, show "No reviews yet".
       - Below the product grid and pagination, add `<ShopReviews>` with `id="shop-reviews"`.
       - After a review changes, reload the shop so the header rating updates.
-- [ ] Guests see "Log in to write a review", which links to `/login?next=/shop/<slug>`.
+- [x] Guests see "Log in to write a review", which links to `/login?next=/shop/<slug>`.
 
 **Done when.** On a shop page a customer can submit, edit and delete a shop review,
 and the header rating updates. A guest sees the reviews but no form. The layout works
 at phone width. `npm run build` passes.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done 2026-09-23
+
+- Types: `ShopReview` is an alias of `Review`, since the API returns the identical
+  shape. **No `ShopReviewUpdatePayload`:** the existing `ReviewUpdatePayload` is
+  reused, matching Task 6's shared `ReviewUpdateSerializer`. `Shop` gained the three
+  rating fields.
+- `api.ts`: the five shop helpers copy the product ones, with the same 404 → `null`,
+  409 detail and first-field-error handling. `createShopReview` also surfaces
+  `shop_id` errors, and a 403 "You cannot review your own shop." arrives through
+  `data.detail`. `api.ts` has the same 5 lint messages as before this task, all in
+  older code.
+- `ShopReviews` exports `SHOP_REVIEWS_ANCHOR = "shop-reviews"`, which the header link
+  and the section both use. `ReviewSection` gained an optional `className`; the shop
+  section passes `scroll-mt-40`, so a jump to `#shop-reviews` isn't hidden under
+  the sticky Header + Navbar.
+- Shop page:
+  - The rating is the **first** header pill: `StarRating` + **4.3** · 12 reviews,
+    or "No reviews yet", as an `<a href="#shop-reviews">`. It sits in the existing
+    `flex-wrap` pill row, so it wraps on phones.
+  - The reviews section follows the product listing inside `<main>`.
+  - `refreshShop()` refetches the shop after a review changes, and **only replaces it
+    when the fetch succeeds**, so a failed refresh can't drop the page into
+    `notFound()`.
+- Verified: typecheck and `npm run build` pass. `eslint` on `shop/[slug]/page.tsx` and
+  `components/reviews/` is clean. Two jsdom harnesses (scratchpad, not committed):
+  - **Shop wiring (15/15):** the real `ShopReviews` → `ReviewSection` → `api.ts`
+    chain, with `fetch` stubbed. The list goes to `/api/shops/<slug>/reviews/`,
+    "mine" to `?shop_id=` with the bearer token, create POSTs `{shop_id, rating,
+    comment}`, edit and delete go to `/api/shop-reviews/<id>/`, the 403 message is
+    shown, guest login returns to `/shop/<slug>`, and no product review endpoint is
+    ever called.
+  - **Task 8 scenarios** still 29/29 after the `className` change.
+- **Not checked in a real browser**, including the header pill and scroll offset.
+  The dev database also still needs `migrate customers` (Task 5) before shop reviews
+  work end to end.
 
 ---
 

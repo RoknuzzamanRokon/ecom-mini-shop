@@ -53,6 +53,11 @@ export interface Shop {
   latitude?: number | null;
   longitude?: number | null;
   status: string;
+  /** From shop reviews only (not product reviews); 0 when unrated. */
+  average_rating?: number;
+  review_count?: number;
+  /** Detail endpoint only. */
+  rating_breakdown?: RatingBreakdown;
   created_at: string;
 }
 
@@ -135,6 +140,15 @@ export interface ReviewCreatePayload {
 
 export interface ReviewUpdatePayload {
   rating?: number;
+  comment?: string;
+}
+
+/** A shop review has exactly the same public shape as a product review. */
+export type ShopReview = Review;
+
+export interface ShopReviewCreatePayload {
+  shop_id: number;
+  rating: number;
   comment?: string;
 }
 

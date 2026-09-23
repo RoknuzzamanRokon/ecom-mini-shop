@@ -40,6 +40,8 @@ interface ReviewSectionProps {
   onReviewsChanged?: () => void;
   /** DOM id for in-page links to this section. */
   id?: string;
+  /** Extra classes for the outer card, e.g. a scroll margin under a sticky header. */
+  className?: string;
 }
 
 const SORT_OPTIONS: { value: ReviewOrdering; label: string }[] = [
@@ -80,6 +82,7 @@ export default function ReviewSection({
   ratingBreakdown,
   onReviewsChanged,
   id,
+  className = "",
 }: ReviewSectionProps) {
   const { user, isAuthenticated } = useAuth();
   const router = useRouter();
@@ -199,7 +202,10 @@ export default function ReviewSection({
   };
 
   return (
-    <div id={id} className="mt-12 bg-surface rounded-xl border border-line p-6 lg:p-8 shadow-sm">
+    <div
+      id={id}
+      className={`mt-12 bg-surface rounded-xl border border-line p-6 lg:p-8 shadow-sm ${className}`}
+    >
       <h3 className="font-bold text-base uppercase tracking-wider text-ink mb-4">
         Customer Reviews {totalCount > 0 && `(${totalCount})`}
       </h3>
