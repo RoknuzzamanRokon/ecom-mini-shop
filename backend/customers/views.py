@@ -27,7 +27,13 @@ from .serializers import (
     ReviewSerializer,
     ReviewUpdateSerializer,
 )
-from .services import AddressService, CustomerService, ReviewAlreadyExistsError, ReviewService
+from .services import (
+    AddressService,
+    CustomerService,
+    ReviewAlreadyExistsError,
+    ReviewService,
+    SelfReviewError,
+)
 
 
 class CustomerProfileView(APIView):
@@ -232,7 +238,10 @@ class ReviewListCreateView(APIView):
                 product_id=data["product_id"],
                 rating=data["rating"],
                 comment=data.get("comment", ""),
+                ip_address=request.META.get("REMOTE_ADDR"),
             )
+        except SelfReviewError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_403_FORBIDDEN)
         except ReviewAlreadyExistsError as e:
             return Response({"detail": str(e)}, status=status.HTTP_409_CONFLICT)
 
@@ -256,7 +265,12 @@ class ReviewDetailView(APIView):
         review = self.get_object(pk)
         serializer = ReviewUpdateSerializer(data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        updated_review = ReviewService.update_review(review, serializer.validated_data)
+        updated_review = ReviewService.update_review(
+            review,
+            serializer.validated_data,
+            actor=request.user,
+            ip_address=request.META.get("REMOTE_ADDR"),
+        )
         return Response(ReviewSerializer(updated_review).data)
 
     def put(self, request, pk):
@@ -264,7 +278,11 @@ class ReviewDetailView(APIView):
 
     def delete(self, request, pk):
         review = self.get_object(pk)
-        ReviewService.delete_review(review)
+        ReviewService.delete_review(
+            review,
+            actor=request.user,
+            ip_address=request.META.get("REMOTE_ADDR"),
+        )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -277,13 +295,19 @@ class MyProductReviewView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        product_id = request.query_params.get("product_id")
-        if not product_id:
+        # Parse here: a non-numeric id reaching the ORM raises ValueError (a 500).
+        try:
+            product_id = int(request.query_params.get("product_id"))
+        except (TypeError, ValueError):
             return Response(
-                {"detail": "product_id query parameter is required."},
+                {"detail": "product_id query parameter is required and must be an integer."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        review = Review.objects.filter(user=request.user, product_id=product_id).first()
+        review = (
+            Review.objects.filter(user=request.user, product_id=product_id)
+            .select_related("user__customer_profile")
+            .first()
+        )
         if not review:
             return Response({"detail": "No review found."}, status=status.HTTP_404_NOT_FOUND)
         return Response(ReviewSerializer(review).data)

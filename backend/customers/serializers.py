@@ -209,7 +209,16 @@ class ReviewSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_reviewer_name(self, obj):
-        return obj.user.get_full_name() or obj.user.username
+        """
+        Public name shown beside the review: the display name the customer chose
+        in their profile, then their full name, then their username. List
+        querysets should select_related("user__customer_profile") so this costs
+        no extra query per review.
+        """
+        # A missing profile raises RelatedObjectDoesNotExist, an AttributeError.
+        profile = getattr(obj.user, "customer_profile", None)
+        display_name = (profile.display_name or "").strip() if profile else ""
+        return display_name or obj.user.get_full_name() or obj.user.username
 
 
 class ReviewCreateSerializer(serializers.Serializer):

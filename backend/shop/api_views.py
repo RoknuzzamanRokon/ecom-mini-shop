@@ -229,7 +229,11 @@ class ProductReviewListAPIView(generics.ListAPIView):
 
     def get_queryset(self):
         product = ProductService.get_public_product_by_identifier(self.kwargs["product_id"])
-        return Review.objects.filter(product=product).select_related("user").order_by("-created_at")
+        return (
+            Review.objects.filter(product=product)
+            .select_related("user__customer_profile")
+            .order_by("-created_at")
+        )
 
 
 class HotDealAPIView(APIView):

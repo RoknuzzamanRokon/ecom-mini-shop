@@ -16,6 +16,8 @@ import StarRating from "@/components/reviews/StarRating";
 
 interface ProductReviewsProps {
   productId: number;
+  /** Used to bring a guest back to this product after logging in. */
+  productSlug: string;
   onReviewsChanged?: () => void;
 }
 
@@ -53,7 +55,11 @@ function StarPicker({
   );
 }
 
-export default function ProductReviews({ productId, onReviewsChanged }: ProductReviewsProps) {
+export default function ProductReviews({
+  productId,
+  productSlug,
+  onReviewsChanged,
+}: ProductReviewsProps) {
   const { isAuthenticated } = useAuth();
   const router = useRouter();
 
@@ -193,7 +199,9 @@ export default function ProductReviews({ productId, onReviewsChanged }: ProductR
           <span>Log in to write a review.</span>
           <button
             type="button"
-            onClick={() => router.push("/login")}
+            onClick={() =>
+              router.push(`/login?next=${encodeURIComponent(`/product/${productSlug}`)}`)
+            }
             className="shrink-0 text-xs font-bold uppercase tracking-wider text-primary hover:underline cursor-pointer"
           >
             Log In

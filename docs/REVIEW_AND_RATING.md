@@ -1,6 +1,6 @@
 # MiniShop — Review & Rating System Plan
 
-**Created:** 2026-09-23 · **Baseline commit:** `6179759` · **Status:** Tasks 0–1 done; Tasks 2–12 not started
+**Created:** 2026-09-23 · **Baseline commit:** `6179759` · **Status:** Tasks 0–2 done; Tasks 3–12 not started
 
 This is the task list for the review & rating feature. Work through it **one task at a
 time, in order**. Each task is sized to be one commit. When a task is done, tick its
@@ -83,7 +83,7 @@ task that depends on them.
 |---|---|---|---|
 | 0 | Product reviews (model, API, product-page UI) | full-stack | ✅ Done (`c4fb3b8`) |
 | 1 | Product cards show real star ratings | frontend | ✅ Done |
-| 2 | Product review fixes | backend (+1 frontend line) | ⬜ Not started |
+| 2 | Product review fixes | backend (+1 frontend line) | ✅ Done |
 | 3 | Rating summary + review sorting on the product page | full-stack | ⬜ Not started |
 | 4 | "Top Rated" product sort | full-stack | ⬜ Not started |
 | 5 | `ShopReview` model, migration, Django admin | backend | ⬜ Not started |
@@ -146,26 +146,50 @@ rated 4 and 5 shows 4½ stars and `(2)`. `npm run build` passes.
 
 **Goal.** Close the gaps listed in §2 before building shop reviews on the same code.
 
-- [ ] `MyProductReviewView`: return `400` when `product_id` is missing **or not a
+- [x] `MyProductReviewView`: return `400` when `product_id` is missing **or not a
       number** (today a non-number gives a 500).
-- [ ] Self-review guard (D5): add `SelfReviewError` in `customers/services.py`.
+- [x] Self-review guard (D5): add `SelfReviewError` in `customers/services.py`.
       `ReviewService.create_review` raises it when `product.shop.owner.user == user`,
       and the view returns `403` with a clear message.
-- [ ] Audit actor: `update_review` / `delete_review` take an `actor` argument, and the
+- [x] Audit actor: `update_review` / `delete_review` take an `actor` argument, and the
       views pass `request.user`. The log then names the administrator when an
       administrator acts.
-- [ ] Public reviewer name: `ReviewSerializer.get_reviewer_name` uses
+- [x] Public reviewer name: `ReviewSerializer.get_reviewer_name` uses
       `customer_profile.display_name`, then full name, then username. Add
       `select_related("user__customer_profile")` to the list query so there are no
       extra queries per review.
-- [ ] `ProductReviews.tsx:215`: send guests to `/login?next=/product/<slug>`. The
+- [x] `ProductReviews.tsx:215`: send guests to `/login?next=/product/<slug>`. The
       component needs the product slug as a new prop.
-- [ ] Tests in `shop/test_product_reviews.py`: non-numeric id → 400; owner reviewing
+- [x] Tests in `shop/test_product_reviews.py`: non-numeric id → 400; owner reviewing
       own product → 403; admin delete logs the admin as actor; display name is used.
 
 **Done when.** All new and existing review tests pass. `npm run build` passes.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done 2026-09-23
+
+- The self-review guard is one query: `Product.objects.filter(pk=product_id,
+  shop__owner__user=user).exists()`. It runs before the verified-purchase check. A
+  shop owner can still review **other** shops' products (tested).
+- Audit entries: `REVIEW_UPDATED` / `REVIEW_DELETED` now log `actor=request.user`
+  and add `author_id` to the metadata, so the author stays on record after a delete.
+  All three review actions now also record `ip_address`, like `AddressService`.
+  Callers that pass no actor still fall back to the review's author.
+- `MyProductReviewView` parses `product_id` with `int()` (catching `TypeError` and
+  `ValueError`), so both a missing id and `abc` return a 400.
+- Reviewer name: blank or whitespace-only `display_name` falls through to full name,
+  then username. A user with no `CustomerProfile` works, because the missing
+  one-to-one raises an `AttributeError` subclass, which `getattr(..., None)` catches.
+- New tests (10): missing/non-numeric id → 400 (2); owner → 403, other shop → 201
+  (2); owner-edit / admin-edit / admin-delete audit actor (3); display name,
+  blank-name fallback, and **query count stays flat from 1 to 3 reviews** (3).
+- Verified: `shop.test_product_reviews` **29/29 OK** (19 existing + 10 new) in 516 s.
+  It ran against a separate throwaway test database (`test_minishop_reviews`,
+  created and then destroyed) because the Task 1 full `shop` suite was still using
+  `test_minishop`. `npm run typecheck` and `npm run build` pass.
+- Pre-existing, left alone: `npx eslint` flags `ProductReviews.tsx` for
+  `react-hooks/set-state-in-effect` (the `loadMyReview` effect) and `no-explicit-any`
+  (`catch (err: any)`), on lines this task did not change. CI does not run lint.
+  Task 8 rewrites this component and should clear them.
 
 ---
 

@@ -2,12 +2,15 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
+from django.db import connection
 from django.test import TestCase
+from django.test.utils import CaptureQueriesContext
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from audit.models import AuditLog
 from cart.models import Cart, CartItem
-from customers.models import Address, Review
+from customers.models import Address, CustomerProfile, Review
 from rbac.models import Role
 from rbac.services import assign_user_role
 from sellers.models import SellerProfile
@@ -291,3 +294,138 @@ class ProductRatingAggregateTests(BaseProductReviewTestCase):
         product_row = next(p for p in results if p["id"] == self.product.id)
         self.assertEqual(product_row["average_rating"], 4.0)
         self.assertEqual(product_row["review_count"], 1)
+
+
+class MyProductReviewParamValidationTests(BaseProductReviewTestCase):
+    def test_missing_product_id_returns_400(self):
+        self.client.force_authenticate(user=self.customer_a)
+        res = self.client.get("/api/reviews/mine/")
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_non_numeric_product_id_returns_400_not_500(self):
+        self.client.force_authenticate(user=self.customer_a)
+        res = self.client.get("/api/reviews/mine/?product_id=abc")
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class SelfReviewGuardTests(BaseProductReviewTestCase):
+    def setUp(self):
+        super().setUp()
+        # The shop owner also shops as a customer, so they do hold reviews.create.
+        assign_user_role(self.seller_user, Role.ROLE_CUSTOMER)
+
+    def test_shop_owner_cannot_review_own_product(self):
+        self.client.force_authenticate(user=self.seller_user)
+        res = self.client.post(
+            "/api/reviews/", {"product_id": self.product.id, "rating": 5, "comment": "Best ever"}
+        )
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(Review.objects.filter(user=self.seller_user).exists())
+
+    def test_shop_owner_can_review_another_shops_product(self):
+        other_owner = User.objects.create_user(
+            username="review_other_seller", email="review_other@example.com", password="Password123!"
+        )
+        other_seller = SellerProfile.objects.create(
+            user=other_owner,
+            seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+            status=SellerProfile.STATUS_ACTIVE,
+            business_name="Other Review Shop Co",
+        )
+        other_shop = Shop.objects.create(
+            owner=other_seller,
+            name="Other Review Shop",
+            slug="other-review-shop",
+            status=Shop.STATUS_ACTIVE,
+        )
+        other_product = Product.objects.create(
+            name="Someone Else's Widget",
+            slug="someone-elses-widget",
+            category=self.category,
+            shop=other_shop,
+            price=Decimal("19.99"),
+            status=Product.STATUS_PUBLISHED,
+            is_active=True,
+        )
+
+        self.client.force_authenticate(user=self.seller_user)
+        res = self.client.post(
+            "/api/reviews/", {"product_id": other_product.id, "rating": 4, "comment": "Solid"}
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+
+
+class ReviewAuditActorTests(BaseProductReviewTestCase):
+    @classmethod
+    def setUpTestData(cls):
+        super().setUpTestData()
+        cls.admin = User.objects.create_superuser(
+            username="review_admin", email="review_admin@example.com", password="Password123!"
+        )
+
+    def setUp(self):
+        super().setUp()
+        self.review = Review.objects.create(
+            user=self.customer_a, product=self.product, rating=4, comment="Initial"
+        )
+
+    def _latest_log(self, action):
+        return AuditLog.objects.filter(action=action, target_id=str(self.review.id)).latest("id")
+
+    def test_owner_update_is_logged_as_owner(self):
+        self.client.force_authenticate(user=self.customer_a)
+        res = self.client.patch(f"/api/reviews/{self.review.id}/", {"rating": 2})
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(self._latest_log("REVIEW_UPDATED").actor, self.customer_a)
+
+    def test_admin_update_is_logged_as_admin(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.patch(f"/api/reviews/{self.review.id}/", {"comment": "Moderated"})
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        log = self._latest_log("REVIEW_UPDATED")
+        self.assertEqual(log.actor, self.admin)
+        self.assertEqual(log.metadata["author_id"], self.customer_a.id)
+
+    def test_admin_delete_is_logged_as_admin(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.delete(f"/api/reviews/{self.review.id}/")
+        self.assertEqual(res.status_code, status.HTTP_204_NO_CONTENT)
+        log = self._latest_log("REVIEW_DELETED")
+        self.assertEqual(log.actor, self.admin)
+        self.assertEqual(log.metadata["author_id"], self.customer_a.id)
+
+
+class ReviewerNameTests(BaseProductReviewTestCase):
+    def _list_results(self):
+        res = self.client.get(f"/api/products/{self.product.id}/reviews/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        return res.data["results"] if "results" in res.data else res.data
+
+    def test_profile_display_name_is_shown(self):
+        CustomerProfile.objects.update_or_create(
+            user=self.customer_a, defaults={"display_name": "Ayesha K."}
+        )
+        Review.objects.create(user=self.customer_a, product=self.product, rating=5)
+        self.assertEqual(self._list_results()[0]["reviewer_name"], "Ayesha K.")
+
+    def test_blank_display_name_falls_back_to_username(self):
+        CustomerProfile.objects.update_or_create(
+            user=self.customer_b, defaults={"display_name": "   "}
+        )
+        Review.objects.create(user=self.customer_b, product=self.product, rating=3)
+        self.assertEqual(self._list_results()[0]["reviewer_name"], "review_customer_b")
+
+    def test_list_query_count_does_not_grow_per_review(self):
+        Review.objects.create(user=self.customer_a, product=self.product, rating=5)
+        with CaptureQueriesContext(connection) as one_review:
+            self._list_results()
+
+        CustomerProfile.objects.update_or_create(
+            user=self.customer_b, defaults={"display_name": "Bilal"}
+        )
+        Review.objects.create(user=self.customer_b, product=self.product, rating=4)
+        Review.objects.create(user=self.no_role_user, product=self.product, rating=3)
+        with CaptureQueriesContext(connection) as three_reviews:
+            self.assertEqual(len(self._list_results()), 3)
+
+        self.assertEqual(len(three_reviews), len(one_review))

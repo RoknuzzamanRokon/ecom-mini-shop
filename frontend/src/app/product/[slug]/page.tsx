@@ -300,7 +300,11 @@ export default function ProductDetailPage() {
           </div>
         </div>
 
-        <ProductReviews productId={product.id} onReviewsChanged={() => loadProduct(false)} />
+        <ProductReviews
+          productId={product.id}
+          productSlug={product.slug}
+          onReviewsChanged={() => loadProduct(false)}
+        />
 
         {/* Related Products */}
         {product.related_products && product.related_products.length > 0 && (

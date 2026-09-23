@@ -15,6 +15,11 @@ class ReviewAlreadyExistsError(Exception):
     pass
 
 
+class SelfReviewError(Exception):
+    """Raised when a seller attempts to review a product from a shop they own."""
+    pass
+
+
 class CustomerService:
     """
     Domain service managing customer profile lifecycle and audit operations.
@@ -286,13 +291,24 @@ class ReviewService:
 
     @classmethod
     @transaction.atomic
-    def create_review(cls, user, product_id: int, rating: int, comment: str = "") -> Review:
+    def create_review(
+        cls,
+        user,
+        product_id: int,
+        rating: int,
+        comment: str = "",
+        ip_address: Optional[str] = None,
+    ) -> Review:
         """
         Creates a review for a product, computing is_verified_purchase once at
         creation time from the user's DELIVERED order history. Raises
+        SelfReviewError if the user owns the product's shop, and
         ReviewAlreadyExistsError if the user has already reviewed this product.
         """
-        from shop.models import Order, OrderItem
+        from shop.models import Order, OrderItem, Product
+
+        if Product.objects.filter(pk=product_id, shop__owner__user=user).exists():
+            raise SelfReviewError("You cannot review a product from your own shop.")
 
         is_verified_purchase = OrderItem.objects.filter(
             order__user=user,
@@ -318,13 +334,24 @@ class ReviewService:
             target=review,
             actor=user,
             metadata={"product_id": product_id, "rating": rating},
+            ip_address=ip_address,
         )
         return review
 
     @classmethod
     @transaction.atomic
-    def update_review(cls, review: Review, data: Dict[str, Any]) -> Review:
-        """Updates a review's rating/comment."""
+    def update_review(
+        cls,
+        review: Review,
+        data: Dict[str, Any],
+        actor: Optional[Any] = None,
+        ip_address: Optional[str] = None,
+    ) -> Review:
+        """
+        Updates a review's rating/comment. `actor` is whoever made the change —
+        a super administrator editing someone else's review must be logged as
+        themselves, not as the review's author.
+        """
         changed_fields = {}
         for field in ["rating", "comment"]:
             if field in data:
@@ -339,19 +366,33 @@ class ReviewService:
             AuditService.log(
                 action="REVIEW_UPDATED",
                 target=review,
-                actor=review.user,
-                metadata={"changed_fields": changed_fields},
+                actor=actor or review.user,
+                metadata={"changed_fields": changed_fields, "author_id": review.user_id},
+                ip_address=ip_address,
             )
         return review
 
     @classmethod
     @transaction.atomic
-    def delete_review(cls, review: Review) -> None:
-        """Deletes a review."""
+    def delete_review(
+        cls,
+        review: Review,
+        actor: Optional[Any] = None,
+        ip_address: Optional[str] = None,
+    ) -> None:
+        """
+        Deletes a review. `actor` is whoever deleted it; `author_id` in the
+        metadata keeps the author on record once the row itself is gone.
+        """
         AuditService.log(
             action="REVIEW_DELETED",
             target=review,
-            actor=review.user,
-            metadata={"product_id": review.product_id, "rating": review.rating},
+            actor=actor or review.user,
+            metadata={
+                "product_id": review.product_id,
+                "rating": review.rating,
+                "author_id": review.user_id,
+            },
+            ip_address=ip_address,
         )
         review.delete()
