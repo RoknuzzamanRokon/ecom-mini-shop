@@ -1,6 +1,6 @@
 # MiniShop — Review & Rating System Plan
 
-**Created:** 2026-09-23 · **Baseline commit:** `6179759` · **Status:** Tasks 0–2 done; Tasks 3–12 not started
+**Created:** 2026-09-23 · **Baseline commit:** `6179759` · **Status:** Tasks 0–3 done; Tasks 4–12 not started
 
 This is the task list for the review & rating feature. Work through it **one task at a
 time, in order**. Each task is sized to be one commit. When a task is done, tick its
@@ -84,7 +84,7 @@ task that depends on them.
 | 0 | Product reviews (model, API, product-page UI) | full-stack | ✅ Done (`c4fb3b8`) |
 | 1 | Product cards show real star ratings | frontend | ✅ Done |
 | 2 | Product review fixes | backend (+1 frontend line) | ✅ Done |
-| 3 | Rating summary + review sorting on the product page | full-stack | ⬜ Not started |
+| 3 | Rating summary + review sorting on the product page | full-stack | ✅ Done |
 | 4 | "Top Rated" product sort | full-stack | ⬜ Not started |
 | 5 | `ShopReview` model, migration, Django admin | backend | ⬜ Not started |
 | 6 | Shop review write API (create / mine / edit / delete) | backend | ⬜ Not started |
@@ -198,24 +198,51 @@ rated 4 and 5 shows 4½ stars and `(2)`. `npm run build` passes.
 **Goal.** Above the review list, show an Amazon-style summary: a large average, stars,
 the total count, and a bar for each star level. The user can also sort the list.
 
-- [ ] Backend: add `rating_breakdown` to `ProductDetailSerializer` only (not the list
+- [x] Backend: add `rating_breakdown` to `ProductDetailSerializer` only (not the list
       serializer), as `{"5": n, "4": n, "3": n, "2": n, "1": n}` with every key
       present. Use one `values("rating").annotate(Count)` query.
-- [ ] Backend: `GET /api/products/<id>/reviews/?ordering=` accepts `newest` (default),
+- [x] Backend: `GET /api/products/<id>/reviews/?ordering=` accepts `newest` (default),
       `oldest`, `highest`, `lowest`. Unknown values fall back to `newest`. Break ties
       by `-created_at`.
-- [ ] Frontend: `types.ts` adds `rating_breakdown?` to `Product`, and
+- [x] Frontend: `types.ts` adds `rating_breakdown?` to `Product`, and
       `getProductReviews()` takes an `ordering` argument.
-- [ ] Frontend: create `components/reviews/RatingSummary.tsx` (average, stars, count,
+- [x] Frontend: create `components/reviews/RatingSummary.tsx` (average, stars, count,
       5 bars with percentages, all token colours). Show it at the top of
       `ProductReviews`, with a sort `<select>` above the list.
-- [ ] Tests: breakdown counts are correct after create/update/delete; each ordering
+- [x] Tests: breakdown counts are correct after create/update/delete; each ordering
       value sorts correctly; a bad ordering value falls back.
 
 **Done when.** The product page shows the summary bars and the sort control works.
 Tests and build pass.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done 2026-09-23
+
+- **Reusable for shops (Task 7):** `customers/services.py` now has
+  `REVIEW_ORDERINGS`, `review_ordering(value)` and `rating_breakdown(queryset)`. The
+  product list view and `ProductDetailSerializer` call them, and the shop endpoints
+  should call the same two functions.
+- `rating_breakdown()` clears ordering (`.order_by()`) before `values().annotate()`,
+  so `Review.Meta.ordering` can never leak into the `GROUP BY`. It fills missing star
+  levels with 0.
+- Orderings end with `-id` / `id` after the planned `-created_at` tie-break, so pages
+  stay stable when two reviews share a timestamp.
+- Frontend: new `RatingSummary` (large average, `StarRating`, count, five
+  `bg-star` bars on a `bg-surface-sunken` track, percentages computed from the
+  breakdown's own total). `ProductReviews` shows it above the form when
+  `reviewCount > 0`, and a "Sort by" `<select>` above the list when there are 2+
+  reviews. Changing the sort reloads page 1. After a review is added, edited or
+  deleted, the page reloads the product, so the summary updates.
+- New types: `RatingBreakdown`, `ReviewOrdering` (`lib/types.ts`).
+  `getProductReviews(productId, page, ordering = "newest")`.
+- New tests (6): breakdown all-zero with five keys, breakdown through
+  create/update/delete, list endpoint has no breakdown (3); each ordering value (a
+  `subTest` per value), missing/unknown ordering → newest, equal ratings broken
+  newest first (3).
+- Verified: `shop.test_product_reviews` **35/35 OK** (29 existing + 6 new) in 628 s,
+  on a throwaway `test_minishop_task3` database (created, then destroyed).
+  `RatingSummary` rendered with `react-dom/server` (4.5 with 50/50 bars; thirds
+  rounding to 33%; no bars without a breakdown; singular "1 review").
+  `npm run typecheck` and `npm run build` pass. Not checked in a running browser.
 
 ---
 

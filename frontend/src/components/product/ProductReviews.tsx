@@ -11,15 +11,27 @@ import {
   updateReview,
   deleteReview,
 } from "@/lib/api";
-import { Review } from "@/lib/types";
+import { RatingBreakdown, Review, ReviewOrdering } from "@/lib/types";
+import RatingSummary from "@/components/reviews/RatingSummary";
 import StarRating from "@/components/reviews/StarRating";
 
 interface ProductReviewsProps {
   productId: number;
   /** Used to bring a guest back to this product after logging in. */
   productSlug: string;
+  /** Summary values from the product detail payload. */
+  averageRating?: number;
+  reviewCount?: number;
+  ratingBreakdown?: RatingBreakdown;
   onReviewsChanged?: () => void;
 }
+
+const SORT_OPTIONS: { value: ReviewOrdering; label: string }[] = [
+  { value: "newest", label: "Newest first" },
+  { value: "oldest", label: "Oldest first" },
+  { value: "highest", label: "Highest rated" },
+  { value: "lowest", label: "Lowest rated" },
+];
 
 function StarPicker({
   value,
@@ -58,12 +70,16 @@ function StarPicker({
 export default function ProductReviews({
   productId,
   productSlug,
+  averageRating = 0,
+  reviewCount = 0,
+  ratingBreakdown,
   onReviewsChanged,
 }: ProductReviewsProps) {
   const { isAuthenticated } = useAuth();
   const router = useRouter();
 
   const [reviews, setReviews] = useState<Review[]>([]);
+  const [ordering, setOrdering] = useState<ReviewOrdering>("newest");
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
   const [hasNext, setHasNext] = useState(false);
@@ -84,7 +100,7 @@ export default function ProductReviews({
       try {
         setLoading(true);
         setError(null);
-        const res = await getProductReviews(productId, targetPage);
+        const res = await getProductReviews(productId, targetPage, ordering);
         setReviews(res.results);
         setTotalCount(res.count);
         setHasNext(Boolean(res.next));
@@ -95,7 +111,8 @@ export default function ProductReviews({
         setLoading(false);
       }
     },
-    [productId]
+    // A new ordering gives a new loadReviews, so the effect below reloads page 1.
+    [productId, ordering]
   );
 
   const loadMyReview = useCallback(async () => {
@@ -193,6 +210,12 @@ export default function ProductReviews({
         Customer Reviews {totalCount > 0 && `(${totalCount})`}
       </h3>
 
+      {reviewCount > 0 && (
+        <div className="pb-6 mb-6 border-b border-line">
+          <RatingSummary average={averageRating} count={reviewCount} breakdown={ratingBreakdown} />
+        </div>
+      )}
+
       {/* Submit / edit form */}
       {!isAuthenticated ? (
         <div className="p-3.5 rounded-lg bg-surface-alt/60 border border-line text-xs text-ink-muted flex items-center justify-between gap-3 mb-6">
@@ -279,6 +302,26 @@ export default function ProductReviews({
             )}
           </div>
         </form>
+      )}
+
+      {/* Sort control: only useful once there is more than one review */}
+      {totalCount > 1 && (
+        <div className="flex items-center justify-end mb-3">
+          <label className="flex items-center gap-2 text-xs text-ink-muted">
+            <span>Sort by</span>
+            <select
+              value={ordering}
+              onChange={(e) => setOrdering(e.target.value as ReviewOrdering)}
+              className="bg-surface-alt border border-line rounded-lg px-3 py-2 text-xs font-medium text-ink focus:outline-hidden focus:border-primary cursor-pointer"
+            >
+              {SORT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       )}
 
       {/* Review list */}

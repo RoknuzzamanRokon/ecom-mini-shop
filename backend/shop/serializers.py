@@ -1,5 +1,6 @@
 from decimal import Decimal
 from rest_framework import serializers
+from customers.services import rating_breakdown
 from shops.models import Shop
 from .models import Category, Product, ProductImage, Order, OrderItem, ProductInventory, InventoryTransaction, Payment, Refund
 
@@ -128,12 +129,18 @@ class ProductListSerializer(serializers.ModelSerializer):
 class ProductDetailSerializer(ProductListSerializer):
     images = ProductImageSerializer(many=True, read_only=True)
     all_image_urls = serializers.SerializerMethodField()
+    # Detail only: one extra GROUP BY query, which the list endpoints don't pay.
+    rating_breakdown = serializers.SerializerMethodField()
 
     class Meta(ProductListSerializer.Meta):
         fields = ProductListSerializer.Meta.fields + [
             "images",
             "all_image_urls",
+            "rating_breakdown",
         ]
+
+    def get_rating_breakdown(self, obj):
+        return rating_breakdown(obj.customer_reviews.all())
 
     def get_all_image_urls(self, obj):
         request = self.context.get("request")

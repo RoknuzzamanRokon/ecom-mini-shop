@@ -1,4 +1,4 @@
-import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse, Favorite, PasswordChangePayload, SellerProfile, SellerDashboardData, SellerShop, SellerWallet, PointTransaction, Review, ReviewCreatePayload, ReviewUpdatePayload } from "./types";
+import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse, Favorite, PasswordChangePayload, SellerProfile, SellerDashboardData, SellerShop, SellerWallet, PointTransaction, Review, ReviewCreatePayload, ReviewOrdering, ReviewUpdatePayload } from "./types";
 
 import { refreshTokenOnce } from "./auth";
 
@@ -1100,10 +1100,11 @@ export async function removeFavorite(productId: number, token: string): Promise<
  */
 export async function getProductReviews(
   productId: number,
-  page = 1
+  page = 1,
+  ordering: ReviewOrdering = "newest"
 ): Promise<PaginatedResponse<Review>> {
   const res = await fetch(
-    `${API_BASE_URL}/api/products/${productId}/reviews/?page=${page}`,
+    `${API_BASE_URL}/api/products/${productId}/reviews/?page=${page}&ordering=${ordering}`,
     { cache: "no-store" }
   );
   if (!res.ok) throw new Error("Failed to fetch reviews");

@@ -1,3 +1,4 @@
+from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -5,6 +6,7 @@ from django.core.management import call_command
 from django.db import connection
 from django.test import TestCase
 from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -429,3 +431,88 @@ class ReviewerNameTests(BaseProductReviewTestCase):
             self.assertEqual(len(self._list_results()), 3)
 
         self.assertEqual(len(three_reviews), len(one_review))
+
+
+class RatingBreakdownTests(BaseProductReviewTestCase):
+    def _breakdown(self):
+        res = self.client.get(f"/api/products/{self.product.id}/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        return res.data["rating_breakdown"]
+
+    def test_no_reviews_gives_all_five_keys_at_zero(self):
+        self.assertEqual(self._breakdown(), {"5": 0, "4": 0, "3": 0, "2": 0, "1": 0})
+
+    def test_breakdown_tracks_create_update_delete(self):
+        self.client.force_authenticate(user=self.customer_a)
+        review_a = self.client.post(
+            "/api/reviews/", {"product_id": self.product.id, "rating": 5}
+        ).data["id"]
+        self.client.force_authenticate(user=self.customer_b)
+        self.client.post("/api/reviews/", {"product_id": self.product.id, "rating": 5})
+        self.assertEqual(self._breakdown(), {"5": 2, "4": 0, "3": 0, "2": 0, "1": 0})
+
+        # Customer A moves from 5 to 2 stars
+        self.client.force_authenticate(user=self.customer_a)
+        self.client.patch(f"/api/reviews/{review_a}/", {"rating": 2})
+        self.assertEqual(self._breakdown(), {"5": 1, "4": 0, "3": 0, "2": 1, "1": 0})
+
+        # ...then deletes it
+        self.client.delete(f"/api/reviews/{review_a}/")
+        self.assertEqual(self._breakdown(), {"5": 1, "4": 0, "3": 0, "2": 0, "1": 0})
+
+    def test_list_endpoint_does_not_include_breakdown(self):
+        res = self.client.get("/api/products/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        results = res.data["results"] if "results" in res.data else res.data
+        product_row = next(p for p in results if p["id"] == self.product.id)
+        self.assertNotIn("rating_breakdown", product_row)
+
+
+class ReviewListOrderingTests(BaseProductReviewTestCase):
+    def setUp(self):
+        super().setUp()
+        # Oldest is rated 3, middle 5, newest 1, so every ordering gives a distinct result.
+        self.oldest = Review.objects.create(user=self.customer_a, product=self.product, rating=3)
+        self.middle = Review.objects.create(user=self.customer_b, product=self.product, rating=5)
+        self.newest = Review.objects.create(user=self.no_role_user, product=self.product, rating=1)
+        self._age(self.oldest, days=3)
+        self._age(self.middle, days=2)
+        self._age(self.newest, days=1)
+
+    def _age(self, review, days):
+        Review.objects.filter(pk=review.pk).update(created_at=timezone.now() - timedelta(days=days))
+
+    def _ids(self, ordering=None):
+        url = f"/api/products/{self.product.id}/reviews/"
+        if ordering is not None:
+            url += f"?ordering={ordering}"
+        res = self.client.get(url)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        results = res.data["results"] if "results" in res.data else res.data
+        return [r["id"] for r in results]
+
+    def test_each_ordering_value(self):
+        expected = {
+            "newest": [self.newest.id, self.middle.id, self.oldest.id],
+            "oldest": [self.oldest.id, self.middle.id, self.newest.id],
+            "highest": [self.middle.id, self.oldest.id, self.newest.id],
+            "lowest": [self.newest.id, self.oldest.id, self.middle.id],
+        }
+        for ordering, ids in expected.items():
+            with self.subTest(ordering=ordering):
+                self.assertEqual(self._ids(ordering), ids)
+
+    def test_missing_or_unknown_ordering_falls_back_to_newest(self):
+        newest_first = [self.newest.id, self.middle.id, self.oldest.id]
+        self.assertEqual(self._ids(), newest_first)
+        self.assertEqual(self._ids("price"), newest_first)
+
+    def test_equal_ratings_are_broken_by_newest_first(self):
+        tie_user = User.objects.create_user(
+            username="review_tie", email="review_tie@example.com", password="Password123!"
+        )
+        tie = Review.objects.create(user=tie_user, product=self.product, rating=5)
+        self._age(tie, days=0)
+        self.assertEqual(
+            self._ids("highest"), [tie.id, self.middle.id, self.oldest.id, self.newest.id]
+        )

@@ -1,13 +1,43 @@
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
+from django.db.models import Count, QuerySet
 
 from audit.services import AuditService
 from .models import Address, CustomerProfile, Review
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
+
+
+# Orderings accepted by the public review lists (?ordering=). Unknown values fall
+# back to "newest". "-id" is the final tie-break so pages stay stable when two
+# reviews share a timestamp.
+REVIEW_ORDERINGS: Dict[str, Tuple[str, ...]] = {
+    "newest": ("-created_at", "-id"),
+    "oldest": ("created_at", "id"),
+    "highest": ("-rating", "-created_at", "-id"),
+    "lowest": ("rating", "-created_at", "-id"),
+}
+DEFAULT_REVIEW_ORDERING = "newest"
+
+
+def review_ordering(value: Optional[str]) -> Tuple[str, ...]:
+    """Maps an ?ordering= value to order_by() fields, defaulting to newest first."""
+    return REVIEW_ORDERINGS.get(value or "", REVIEW_ORDERINGS[DEFAULT_REVIEW_ORDERING])
+
+
+def rating_breakdown(reviews: QuerySet) -> Dict[str, int]:
+    """
+    Counts reviews per star level in one GROUP BY query, as
+    {"5": n, "4": n, "3": n, "2": n, "1": n}. Every key is always present, so
+    the storefront can draw all five bars without special-casing gaps.
+    """
+    counts = {str(star): 0 for star in range(5, 0, -1)}
+    for row in reviews.order_by().values("rating").annotate(n=Count("id")):
+        counts[str(row["rating"])] = row["n"]
+    return counts
 
 
 class ReviewAlreadyExistsError(Exception):

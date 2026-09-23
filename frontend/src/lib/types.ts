@@ -102,11 +102,19 @@ export interface Product {
   in_stock: boolean;
   average_rating?: number;
   review_count?: number;
+  /** Detail endpoint only. */
+  rating_breakdown?: RatingBreakdown;
   created_at: string;
   images?: ProductImage[];
   all_image_urls?: string[];
   related_products?: Product[];
 }
+
+/** Review count per star level; the API always sends all five keys. */
+export type RatingBreakdown = Record<"5" | "4" | "3" | "2" | "1", number>;
+
+/** `?ordering=` values accepted by the public review lists. */
+export type ReviewOrdering = "newest" | "oldest" | "highest" | "lowest";
 
 export interface Review {
   id: number;

@@ -15,6 +15,7 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.dateparse import parse_date
 from customers.models import Review
 from customers.serializers import ReviewSerializer
+from customers.services import review_ordering
 from points.services import InsufficientPointsError, PointService
 from rbac.models import Role
 from rbac.services import get_user_role_codes, has_user_permission
@@ -220,8 +221,9 @@ class ProductDetailAPIView(generics.RetrieveAPIView):
 class ProductReviewListAPIView(generics.ListAPIView):
     """
     Public listing of customer reviews for a single product.
-    GET /api/products/<int:product_id>/reviews/
+    GET /api/products/<int:product_id>/reviews/?ordering=newest|oldest|highest|lowest
     404s for non-public products, exactly like ProductDetailAPIView.
+    Unknown ordering values fall back to newest first.
     """
     permission_classes = [permissions.AllowAny]
     serializer_class = ReviewSerializer
@@ -232,7 +234,7 @@ class ProductReviewListAPIView(generics.ListAPIView):
         return (
             Review.objects.filter(product=product)
             .select_related("user__customer_profile")
-            .order_by("-created_at")
+            .order_by(*review_ordering(self.request.query_params.get("ordering")))
         )
 
 

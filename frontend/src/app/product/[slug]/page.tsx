@@ -303,6 +303,9 @@ export default function ProductDetailPage() {
         <ProductReviews
           productId={product.id}
           productSlug={product.slug}
+          averageRating={product.average_rating}
+          reviewCount={product.review_count}
+          ratingBreakdown={product.rating_breakdown}
           onReviewsChanged={() => loadProduct(false)}
         />
 
