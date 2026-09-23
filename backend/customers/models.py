@@ -240,3 +240,58 @@ class Review(models.Model):
 
     def __str__(self):
         return f"{self.user.username} rated {self.product.name}: {self.rating}/5"
+
+
+class ShopReview(models.Model):
+    """
+    Customer rating and comment for a shop as a whole, independent of the
+    shop's product reviews. related_name on the shop FK is "customer_reviews",
+    matching Product — Shop already has reviewed_by/reviewed_at for the
+    unrelated staff-approval workflow.
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="shop_reviews",
+    )
+    shop = models.ForeignKey(
+        "shops.Shop",
+        on_delete=models.CASCADE,
+        related_name="customer_reviews",
+    )
+    rating = models.PositiveSmallIntegerField(
+        validators=[MinValueValidator(1), MaxValueValidator(5)],
+    )
+    comment = models.TextField(blank=True)
+    is_verified_purchase = models.BooleanField(
+        default=False,
+        help_text="Computed once at creation time; never recomputed afterward.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Shop Review"
+        verbose_name_plural = "Shop Reviews"
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "shop"],
+                name="unique_review_per_user_shop",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["shop", "-created_at"], name="cust_shoprev_shop_created_idx"),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.rating is not None and not (1 <= self.rating <= 5):
+            raise ValidationError({"rating": "Rating must be between 1 and 5."})
+
+    def save(self, *args, **kwargs):
+        self.clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.user.username} rated shop {self.shop.name}: {self.rating}/5"

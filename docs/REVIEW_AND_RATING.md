@@ -1,6 +1,6 @@
 # MiniShop — Review & Rating System Plan
 
-**Created:** 2026-09-23 · **Baseline commit:** `6179759` · **Status:** Tasks 0–4 done; Tasks 5–12 not started
+**Created:** 2026-09-23 · **Baseline commit:** `6179759` · **Status:** Tasks 0–5 done; Tasks 6–12 not started
 
 This is the task list for the review & rating feature. Work through it **one task at a
 time, in order**. Each task is sized to be one commit. When a task is done, tick its
@@ -86,7 +86,7 @@ task that depends on them.
 | 2 | Product review fixes | backend (+1 frontend line) | ✅ Done |
 | 3 | Rating summary + review sorting on the product page | full-stack | ✅ Done |
 | 4 | "Top Rated" product sort | full-stack | ✅ Done |
-| 5 | `ShopReview` model, migration, Django admin | backend | ⬜ Not started |
+| 5 | `ShopReview` model, migration, Django admin | backend | ✅ Done |
 | 6 | Shop review write API (create / mine / edit / delete) | backend | ⬜ Not started |
 | 7 | Shop review public list + shop rating aggregates | backend | ⬜ Not started |
 | 8 | Shared review UI components (refactor) | frontend | ⬜ Not started |
@@ -289,24 +289,46 @@ Tests and build pass.
 
 **Goal.** The database can store shop reviews.
 
-- [ ] `customers/models.py`: add `ShopReview`, built like `Review`:
+- [x] `customers/models.py`: add `ShopReview`, built like `Review`:
       - `user` FK → `AUTH_USER_MODEL`, `related_name="shop_reviews"`
       - `shop` FK → `"shops.Shop"`, `related_name="customer_reviews"` (D9)
       - `rating` 1–5 (validators + `clean()`), `comment` (blank allowed),
         `is_verified_purchase`, `created_at`, `updated_at`
       - `UniqueConstraint(user, shop)` named `unique_review_per_user_shop`
       - index `(shop, -created_at)` named `cust_shoprev_shop_created_idx`
-- [ ] Migration `customers/0004_shopreview.py` via `makemigrations`. Then
+- [x] Migration `customers/0004_shopreview.py` via `makemigrations`. Then
       `makemigrations --check` must report nothing.
-- [ ] `customers/admin.py`: `ShopReviewAdmin` (list: user, shop, rating, verified,
+- [x] `customers/admin.py`: `ShopReviewAdmin` (list: user, shop, rating, verified,
       created; search by username or shop name; filter by rating, verified, date;
       `select_related`).
-- [ ] Tests: the unique constraint blocks a duplicate; rating outside 1–5 fails `clean()`.
+- [x] Tests: the unique constraint blocks a duplicate; rating outside 1–5 fails `clean()`.
 
 **Done when.** The migration applies cleanly, `ShopReviewAdmin` appears in `/admin/`,
 and the tests pass.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done 2026-09-23
+
+- The migration has one `CreateModel` and depends on `customers.0003_review`,
+  `shops.0002_alter_shop_location` and the user model. `makemigrations --check
+  --dry-run` reports "No changes detected".
+- **Not applied to the development database.** `showmigrations customers` (read-only)
+  shows `[ ] 0004_shopreview` on the shared remote dev MySQL. Apply it with
+  `venv/Scripts/python.exe manage.py migrate customers` before using shop reviews in
+  the running app (Tasks 6–10 need the table). It only creates a table; reverse it
+  with `migrate customers 0003`.
+- `ShopReviewAdmin` copies `ReviewAdmin`. Like it, the admin add form writes
+  directly, bypassing the Task 6 service (no audit entry, no self-review check).
+  Task 12 is where staff moderation gets a proper path.
+- `/admin/` coverage came for free: `shop/test_admin_site.py`'s
+  `test_every_changelist_loads` / `test_every_add_form_loads` go through
+  `admin.site._registry`, so they now load the Shop Review pages too.
+- New tests in `shop/test_shop_reviews.py` (4, with a `BaseShopReviewTestCase` for
+  Tasks 6–7 to extend): duplicate → `IntegrityError` (inside a savepoint); the same
+  user can review two different shops; ratings 0 and 6 → `ValidationError` on save;
+  both reverse relations work, plus `__str__`.
+- Verified: `shop.test_shop_reviews shop.test_admin_site` **15/15 OK** (4 new + 11
+  admin-site) on a throwaway `test_minishop_task5` database, where `0004_shopreview`
+  applied cleanly. `manage.py check` is clean. No frontend change, so no build needed.
 
 ---
 
