@@ -11,6 +11,9 @@ import {
 } from "@/lib/api";
 import { getAuthToken } from "@/lib/auth";
 import { SellerShop } from "@/lib/types";
+import UseCurrentLocationButton, {
+  CoordinateMapLink,
+} from "@/components/location/UseCurrentLocationButton";
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
@@ -491,10 +494,11 @@ export default function SellerShopsPage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-ink mb-1.5">
+                  <label htmlFor="seller-shop-latitude" className="block text-xs font-semibold text-ink mb-1.5">
                     Latitude
                   </label>
                   <input
+                    id="seller-shop-latitude"
                     type="number"
                     step="any"
                     value={formData.latitude}
@@ -504,10 +508,11 @@ export default function SellerShopsPage() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-ink mb-1.5">
+                  <label htmlFor="seller-shop-longitude" className="block text-xs font-semibold text-ink mb-1.5">
                     Longitude
                   </label>
                   <input
+                    id="seller-shop-longitude"
                     type="number"
                     step="any"
                     value={formData.longitude}
@@ -516,6 +521,19 @@ export default function SellerShopsPage() {
                     className="w-full px-3.5 py-2 rounded-lg border border-line bg-surface text-ink text-xs focus:outline-none focus:border-primary"
                   />
                 </div>
+              </div>
+              <div className="-mt-1 flex flex-wrap items-start justify-between gap-2">
+                <UseCurrentLocationButton
+                  disabled={submittingModal}
+                  onLocated={(position) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      latitude: String(position.latitude),
+                      longitude: String(position.longitude),
+                    }))
+                  }
+                />
+                <CoordinateMapLink latitude={formData.latitude} longitude={formData.longitude} />
               </div>
 
               <div>

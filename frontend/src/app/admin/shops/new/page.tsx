@@ -14,6 +14,9 @@ import {
 import { ADMIN_PERMISSIONS } from "@/lib/admin-navigation";
 import { hasAnyPermission } from "@/lib/admin-auth";
 import { AdminConfirmModal } from "@/components/admin/shared";
+import UseCurrentLocationButton, {
+  CoordinateMapLink,
+} from "@/components/location/UseCurrentLocationButton";
 import { ShopAccessNotice, canManageAdminShops, canViewAdminShops } from "../shopGovernance";
 
 const FIELD_LABEL_CLASS =
@@ -428,6 +431,16 @@ export default function AdminShopCreatePage() {
               className={FIELD_CONTROL_CLASS}
             />
           </div>
+        </div>
+        <div className="-mt-2 flex flex-wrap items-start justify-between gap-2">
+          <UseCurrentLocationButton
+            disabled={submitting}
+            onLocated={(position) => {
+              setLatitude(String(position.latitude));
+              setLongitude(String(position.longitude));
+            }}
+          />
+          <CoordinateMapLink latitude={latitude} longitude={longitude} />
         </div>
         {!latLngBothOrNeither && (
           <p className="text-[11px] font-semibold text-red-600">

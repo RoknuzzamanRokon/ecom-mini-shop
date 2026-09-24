@@ -353,7 +353,7 @@ strings in `lat` (`1 OR 1=1`, `1);DROP`) → 400.
 | Task | Title | Side | Status |
 |---|---|---|---|
 | 1 | Harden and extend the nearby-shops API | backend | ✅ Done |
-| 2 | Geolocation helper + "Use My Current Location" on both shop forms | frontend | ⬜ |
+| 2 | Geolocation helper + "Use My Current Location" on both shop forms | frontend | ✅ Done |
 | 3 | Admin API returns shop coordinates; admin shop page shows them | full-stack | ⬜ |
 | 4 | Customer location context + nearby API client and types | frontend | ⬜ |
 | 5 | `/shops/nearby` page with radius control and result list | frontend | ⬜ |
@@ -411,18 +411,38 @@ strings in `lat` (`1 OR 1=1`, `1);DROP`) → 400.
 **Goal.** An admin creating a shop, or a seller editing theirs, fills the coordinates
 with one click.
 
-- [ ] `src/lib/geolocation.ts`: `getCurrentPosition()`, `GeolocationError` with the
+- [x] `src/lib/geolocation.ts`: `getCurrentPosition()`, `GeolocationError` with the
       five kinds and messages from §8, `roundCoordinate()`, `formatAccuracy()`,
       `formatDistance()`, `openStreetMapUrl()`.
-- [ ] `src/components/location/UseCurrentLocationButton.tsx`: button + `aria-live`
+- [x] `src/components/location/UseCurrentLocationButton.tsx`: button + `aria-live`
       status line (locating, found ±accuracy, low-accuracy warning, each error).
-- [ ] Admin create page and seller edit modal: button under the lat/lng inputs; fills
+- [x] Admin create page and seller edit modal: button under the lat/lng inputs; fills
       both; "Check on map" link when both inputs hold a valid point.
 
 **Done when.** Both forms fill coordinates from the browser; denying permission shows
 the message and manual entry still works; `npm run build` passes.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done 2026-09-24
+
+- The helper also exports `geolocationBlocker()` (checked before asking, so an
+  insecure page says "HTTPS" instead of a generic failure), `isValidCoordinatePair()`,
+  `toGeolocationError()` and `LOW_ACCURACY_METERS = 500`. `GeolocationError.retryable`
+  is true for `unavailable` / `timeout`; for the other kinds the button adds "You can
+  still type the coordinates."
+- Shop forms always ask for a fresh reading (`maximumAge: 0`); coordinates are
+  rounded to 7 dp, the precision the backend stores.
+- `CoordinateMapLink` (same file) opens openstreetmap.org with a marker on the typed or
+  filled point, and renders nothing until both inputs hold a valid pair.
+- The status line is one always-present `role="status"` region, so screen readers
+  announce each result. Colours are `text-success` / `text-danger` / `text-accent`
+  tokens.
+- Wider than planned: the seller modal's latitude/longitude `<label>`s were not tied to
+  their inputs; they now have `htmlFor` / `id`.
+- Verified: a Node harness (compiled with `tsc`, `navigator` mocked) checks all five
+  error kinds, `retryable`, the options passed to the browser, rounding, the accuracy
+  and distance formats, the coordinate ranges and the map URL — all pass.
+  `npm run typecheck`, `npm run build` and `eslint` on the two new files pass. Not
+  checked in a real browser.
 
 ---
 
