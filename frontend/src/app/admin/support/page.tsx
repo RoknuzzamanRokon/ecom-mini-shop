@@ -40,6 +40,7 @@ import {
   parseOrdering,
   parsePriority,
   parseStatusTab,
+  rememberSupportListUrl,
   type SupportStatusTab,
 } from "./supportGovernance";
 
@@ -123,6 +124,12 @@ function AdminSupportPageContent() {
     }, 350);
     return () => clearTimeout(handle);
   }, [searchInput, urlSearch, updateParams]);
+
+  // A ticket's back link returns to exactly this view.
+  useEffect(() => {
+    const query = searchParams.toString();
+    rememberSupportListUrl(query ? `${pathname}?${query}` : pathname);
+  }, [pathname, searchParams]);
 
   // Refresh reloads the list and the counts; there is no polling on this page.
   const [reloadToken, setReloadToken] = useState(0);

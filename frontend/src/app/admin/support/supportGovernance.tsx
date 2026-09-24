@@ -144,6 +144,68 @@ export const QUEUE_VIEWS: {
   },
 ];
 
+/**
+ * The status buttons on a ticket and their confirm step. Staff can never move
+ * a ticket back to OPEN (only a customer reply does), so OPEN has no entry.
+ * Every change also adds a public "Status changed to …" line to the thread.
+ */
+export const STATUS_ACTIONS: Partial<
+  Record<SupportStatus, { label: string; icon: string; title: string; message: string; destructive?: boolean }>
+> = {
+  IN_PROGRESS: {
+    label: "Mark in progress",
+    icon: "autorenew",
+    title: "Move to In progress?",
+    message: "Use this when work on the ticket (re)starts.",
+  },
+  WAITING_ON_CUSTOMER: {
+    label: "Wait on customer",
+    icon: "hourglass_top",
+    title: "Wait on the customer?",
+    message:
+      "Use this after asking the customer for something. Their next reply moves the ticket back to Open.",
+  },
+  RESOLVED: {
+    label: "Resolve",
+    icon: "task_alt",
+    title: "Resolve this ticket?",
+    message:
+      "The customer is told the problem is resolved. If it isn't, their reply reopens the ticket; if it is, they can close it.",
+  },
+  CLOSED: {
+    label: "Close",
+    icon: "lock",
+    title: "Close this ticket?",
+    message:
+      "Closing is final: nobody can reply any more, and the customer would have to open a new ticket for further help.",
+    destructive: true,
+  },
+};
+
+// The queue remembers its current view (filters, tab, page) for this browser
+// tab, so a ticket's back link returns to it rather than to the bare list.
+const LIST_URL_KEY = "minishop:admin-support-list";
+export const SUPPORT_LIST_PATH = "/admin/support";
+
+export function rememberSupportListUrl(url: string): void {
+  try {
+    sessionStorage.setItem(LIST_URL_KEY, url);
+  } catch {
+    // Storage blocked (private mode, site data off): the link falls back to the list.
+  }
+}
+
+/** The remembered queue URL, if it is really a queue URL; else the plain list. */
+export function readSupportListUrl(): string {
+  try {
+    const url = sessionStorage.getItem(LIST_URL_KEY);
+    if (url === SUPPORT_LIST_PATH || url?.startsWith(`${SUPPORT_LIST_PATH}?`)) return url;
+  } catch {
+    // As above.
+  }
+  return SUPPORT_LIST_PATH;
+}
+
 /** Shown instead of the module when the operator lacks support.staff.view. */
 export function SupportAccessNotice() {
   return (

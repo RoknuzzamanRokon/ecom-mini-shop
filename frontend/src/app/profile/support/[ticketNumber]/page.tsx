@@ -23,7 +23,7 @@ import {
 } from "@/lib/support";
 import type { SupportStatus, SupportTicket } from "@/lib/types";
 
-/** D11: no push, so the ticket is re-read on this timer while the tab is visible, and on focus. */
+/** D12: no push, so the ticket is re-read on this timer while the tab is visible, and on focus. */
 const REFRESH_INTERVAL_MS = 60_000;
 /** Coming back to the tab fires both focus and visibilitychange; one request is enough. */
 const MIN_REFRESH_GAP_MS = 5_000;

@@ -1,6 +1,6 @@
 # MiniShop — Customer Support Ticket System Plan
 
-**Created:** 2026-09-24 · **Baseline commit:** `2463421` · **Status:** In progress (Tasks 1–9 of 12 done; backend complete, customer side complete)
+**Created:** 2026-09-24 · **Baseline commit:** `2463421` · **Status:** In progress (Tasks 1–10 of 12 done; the feature is usable end to end)
 
 This is the plan and task list for the support ticket feature. Work through the tasks
 in §13 **one at a time, in order**. Each task is one commit. When a task is done, tick
@@ -474,7 +474,7 @@ plans:
 | 7 | Customer ticket conversation page | frontend | ✅ Done |
 | 8 | Customer entry points: order page, header menu, footer | frontend | ✅ Done |
 | 9 | Admin `/admin/support` ticket list | frontend | ✅ Done |
-| 10 | Admin ticket detail: thread, reply / internal note, status, priority, assignee | frontend | ☐ Not started |
+| 10 | Admin ticket detail: thread, reply / internal note, status, priority, assignee | frontend | ✅ Done |
 | 11 | *(optional)* Auto-close resolved tickets after 7 days | backend | ☐ Not started |
 | 12 | Regression run and documentation close-out | docs | ☐ Not started |
 
@@ -1034,7 +1034,7 @@ clears after opening; `npm run build` passes.
   non-destructive primary style. It gives role="dialog", focus trap, Escape and focus
   restore. The dialog warns when an unsent reply would be discarded and shows a failed
   close inline.
-- **Refreshing (D11):**
+- **Refreshing (D12):**
   - The ticket is re-read every 60 s while the tab is visible, and on window focus or a
     return to the tab (at most one read per 5 s).
   - Every write answers with the whole ticket, and the page shows that directly.
@@ -1249,7 +1249,7 @@ back); `npm run build` passes.
     and the default tab and sort are left out.
   - **Table:** needs-reply dot (accent), Ticket, Category, Priority, Status, Assignee,
     Last activity ("27 min ago", with the full date on hover), 20 per page.
-  - **Refresh** reloads the list and counts; there is no polling here (D11).
+  - **Refresh** reloads the list and counts; there is no polling here (D12).
 - **Layout change after the first browser pass:**
   - At 1280 px the planned separate "Ticket no." column pushed Last activity off
     screen. The ticket number now sits under the subject ("TKT… · customer"), and
@@ -1315,21 +1315,159 @@ back); `npm run build` passes.
 
 **Goal.** Staff handle a ticket from start to finish in the console.
 
-- [ ] `app/admin/support/[ticketNumber]/page.tsx`: back link, identity header,
+- [x] `app/admin/support/[ticketNumber]/page.tsx`: back link, identity header,
       `lg:grid-cols-12` layout from §7.
-- [ ] Thread (`TicketThread variant="staff"`, internal notes marked), composer with
+- [x] Thread (`TicketThread variant="staff"`, internal notes marked), composer with
       **Reply to customer / Internal note** tabs, attachments via
       `adminMultipartRequest`, optional "…and set status to".
-- [ ] Side panel: status (allowed transitions + reason, `AdminConfirmModal`), priority,
+- [x] Side panel: status (allowed transitions + reason, `AdminConfirmModal`), priority,
       category, assignee + **Assign to me**, customer card, order card (৳ total),
       timeline.
-- [ ] Controls hidden per `support.staff.reply` / `support.staff.manage`; the same
+- [x] Controls hidden per `support.staff.reply` / `support.staff.manage`; the same
       refetch rules as D12.
 
 **Done when.** The full §12 walkthrough passes in the browser (the customer never sees
 the internal note); `npm run build` passes.
 
-**Status:** ☐ Not started
+**Status:** ✅ Done 2026-09-24
+
+- **Layout:**
+  - A back link, then the identity header: status, priority, a "Needs reply" marker,
+    ticket number, subject, category, customer, opening time and order.
+  - Below it, `lg:grid-cols-12`:
+    - thread and composer in `col-span-8`;
+    - Status, Details, Assignee, Customer, Linked order and Timeline cards in
+      `col-span-4`.
+  - On phones the side cards stack under the composer.
+- **Back link, "Back to the queue":**
+  - It returns to the queue exactly as the agent left it (tab, filters, page).
+  - The list remembers its URL in `sessionStorage`, a per-tab convenience. Reads are
+    checked to be a `/admin/support` list URL, and fall back to the plain list.
+  - The link reads storage through `useSyncExternalStore`, so there is no hydration
+    mismatch.
+- **Thread:** `TicketThread` with `viewer="staff"` (the prop is `viewer`, not
+  `variant`).
+  - The customer is on the left and staff on the right.
+  - Internal notes get a dashed amber outline and the "Internal note · staff only"
+    label.
+  - Staff-only system lines (assignment, priority/category, status reasons) carry a
+    lock.
+  - Attachments, internal ones included, load through `fetchAdminSupportAttachment`.
+- **Composer:**
+  - A **Reply to customer / Internal note** switch: a real radio group, with the focus
+    ring on the chip. Internal-note mode turns the composer amber and says "Only the
+    team sees internal notes. The customer is never shown this."
+  - Attachments, a 5000-character counter, Ctrl/⌘ + Enter, and the backend's "Write a
+    message or attach a file" rule.
+  - **…and set status to** appears for managers in reply mode and lists the allowed
+    next statuses:
+    - It leaves out In progress on an Open ticket, since the first reply sets it
+      anyway ("In progress (default)").
+    - It leaves out Close, so closing always goes through the Status card's confirm
+      step.
+  - **On a closed ticket**, Reply is disabled and a warning says the customer can't be
+    replied to; internal notes still work. The composer starts in note mode when a
+    ticket is already closed.
+- **Status card:**
+  - One button per allowed transition: Mark in progress, Wait on customer, Resolve
+    (green), Close (red).
+  - Each opens `AdminConfirmModal`, which explains the step and that the customer sees
+    "Status changed to …". It has an optional **staff-only reason**, kept as an
+    internal note and in the audit log.
+  - Close uses the destructive style; closed tickets show "can't be reopened".
+- **Details card:** priority and category selects that save as soon as one is chosen.
+  The new value is held while saving, and each change adds a staff-only line to the
+  thread.
+- **Assignee card:**
+  - A select with Unassigned plus everyone from `assignees`; the viewer is marked
+    "(you)".
+  - **Assign to me** shows when the viewer can be assigned and isn't already the
+    assignee.
+  - A current assignee who is no longer assignable still shows by name.
+- **Customer card:** name, username, email and phone. **Open customer profile**
+  (`/admin/customers/<profile id>`) only shows with `customers.admin.view`, which
+  SUPPORT_TEAM doesn't hold.
+- **Linked order card:** number, status, ৳ total and date. It links to
+  `/admin/orders/<id>` only with `orders.staff.view`.
+- **Timeline card:** opened, first response, last customer message, last staff reply,
+  resolved, closed.
+- **Permissions:**
+  - Without `support.staff.reply` there is no composer, only a note.
+  - Without `support.staff.manage` there are no status buttons, no pickers and no "…and
+    set status to", and a note explains why.
+  - Without `support.staff.view` the page shows the access notice.
+- **Refreshing (D12):** the same as the customer page.
+  - Re-read every 60 s while visible, and on focus or a return to the tab (at most once
+    per 5 s).
+  - Every write shows the ticket it returns.
+  - A generation counter drops reads that answer late.
+  - A failed write re-reads, in case a colleague acted.
+- **Announcements** (polite live region): "Reply sent.", "Internal note added.",
+  "Status changed to …", "Priority changed to …", "Assigned to …", and "New message from
+  the customer." when a refresh brings one.
+- **Noticed and fixed:** my Task 7 and Task 9 notes and two code comments called the
+  refetch rule "D11". In this document D11 is the unread-marker rule and D12 is the
+  refetch rule, so they now say D12.
+- **Verified:**
+  - `npm run typecheck` passes. `npm run build` compiles, with
+    `/admin/support/[ticketNumber]` dynamic (ƒ). `eslint` is clean on
+    `app/admin/support/`.
+  - **Browser: the full §12 flow**, run through the real UI with three headless Chrome
+    instances side by side, against the production build on `next start -p 3001` and
+    Django on 8001:
+    - a customer (`smoke_cust_1`);
+    - SUPPORT_TEAM (throwaway `t10_agent`);
+    - a third for OPERATION_MANAGER (`t10_ops`) and ADMINISTRATOR (`t10_admin`).
+  - The owner's `next dev` on 3000 still answered 500 for new routes. The test Chrome
+    used `--disable-web-security`, because CORS allows only 3000.
+  - **All 31 checks passed** on the first run, with no console errors in any browser:
+    1. **Customer opens it:** "Get help with this order" preset the order and category,
+       and a ticket went in with a PNG and a JPEG.
+    2. **Staff find and work it:**
+       - The ticket appeared under the **Needs reply** card, and the detail showed
+         Open, Normal priority, Needs reply, and both images on the customer's side.
+       - The back link pointed to `/admin/support?needs_reply=true`. The order card
+         linked to `/admin/orders/<id>` with ৳560.00, and there was no customer-profile
+         link for SUPPORT_TEAM.
+       - **Assign to me** added the staff-only "Assigned to Tara Agent." line.
+       - An **internal note with a PDF** left the status at Open, and its PDF opened as
+         `application/pdf`.
+       - "…and set status to" offered exactly In progress (default), Waiting on
+         customer, Resolved.
+       - A **reply + Waiting on customer** added a public bubble and the public status
+         line.
+       - **Priority → High** saved at once, and the timeline filled in "First
+         response".
+    3. **Customer sees it:**
+       - The unread badge showed "1", and the ticket read "Waiting on you" with the
+         reply.
+       - **Not shown to the customer:** the internal note, its PDF, "Assigned to…" and
+         "Priority changed…".
+       - Their reply reopened the ticket.
+    4. **OPERATION_MANAGER on the open ticket:** the composer, but no status buttons, no
+       pickers, no "…and set status to", and the explanation note.
+    5. **Staff resolve it:**
+       - The customer's reply appeared on focus: Open, Needs reply, announced.
+       - The status buttons were exactly Mark in progress / Wait on customer / Resolve /
+         Close.
+       - **Resolve** with a reason added the public "Status changed to Resolved." and
+         the staff-only "Status change reason: …".
+    6. **Customer closes it:** they saw Resolved but not the reason, then used "All
+       sorted, close it" and confirmed.
+    7. **Staff after closing:**
+       - No status buttons; Reply disabled with the warning; Send disabled.
+       - An internal note was still added.
+       - Tab from the message box landed on "Attach files" with a visible focus ring.
+       - No horizontal overflow at 390 px on the staff page or the customer page.
+    8. **ADMINISTRATOR:** "Open customer profile" linked to
+       `/admin/customers/<profile id>`.
+    9. **Unknown ticket number:** "Ticket not found".
+  - **Cleanup:**
+    - The ticket (12 messages, 3 attachments) and its 3 private files were deleted, as
+      were the 3 staff users; the dev database has 0 tickets.
+    - The flow's 7 audit rows remain (support rows 22 → 29), because the audit log is
+      append-only.
+    - Both servers were stopped.
 
 ---
 
