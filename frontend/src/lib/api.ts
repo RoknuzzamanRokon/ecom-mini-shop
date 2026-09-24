@@ -1,4 +1,4 @@
-import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse, Favorite, PasswordChangePayload, SellerProfile, SellerDashboardData, SellerShop, SellerWallet, NearbyShopsResponse, PointTransaction, Review, ReviewCreatePayload, ReviewOrdering, ReviewUpdatePayload, ShopReview, ShopReviewCreatePayload, MyReviews } from "./types";
+import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse, Favorite, PasswordChangePayload, SellerProfile, SellerDashboardData, SellerShop, SellerWallet, NearbyShopsResponse, PointTransaction, Review, ReviewCreatePayload, ReviewOrdering, ReviewUpdatePayload, ShopReview, ShopReviewCreatePayload, MyReviews, SupportTicket, SupportTicketCreateInput, SupportTicketListStatus, SupportTicketSummary } from "./types";
 
 import { refreshTokenOnce } from "./auth";
 
@@ -1549,5 +1549,135 @@ export async function getSellerPointHistory(
   }
   const data = await res.json();
   return Array.isArray(data) ? data : data.results || [];
+}
+
+// ---------------------------------------------------------------------------
+// Support tickets — customer side (/api/support/). The backend scopes every
+// call to the caller's own tickets and never returns internal notes.
+// ---------------------------------------------------------------------------
+
+const SUPPORT_OFFLINE_MESSAGE = "Couldn't reach MiniShop. Check your connection and try again.";
+
+/** customerRequest, with a network failure turned into a readable message. */
+async function supportRequest(
+  endpoint: string,
+  token: string,
+  options: RequestInit = {}
+): Promise<Response> {
+  try {
+    return await customerRequest(endpoint, token, options);
+  } catch {
+    throw new Error(SUPPORT_OFFLINE_MESSAGE);
+  }
+}
+
+/** The backend's own words: `detail`, else the first field error, else `fallback`. */
+async function supportError(res: Response, fallback: string): Promise<Error> {
+  const data = await res.json().catch(() => ({}));
+  if (typeof data?.detail === "string") return new Error(data.detail);
+  for (const value of Object.values(data ?? {})) {
+    if (Array.isArray(value) && typeof value[0] === "string") return new Error(value[0]);
+  }
+  return new Error(fallback);
+}
+
+function ticketPath(ticketNumber: string): string {
+  return `/api/support/tickets/${encodeURIComponent(ticketNumber)}/`;
+}
+
+/** GET /api/support/tickets/?status=open|closed|all&page= — 10 per page, newest activity first. */
+export async function getMySupportTickets(
+  token: string,
+  params: { status?: SupportTicketListStatus; page?: number } = {}
+): Promise<PaginatedResponse<SupportTicketSummary>> {
+  const query = new URLSearchParams();
+  if (params.status) query.set("status", params.status);
+  if (params.page && params.page > 1) query.set("page", String(params.page));
+  const res = await supportRequest(`/api/support/tickets/?${query.toString()}`, token, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw await supportError(res, "Your tickets couldn't be loaded.");
+  return await res.json();
+}
+
+/**
+ * GET /api/support/tickets/<ticket_number>/ — null when it doesn't exist or
+ * isn't yours (the backend answers both with 404). Opening it marks staff
+ * replies as read.
+ */
+export async function getMySupportTicket(
+  ticketNumber: string,
+  token: string
+): Promise<SupportTicket | null> {
+  const res = await supportRequest(ticketPath(ticketNumber), token, { cache: "no-store" });
+  if (res.status === 404) return null;
+  if (!res.ok) throw await supportError(res, "This ticket couldn't be loaded.");
+  return await res.json();
+}
+
+/** POST /api/support/tickets/ (multipart). Returns the new ticket. */
+export async function createSupportTicket(
+  input: SupportTicketCreateInput,
+  token: string
+): Promise<SupportTicket> {
+  const form = new FormData();
+  form.append("category", input.category);
+  form.append("subject", input.subject);
+  form.append("description", input.description);
+  if (input.order_number) form.append("order_number", input.order_number);
+  for (const file of input.attachments ?? []) form.append("attachments", file);
+  const res = await supportRequest(`/api/support/tickets/`, token, { method: "POST", body: form });
+  if (!res.ok) throw await supportError(res, "Your ticket couldn't be sent. Please try again.");
+  return await res.json();
+}
+
+/** POST /api/support/tickets/<ticket_number>/messages/ (multipart). Returns the whole updated ticket. */
+export async function replyToSupportTicket(
+  ticketNumber: string,
+  body: string,
+  files: File[],
+  token: string
+): Promise<SupportTicket> {
+  const form = new FormData();
+  form.append("body", body);
+  for (const file of files) form.append("attachments", file);
+  const res = await supportRequest(`${ticketPath(ticketNumber)}messages/`, token, {
+    method: "POST",
+    body: form,
+  });
+  if (!res.ok) throw await supportError(res, "Your reply couldn't be sent. Please try again.");
+  return await res.json();
+}
+
+/** POST /api/support/tickets/<ticket_number>/close/. Returns the closed ticket. */
+export async function closeSupportTicket(
+  ticketNumber: string,
+  token: string
+): Promise<SupportTicket> {
+  const res = await supportRequest(`${ticketPath(ticketNumber)}close/`, token, { method: "POST" });
+  if (!res.ok) throw await supportError(res, "The ticket couldn't be closed. Please try again.");
+  return await res.json();
+}
+
+/** GET /api/support/tickets/unread-count/ — tickets with a staff reply not yet opened. */
+export async function getSupportUnreadCount(token: string): Promise<number> {
+  const res = await supportRequest(`/api/support/tickets/unread-count/`, token, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw await supportError(res, "Unread tickets couldn't be counted.");
+  const data = await res.json();
+  return typeof data?.unread === "number" ? data.unread : 0;
+}
+
+/**
+ * Downloads a private attachment (`attachment.url`, an /api/support/ path).
+ * It needs the bearer token, so it can't be an <img src>; callers show the
+ * Blob through URL.createObjectURL.
+ */
+export async function fetchSupportAttachment(url: string, token: string): Promise<Blob> {
+  if (!url.startsWith("/api/support/")) throw new Error("Not a support attachment.");
+  const res = await supportRequest(url, token);
+  if (!res.ok) throw await supportError(res, "This file couldn't be opened.");
+  return await res.blob();
 }
 

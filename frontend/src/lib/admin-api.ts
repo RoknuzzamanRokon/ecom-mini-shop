@@ -1,4 +1,11 @@
-import { PaginatedResponse } from "./types";
+import {
+  PaginatedResponse,
+  SupportAttachment,
+  SupportAuthorType,
+  SupportCategory,
+  SupportPriority,
+  SupportStatus,
+} from "./types";
 import { refreshTokenOnce } from "./auth";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
@@ -1953,4 +1960,301 @@ export async function refundAdminPayment(
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+// ==============================================================================
+// SUPPORT TICKETS (/api/support/staff/)
+// ==============================================================================
+
+/**
+ * The "second request layer" the AdminCategoryWritePayload comment
+ * anticipated: the two console requests that aren't JSON-in / JSON-out.
+ * Multipart uploads must let the browser write their own Content-Type (with
+ * the boundary), and file downloads return a Blob, not JSON. Same 401 recovery
+ * (refreshTokenOnce, one retry) and the same AdminApiError as adminRequest.
+ */
+async function adminRawRequest(
+  endpoint: string,
+  token: string,
+  options: RequestInit = {},
+  retried = false
+): Promise<Response> {
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${token}`,
+    ...((options.headers as Record<string, string>) || {}),
+  };
+
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${endpoint}`, { ...options, headers, cache: "no-store" });
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Network error";
+    throw new AdminApiError(`Network request failed: ${msg}`, 0);
+  }
+
+  if (res.status === 401 && !retried) {
+    const refreshed = await refreshTokenOnce();
+    if (refreshed) {
+      return adminRawRequest(endpoint, refreshed, options, true);
+    }
+  }
+
+  if (!res.ok) {
+    const errorBody = await res.json().catch(() => ({}));
+    const message = extractErrorMessage(errorBody, `Request failed with status ${res.status}`);
+    throw new AdminApiError(message, res.status, errorBody);
+  }
+  return res;
+}
+
+async function adminMultipartRequest<T>(
+  endpoint: string,
+  token: string,
+  body: FormData,
+  method = "POST"
+): Promise<T> {
+  const res = await adminRawRequest(endpoint, token, { method, body });
+  return (await res.json()) as T;
+}
+
+export interface AdminSupportPerson {
+  id: number;
+  name: string;
+}
+
+/** Mirrors StaffTicketListSerializer.get_customer. */
+export interface AdminSupportCustomer {
+  id: number;
+  /** Display name, else full name, else username. */
+  name: string;
+  email: string;
+}
+
+/** Mirrors StaffTicketDetailSerializer.get_customer. */
+export interface AdminSupportCustomerDetail extends AdminSupportCustomer {
+  username: string;
+  phone: string;
+  /** For /admin/customers/<id>; null when the user has no customer profile. */
+  customer_profile_id: number | null;
+}
+
+/** Mirrors StaffMessageSerializer: every message, internal ones included. */
+export interface AdminSupportMessage {
+  id: number;
+  author_type: SupportAuthorType;
+  author: AdminSupportPerson | null;
+  /** Real names: the customer's display name, the staff member's full name, or "System". */
+  author_name: string;
+  body: string;
+  is_internal: boolean;
+  created_at: string;
+  /** `url` points at /api/support/staff/attachments/<id>/. */
+  attachments: SupportAttachment[];
+}
+
+/** Mirrors StaffTicketListSerializer field-for-field. */
+export interface AdminSupportTicket {
+  ticket_number: string;
+  subject: string;
+  category: SupportCategory;
+  category_label: string;
+  status: SupportStatus;
+  /** Staff wording, e.g. "Waiting on customer". */
+  status_label: string;
+  priority: SupportPriority;
+  priority_label: string;
+  customer: AdminSupportCustomer | null;
+  assigned_to: AdminSupportPerson | null;
+  order_number: string | null;
+  /** The customer spoke last and the ticket is still being worked on. */
+  needs_reply: boolean;
+  created_at: string;
+  last_activity_at: string;
+}
+
+/** Mirrors StaffTicketDetailSerializer field-for-field. */
+export interface AdminSupportTicketDetail extends AdminSupportTicket {
+  customer: AdminSupportCustomerDetail | null;
+  order: {
+    id: number;
+    order_number: string;
+    status: string;
+    /** Decimal string, e.g. "1250.00"; format with formatTaka. */
+    total_amount: string;
+    created_at: string;
+  } | null;
+  /** Statuses the ticket may move to next (SupportTicket.VALID_TRANSITIONS). */
+  allowed_transitions: SupportStatus[];
+  updated_at: string;
+  last_customer_message_at: string | null;
+  last_staff_reply_at: string | null;
+  first_response_at: string | null;
+  resolved_at: string | null;
+  closed_at: string | null;
+  /** Oldest first. */
+  messages: AdminSupportMessage[];
+}
+
+export type AdminSupportOrdering =
+  | "-last_activity_at"
+  | "last_activity_at"
+  | "-created_at"
+  | "created_at"
+  | "-priority"
+  | "priority";
+
+export interface AdminSupportTicketFilterParams {
+  page?: number;
+  page_size?: number;
+  /** A status code, "active" (everything but CLOSED) or "all". */
+  status?: SupportStatus | "active" | "all";
+  priority?: SupportPriority;
+  category?: SupportCategory;
+  /** "me", "unassigned" or a user id. */
+  assigned?: string;
+  needs_reply?: boolean;
+  /** Ticket number, subject, customer name / username / email, or order number. */
+  search?: string;
+  ordering?: AdminSupportOrdering;
+}
+
+export interface AdminSupportSummary {
+  by_status: Record<SupportStatus, number>;
+  /** These four count only tickets that aren't closed. */
+  active: number;
+  needs_reply: number;
+  unassigned: number;
+  assigned_to_me: number;
+}
+
+export interface AdminSupportAssignee {
+  id: number;
+  name: string;
+  email: string;
+}
+
+export interface AdminSupportTicketUpdate {
+  status?: SupportStatus;
+  priority?: SupportPriority;
+  category?: SupportCategory;
+  /** Optional; kept in the audit log and an internal note, never shown to the customer. */
+  reason?: string;
+}
+
+export interface AdminSupportMessageInput {
+  body: string;
+  isInternal: boolean;
+  /** Needs 'support.staff.manage'; ignored for internal notes (the backend refuses the pair). */
+  setStatus?: SupportStatus;
+  files: File[];
+}
+
+function staffTicketPath(ticketNumber: string): string {
+  return `/api/support/staff/tickets/${encodeURIComponent(ticketNumber)}/`;
+}
+
+/** GET /api/support/staff/tickets/ — 'support.staff.view'. Unknown filter values are a 400. */
+export async function getAdminSupportTickets(
+  token: string,
+  params: AdminSupportTicketFilterParams = {}
+): Promise<PaginatedResponse<AdminSupportTicket>> {
+  const query = new URLSearchParams();
+  if (params.page) query.set("page", String(params.page));
+  if (params.page_size) query.set("page_size", String(params.page_size));
+  if (params.status) query.set("status", params.status);
+  if (params.priority) query.set("priority", params.priority);
+  if (params.category) query.set("category", params.category);
+  if (params.assigned) query.set("assigned", params.assigned);
+  if (params.needs_reply) query.set("needs_reply", "true");
+  if (params.search) query.set("search", params.search);
+  if (params.ordering) query.set("ordering", params.ordering);
+  const queryString = query.toString();
+  return adminRequest<PaginatedResponse<AdminSupportTicket>>(
+    `/api/support/staff/tickets/${queryString ? `?${queryString}` : ""}`,
+    token
+  );
+}
+
+/** GET /api/support/staff/tickets/<ticket_number>/ — 'support.staff.view'. */
+export async function getAdminSupportTicket(
+  token: string,
+  ticketNumber: string
+): Promise<AdminSupportTicketDetail> {
+  return adminRequest<AdminSupportTicketDetail>(staffTicketPath(ticketNumber), token);
+}
+
+/**
+ * POST /api/support/staff/tickets/<ticket_number>/messages/ (multipart) —
+ * 'support.staff.reply' (+ 'support.staff.manage' with setStatus).
+ * Returns the whole updated ticket.
+ */
+export async function postAdminSupportMessage(
+  token: string,
+  ticketNumber: string,
+  input: AdminSupportMessageInput
+): Promise<AdminSupportTicketDetail> {
+  const form = new FormData();
+  form.append("body", input.body);
+  form.append("is_internal", input.isInternal ? "true" : "false");
+  if (input.setStatus && !input.isInternal) form.append("set_status", input.setStatus);
+  for (const file of input.files) form.append("attachments", file);
+  return adminMultipartRequest<AdminSupportTicketDetail>(
+    `${staffTicketPath(ticketNumber)}messages/`,
+    token,
+    form
+  );
+}
+
+/**
+ * PATCH /api/support/staff/tickets/<ticket_number>/ — 'support.staff.manage'.
+ * All-or-nothing: if the status change is refused, a priority/category change
+ * sent with it is undone too. Returns the whole updated ticket.
+ */
+export async function updateAdminSupportTicket(
+  token: string,
+  ticketNumber: string,
+  update: AdminSupportTicketUpdate
+): Promise<AdminSupportTicketDetail> {
+  return adminRequest<AdminSupportTicketDetail>(staffTicketPath(ticketNumber), token, {
+    method: "PATCH",
+    body: JSON.stringify(update),
+  });
+}
+
+/**
+ * POST /api/support/staff/tickets/<ticket_number>/assign/ — 'support.staff.manage'.
+ * `assigneeId` must hold 'support.staff.reply' (see getAdminSupportAssignees);
+ * null unassigns. Returns the whole updated ticket.
+ */
+export async function assignAdminSupportTicket(
+  token: string,
+  ticketNumber: string,
+  assigneeId: number | null
+): Promise<AdminSupportTicketDetail> {
+  return adminRequest<AdminSupportTicketDetail>(`${staffTicketPath(ticketNumber)}assign/`, token, {
+    method: "POST",
+    body: JSON.stringify({ assignee_id: assigneeId }),
+  });
+}
+
+/** GET /api/support/staff/assignees/ — everyone a ticket can be assigned to. */
+export async function getAdminSupportAssignees(token: string): Promise<AdminSupportAssignee[]> {
+  return adminRequest<AdminSupportAssignee[]>(`/api/support/staff/assignees/`, token);
+}
+
+/** GET /api/support/staff/summary/ — the queue's counts for the stat cards. */
+export async function getAdminSupportSummary(token: string): Promise<AdminSupportSummary> {
+  return adminRequest<AdminSupportSummary>(`/api/support/staff/summary/`, token);
+}
+
+/**
+ * Downloads any attachment, internal ones included (`attachment.url`, an
+ * /api/support/staff/ path). Callers show the Blob through URL.createObjectURL.
+ */
+export async function fetchAdminSupportAttachment(token: string, url: string): Promise<Blob> {
+  if (!url.startsWith("/api/support/staff/")) {
+    throw new AdminApiError("Not a staff support attachment.", 0);
+  }
+  const res = await adminRawRequest(url, token);
+  return await res.blob();
 }

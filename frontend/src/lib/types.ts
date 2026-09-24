@@ -817,3 +817,85 @@ export interface PointTransaction {
   created_at: string;
 }
 
+// ---------------------------------------------------------------------------
+// Support tickets (backend/support). Customer shapes mirror
+// support/serializers.py::CustomerTicket*Serializer field-for-field; the staff
+// shapes live in lib/admin-api.ts. Customers never receive priority, assignee
+// or internal notes, so none of those appear here.
+// ---------------------------------------------------------------------------
+
+export type SupportCategory =
+  | "ORDER"
+  | "PAYMENT"
+  | "PRODUCT"
+  | "RETURN"
+  | "ACCOUNT"
+  | "SHOP"
+  | "OTHER";
+
+export type SupportStatus =
+  | "OPEN"
+  | "IN_PROGRESS"
+  | "WAITING_ON_CUSTOMER"
+  | "RESOLVED"
+  | "CLOSED";
+
+export type SupportPriority = "LOW" | "NORMAL" | "HIGH" | "URGENT";
+
+export type SupportAuthorType = "CUSTOMER" | "STAFF" | "SYSTEM";
+
+/** A private file. `url` is an API path that needs the bearer token; see fetchSupportAttachment. */
+export interface SupportAttachment {
+  id: number;
+  name: string;
+  content_type: string;
+  size: number;
+  url: string;
+}
+
+export interface SupportMessage {
+  id: number;
+  author_type: SupportAuthorType;
+  /** "You", "Rina · MiniShop Support" or "MiniShop Support". */
+  author_name: string;
+  body: string;
+  created_at: string;
+  attachments: SupportAttachment[];
+}
+
+/** A row of GET /api/support/tickets/. */
+export interface SupportTicketSummary {
+  ticket_number: string;
+  subject: string;
+  category: SupportCategory;
+  category_label: string;
+  status: SupportStatus;
+  /** Customer wording: WAITING_ON_CUSTOMER reads "Waiting on you". */
+  status_label: string;
+  order_number: string | null;
+  created_at: string;
+  last_activity_at: string;
+  resolved_at: string | null;
+  closed_at: string | null;
+  /** A staff reply the customer hasn't opened the ticket to see yet. */
+  has_unread: boolean;
+}
+
+/** GET /api/support/tickets/<ticket_number>/, and the body of every customer write. */
+export interface SupportTicket extends SupportTicketSummary {
+  can_reply: boolean;
+  can_close: boolean;
+  /** Public messages only, oldest first. */
+  messages: SupportMessage[];
+}
+
+export interface SupportTicketCreateInput {
+  category: SupportCategory;
+  subject: string;
+  description: string;
+  order_number?: string;
+  attachments?: File[];
+}
+
+export type SupportTicketListStatus = "open" | "closed" | "all";
+

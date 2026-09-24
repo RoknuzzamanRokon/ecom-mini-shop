@@ -1,6 +1,6 @@
 # MiniShop — Customer Support Ticket System Plan
 
-**Created:** 2026-09-24 · **Baseline commit:** `2463421` · **Status:** In progress (Tasks 1–4 of 12 done; backend complete)
+**Created:** 2026-09-24 · **Baseline commit:** `2463421` · **Status:** In progress (Tasks 1–5 of 12 done; backend complete)
 
 This is the plan and task list for the support ticket feature. Work through the tasks
 in §13 **one at a time, in order**. Each task is one commit. When a task is done, tick
@@ -469,7 +469,7 @@ plans:
 | 2 | `SupportTicketService` + attachment validator | backend | ✅ Done |
 | 3 | Customer API | backend | ✅ Done |
 | 4 | Staff API | backend | ✅ Done |
-| 5 | Frontend foundation: types, API clients, shared support components | frontend | ☐ Not started |
+| 5 | Frontend foundation: types, API clients, shared support components | frontend | ✅ Done |
 | 6 | Customer ticket list + new ticket form + profile nav item | frontend | ☐ Not started |
 | 7 | Customer ticket conversation page | frontend | ☐ Not started |
 | 8 | Customer entry points: order page, header menu, footer | frontend | ☐ Not started |
@@ -793,21 +793,21 @@ the API yet.
 
 **Goal.** Everything the support pages need exists and compiles. Nothing is visible yet.
 
-- [ ] `lib/types.ts`: `SupportCategory`, `SupportStatus`, `SupportTicketSummary`,
+- [x] `lib/types.ts`: `SupportCategory`, `SupportStatus`, `SupportTicketSummary`,
       `SupportTicket`, `SupportMessage`, `SupportAttachment`. Use names that don't clash
       with the old `Admin*` types there.
-- [ ] `lib/support.ts`: category and status labels, limits (5 files, 5 MB, allowed
+- [x] `lib/support.ts`: category and status labels, limits (5 files, 5 MB, allowed
       types, subject/description lengths), `validateSupportFiles()`, `formatFileSize()`.
-- [ ] `lib/api.ts` (customer, token last, like `createReview`): `getMySupportTickets`,
+- [x] `lib/api.ts` (customer, token last, like `createReview`): `getMySupportTickets`,
       `getMySupportTicket`, `createSupportTicket(FormData)`, `replyToSupportTicket`,
       `closeSupportTicket`, `getSupportUnreadCount`, `fetchSupportAttachment` (→ `Blob`).
-- [ ] `lib/admin-api.ts`: a private `adminMultipartRequest` (same 401 refresh-and-retry
+- [x] `lib/admin-api.ts`: a private `adminMultipartRequest` (same 401 refresh-and-retry
       as `adminRequest`, but no JSON `Content-Type`); staff types with "Mirrors …"
       comments; `getAdminSupportTickets`, `getAdminSupportTicket`,
       `postAdminSupportMessage(FormData)`, `updateAdminSupportTicket`,
       `assignAdminSupportTicket`, `getAdminSupportAssignees`, `getAdminSupportSummary`,
       `fetchAdminSupportAttachment`.
-- [ ] `components/support/TicketStatusBadge.tsx` (token colours),
+- [x] `components/support/TicketStatusBadge.tsx` (token colours),
       `AttachmentPicker.tsx` (pick, validate, previews, remove; revokes object URLs),
       `SecureAttachment.tsx` (takes a `load(): Promise<Blob>` prop, renders a thumbnail
       or a file chip, opens in a new tab, revokes on unmount),
@@ -816,7 +816,87 @@ the API yet.
 
 **Done when.** `npm run typecheck`, `npm run build` and `eslint` on the new files pass.
 
-**Status:** ☐ Not started
+**Status:** ✅ Done 2026-09-24
+
+- **Signatures as built** (they differ a little from the checklist):
+  - Customer (token last):
+    - `createSupportTicket(input, token)` takes a typed `SupportTicketCreateInput` and
+      builds the `FormData` itself.
+    - `replyToSupportTicket(ticketNumber, body, files, token)`.
+    - `getMySupportTicket` returns **`null` on 404** (missing or not yours), like
+      `getMyProductReview`.
+    - Every write returns the whole `SupportTicket`.
+    - Errors carry the backend's own words: `detail`, else the first field error.
+    - A network failure reads "Couldn't reach MiniShop. Check your connection and try
+      again."
+  - Staff (token first):
+    - `postAdminSupportMessage(token, n, {body, isInternal, setStatus?, files})`. It
+      never sends `set_status` with an internal note, because the backend refuses the
+      pair.
+    - `assignAdminSupportTicket(token, n, assigneeId | null)`.
+    - `getAdminSupportTickets(token, filters)` takes every filter from Task 4, typed.
+- **Staff transport:** `admin-api.ts` gets `adminRawRequest`, which returns the raw
+  `Response` and handles 401 refresh-and-retry and `AdminApiError` like
+  `adminRequest`.
+  - `adminMultipartRequest` and `fetchAdminSupportAttachment` are both built on it.
+  - This is the "second request layer" the `AdminCategoryWritePayload` comment
+    anticipated.
+- **Attachment fetchers** refuse any URL outside `/api/support/`
+  (`/api/support/staff/` for the staff one), so the token is never sent anywhere
+  else.
+- **Types:** customer types (plus `SupportPriority`, `SupportAuthorType`,
+  `SupportTicketCreateInput`, `SupportTicketListStatus`) are in `types.ts`. Staff
+  types (`AdminSupportTicket`, `AdminSupportTicketDetail`, `AdminSupportMessage`,
+  `AdminSupportSummary`, `AdminSupportAssignee`, …) are next to their fetchers in
+  `admin-api.ts`, each with a "Mirrors …Serializer" comment.
+- **`lib/support.ts` extras:**
+  - Both label sets: `CUSTOMER_STATUS_LABELS` ("Waiting on you") and
+    `STAFF_STATUS_LABELS` ("Waiting on customer").
+  - Categories with Material icons, plus `SUPPORT_STATUSES` and `SUPPORT_PRIORITIES`.
+  - `SUPPORT_FILE_ACCEPT` and `SUPPORT_FILE_HINT`.
+  - `formatSupportDateTime()`.
+  - `formatRelativeTime(iso, now)`. It takes `now` as an argument so pages can keep
+    render pure.
+  - `validateSupportFiles` falls back to the file extension when the browser sends an
+    empty MIME type.
+- **Object URLs never go into React state.** `AttachmentPicker`'s previews and
+  `SecureAttachment`'s thumbnails create the URL inside an effect, write it to the
+  `<img>` / `<a>` through a ref, and revoke it in the effect's cleanup. React's
+  development double-mount therefore can't leave a revoked URL on screen, which a
+  `useMemo` + cleanup version would.
+  - These are the only two `<img>` elements in the app, each with an
+    `@next/next/no-img-element` exception, because `next/image` can't load a
+    `blob:` URL.
+- **Attachment behaviour:**
+  - Images are fetched right away and shown as 96 px thumbnails that open full size in
+    a new tab.
+  - PDFs are fetched only when clicked, then open in a new tab. If a pop-up blocker
+    stops that, they download instead. The URL is revoked 60 s later.
+  - A failed load shows "Couldn't load" / "Couldn't open — try again".
+- **`TicketThread`** takes `viewer: "customer" | "staff"` (the checklist called it
+  `variant`); the viewer's own messages sit on the right.
+  - Internal notes get a dashed accent border and the label "Internal note · staff
+    only".
+  - Internal system lines get a lock icon and a screen-reader-only "Staff only:".
+  - Times use `<time dateTime>`.
+  - The list is an `<ol aria-label="Conversation">`.
+- **`TicketStatusBadge`** uses theme tokens. `WAITING_ON_CUSTOMER` is the one solid
+  (accent) badge, because it is the only status that asks the customer to act.
+- **Verified:**
+  - `npm run typecheck` passes, and `npm run build` compiles (42 pages).
+  - `eslint` on `components/support/*`, `lib/support.ts` and `lib/admin-api.ts` is
+    clean.
+  - A Node harness (`lib/support.ts` compiled with `tsc`, real `File` objects) passes
+    7 checks: the four allowed types; the extension fallback; SVG / empty / 5 MB + 1
+    byte refused while good files are kept; the 5-file cap counting files already
+    chosen; file sizes; relative times; every label present.
+  - Found while testing: `en-GB` month names come out as "Sept" in Node and current
+    browsers; the console's existing `formatDateTime` does the same.
+  - Not rendered in a browser yet: the components get their first real use in
+    Task 6.
+- **Pre-existing, left alone:** `eslint` reports `no-explicit-any` at `types.ts:307`
+  (`Payment.metadata`, from 2026-09-12) and at `api.ts:1435` / `:1485`, plus three
+  unused-variable warnings in `api.ts`. All are in code this task didn't touch.
 
 ---
 
