@@ -36,7 +36,7 @@ export default function NearbyShopCard({
     <article
       id={`nearby-shop-${shop.id}`}
       onClick={() => onSelect(shop.id)}
-      className={`relative flex gap-3 rounded-xl border bg-surface p-3 transition-shadow cursor-pointer scroll-mt-4 ${
+      className={`relative flex gap-3 rounded-xl border bg-surface p-3 transition-shadow cursor-pointer scroll-mt-36 ${
         selected
           ? "border-primary ring-2 ring-primary/25 shadow-md"
           : "border-line shadow-xs hover:shadow-md"

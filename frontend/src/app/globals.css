@@ -437,3 +437,171 @@ html, body {
 .material-symbols-outlined.fill-active {
   font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
 }
+
+/* ==========================================================================
+   Nearby shops map (components/shops/NearbyShopsMap.tsx)
+   Leaflet's own stylesheet is imported by that component; these rules only
+   re-colour it with the theme tokens, so the map follows every palette and
+   dark mode like the rest of the UI.
+   ========================================================================== */
+.nearby-map.leaflet-container {
+  background: var(--c-surface-alt);
+  font-family: inherit;
+}
+
+.nearby-map.leaflet-container:focus-visible {
+  outline: 2px solid var(--c-focus-ring);
+  outline-offset: -2px;
+}
+
+.nearby-map .leaflet-bar a {
+  background: var(--c-surface);
+  color: var(--c-text-strong);
+  border-bottom-color: var(--c-border);
+}
+
+.nearby-map .leaflet-bar a:hover,
+.nearby-map .leaflet-bar a:focus-visible {
+  background: var(--c-surface-alt);
+}
+
+/* Search radius and location accuracy circles (SVG paths). */
+.nearby-map-radius {
+  stroke: var(--c-primary);
+  stroke-width: 2;
+  stroke-dasharray: 6 6;
+  fill: var(--c-primary);
+  fill-opacity: 0.05;
+}
+
+.nearby-map-accuracy {
+  stroke: var(--c-primary);
+  stroke-width: 1;
+  stroke-opacity: 0.4;
+  fill: var(--c-primary);
+  fill-opacity: 0.12;
+}
+
+/* The customer: a solid dot with a slow pulse. */
+.nearby-map-me span {
+  position: relative;
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: var(--c-primary);
+  border: 3px solid var(--c-surface);
+  box-shadow: 0 0 0 1px var(--c-primary), 0 1px 4px rgb(0 0 0 / 0.35);
+}
+
+.nearby-map-me span::after {
+  content: "";
+  position: absolute;
+  inset: -9px;
+  border-radius: 9999px;
+  border: 2px solid var(--c-primary);
+  animation: nearby-map-pulse 2s ease-out infinite;
+}
+
+@keyframes nearby-map-pulse {
+  from { transform: scale(0.5); opacity: 0.8; }
+  to { transform: scale(1.4); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nearby-map-me span::after { animation: none; opacity: 0; }
+}
+
+/* Numbered shop pins: a rotated teardrop with the rank upright inside. */
+.nearby-map-pin {
+  border-radius: 9999px;
+}
+
+.nearby-map-pin-body {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background: var(--c-primary);
+  border: 2px solid var(--c-surface);
+  box-shadow: 0 2px 5px rgb(0 0 0 / 0.35);
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+.nearby-map-pin-rank {
+  transform: rotate(45deg);
+  color: var(--c-on-primary);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.nearby-map-pin:hover .nearby-map-pin-body {
+  transform: rotate(-45deg) scale(1.08);
+}
+
+.nearby-map-pin.is-selected .nearby-map-pin-body {
+  background: var(--c-accent);
+  transform: rotate(-45deg) scale(1.18);
+}
+
+.nearby-map-pin.is-selected .nearby-map-pin-rank {
+  color: var(--c-on-accent);
+}
+
+.nearby-map-pin:focus-visible {
+  outline: 2px solid var(--c-focus-ring);
+  outline-offset: 3px;
+}
+
+/* Popups */
+.nearby-map .leaflet-popup-content-wrapper,
+.nearby-map .leaflet-popup-tip {
+  background: var(--c-surface);
+  color: var(--c-text-strong);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.25);
+}
+
+.nearby-map .leaflet-popup-content {
+  margin: 12px 14px;
+}
+
+.nearby-map.leaflet-container a.leaflet-popup-close-button {
+  color: var(--c-text-muted);
+}
+
+.nearby-map-popup-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--c-text-strong);
+  padding-right: 12px;
+}
+
+.nearby-map-popup-meta {
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--c-primary);
+}
+
+.nearby-map-popup-address {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--c-text-muted);
+}
+
+.nearby-map .nearby-map-popup-link {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--c-primary);
+  text-decoration: none;
+}
+
+.nearby-map .nearby-map-popup-link:hover {
+  text-decoration: underline;
+}

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { Suspense, useEffect, useRef, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import Header from "@/components/layout/Header";
@@ -10,6 +10,7 @@ import { RouteSpinner } from "@/components/feedback";
 import CustomerLocationControl from "@/components/location/CustomerLocationControl";
 import NearbyRadiusPicker from "@/components/shops/NearbyRadiusPicker";
 import NearbyShopCard, { NearbyShopCardSkeleton } from "@/components/shops/NearbyShopCard";
+import NearbyShopsMap from "@/components/shops/NearbyShopsMap";
 import { useCustomerLocation } from "@/context/LocationContext";
 import {
   NEARBY_RADIUS_OPTIONS,
@@ -141,6 +142,27 @@ function NearbyShopsExplorer() {
   const shops = current?.data?.results ?? [];
   const selectedShopId = shops.some((s) => s.id === selectedId) ? selectedId : null;
 
+  const mapRef = useRef<HTMLDivElement>(null);
+  const isDesktop = () => window.matchMedia("(min-width: 1024px)").matches;
+
+  // Marker → card: on desktop the list is beside the map, so bring the card
+  // into view. On smaller screens the list is below the map; the marker's
+  // popup already shows the shop, so the page stays where it is.
+  const selectFromMap = useCallback((shopId: number | null) => {
+    setSelectedId(shopId);
+    if (shopId !== null && isDesktop()) {
+      document
+        .getElementById(`nearby-shop-${shopId}`)
+        ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, []);
+
+  // Card → map: on smaller screens the map is above the list, so scroll up to it.
+  const showOnMap = useCallback((shopId: number) => {
+    setSelectedId(shopId);
+    if (!isDesktop()) mapRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, []);
+
   const changeRadius = (next: number) => {
     router.replace(`/shops/nearby?radius=${next}`, { scroll: false });
   };
@@ -177,61 +199,80 @@ function NearbyShopsExplorer() {
         ) : (
           <LocationPrompt />
         )
-      ) : loading ? (
-        <ResultsSkeleton />
-      ) : current?.error ? (
-        <StateCard
-          icon="cloud_off"
-          tone="danger"
-          title="Couldn't load nearby shops"
-          body={current.error}
-          action={
-            <button type="button" onClick={() => setAttempt((n) => n + 1)} className={PRIMARY_BUTTON}>
-              <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
-                refresh
-              </span>
-              Retry
-            </button>
-          }
-        />
-      ) : current?.data && current.data.results.length === 0 ? (
-        <StateCard
-          icon="wrong_location"
-          title={`No shops within ${radius} km`}
-          body="No shop on MiniShop has a location inside this area yet."
-          action={
-            <>
-              {widerRadius && (
-                <button type="button" onClick={() => changeRadius(widerRadius)} className={PRIMARY_BUTTON}>
-                  <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
-                    zoom_out_map
-                  </span>
-                  Search within {widerRadius} km
-                </button>
-              )}
-              <Link href="/shops" className={SECONDARY_LINK}>
-                Browse all shops
-              </Link>
-            </>
-          }
-        />
-      ) : current?.data ? (
-        <div className="flex flex-col gap-3">
-          <p className="text-sm font-semibold text-ink-body">{resultSummary(current.data, radius)}</p>
-          <ol className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {shops.map((shop, index) => (
-              <li key={shop.id}>
-                <NearbyShopCard
-                  shop={shop}
-                  rank={index + 1}
-                  selected={shop.id === selectedShopId}
-                  onSelect={setSelectedId}
-                />
-              </li>
-            ))}
-          </ol>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          {/* Map first on small screens; beside the list (and sticky) on desktop. */}
+          <div ref={mapRef} className="lg:col-span-7 lg:order-2 lg:sticky lg:top-32 scroll-mt-32">
+            <NearbyShopsMap
+              center={position}
+              radiusKm={radius}
+              shops={shops}
+              selectedShopId={selectedShopId}
+              onSelectShop={selectFromMap}
+              className="h-72 sm:h-96 lg:h-[calc(100dvh-10rem)] lg:min-h-105 lg:max-h-190"
+            />
+          </div>
+
+          <div className="lg:col-span-5 lg:order-1 min-w-0">
+            {loading ? (
+              <ResultsSkeleton />
+            ) : current?.error ? (
+              <StateCard
+                icon="cloud_off"
+                tone="danger"
+                title="Couldn't load nearby shops"
+                body={current.error}
+                action={
+                  <button type="button" onClick={() => setAttempt((n) => n + 1)} className={PRIMARY_BUTTON}>
+                    <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+                      refresh
+                    </span>
+                    Retry
+                  </button>
+                }
+              />
+            ) : current?.data && current.data.results.length === 0 ? (
+              <StateCard
+                icon="wrong_location"
+                title={`No shops within ${radius} km`}
+                body="No shop on MiniShop has a location inside this area yet."
+                action={
+                  <>
+                    {widerRadius && (
+                      <button type="button" onClick={() => changeRadius(widerRadius)} className={PRIMARY_BUTTON}>
+                        <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+                          zoom_out_map
+                        </span>
+                        Search within {widerRadius} km
+                      </button>
+                    )}
+                    <Link href="/shops" className={SECONDARY_LINK}>
+                      Browse all shops
+                    </Link>
+                  </>
+                }
+              />
+            ) : current?.data ? (
+              <div className="flex flex-col gap-3">
+                <p className="text-sm font-semibold text-ink-body">{resultSummary(current.data, radius)}</p>
+                <ol className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-3">
+                  {shops.map((shop, index) => (
+                    <li key={shop.id}>
+                      <NearbyShopCard
+                        shop={shop}
+                        rank={index + 1}
+                        selected={shop.id === selectedShopId}
+                        onSelect={setSelectedId}
+                        onShowOnMap={showOnMap}
+                      />
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            ) : null}
+          </div>
         </div>
-      ) : null}
+      )}
     </>
   );
 }
@@ -366,8 +407,8 @@ function ResultsSkeleton() {
   return (
     <div aria-hidden="true" className="flex flex-col gap-3">
       <div className="h-4 w-40 rounded bg-surface-alt animate-pulse" />
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-        {[0, 1, 2, 3, 4, 5].map((i) => (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-3">
+        {[0, 1, 2, 3].map((i) => (
           <NearbyShopCardSkeleton key={i} />
         ))}
       </div>

@@ -357,7 +357,7 @@ strings in `lat` (`1 OR 1=1`, `1);DROP`) → 400.
 | 3 | Admin API returns shop coordinates; admin shop page shows them | full-stack | ✅ Done |
 | 4 | Customer location context + nearby API client and types | frontend | ✅ Done |
 | 5 | `/shops/nearby` page with radius control and result list | frontend | ✅ Done |
-| 6 | Interactive map (Leaflet + OSM) on the nearby page | frontend | ⬜ |
+| 6 | Interactive map (Leaflet + OSM) on the nearby page | frontend | ✅ Done |
 | 7 | Home page "Shops near you" bar + `/shops` entry link | frontend | ⬜ |
 | 8 | Regression run and documentation close-out | docs | ⬜ |
 
@@ -558,18 +558,50 @@ passes.
 
 **Goal.** The results are also shown on a map that stays in sync with the list.
 
-- [ ] `npm install leaflet` and `npm install -D @types/leaflet`.
-- [ ] `src/components/shops/NearbyShopsMap.tsx`: dynamic import; OSM tiles
+- [x] `npm install leaflet` and `npm install -D @types/leaflet`.
+- [x] `src/components/shops/NearbyShopsMap.tsx`: dynamic import; OSM tiles
       (env-overridable); customer marker + accuracy circle; radius circle; shop
       markers; DOM-built popups; selection sync both ways; fit to radius; resize
       handling; `isolate` wrapper; `aria-label`.
-- [ ] Marker and popup styles in `globals.css` with theme variables.
-- [ ] Page layout from §6 (desktop split, tablet/mobile stacked).
+- [x] Marker and popup styles in `globals.css` with theme variables.
+- [x] Page layout from §6 (desktop split, tablet/mobile stacked).
 
 **Done when.** Markers, popups and selection work; map never covers the header;
 build passes.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done 2026-09-24
+
+- Dependencies: `leaflet ^1.9.4` (BSD-2-Clause) and dev `@types/leaflet ^1.9.22`.
+  Leaflet ships as its own lazily loaded chunk (148 KB, **42.5 KB gzipped**) plus a
+  10.5 KB CSS chunk; the home page loads neither.
+- Pins are numbered teardrops matching the list ranks (selected = accent colour). The
+  customer is a pulsing dot (the pulse is off under `prefers-reduced-motion`) inside
+  an accuracy circle, and the search radius is a dashed circle. All colours come from
+  the theme variables, so pins, popups and zoom buttons follow every palette and dark
+  mode. The tiles themselves stay light.
+- **Selected means "its popup is open".** Marker click, Enter or Space on a focused
+  marker, or a card's new "Show on map" button select a shop and open its popup.
+  Closing the popup clears the selection. On desktop a marker click scrolls its card
+  into view; on smaller screens "Show on map" scrolls up to the map instead.
+- Wider than planned, found in the browser: Leaflet opens a bound popup on Enter but
+  never fires `click` for it, and ignores Space on its `role="button"` markers. Both
+  keys now select. The popup is opened before the selection is set, because opening
+  it closes the previous popup, and that close would otherwise clear the new
+  selection.
+- Scroll-wheel zoom is on only while the map has focus. `zoomSnap: 0.5` lets the
+  radius circle fill a phone-sized map. The map is `h-72` on phones, `h-96` on
+  tablets, and on desktop `lg:col-span-7`, sticky at `top-32`, the viewport height
+  minus 10rem (420–760 px).
+- Verified in headless Chrome against the dev API (5 km from 23.78, 90.40): 4 pins
+  titled "1. Urban Thread — 1.6 km away" …, each with `tabindex=0` and
+  `role=button`; customer marker, radius and accuracy circles; OSM attribution shown;
+  marker 3 → card 3 selected and popup; card 1 "Show on map" → pin 1; Enter and Space
+  on focused pins select them (Space doesn't scroll the page); closing a popup clears
+  the selection and "Show on map" reopens it; radius 2 km → 1 pin; zooming makes
+  **0 API requests**; popup "View Shop" → `/shop/urban-thread` in the same document;
+  at 390 px the header stays above the map while scrolling, with no horizontal
+  overflow; dark mode popups use the dark tokens. No console errors.
+  `npm run typecheck`, `npm run build` and `eslint` on the new files pass.
 
 ---
 
