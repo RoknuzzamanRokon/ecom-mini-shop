@@ -774,6 +774,8 @@ the API yet.
 - **Verified:**
   - `manage.py test support.tests.test_staff_api` **22/22 OK** in 214 s on a throwaway
     `test_minishop_sup4` database.
+  - The whole `support` suite (Tasks 1–4) passed **121/121 OK** in 903 s on a
+    throwaway `test_minishop_sup4f` database. This is the "Done when" criterion.
   - `manage.py check` is clean; `makemigrations --check` reports no changes.
   - **Live check on the dev database**, in a rolled-back transaction with the file
     deleted afterwards (0 tickets before and after):
