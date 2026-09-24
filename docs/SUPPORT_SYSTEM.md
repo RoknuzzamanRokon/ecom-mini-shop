@@ -374,9 +374,12 @@ email addresses.
 
 - New app `support` with **3 tables** (`support/0001_initial`) and **5 new permission
   codes**. No change to existing tables.
-- The shared dev MySQL needs `manage.py migrate` and `manage.py seed_rbac` once Tasks 1–4
-  are in. Until then the new endpoints fail (missing tables) or return 403 (missing
-  codes). **Offer to run these; don't run them unasked.**
+- **Dev database: done 2026-09-24** (after Task 2, at the owner's request).
+  - `migrate` applied `support.0001_initial`, the only pending migration.
+  - `seed_rbac` reported "5 permissions created (total 71) … 15 new role-permission links
+    created, 0 forbidden grant(s) revoked".
+  - The grants on the dev database match §4.
+  - Any later migration or new permission code is run there as part of its own task.
 - `backend/.gitignore` gets `private_media/`.
 
 ## 11. Files likely to change
@@ -539,8 +542,7 @@ the API yet.
   `makemigrations --check` reports no changes.
 - **Regression:** the `rbac` suite, which covers `seed_rbac` and the permission board,
   passed **69/69 OK** in 671 s on a throwaway `test_minishop_sup1r` database.
-- **Dev database:** not migrated yet. `migrate` + `seed_rbac` are due once Task 4 is in
-  (§10).
+- **Dev database:** migrated and seeded on 2026-09-24, after Task 2 (§10).
 
 ---
 
@@ -679,9 +681,6 @@ the API yet.
 **Done when.** `manage.py test support` passes; `manage.py check` is clean.
 
 **Status:** ☐ Not started
-
-> After Task 4, the shared dev database needs `migrate` + `seed_rbac` before the
-> frontend tasks can be checked against it (§10).
 
 ---
 
@@ -859,8 +858,8 @@ the internal note); `npm run build` passes.
    blocked in v1.
 5. **Judgement calls:** the 5-ticket cap, 5 MB limit, 60 s refresh and 7-day auto-close
    (D9, D12, D13, D17).
-6. **Dev database:** nothing works against the shared MySQL until `migrate` and
-   `seed_rbac` have run (§10).
+6. ~~**Dev database:** nothing works against the shared MySQL until `migrate` and
+   `seed_rbac` have run.~~ Done 2026-09-24 (§10).
 
 ## 15. Not in this plan
 
