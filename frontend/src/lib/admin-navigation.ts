@@ -62,6 +62,20 @@ export const ADMIN_PERMISSIONS = {
   paymentsRefund: ["payments.refund", "orders.refund"],
 
   /**
+   * /api/support/staff/ (support/permissions.py). View opens the queue, a
+   * ticket, the summary, the assignee list and attachments -> CanViewSupportTickets.
+   * Seeded to SUPPORT_TEAM, ADMINISTRATOR and OPERATION_MANAGER.
+   */
+  supportView: ["support.staff.view"],
+  /** Public replies and internal notes; also makes a user assignable -> CanReplySupportTickets. */
+  supportReply: ["support.staff.reply"],
+  /**
+   * Status, priority, category and assignee -> CanManageSupportTickets.
+   * SUPPORT_TEAM and ADMINISTRATOR only; OPERATION_MANAGER can view and reply.
+   */
+  supportManage: ["support.staff.manage"],
+
+  /**
    * GET /api/admin/categories/ -> CanManageAdminCategories.
    * There is no seeded read-only category permission. See KNOWN CONTRACT GAPS.
    */
@@ -238,6 +252,14 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     section: "Operations",
     requiredPermissions: ADMIN_PERMISSIONS.paymentsView,
     description: "Verify transactions and process refunds.",
+  },
+  {
+    href: "/admin/support",
+    label: "Support Tickets",
+    icon: "support_agent",
+    section: "Operations",
+    requiredPermissions: ADMIN_PERMISSIONS.supportView,
+    description: "Work the customer ticket queue: reply, assign and resolve.",
   },
   {
     href: "/admin/customers",

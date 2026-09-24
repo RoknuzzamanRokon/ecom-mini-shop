@@ -29,6 +29,8 @@ export type AdminStatusTone =
  *   Refund/Txn (shop/models)   PENDING COMPLETED FAILED
  *   Shop    (shops/models.py)  DRAFT PENDING APPROVED ACTIVE SUSPENDED REJECTED
  *   Seller  (sellers/models)   PENDING UNDER_REVIEW APPROVED ACTIVE SUSPENDED REJECTED
+ *   Ticket  (support/models)   OPEN IN_PROGRESS WAITING_ON_CUSTOMER RESOLVED CLOSED
+ *   Ticket priority            LOW NORMAL HIGH URGENT
  *
  * Legacy lowercase order statuses ("pending", "shipped", ...) normalize to the
  * same keys because lookup is case-insensitive.
@@ -65,6 +67,18 @@ const STATUS_TONES: Record<string, AdminStatusTone> = {
 
   // Financial reversal
   REFUNDED: "accent",
+
+  // Support tickets: an OPEN ticket waits on staff, WAITING_ON_CUSTOMER on
+  // the customer. Priorities ramp from quiet to loud.
+  OPEN: "warning",
+  IN_PROGRESS: "info",
+  WAITING_ON_CUSTOMER: "accent",
+  RESOLVED: "success",
+  CLOSED: "neutral",
+  LOW: "neutral",
+  NORMAL: "info",
+  HIGH: "warning",
+  URGENT: "danger",
 };
 
 /**

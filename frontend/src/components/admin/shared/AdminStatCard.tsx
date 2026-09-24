@@ -49,6 +49,11 @@ export interface AdminStatCardProps {
   href?: string;
   /** Small pill beside the value, e.g. "Needs Action". */
   badge?: React.ReactNode;
+  /**
+   * For a card whose `href` applies a list filter: marks it as the view now
+   * shown (outlined, and `aria-current` on the link).
+   */
+  active?: boolean;
   className?: string;
 }
 
@@ -70,6 +75,7 @@ export default function AdminStatCard({
   loading = false,
   href,
   badge,
+  active = false,
   className = "",
 }: AdminStatCardProps) {
   const displayValue = React.useMemo(() => {
@@ -140,12 +146,14 @@ export default function AdminStatCard({
     </>
   );
 
-  const baseClass = `bg-surface p-5 rounded-2xl border border-line shadow-xs flex flex-col justify-between ${className}`;
+  const borderClass = active ? "border-primary ring-1 ring-primary" : "border-line";
+  const baseClass = `bg-surface p-5 rounded-2xl border ${borderClass} shadow-xs flex flex-col justify-between ${className}`;
 
   if (href) {
     return (
       <Link
         href={href}
+        aria-current={active ? "true" : undefined}
         className={`${baseClass} transition-colors hover:bg-surface-alt focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary`}
       >
         {body}

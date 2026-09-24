@@ -1,6 +1,6 @@
 # MiniShop — Customer Support Ticket System Plan
 
-**Created:** 2026-09-24 · **Baseline commit:** `2463421` · **Status:** In progress (Tasks 1–8 of 12 done; backend complete, customer side complete)
+**Created:** 2026-09-24 · **Baseline commit:** `2463421` · **Status:** In progress (Tasks 1–9 of 12 done; backend complete, customer side complete)
 
 This is the plan and task list for the support ticket feature. Work through the tasks
 in §13 **one at a time, in order**. Each task is one commit. When a task is done, tick
@@ -473,7 +473,7 @@ plans:
 | 6 | Customer ticket list + new ticket form + profile nav item | frontend | ✅ Done |
 | 7 | Customer ticket conversation page | frontend | ✅ Done |
 | 8 | Customer entry points: order page, header menu, footer | frontend | ✅ Done |
-| 9 | Admin `/admin/support` ticket list | frontend | ☐ Not started |
+| 9 | Admin `/admin/support` ticket list | frontend | ✅ Done |
 | 10 | Admin ticket detail: thread, reply / internal note, status, priority, assignee | frontend | ☐ Not started |
 | 11 | *(optional)* Auto-close resolved tickets after 7 days | backend | ☐ Not started |
 | 12 | Regression run and documentation close-out | docs | ☐ Not started |
@@ -1192,20 +1192,122 @@ back); `npm run build` passes.
 
 **Goal.** Staff see and filter the ticket queue.
 
-- [ ] `lib/admin-navigation.ts`: `ADMIN_PERMISSIONS.supportView / supportReply /
+- [x] `lib/admin-navigation.ts`: `ADMIN_PERMISSIONS.supportView / supportReply /
       supportManage` and a **Support Tickets** nav item (`support_agent`, section
       Operations, `requiredPermissions: supportView`).
-- [ ] `app/admin/support/supportGovernance.tsx`: `canViewSupport`, `canReplySupport`,
+- [x] `app/admin/support/supportGovernance.tsx`: `canViewSupport`, `canReplySupport`,
       `canManageSupport`, `SupportAccessNotice`.
-- [ ] `AdminStatusBadge`: tones for the 5 statuses and 4 priorities.
-- [ ] `app/admin/support/page.tsx`: stat cards from `summary`, status tabs,
+- [x] `AdminStatusBadge`: tones for the 5 statuses and 4 priorities.
+- [x] `app/admin/support/page.tsx`: stat cards from `summary`, status tabs,
       `AdminFilterBar` (search, priority, category, assignee), `AdminDataTable` with the
       §7 columns, URL-synced filters, debounced search, 20 per page.
 
 **Done when.** A SUPPORT_TEAM user sees the queue and every filter works; a user without
 `support.staff.view` sees the access notice; `npm run build` passes.
 
-**Status:** ☐ Not started
+**Status:** ✅ Done 2026-09-24
+
+- **Navigation:**
+  - `ADMIN_PERMISSIONS.supportView / supportReply / supportManage` map to the three
+    `support.staff.*` codes, commented with their backend classes.
+  - **Support Tickets** sits under Operations after Payments. It appears in the sidebar
+    and, through the same list, in the dashboard's Operational Shortcuts. The sidebar's
+    prefix match keeps it lit on ticket pages.
+- **`AdminStatusBadge` tones:**
+  - Statuses: OPEN warning, IN_PROGRESS info, WAITING_ON_CUSTOMER accent, RESOLVED
+    success, CLOSED neutral.
+  - Priorities: LOW neutral, NORMAL info, HIGH warning, URGENT danger.
+  - None of these tokens was already in use, so no other module's badges change.
+- **`AdminStatCard`** gets an optional `active` prop, for a card used as a quick filter:
+  it adds a primary outline and `aria-current="true"`. Existing cards are unaffected.
+- **`supportGovernance.tsx`:**
+  - The three gates and the access notice (names `support.staff.view`).
+  - The status tabs, priority options (highest first), category options and sort
+    options.
+  - URL parsers, so an unknown value in a link (the backend would answer 400) falls
+    back to the default instead of breaking the list.
+  - The four queue-card definitions.
+- **The page:**
+  - **Queue cards:** Needs reply, Open, Unassigned, Assigned to me, from `summary`.
+    - Each is a link to exactly its own view on the Active tab, so the list shows the
+      number the card promised. The current sort is kept.
+    - The matching card is outlined.
+  - **Status tabs:** Active (the default; not in the URL), Open, In progress, Waiting
+    on customer, Resolved, Closed, All. Each shows its count from `summary`.
+  - **Filter bar:**
+    - Search, debounced 350 ms: ticket number, subject, customer, order number.
+    - Priority and Category.
+    - Assignee: Anyone / Me / Unassigned / each agent from `assignees`, with the
+      viewer marked "(you)". A link to someone no longer assignable still shows
+      "User #id".
+    - **Sort by** (added; the API already supported it): latest activity, oldest
+      activity, highest priority, newest tickets, oldest tickets.
+    - A **Needs reply only** checkbox, so the Needs reply card's filter stays visible
+      and removable.
+    - **Clear** resets the filters and sort, keeping the tab.
+  - **Everything lives in the URL.** Choosing a tab or filter resets the page number,
+    and the default tab and sort are left out.
+  - **Table:** needs-reply dot (accent), Ticket, Category, Priority, Status, Assignee,
+    Last activity ("27 min ago", with the full date on hover), 20 per page.
+  - **Refresh** reloads the list and counts; there is no polling here (D11).
+- **Layout change after the first browser pass:**
+  - At 1280 px the planned separate "Ticket no." column pushed Last activity off
+    screen. The ticket number now sits under the subject ("TKT… · customer"), and
+    category and assignee names wrap, so all columns fit at 1280.
+  - At phone width, priority, status and last activity move onto a line under the
+    subject, and those columns are hidden, so the table doesn't scroll sideways.
+  - Subjects are clamped to two lines. The first version paired `block` with
+    `line-clamp-1`; `block` wins the `display` property, so the clamp did nothing.
+- **Linking:** each subject links to `/admin/support/<ticket_number>`. **That page
+  arrives in Task 10**; until then the link opens the console's generic module
+  placeholder.
+- **Verified:**
+  - `npm run typecheck` passes. `npm run build` compiles, with `/admin/support` static.
+    `eslint` is clean on every changed file.
+  - **Browser:** headless Chrome over the DevTools protocol, against the production
+    build on `next start -p 3001` with Django on 8001. The owner's `next dev` on 3000
+    still answered 500 for new routes. The test Chrome used `--disable-web-security`,
+    because CORS allows only 3000.
+  - **Test data:** 22 tickets written straight through the ORM with fixed timestamps.
+    The list reads only ticket fields, the sort order is then predictable, and the
+    append-only audit log stayed at 22 support rows. The 22 tickets were: every status,
+    priority and category, 3 needing a reply, 2 unassigned, 3 assigned to the agent, 1
+    linked order, and 15 old closed ones for a second page.
+  - **Users:** throwaway `t9_agent` and `t9_agent2` (SUPPORT_TEAM), `t9_ops`
+    (OPERATION_MANAGER) and `t9_sales` (SALES_TEAM), logged in by token.
+  - **All 46 checks passed** with no console errors. Every list shown was compared,
+    row for row and in order, with the API's own answer for the same filters:
+    - **Sidebar:** entry under Operations, marked current on the page.
+    - **Default Active tab:** 6 rows. The needs-reply dots, the "(you)" / "Unassigned"
+      assignee labels and newest-first relative times all matched.
+    - **Cards and tabs:** the cards showed 3 / 2 / 2 / 3, and the tabs 6 / 2 / 2 / 1 /
+      1 / 16 / 22, all matching `summary`.
+    - **Each tab** showed only its status. All held 20 rows, page 2 the other 2, with
+      `page=2` in the URL. Changing tab dropped the page and `status=active` from the
+      URL.
+    - **Each card** opened exactly its list, and that card was marked current. The
+      filter bar showed the card's filter.
+    - **Each filter:** priority, category and a named assignee on their own, then High
+      + Me together (both in the URL). Clear reset them all.
+    - **The checkbox**, and **search** by subject word, ticket number, order number and
+      customer email, each reaching the URL after the debounce.
+    - **Both sorts:** highest priority (Urgent > … > Low) and oldest activity. Choosing
+      the default sort removed it from the URL.
+    - **Links in:** a shared link restored its filters. Clicking a card after a search
+      cleared the search box, and Back restored both the box and the list. Junk values
+      (`status=BOGUS&priority=NOPE&assigned=xyz&ordering=bad&page=abc`) fell back to the
+      defaults with no error.
+    - **Refresh** showed a priority changed in the database.
+    - **Layout:**
+      - At 1280 px no column is scrolled away.
+      - At 390 px there is no page or table overflow, and each row carries its
+        priority, status and time.
+      - A 150-character subject rendered as 2 lines at both widths, with the customer
+        line whole.
+    - **Roles:** OPERATION_MANAGER opened the queue. SALES_TEAM had no sidebar entry,
+      and the page showed the access notice naming `support.staff.view`.
+  - **Cleanup:** the 22 tickets and 4 users were deleted; the dev database has 0
+    tickets. Both servers were stopped.
 
 ---
 
