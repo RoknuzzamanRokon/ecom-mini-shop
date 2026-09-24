@@ -5,6 +5,7 @@ import { AuthProvider } from "@/context/AuthContext";
 import { ProfileProvider } from "@/context/ProfileContext";
 import { FavoritesProvider } from "@/context/FavoritesContext";
 import { CartProvider } from "@/context/CartContext";
+import { LocationProvider } from "@/context/LocationContext";
 import CartDrawer from "@/components/cart/CartDrawer";
 import ThemeSwitcher from "@/components/theme/ThemeSwitcher";
 
@@ -53,9 +54,11 @@ export default function RootLayout({
             <ProfileProvider>
               <FavoritesProvider>
                 <CartProvider>
-                  {children}
-                  <CartDrawer />
-                  <ThemeSwitcher />
+                  <LocationProvider>
+                    {children}
+                    <CartDrawer />
+                    <ThemeSwitcher />
+                  </LocationProvider>
                 </CartProvider>
               </FavoritesProvider>
             </ProfileProvider>

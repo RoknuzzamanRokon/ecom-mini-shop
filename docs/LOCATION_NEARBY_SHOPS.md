@@ -355,7 +355,7 @@ strings in `lat` (`1 OR 1=1`, `1);DROP`) → 400.
 | 1 | Harden and extend the nearby-shops API | backend | ✅ Done |
 | 2 | Geolocation helper + "Use My Current Location" on both shop forms | frontend | ✅ Done |
 | 3 | Admin API returns shop coordinates; admin shop page shows them | full-stack | ✅ Done |
-| 4 | Customer location context + nearby API client and types | frontend | ⬜ |
+| 4 | Customer location context + nearby API client and types | frontend | ✅ Done |
 | 5 | `/shops/nearby` page with radius control and result list | frontend | ⬜ |
 | 6 | Interactive map (Leaflet + OSM) on the nearby page | frontend | ⬜ |
 | 7 | Home page "Shops near you" bar + `/shops` entry link | frontend | ⬜ |
@@ -481,17 +481,31 @@ the message and manual entry still works; `npm run build` passes.
 
 **Goal.** One in-memory place for the customer's location, and a typed API call.
 
-- [ ] `src/context/LocationContext.tsx`: `status` (`idle` / `locating` / `ready` /
+- [x] `src/context/LocationContext.tsx`: `status` (`idle` / `locating` / `ready` /
       `error`), `position`, `error`, `permission` (from the Permissions API, if
       available), `requestLocation()`, `clearLocation()`. Memory only (D5).
-- [ ] Provider in `src/app/layout.tsx`.
-- [ ] `types.ts`: `NearbyShop`, `NearbyShopsResponse`. `api.ts`: `getNearbyShops()` —
+- [x] Provider in `src/app/layout.tsx`.
+- [x] `types.ts`: `NearbyShop`, `NearbyShopsResponse`. `api.ts`: `getNearbyShops()` —
       throws with the backend message (no demo fallback: the UI needs a real error
       state), accepts an `AbortSignal`. `NEARBY_RADIUS_OPTIONS` / default radius.
 
 **Done when.** Typecheck and build pass. (Nothing visible yet.)
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done 2026-09-24
+
+- The hook is `useCustomerLocation()`. `LocationProvider` sits innermost in the root
+  layout (inside `CartProvider`), around the page, `CartDrawer` and `ThemeSwitcher`.
+- `requestLocation()` shares one browser request between concurrent callers, resolves
+  with the position or `null`, and keeps the previous position when a refresh fails.
+  A `denied` result also sets `permission` to `"denied"`; `permission` follows the
+  Permissions API's `change` event where the browser has one.
+- Customer readings accept a cached position up to 60 s old (`maximumAge`).
+- `getNearbyShops()` sends coordinates at 6 dp, uses the backend's `error` text only
+  for a 400, turns network failures into "Check your connection", and passes an abort
+  through untouched. `parseNearbyRadius()` maps a `?radius=` value to one of the
+  options, else the 5 km default.
+- Verified: `npm run typecheck`, `npm run build` and `eslint` on the new context pass.
+  Exercised in a real browser through the Task 5 page.
 
 ---
 

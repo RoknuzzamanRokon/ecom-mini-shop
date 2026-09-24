@@ -1,4 +1,4 @@
-import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse, Favorite, PasswordChangePayload, SellerProfile, SellerDashboardData, SellerShop, SellerWallet, PointTransaction, Review, ReviewCreatePayload, ReviewOrdering, ReviewUpdatePayload, ShopReview, ShopReviewCreatePayload, MyReviews } from "./types";
+import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse, Favorite, PasswordChangePayload, SellerProfile, SellerDashboardData, SellerShop, SellerWallet, NearbyShopsResponse, PointTransaction, Review, ReviewCreatePayload, ReviewOrdering, ReviewUpdatePayload, ShopReview, ShopReviewCreatePayload, MyReviews } from "./types";
 
 import { refreshTokenOnce } from "./auth";
 
@@ -377,6 +377,59 @@ export async function getShops(params?: {
     console.warn("Failed to fetch shops list:", err);
     return { count: 0, next: null, previous: null, results: [] };
   }
+}
+
+/** Radius choices (km) for nearby-shop search. The backend rejects anything over 50 km. */
+export const NEARBY_RADIUS_OPTIONS = [1, 2, 5, 10, 20, 50] as const;
+export const DEFAULT_NEARBY_RADIUS_KM = 5;
+
+/** A `?radius=` value if it is one of NEARBY_RADIUS_OPTIONS, else the default. */
+export function parseNearbyRadius(value: string | null | undefined): number {
+  const radius = Number(value);
+  return (NEARBY_RADIUS_OPTIONS as readonly number[]).includes(radius)
+    ? radius
+    : DEFAULT_NEARBY_RADIUS_KM;
+}
+
+/**
+ * Public shops within `radiusKm` of a point, nearest first (GET /api/shops/nearby/).
+ *
+ * Unlike the other public reads above there is no demo fallback: a failure
+ * throws with the backend's message, because the nearby page shows a real
+ * error and retry state rather than invented shops. The coordinates are sent
+ * only in this request and are not stored anywhere by the frontend.
+ */
+export async function getNearbyShops(
+  params: { latitude: number; longitude: number; radiusKm: number },
+  signal?: AbortSignal
+): Promise<NearbyShopsResponse> {
+  const query = new URLSearchParams({
+    lat: params.latitude.toFixed(6),
+    lng: params.longitude.toFixed(6),
+    radius: String(params.radiusKm),
+  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/api/shops/nearby/?${query.toString()}`, {
+      cache: "no-store",
+      signal,
+    });
+  } catch (err) {
+    // An abort is the caller's own doing; pass it through untouched.
+    if (signal?.aborted) throw err;
+    throw new Error("Nearby shops couldn't be loaded. Check your connection and try again.");
+  }
+  if (!res.ok) {
+    let message = "Nearby shops couldn't be loaded. Please try again.";
+    try {
+      const body = await res.json();
+      if (res.status === 400 && typeof body?.error === "string") message = body.error;
+    } catch {
+      // Non-JSON error page: keep the generic message.
+    }
+    throw new Error(message);
+  }
+  return res.json();
 }
 
 export async function getHotDeal(): Promise<Product | null> {

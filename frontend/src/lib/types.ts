@@ -61,6 +61,22 @@ export interface Shop {
   created_at: string;
 }
 
+/** One GET /api/shops/nearby/ result: the public shop card plus its distance from the search point. */
+export interface NearbyShop extends Shop {
+  /** Great-circle distance, 3 decimal places. */
+  distance_km: number;
+  distance_meters: number;
+}
+
+export interface NearbyShopsResponse {
+  /** Every public shop with coordinates inside the radius; `results` may hold fewer. */
+  count: number;
+  radius_km: number;
+  /** The most shops `results` can hold (nearest first). */
+  limit: number;
+  results: NearbyShop[];
+}
+
 export interface ProductFilterParams {
   category?: string;
   q?: string;
