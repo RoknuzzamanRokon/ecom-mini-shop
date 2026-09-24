@@ -7,6 +7,7 @@ import Footer from "@/components/layout/Footer";
 import CategorySidebar from "@/components/home/CategorySidebar";
 import HotDealWidget from "@/components/home/HotDealWidget";
 import HeroBanner from "@/components/home/HeroBanner";
+import NearbyShopsBar from "@/components/home/NearbyShopsBar";
 import ProductGrid from "@/components/home/ProductGrid";
 import Pagination from "@/components/home/Pagination";
 import { Category, Product } from "@/lib/types";
@@ -97,6 +98,9 @@ export default function HomePage() {
 
           {/* RIGHT MAIN AREA: Banner, Product Grid & Pagination (full width on mobile, 9 columns on lg) */}
           <section className="w-full lg:col-span-9 flex flex-col gap-6">
+            {/* Nearby-shop discovery: separate from product search and optional. */}
+            <NearbyShopsBar />
+
             <HeroBanner
               activeCategory={selectedCategory}
               categories={categories}

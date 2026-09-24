@@ -358,7 +358,7 @@ strings in `lat` (`1 OR 1=1`, `1);DROP`) → 400.
 | 4 | Customer location context + nearby API client and types | frontend | ✅ Done |
 | 5 | `/shops/nearby` page with radius control and result list | frontend | ✅ Done |
 | 6 | Interactive map (Leaflet + OSM) on the nearby page | frontend | ✅ Done |
-| 7 | Home page "Shops near you" bar + `/shops` entry link | frontend | ⬜ |
+| 7 | Home page "Shops near you" bar + `/shops` entry link | frontend | ✅ Done |
 | 8 | Regression run and documentation close-out | docs | ⬜ |
 
 **The requested feature is complete after Task 7.** Task 8 records the final checks.
@@ -609,14 +609,32 @@ build passes.
 
 **Goal.** Customers can find the feature from the home page and the shop directory.
 
-- [ ] `src/components/home/NearbyShopsBar.tsx` with the states from §6; placed at the
+- [x] `src/components/home/NearbyShopsBar.tsx` with the states from §6; placed at the
       top of the home page main column.
-- [ ] `/shops`: "Find Nearby Shops" link next to the sort control.
-- [ ] Product search and the hero carousel behave exactly as before.
+- [x] `/shops`: "Find Nearby Shops" link next to the sort control.
+- [x] Product search and the hero carousel behave exactly as before.
 
 **Done when.** Build passes; the bar works at phone width.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done 2026-09-24
+
+- The bar reuses `CustomerLocationControl` (off / locating / on with Update location and
+  Clear / failed with Try again), plus a radius `<select>` and an accent **Find Nearby
+  Shops** button, matching the header's search button. Find asks for the location only
+  if there isn't one yet. If that fails it stays on the home page, where the control now
+  shows the reason. Otherwise it goes to `/shops/nearby?radius=N`.
+- On `xl` screens everything sits on one row; below that the control stacks above the
+  radius + button row. The options read "5 km" (not "Within 5 km") so the select fits
+  at 320 px.
+- Verified in headless Chrome against the dev API: with permission denied the home
+  page loads its 13 product links and the carousel as before; Find stays on `/` and
+  shows the blocked message with Try again, and the grid is unchanged; typing in the
+  header search still filters the grid (13 → 1, the hot-deal link). With permission
+  granted: Use My Current Location → "Using your current location", ±25 m; radius 10 +
+  Find → `/shops/nearby?radius=10`, 4 cards, the 10 km chip pressed; `/shops` → Find
+  Nearby Shops → `/shops/nearby`. No horizontal overflow at 320, 390 or 768 px, and
+  the sidebar is still hidden on phones. No console errors. `npm run typecheck`,
+  `npm run build` and `eslint` on the changed files pass.
 
 ---
 

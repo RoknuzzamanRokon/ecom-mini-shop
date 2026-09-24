@@ -98,15 +98,26 @@ export default function ShopsDirectoryPage() {
             </div>
           </div>
 
-          <select
-            value={ordering}
-            onChange={handleOrderingChange}
-            aria-label="Sort shops"
-            className="bg-surface-alt border border-line rounded-lg px-3 py-2 text-xs font-medium text-ink focus:outline-hidden focus:border-primary cursor-pointer"
-          >
-            <option value="newest">Sort: Newest First</option>
-            <option value="-rating">Top Rated</option>
-          </select>
+          <div className="flex items-center gap-2 flex-wrap">
+            <Link
+              href="/shops/nearby"
+              className="inline-flex items-center gap-1.5 bg-primary hover:bg-primary-hover text-on-primary rounded-lg px-3 py-2 text-xs font-bold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+                near_me
+              </span>
+              Find Nearby Shops
+            </Link>
+            <select
+              value={ordering}
+              onChange={handleOrderingChange}
+              aria-label="Sort shops"
+              className="bg-surface-alt border border-line rounded-lg px-3 py-2 text-xs font-medium text-ink focus:outline-hidden focus:border-primary cursor-pointer"
+            >
+              <option value="newest">Sort: Newest First</option>
+              <option value="-rating">Top Rated</option>
+            </select>
+          </div>
         </div>
 
         {/* Shop Grid */}
