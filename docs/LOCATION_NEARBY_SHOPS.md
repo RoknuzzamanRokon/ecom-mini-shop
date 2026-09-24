@@ -356,7 +356,7 @@ strings in `lat` (`1 OR 1=1`, `1);DROP`) → 400.
 | 2 | Geolocation helper + "Use My Current Location" on both shop forms | frontend | ✅ Done |
 | 3 | Admin API returns shop coordinates; admin shop page shows them | full-stack | ✅ Done |
 | 4 | Customer location context + nearby API client and types | frontend | ✅ Done |
-| 5 | `/shops/nearby` page with radius control and result list | frontend | ⬜ |
+| 5 | `/shops/nearby` page with radius control and result list | frontend | ✅ Done |
 | 6 | Interactive map (Leaflet + OSM) on the nearby page | frontend | ⬜ |
 | 7 | Home page "Shops near you" bar + `/shops` entry link | frontend | ⬜ |
 | 8 | Regression run and documentation close-out | docs | ⬜ |
@@ -513,16 +513,44 @@ the message and manual entry still works; `npm run build` passes.
 
 **Goal.** A customer sees nearby shops as a list, with every state from §6.
 
-- [ ] `src/app/shops/nearby/page.tsx` (+ `Suspense` for `useSearchParams`): location
+- [x] `src/app/shops/nearby/page.tsx` (+ `Suspense` for `useSearchParams`): location
       prompt, radius chips synced to `?radius=`, auto-locate only when permission is
       already granted, fetch with abort, all states from §6.
-- [ ] `src/components/shops/NearbyShopCard.tsx`: logo, name, stars, address, distance
+- [x] `src/components/shops/NearbyShopCard.tsx`: logo, name, stars, address, distance
       badge, View Shop; selected state.
 
 **Done when.** The page works end to end against the dev API without a map; build
 passes.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done 2026-09-24
+
+- Two more components than planned, both reused by Task 7:
+  `components/location/CustomerLocationControl.tsx` (status line + Use My Current
+  Location / Try again / Update location / Clear, one `role="status"` region) and
+  `components/shops/NearbyRadiusPicker.tsx` (radius chips with `aria-pressed`, inside a
+  `fieldset`). On this page the control hides its start buttons, because the page body
+  already offers them.
+- Each card has a rank number (1 = nearest), matching the map markers coming in Task 6.
+  The list is an `<ol>`. "View Shop" is a `next/link`, so the in-memory location
+  survives the trip; a click anywhere else on the card selects it.
+- Fetching keys each response by (lat, lng, radius, retry count). Loading is derived
+  from "no response for the current key", so no `setState` runs inside the effect
+  body, and a late response for an old radius can't overwrite a newer one (the old
+  request is also aborted).
+- Auto-locate happens at most once per visit, and never after a position has been seen
+  on the page. The first browser run showed that without the second rule, **Clear**
+  after returning with Back located the customer again straight away.
+- Empty state offers the next radius up; errors offer Retry; every no-location state
+  links to `/shops`.
+- Verified in headless Chrome (DevTools protocol, geolocation permission and position
+  set per run) against the dev API: denied → prompt, then the blocked message with
+  Try again and Browse all shops; granted at 23.78, 90.40 → located on arrival, "4 shops
+  within 5 km", nearest first (Urban Thread 1.6 km … Bloom & Home 4.6 km); 1 km → empty
+  state, "Search within 2 km" → `?radius=2`, 1 shop; card click selects; View Shop
+  → `/shop/urban-thread` in the same document; Back → results again with the location
+  kept; Clear → prompt and no re-locate; 390 px wide → no horizontal overflow, chips
+  scroll. No console errors. `npm run typecheck`, `npm run build` (`/shops/nearby`
+  prerenders as static) and `eslint` on the new files pass.
 
 ---
 
