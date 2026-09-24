@@ -1,6 +1,6 @@
 # MiniShop — Customer Support Ticket System Plan
 
-**Created:** 2026-09-24 · **Baseline commit:** `2463421` · **Status:** Not started (0 of 12 tasks done)
+**Created:** 2026-09-24 · **Baseline commit:** `2463421` · **Status:** In progress (Task 1 of 12 done)
 
 This is the plan and task list for the support ticket feature. Work through the tasks
 in §13 **one at a time, in order**. Each task is one commit. When a task is done, tick
@@ -462,7 +462,7 @@ plans:
 
 | Task | Title | Side | Status |
 |---|---|---|---|
-| 1 | `support` app: models, migration, private storage, read-only Django admin, permission codes | backend | ☐ Not started |
+| 1 | `support` app: models, migration, private storage, read-only Django admin, permission codes | backend | ✅ Done |
 | 2 | `SupportTicketService` + attachment validator | backend | ☐ Not started |
 | 3 | Customer API | backend | ☐ Not started |
 | 4 | Staff API | backend | ☐ Not started |
@@ -483,29 +483,62 @@ the final checks.
 **Goal.** The database and permissions for tickets exist. Nothing is reachable through
 the API yet.
 
-- [ ] Create the `support` app (`apps.py`, `__init__.py`) and add it to
+- [x] Create the `support` app (`apps.py`, `__init__.py`) and add it to
       `INSTALLED_APPS` (`config/settings/base.py`).
-- [ ] `PRIVATE_MEDIA_ROOT = BASE_DIR / "private_media"` in `base.py`;
+- [x] `PRIVATE_MEDIA_ROOT = BASE_DIR / "private_media"` in `base.py`;
       `private_media/` in `backend/.gitignore`.
-- [ ] `support/storage.py`: a callable returning a `FileSystemStorage` on
+- [x] `support/storage.py`: a callable returning a `FileSystemStorage` on
       `settings.PRIVATE_MEDIA_ROOT` (no `base_url`), plus the
       `support/<yyyy>/<mm>/<uuid>.<ext>` `upload_to` function.
-- [ ] `support/models.py`: `SupportTicket`, `TicketMessage`, `TicketAttachment` exactly
+- [x] `support/models.py`: `SupportTicket`, `TicketMessage`, `TicketAttachment` exactly
       as §5, with choices, `VALID_TRANSITIONS`, `can_transition_to()`, `is_closed`,
       indexes and `__str__`.
-- [ ] Migration `support/migrations/0001_initial.py`.
-- [ ] `support/admin.py`: ticket admin with list filters (status, priority, category),
+- [x] Migration `support/migrations/0001_initial.py`.
+- [x] `support/admin.py`: ticket admin with list filters (status, priority, category),
       search (ticket number, subject, customer email), read-only message and attachment
       inlines; `status` / `assigned_to` read-only; no add, no delete (D16).
-- [ ] `seed_rbac.py`: the five codes in `PERMISSIONS_DATA`, the role grants from §4, and
+- [x] `seed_rbac.py`: the five codes in `PERMISSIONS_DATA`, the role grants from §4, and
       the three `support.staff.*` codes in `FORBIDDEN_ROLE_PERMISSIONS[CUSTOMER]`.
-- [ ] Tests: the transition table; `seed_rbac` grants per role; the CUSTOMER denylist
+- [x] Tests: the transition table; `seed_rbac` grants per role; the CUSTOMER denylist
       heals a bad grant; the upload path is a UUID under `support/`.
 
 **Done when.** `manage.py test support` passes; `manage.py check` is clean;
 `makemigrations --check` reports no changes.
 
-**Status:** ☐ Not started
+**Status:** ✅ Done 2026-09-24
+
+- **Storage.** `PrivateMediaStorage` reads `PRIVATE_MEDIA_ROOT` on every access instead
+  of caching it, so `override_settings` works in tests. Its `url()` raises
+  `ValueError`, so nothing can accidentally hand out a public link. The upload path
+  keeps only a known extension (`jpg`, `png`, `webp`, `pdf`; `jpeg` becomes `jpg`).
+  Anything else is stored as an inert `.bin`, and the client's file name never reaches
+  the disk.
+- **Model constants for later tasks:** `CUSTOMER_REOPEN_STATUSES` (WAITING / RESOLVED)
+  and `UNRESOLVED_STATUSES` (the D13 cap). `can_transition_to()` is the staff table only;
+  the service applies the customer moves.
+- **Wider than planned:**
+  - A database `CHECK` constraint, `support_msg_customer_not_internal`: a customer's
+    message can never be internal.
+  - The Django admin is fully **view-only**, stricter than "status/assignee read-only":
+    no field is editable, and add/change/delete all return 403. Attachments appear in
+    the message inline by name and size only, because they have no URL.
+  - `rbac/widgets.py` `RESOURCE_META` gets a "Support tickets" group
+    (`support_agent`, weight 170) for the Django-admin permission board.
+- **Indexes.** Names are shortened to fit Django's 30-character limit
+  (`support_tkt_cust_act_idx`, `support_tkt_status_act_idx`, `support_tkt_assignee_idx`,
+  `support_msg_tkt_created_idx`). `status` has no index of its own, because the
+  (`status`, `-last_activity_at`) index covers it.
+- **Roles.** OPERATION_MANAGER gets `support.staff.view` + `support.staff.reply` (no
+  `manage`), with a comment in `seed_rbac.py` saying why.
+- **Verified:** `manage.py test support` **34/34 OK** in 87 s on a throwaway
+  `test_minishop_sup1` database (created, then destroyed). The 34 cover: every
+  transition pair; the check constraint; ticket-number uniqueness; the ticket surviving
+  its customer's deletion; files landing under the private root and not `MEDIA_ROOT`;
+  no public URL; path sanitising; per-role grants; the CUSTOMER denylist healing a bad
+  grant; the admin refusing add/change/delete. `manage.py check` is clean and
+  `makemigrations --check` reports no changes.
+- **Dev database:** not migrated yet. `migrate` + `seed_rbac` are due once Task 4 is in
+  (§10).
 
 ---
 

@@ -78,6 +78,12 @@ PERMISSIONS_DATA = [
     # Reviews
     ("reviews.create", "Create Reviews", "reviews", "create", "Can submit product ratings and reviews"),
     ("reviews.moderate", "Moderate Reviews", "reviews", "moderate", "Can hide and restore product and shop reviews"),
+    # Support Tickets
+    ("support.view", "View Own Support Tickets", "support", "view", "Can list and read their own support tickets and attachments"),
+    ("support.create", "Create Support Tickets", "support", "create", "Can open support tickets, and reply to and close their own tickets"),
+    ("support.staff.view", "View Support Tickets (Staff)", "support", "staff_view", "Can view every customer's support tickets, including internal notes (Staff)"),
+    ("support.staff.reply", "Reply to Support Tickets (Staff)", "support", "staff_reply", "Can reply to customers and add internal notes, and can be assigned tickets (Staff)"),
+    ("support.staff.manage", "Manage Support Tickets (Staff)", "support", "staff_manage", "Can change a ticket's status, priority, category and assignee (Staff)"),
     # Admin Governance Permissions
     ("users.admin.view", "View Admin Users", "users", "admin_view", "Can view admin user accounts"),
     ("users.admin.manage", "Manage Admin Users", "users", "admin_manage", "Can manage admin users, roles, and statuses"),
@@ -162,6 +168,7 @@ ROLE_PERMISSIONS_MAPPING = {
         "categories.admin.manage",
         "customers.admin.view",
         "reviews.moderate",
+        "support.staff.view", "support.staff.reply", "support.staff.manage",
     ],
     Role.ROLE_OPERATION_MANAGER: [
         "products.view", "products.approve", "products.reject", "products.publish",
@@ -178,6 +185,9 @@ ROLE_PERMISSIONS_MAPPING = {
         # there is no 'customers.admin.manage' in PERMISSIONS_DATA, and the
         # admin customer endpoints expose GET only.
         "customers.admin.view",
+        # Operations answers delivery questions on tickets, but triage
+        # (status, priority, assignment) stays with Support.
+        "support.staff.view", "support.staff.reply",
     ],
     Role.ROLE_SALES_MANAGER: [
         "sellers.view", "sellers.create", "sellers.update", "sellers.approve",
@@ -215,6 +225,7 @@ ROLE_PERMISSIONS_MAPPING = {
         "inventory.view",
         # Support handles complaints, which includes abusive reviews.
         "reviews.moderate",
+        "support.staff.view", "support.staff.reply", "support.staff.manage",
     ],
     Role.ROLE_CUSTOMER: [
         "profile.view", "profile.update",
@@ -223,6 +234,7 @@ ROLE_PERMISSIONS_MAPPING = {
         "orders.view", "orders.create", "orders.cancel",
         "payments.create",
         "reviews.create",
+        "support.view", "support.create",
     ],
 }
 
@@ -247,8 +259,18 @@ ROLE_PERMISSIONS_MAPPING = {
 # every run, for already-seeded databases, without touching any other
 # role/permission an administrator may have intentionally customized via the
 # Roles admin API.
+#
+# The 'support.staff.*' codes follow the same reasoning: the staff support
+# endpoints read every customer's tickets, including staff-only internal notes.
+# A customer only ever needs 'support.view' / 'support.create', which the
+# customer endpoints scope to their own tickets.
 FORBIDDEN_ROLE_PERMISSIONS = {
-    Role.ROLE_CUSTOMER: {"payments.view"},
+    Role.ROLE_CUSTOMER: {
+        "payments.view",
+        "support.staff.view",
+        "support.staff.reply",
+        "support.staff.manage",
+    },
 }
 
 

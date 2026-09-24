@@ -267,6 +267,7 @@ RESOURCE_META = {
     "address": ("Addresses", "home_pin", 140),
     "cart": ("Carts", "shopping_cart", 150),
     "reviews": ("Reviews", "reviews", 160),
+    "support": ("Support tickets", "support_agent", 170),
 }
 
 WILDCARD_CODE = "*"

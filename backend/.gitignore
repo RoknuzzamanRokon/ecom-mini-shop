@@ -13,3 +13,6 @@ Thumbs.db
 staticfiles/
 .idea/
 .vscode/
+
+# Private uploads (support ticket attachments) — never commit
+private_media/

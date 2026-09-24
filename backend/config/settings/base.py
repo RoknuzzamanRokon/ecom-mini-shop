@@ -66,6 +66,7 @@ INSTALLED_APPS = [
     'customers',
     'cart',
     'shop',
+    'support',
 ]
 
 MIDDLEWARE = [
@@ -178,6 +179,12 @@ STATICFILES_DIRS = [BASE_DIR / 'static']
 
 MEDIA_URL = 'media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+# Files that must never be publicly reachable (support ticket attachments).
+# Deliberately outside MEDIA_ROOT, which is served whenever DEBUG is on, and
+# never given a URL: support/storage.py serves them only through authenticated
+# download endpoints.
+PRIVATE_MEDIA_ROOT = BASE_DIR / 'private_media'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
