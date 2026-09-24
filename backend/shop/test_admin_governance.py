@@ -1451,6 +1451,47 @@ class AdminShopCreationTests(APITestCase):
         res = self.client.post("/api/admin/shops/", data=self._payload(name="   "), format="json")
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_coordinates_are_stored_and_returned(self):
+        """Coordinates sent at creation (typed, or filled by the browser) are saved and echoed back."""
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post(
+            "/api/admin/shops/",
+            data=self._payload(latitude=23.8103457, longitude=90.4125123),
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertAlmostEqual(res.data["latitude"], 23.8103457, places=6)
+        self.assertAlmostEqual(res.data["longitude"], 90.4125123, places=6)
+
+        shop = Shop.objects.get(pk=res.data["id"])
+        self.assertAlmostEqual(shop.latitude, 23.8103457, places=6)
+        self.assertAlmostEqual(shop.longitude, 90.4125123, places=6)
+
+        detail = self.client.get(f"/api/admin/shops/{shop.id}/")
+        self.assertAlmostEqual(detail.data["latitude"], 23.8103457, places=6)
+
+    def test_shop_without_coordinates_reports_null(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.post("/api/admin/shops/", data=self._payload(), format="json")
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertIsNone(res.data["latitude"])
+        self.assertIsNone(res.data["longitude"])
+
+    def test_out_of_range_coordinates_rejected(self):
+        """The backend, not the browser, decides what a valid coordinate is."""
+        self.client.force_authenticate(user=self.admin)
+        for name, coords in (
+            ("Bad Latitude Shop", {"latitude": 95.0, "longitude": 90.4}),
+            ("Bad Longitude Shop", {"latitude": 23.8, "longitude": -180.5}),
+            ("Half Coordinate Shop", {"latitude": 23.8}),
+        ):
+            with self.subTest(name=name):
+                res = self.client.post(
+                    "/api/admin/shops/", data=self._payload(name=name, **coords), format="json"
+                )
+                self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+                self.assertFalse(Shop.objects.filter(name=name).exists())
+
     def test_reason_is_required(self):
         payload = self._payload()
         del payload["reason"]

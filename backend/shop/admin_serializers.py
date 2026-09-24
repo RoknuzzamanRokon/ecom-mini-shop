@@ -456,6 +456,9 @@ class AdminShopSerializer(serializers.ModelSerializer):
     owner_id = serializers.IntegerField(source="owner.id", read_only=True)
     owner_business_name = serializers.CharField(source="owner.business_name", read_only=True)
     products_count = serializers.SerializerMethodField()
+    # Shop.latitude / Shop.longitude: None while the shop is at the POINT(0 0) default.
+    latitude = serializers.FloatField(read_only=True)
+    longitude = serializers.FloatField(read_only=True)
 
     class Meta:
         model = Shop
@@ -468,6 +471,8 @@ class AdminShopSerializer(serializers.ModelSerializer):
             "description",
             "phone",
             "address",
+            "latitude",
+            "longitude",
             "status",
             "rejection_reason",
             "suspension_reason",

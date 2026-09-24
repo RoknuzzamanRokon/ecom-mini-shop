@@ -8,6 +8,7 @@ import { getAuthToken } from "@/lib/auth";
 import { AdminApiError, AdminShop, getAdminShopDetail } from "@/lib/admin-api";
 import { formatDateTime } from "@/lib/admin-format";
 import { AdminConfirmModal, AdminStatusBadge } from "@/components/admin/shared";
+import { CoordinateMapLink } from "@/components/location/UseCurrentLocationButton";
 import {
   SHOP_STATUS_LABELS,
   getAvailableShopActions,
@@ -218,6 +219,26 @@ export default function AdminShopDetailPage() {
           <dl>
             <InfoRow label="Phone" value={shop.phone || "—"} />
             <InfoRow label="Address" value={shop.address || "—"} />
+            <InfoRow
+              label="Coordinates"
+              value={
+                shop.latitude != null && shop.longitude != null ? (
+                  <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                    <span className="font-mono">
+                      {shop.latitude}, {shop.longitude}
+                    </span>
+                    <CoordinateMapLink
+                      latitude={String(shop.latitude)}
+                      longitude={String(shop.longitude)}
+                    />
+                  </span>
+                ) : (
+                  <span className="text-ink-muted">
+                    Not set — the shop won&apos;t appear in nearby-shop search.
+                  </span>
+                )
+              }
+            />
           </dl>
         </div>
 

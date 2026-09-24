@@ -354,7 +354,7 @@ strings in `lat` (`1 OR 1=1`, `1);DROP`) → 400.
 |---|---|---|---|
 | 1 | Harden and extend the nearby-shops API | backend | ✅ Done |
 | 2 | Geolocation helper + "Use My Current Location" on both shop forms | frontend | ✅ Done |
-| 3 | Admin API returns shop coordinates; admin shop page shows them | full-stack | ⬜ |
+| 3 | Admin API returns shop coordinates; admin shop page shows them | full-stack | ✅ Done |
 | 4 | Customer location context + nearby API client and types | frontend | ⬜ |
 | 5 | `/shops/nearby` page with radius control and result list | frontend | ⬜ |
 | 6 | Interactive map (Leaflet + OSM) on the nearby page | frontend | ⬜ |
@@ -450,15 +450,30 @@ the message and manual entry still works; `npm run build` passes.
 
 **Goal.** After creating a shop, the admin can see the coordinates that were saved.
 
-- [ ] `AdminShopSerializer`: add read-only `latitude`, `longitude`.
-- [ ] `AdminShop` type (`admin-api.ts`) + its doc comment; admin shop detail
+- [x] `AdminShopSerializer`: add read-only `latitude`, `longitude`.
+- [x] `AdminShop` type (`admin-api.ts`) + its doc comment; admin shop detail
       "Contact & Location" shows the coordinates and a map link, or "Not set".
-- [ ] Tests: create with coordinates stores and returns them; latitude 95 → 400, no
+- [x] Tests: create with coordinates stores and returns them; latitude 95 → 400, no
       shop created.
 
 **Done when.** Tests pass; `npm run build` passes.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done 2026-09-24
+
+- The fields come from the `Shop.latitude` / `longitude` properties, so a shop at
+  `POINT(0 0)` reports `null` and the detail page says "Not set — the shop won't
+  appear in nearby-shop search."
+- The admin list endpoint returns the same two fields (it shares the serializer); the
+  list page doesn't show them.
+- New tests (3) in `AdminShopCreationTests`: create with coordinates → stored, in the
+  create response and in `GET /api/admin/shops/<id>/`; create without → both `null`;
+  latitude 95, longitude −180.5, or latitude alone → 400 and no shop created.
+- Verified: `shop.test_admin_governance` **86/86 OK** (83 existing + 3 new) in 360 s
+  on a throwaway `test_minishop_loc3` database. `npm run typecheck` and
+  `npm run build` pass. Not checked in a browser (the admin console needs a staff
+  login this session doesn't have).
+- Pre-existing, left alone: `eslint` flags `react-hooks/set-state-in-effect` at
+  `admin/shops/[id]/page.tsx:88`, on code this task didn't touch.
 
 ---
 

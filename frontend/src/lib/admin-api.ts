@@ -234,8 +234,8 @@ export async function getAdminAuditLogs(
  * That serializer is entirely read_only — every field below is exactly what
  * GET /api/admin/shops/ and /api/admin/shops/<id>/ return, nothing more.
  * Notably absent (and therefore NOT rendered anywhere in the admin UI):
- * logo, cover_image, location/coordinates, reviewed_by. The serializer does
- * not expose them, so the admin console cannot either.
+ * logo, cover_image, reviewed_by. The serializer does not expose them, so the
+ * admin console cannot either.
  */
 export interface AdminShop {
   id: number;
@@ -246,6 +246,9 @@ export interface AdminShop {
   description: string;
   phone: string;
   address: string;
+  /** null while the shop has no coordinates (the POINT(0 0) default). */
+  latitude: number | null;
+  longitude: number | null;
   status: string;
   rejection_reason: string;
   suspension_reason: string;
