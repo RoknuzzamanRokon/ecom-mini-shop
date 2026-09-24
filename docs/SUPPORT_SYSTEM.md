@@ -537,6 +537,8 @@ the API yet.
   no public URL; path sanitising; per-role grants; the CUSTOMER denylist healing a bad
   grant; the admin refusing add/change/delete. `manage.py check` is clean and
   `makemigrations --check` reports no changes.
+- **Regression:** the `rbac` suite, which covers `seed_rbac` and the permission board,
+  passed **69/69 OK** in 671 s on a throwaway `test_minishop_sup1r` database.
 - **Dev database:** not migrated yet. `migrate` + `seed_rbac` are due once Task 4 is in
   (§10).
 
