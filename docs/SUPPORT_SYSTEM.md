@@ -1,6 +1,6 @@
 # MiniShop — Customer Support Ticket System Plan
 
-**Created:** 2026-09-24 · **Baseline commit:** `2463421` · **Status:** In progress (Tasks 1–2 of 12 done)
+**Created:** 2026-09-24 · **Baseline commit:** `2463421` · **Status:** In progress (Tasks 1–3 of 12 done)
 
 This is the plan and task list for the support ticket feature. Work through the tasks
 in §13 **one at a time, in order**. Each task is one commit. When a task is done, tick
@@ -467,7 +467,7 @@ plans:
 |---|---|---|---|
 | 1 | `support` app: models, migration, private storage, read-only Django admin, permission codes | backend | ✅ Done |
 | 2 | `SupportTicketService` + attachment validator | backend | ✅ Done |
-| 3 | Customer API | backend | ☐ Not started |
+| 3 | Customer API | backend | ✅ Done |
 | 4 | Staff API | backend | ☐ Not started |
 | 5 | Frontend foundation: types, API clients, shared support components | frontend | ☐ Not started |
 | 6 | Customer ticket list + new ticket form + profile nav item | frontend | ☐ Not started |
@@ -645,22 +645,74 @@ the API yet.
 
 **Goal.** A customer can open, read, answer and close their own tickets over the API.
 
-- [ ] `support/permissions.py`: `CanViewOwnSupportTickets` (`support.view`) and
+- [x] `support/permissions.py`: `CanViewOwnSupportTickets` (`support.view`) and
       `CanCreateSupportTickets` (`support.create`), in the `CanModerateReviews` style.
-- [ ] `support/serializers.py`: create (multipart, field validation from D3), customer
+- [x] `support/serializers.py`: create (multipart, field validation from D3), customer
       ticket list, customer ticket detail with public messages only and staff names per
       D14, reply.
-- [ ] `support/views.py` + `support/urls.py` (`app_name = "support"`): every customer
+- [x] `support/views.py` + `support/urls.py` (`app_name = "support"`): every customer
       route in §6. Querysets are scoped to `request.user`; `ticket_number` lookups give
       404 off-scope; the detail GET marks the ticket read; the attachment view returns a
       `FileResponse` with `nosniff`, the detected content type and a cleaned file name.
-- [ ] Mount it with `path("api/support/", include("support.urls"))` in `config/urls.py`
+- [x] Mount it with `path("api/support/", include("support.urls"))` in `config/urls.py`
       (**before** the `api/` customers include).
-- [ ] Tests: the customer API cases from §12.
+- [x] Tests: the customer API cases from §12.
 
 **Done when.** Tests pass; the §6 example shape comes back from the detail endpoint.
 
-**Status:** ☐ Not started
+**Status:** ✅ Done 2026-09-24
+
+- **Contract as built** (the frontend in Tasks 5–7 relies on it):
+  - `POST tickets/`, `POST tickets/<n>/messages/` and `POST tickets/<n>/close/` all
+    return the **full customer ticket detail**: 201, 201 and 200. The plan said reply
+    would return "message + status"; returning the whole ticket lets the page swap its
+    state in one step.
+  - Files go in a repeated `attachments` multipart field.
+  - `GET tickets/?status=` accepts `open` (everything except CLOSED), `closed`, `all`
+    (the default). Anything else → 400.
+  - The list is `{count, next, previous, results}`, 10 per page, newest activity first.
+  - Customer status labels: `OPEN` "Open", `IN_PROGRESS` "In progress",
+    `WAITING_ON_CUSTOMER` **"Waiting on you"**, `RESOLVED` "Resolved", `CLOSED` "Closed".
+  - Author names: the customer's own messages read **"You"**. Staff messages read
+    "<first name> · MiniShop Support", or just "MiniShop Support" when the staff user
+    has no first name. System lines read "MiniShop Support".
+  - Attachment `url` is a relative `/api/support/attachments/<id>/`.
+- **Errors:**
+  - Field errors come back per field with plain wording
+    (`{"subject": ["Subject must be at least 5 characters."]}`).
+  - Service rules come back as `{"detail": …}`.
+  - Missing or foreign tickets → 404 `{"detail": "Ticket not found."}`.
+  - A file missing from disk → 404 `{"detail": "This file is no longer available."}`.
+- **Read tracking:** `SupportTicket.has_unread_for_customer` (a model property) drives
+  both `has_unread` and the detail view's mark-read. The detail GET only writes when
+  something is actually unread, so the page's 60-second refresh doesn't write every
+  time.
+- **Private data:**
+  - Messages are prefetched as `public_messages` with `is_internal=False`.
+  - The serializer never falls back to `ticket.messages.all()`.
+  - A test checks that the raw response contains no internal-note text, no
+    internal-attachment name, no priority value and no assignment note.
+- **Downloads** send `Content-Disposition: inline; filename="…"` (Django escapes it),
+  the detected `Content-Type`, `X-Content-Type-Options: nosniff` and
+  `Cache-Control: private, no-store`.
+- **Verified:**
+  - `manage.py test support.tests.test_customer_api` **17/17 OK** in 327 s on a
+    throwaway `test_minishop_sup3` database.
+  - `manage.py check` is clean; `makemigrations --check` reports no changes.
+  - **Live check on the dev database**, run through the Django shell in a transaction
+    that was rolled back, with the attachment file deleted afterwards (ticket count 0
+    before and after):
+    - A real CUSTOMER (`smoke_customer_user`) created a ticket with a PNG (201).
+    - The ticket showed in the list and the PNG downloaded (200, `image/png`,
+      `nosniff`).
+    - A staff reply raised `unread` to 1. Opening the ticket cleared it.
+    - An internal note did **not** appear.
+    - Reply returned 201, close returned 200 with `can_reply: false`, and another
+      user's request got 404.
+- **Test pitfall found and fixed:** after reading a `FileResponse`'s
+  `streaming_content`, calling `response.close()` again fires `request_finished` a
+  second time. Django then closes the database connection in the middle of the
+  transaction. The download test no longer does this, and a comment says why.
 
 ---
 

@@ -151,6 +151,14 @@ class SupportTicket(models.Model):
     def is_closed(self) -> bool:
         return self.status == self.STATUS_CLOSED
 
+    @property
+    def has_unread_for_customer(self) -> bool:
+        """A public staff reply the customer hasn't opened the ticket to see yet."""
+        if self.last_staff_reply_at is None:
+            return False
+        read_at = self.customer_last_read_at
+        return read_at is None or self.last_staff_reply_at > read_at
+
     def can_transition_to(self, new_status: str) -> bool:
         """Whether staff may move the ticket from its current status to new_status."""
         return new_status in self.VALID_TRANSITIONS.get(self.status, [])
