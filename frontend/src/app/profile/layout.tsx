@@ -11,7 +11,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useProfile } from "@/context/ProfileContext";
 import { formatImageUrl, getSupportUnreadCount } from "@/lib/api";
 import { getAuthToken } from "@/lib/auth";
-import { SUPPORT_UNREAD_EVENT } from "@/lib/support";
+import { SUPPORT_UNREAD_EVENT, canUseSupport } from "@/lib/support";
 
 const SUPPORT_HREF = "/profile/support";
 
@@ -32,9 +32,7 @@ export default function ProfileLayout({ children }: { children: React.ReactNode 
   const pathname = usePathname();
   const [supportUnread, setSupportUnread] = useState(0);
 
-  const permissions = user?.permissions ?? [];
-  const canUseSupport =
-    Boolean(user?.is_superuser) || permissions.includes("support.view") || permissions.includes("*");
+  const supportAllowed = canUseSupport(user);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -56,7 +54,7 @@ export default function ProfileLayout({ children }: { children: React.ReactNode 
   // Refreshed on every profile navigation too.
   useEffect(() => {
     const token = getAuthToken();
-    if (!isAuthenticated || !canUseSupport || !token) return;
+    if (!isAuthenticated || !supportAllowed || !token) return;
     let cancelled = false;
     getSupportUnreadCount(token)
       .then((count) => {
@@ -68,9 +66,9 @@ export default function ProfileLayout({ children }: { children: React.ReactNode 
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, canUseSupport, pathname, unreadCheck]);
+  }, [isAuthenticated, supportAllowed, pathname, unreadCheck]);
 
-  const navItems = canUseSupport ? NAV_ITEMS : NAV_ITEMS.filter((item) => item.href !== SUPPORT_HREF);
+  const navItems = supportAllowed ? NAV_ITEMS : NAV_ITEMS.filter((item) => item.href !== SUPPORT_HREF);
 
   // Below lg the nav is one sideways-scrolling row; bring the current item into
   // view (Support, at the end, would otherwise be off-screen on phones). Sets
@@ -81,7 +79,7 @@ export default function ProfileLayout({ children }: { children: React.ReactNode 
     const active = row?.querySelector<HTMLElement>('[aria-current="page"]');
     if (!row || !active || row.scrollWidth <= row.clientWidth) return;
     row.scrollLeft = active.offsetLeft - (row.clientWidth - active.offsetWidth) / 2;
-  }, [pathname, isLoading, isAuthenticated, canUseSupport]);
+  }, [pathname, isLoading, isAuthenticated, supportAllowed]);
 
   const displayName =
     profile?.display_name ||

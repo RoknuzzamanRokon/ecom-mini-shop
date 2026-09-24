@@ -6,7 +6,7 @@
  * stays authoritative (it checks each file's real content, which the browser
  * can't); these checks only save a round trip for obvious mistakes.
  */
-import type { SupportCategory, SupportPriority, SupportStatus } from "./types";
+import type { AuthUser, SupportCategory, SupportPriority, SupportStatus } from "./types";
 
 export const SUPPORT_LIMITS = {
   maxFiles: 5,
@@ -16,6 +16,17 @@ export const SUPPORT_LIMITS = {
   descriptionMin: 10,
   messageMax: 5000,
 } as const;
+
+/**
+ * Whether to offer this user the customer support pages: they hold
+ * `support.view` (CUSTOMER), or everything. A staff account without the
+ * CUSTOMER role would only get 403s there, so it isn't shown the links.
+ */
+export function canUseSupport(user: AuthUser | null | undefined): boolean {
+  if (!user) return false;
+  const permissions = user.permissions ?? [];
+  return user.is_superuser || permissions.includes("support.view") || permissions.includes("*");
+}
 
 export const SUPPORT_CATEGORIES: {
   value: SupportCategory;

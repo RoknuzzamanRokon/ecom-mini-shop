@@ -7,6 +7,8 @@ import { useParams, useRouter } from "next/navigation";
 import { Order } from "@/lib/types";
 import { cancelCustomerOrder, formatImageUrl, getOrderDetail } from "@/lib/api";
 import { getAuthToken } from "@/lib/auth";
+import { canUseSupport } from "@/lib/support";
+import { useAuth } from "@/context/AuthContext";
 import { PRODUCT_REVIEWS_ANCHOR } from "@/components/product/ProductReviews";
 
 const TRACK_STEPS = ["PENDING", "CONFIRMED", "PROCESSING", "SHIPPED", "DELIVERED"];
@@ -36,6 +38,8 @@ export default function CustomerOrderDetailPage() {
   const params = useParams();
   const router = useRouter();
   const orderNumber = params?.orderNumber as string;
+  const { user } = useAuth();
+  const supportAllowed = canUseSupport(user);
 
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
@@ -174,16 +178,27 @@ export default function CustomerOrderDetailPage() {
           </p>
         </div>
 
-        {canCancel && (
-          <button
-            type="button"
-            onClick={() => setShowCancelModal(true)}
-            className="inline-flex items-center gap-1.5 self-start sm:self-auto bg-accent/10 hover:bg-accent/20 text-accent font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-lg border border-accent/20 transition-colors cursor-pointer"
-          >
-            <span className="material-symbols-outlined text-[18px]">cancel</span>
-            <span>Cancel Order</span>
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+          {supportAllowed && (
+            <Link
+              href={`/profile/support/new?order=${encodeURIComponent(order.order_number)}`}
+              className="inline-flex items-center gap-1.5 bg-surface hover:bg-surface-alt text-ink font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-lg border border-line transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-[18px]">support_agent</span>
+              <span>Get help with this order</span>
+            </Link>
+          )}
+          {canCancel && (
+            <button
+              type="button"
+              onClick={() => setShowCancelModal(true)}
+              className="inline-flex items-center gap-1.5 bg-accent/10 hover:bg-accent/20 text-accent font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-lg border border-accent/20 transition-colors cursor-pointer"
+            >
+              <span className="material-symbols-outlined text-[18px]">cancel</span>
+              <span>Cancel Order</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Order Status Stepper or Cancelled Banner */}

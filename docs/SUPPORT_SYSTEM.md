@@ -1,6 +1,6 @@
 # MiniShop — Customer Support Ticket System Plan
 
-**Created:** 2026-09-24 · **Baseline commit:** `2463421` · **Status:** In progress (Tasks 1–7 of 12 done; backend complete)
+**Created:** 2026-09-24 · **Baseline commit:** `2463421` · **Status:** In progress (Tasks 1–8 of 12 done; backend complete, customer side complete)
 
 This is the plan and task list for the support ticket feature. Work through the tasks
 in §13 **one at a time, in order**. Each task is one commit. When a task is done, tick
@@ -472,7 +472,7 @@ plans:
 | 5 | Frontend foundation: types, API clients, shared support components | frontend | ✅ Done |
 | 6 | Customer ticket list + new ticket form + profile nav item | frontend | ✅ Done |
 | 7 | Customer ticket conversation page | frontend | ✅ Done |
-| 8 | Customer entry points: order page, header menu, footer | frontend | ☐ Not started |
+| 8 | Customer entry points: order page, header menu, footer | frontend | ✅ Done |
 | 9 | Admin `/admin/support` ticket list | frontend | ☐ Not started |
 | 10 | Admin ticket detail: thread, reply / internal note, status, priority, assignee | frontend | ☐ Not started |
 | 11 | *(optional)* Auto-close resolved tickets after 7 days | backend | ☐ Not started |
@@ -1111,16 +1111,80 @@ clears after opening; `npm run build` passes.
 
 **Goal.** Customers can find support where they need it.
 
-- [ ] Order detail header: **Get help with this order** →
+- [x] Order detail header: **Get help with this order** →
       `/profile/support/new?order=<order_number>`.
-- [ ] Header account dropdown: **Help & Support** → `/profile/support` (after
+- [x] Header account dropdown: **Help & Support** → `/profile/support` (after
       Favorites, same classes).
-- [ ] Footer **Contact Support** → `/profile/support/new`.
+- [x] Footer **Contact Support** → `/profile/support/new`.
 
 **Done when.** All three links work, including for a logged-out visitor (login, then
 back); `npm run build` passes.
 
-**Status:** ☐ Not started
+**Status:** ✅ Done 2026-09-24
+
+- **Order detail** (`profile/orders/[orderNumber]/page.tsx`):
+  - **Get help with this order** is an outlined button (`support_agent` icon) next to
+    Cancel Order. The two sit in one wrapping group, so they share a row on desktop and
+    stack neatly under the title on phones.
+  - It shows on every order, cancelled and delivered ones included (refund questions).
+- **Header menu** (`components/layout/Header.tsx`): **Help & Support** right after
+  Favorites, with the same classes and the `support_agent` icon; clicking it closes the
+  menu.
+- **Footer** (`components/layout/Footer.tsx`): **Contact Support** now goes to
+  `/profile/support/new`; the other footer links are still `#`. A logged-out visitor is
+  sent to `/login?next=…` by the profile layout (Task 6) and comes back after logging
+  in.
+- **One rule for who sees the links:** `canUseSupport(user)` in `lib/support.ts`
+  (`support.view`, `*`, or superuser).
+  - The profile layout now uses it too, instead of its own inline copy.
+  - The header item and the order button only show for those users, so a staff account
+    without the CUSTOMER role isn't offered pages that would answer 403.
+  - The footer link stays for everyone, logged out included.
+- **Wider than planned: `?next=` can no longer leave the site.**
+  - `/login` and `/register` passed `?next=` straight to `router.replace()`. Next's
+    router makes a full page load to any other origin (`isExternalURL` →
+    `completeHardNavigation`), so `/login?next=https://evil.example` sent a user
+    off-site after login. For an already-logged-in visitor it did so at once.
+  - This task sends every logged-out support visitor through that redirect.
+  - `safeNextPath()` in `lib/auth.ts` fixes it. It keeps `next` only if it starts with
+    `/` and still has this site's origin once parsed the way the browser parses it;
+    anything else goes to `/`. This also catches `//host`, `/\host` and a tab or
+    newline between the slashes.
+  - Both pages use it: both login redirects, and the register redirect.
+- **Verified:**
+  - `npm run typecheck` passes, and `npm run build` compiles.
+  - eslint is clean on every changed file except the order page. Its 2 errors (the
+    `loadOrder()` effect and an `err: any`) are already in `HEAD`, 4 lines earlier; this
+    task didn't touch those lines.
+  - `safeNextPath` was compiled and run under Node against 17 inputs, all correct:
+    - kept: normal paths with query and hash, `/%2F%2F…` (a plain path), and
+      `/../../profile` (becomes `/profile`);
+    - sent to `/`: `https://…`, `//…`, `/\…`, `\\…`, `/\\…`, `/<tab>/…`, `/<LF>/…`,
+      `/<CR>/…`, `javascript:…`, a leading space, empty and null.
+  - **Browser:** headless Chrome over the DevTools protocol, against the production
+    build on `next start -p 3001` with Django on 8001. The owner's `next dev` on 3000
+    was still answering 500 for new routes (see Task 7). The test Chrome used
+    `--disable-web-security`, because CORS allows only port 3000.
+  - Throwaway users were created for the run and deleted afterwards:
+    `t8_login_check` (CUSTOMER, known password, for the real login form) and
+    `t8_staff_check` (SUPPORT_TEAM only). `smoke_cust_1`, who owns orders, logged in by
+    token.
+  - All 16 checks passed, with no console errors:
+    - Logged out, the footer link went to `/login?next=%2Fprofile%2Fsupport%2Fnew`.
+      Submitting the real login form landed on the new-ticket form.
+    - The header menu read …Favorites → **Help & Support** → Seller Center. Clicking it
+      opened `/profile/support` and closed the menu.
+    - Logged in, `/login?next=` with `https://evil.invalid/`, `//evil.invalid` or
+      `/\evil.invalid`, and `/register?next=https://evil.invalid/`, all stayed on
+      MiniShop's home page. A normal `next=/profile/support` still went there.
+    - Logged out, the order page went to `/login?next=%2Fprofile%2Forders%2F<n>`. After
+      logging in, it came back to the order. **Get help with this order** linked to
+      `/profile/support/new?order=<n>`, and the form opened with that order and "Order
+      & delivery" chosen.
+    - The order page had no horizontal overflow at 390 px.
+    - The staff-only account's header menu had no Help & Support, and still had
+      Management Portal.
+  - Both servers were stopped afterwards.
 
 ---
 

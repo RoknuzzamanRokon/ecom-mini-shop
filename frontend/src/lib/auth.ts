@@ -180,3 +180,24 @@ function failRefresh(): void {
   clearTokens();
   notifyAuthCleared();
 }
+
+/** Any origin works here; it only has to be one no real URL can share. */
+const NEXT_PATH_BASE = "http://minishop.invalid";
+
+/**
+ * The `?next=` a login or register page may return to: a path on this site,
+ * else `fallback`. `router.replace()` leaves the site for an absolute or
+ * protocol-relative URL (`https://…`, `//…`, `/\…`), so `?next=` must never
+ * reach it unchecked. The value is parsed the way the browser would parse it,
+ * which also catches tricks like a tab or newline between the slashes.
+ */
+export function safeNextPath(raw: string | null | undefined, fallback = "/"): string {
+  if (!raw || !raw.startsWith("/")) return fallback;
+  try {
+    const url = new URL(raw, NEXT_PATH_BASE);
+    if (url.origin !== NEXT_PATH_BASE) return fallback;
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return fallback;
+  }
+}

@@ -4,6 +4,7 @@ import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
+import { safeNextPath } from "@/lib/auth";
 import { registerCustomer } from "@/lib/api";
 import Header from "@/components/layout/Header";
 import Navbar from "@/components/layout/Navbar";
@@ -49,7 +50,7 @@ function RegisterPageContent() {
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const nextDestination = searchParams.get("next") || "/";
+  const nextDestination = safeNextPath(searchParams.get("next"));
 
   // Redirect if already authenticated
   useEffect(() => {

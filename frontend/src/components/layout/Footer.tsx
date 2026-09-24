@@ -20,7 +20,8 @@ export default function Footer() {
           <Link href="#" className="hover:text-primary transition-colors">
             Delivery Information
           </Link>
-          <Link href="#" className="hover:text-primary transition-colors">
+          {/* Logged-out visitors are sent to /login and brought back here. */}
+          <Link href="/profile/support/new" className="hover:text-primary transition-colors">
             Contact Support
           </Link>
         </div>

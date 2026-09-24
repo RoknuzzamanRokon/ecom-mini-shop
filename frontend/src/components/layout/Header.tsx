@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
 import { isManagementUser } from "@/lib/admin-auth";
+import { canUseSupport } from "@/lib/support";
 
 interface HeaderProps {
   onSearch?: (query: string) => void;
@@ -195,6 +196,18 @@ export default function Header({ onSearch, searchQuery = "" }: HeaderProps) {
                         </span>
                         Favorites
                       </Link>
+                      {canUseSupport(user) && (
+                        <Link
+                          href="/profile/support"
+                          onClick={() => setIsUserMenuOpen(false)}
+                          className="w-full flex items-center gap-2 px-4 py-2.5 text-sm text-ink hover:bg-surface-alt transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">
+                            support_agent
+                          </span>
+                          Help &amp; Support
+                        </Link>
+                      )}
 
                       <Link
                         href="/seller"

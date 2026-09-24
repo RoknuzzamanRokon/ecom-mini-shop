@@ -4,6 +4,7 @@ import React, { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
+import { safeNextPath } from "@/lib/auth";
 import Header from "@/components/layout/Header";
 import Navbar from "@/components/layout/Navbar";
 
@@ -45,7 +46,7 @@ function LoginPageContent() {
   // Redirect if already authenticated
   useEffect(() => {
     if (!authLoading && isAuthenticated) {
-      const next = searchParams.get("next") || "/";
+      const next = safeNextPath(searchParams.get("next"));
       router.replace(next);
     }
   }, [isAuthenticated, authLoading, router, searchParams]);
@@ -67,7 +68,7 @@ function LoginPageContent() {
     setIsSubmitting(true);
     try {
       await login(username.trim(), password);
-      const next = searchParams.get("next") || "/";
+      const next = safeNextPath(searchParams.get("next"));
       router.replace(next);
     } catch (err) {
       setError(
