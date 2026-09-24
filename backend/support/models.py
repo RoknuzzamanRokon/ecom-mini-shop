@@ -9,10 +9,16 @@ where tickets are read-only.
 """
 from django.conf import settings
 from django.db import models
-from django.db.models import Q
+from django.db.models import F, Q
 from django.utils import timezone
 
 from .storage import private_storage, support_attachment_path
+
+
+class SupportTicketQuerySet(models.QuerySet):
+    def needs_reply(self):
+        """Tickets waiting on staff; see SupportTicket.needs_reply."""
+        return self.filter(SupportTicket.needs_reply_condition())
 
 
 class SupportTicket(models.Model):
@@ -134,6 +140,8 @@ class SupportTicket(models.Model):
     closed_at = models.DateTimeField(null=True, blank=True)
     customer_last_read_at = models.DateTimeField(null=True, blank=True)
 
+    objects = SupportTicketQuerySet.as_manager()
+
     class Meta:
         ordering = ["-last_activity_at", "-id"]
         verbose_name = "Support Ticket"
@@ -158,6 +166,28 @@ class SupportTicket(models.Model):
             return False
         read_at = self.customer_last_read_at
         return read_at is None or self.last_staff_reply_at > read_at
+
+    @classmethod
+    def needs_reply_condition(cls) -> Q:
+        """Database form of needs_reply, for filters and counts."""
+        return Q(
+            status__in=cls.UNRESOLVED_STATUSES,
+            last_customer_message_at__isnull=False,
+        ) & (
+            Q(last_staff_reply_at__isnull=True)
+            | Q(last_customer_message_at__gt=F("last_staff_reply_at"))
+        )
+
+    @property
+    def needs_reply(self) -> bool:
+        """
+        The customer spoke last (their latest public message is newer than the
+        latest public staff reply) and the ticket is still being worked on.
+        Tracked per team, not per agent.
+        """
+        if self.status not in self.UNRESOLVED_STATUSES or self.last_customer_message_at is None:
+            return False
+        return self.last_staff_reply_at is None or self.last_customer_message_at > self.last_staff_reply_at
 
     def can_transition_to(self, new_status: str) -> bool:
         """Whether staff may move the ticket from its current status to new_status."""

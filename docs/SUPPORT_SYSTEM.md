@@ -1,6 +1,6 @@
 # MiniShop — Customer Support Ticket System Plan
 
-**Created:** 2026-09-24 · **Baseline commit:** `2463421` · **Status:** In progress (Tasks 1–3 of 12 done)
+**Created:** 2026-09-24 · **Baseline commit:** `2463421` · **Status:** In progress (Tasks 1–4 of 12 done; backend complete)
 
 This is the plan and task list for the support ticket feature. Work through the tasks
 in §13 **one at a time, in order**. Each task is one commit. When a task is done, tick
@@ -468,7 +468,7 @@ plans:
 | 1 | `support` app: models, migration, private storage, read-only Django admin, permission codes | backend | ✅ Done |
 | 2 | `SupportTicketService` + attachment validator | backend | ✅ Done |
 | 3 | Customer API | backend | ✅ Done |
-| 4 | Staff API | backend | ☐ Not started |
+| 4 | Staff API | backend | ✅ Done |
 | 5 | Frontend foundation: types, API clients, shared support components | frontend | ☐ Not started |
 | 6 | Customer ticket list + new ticket form + profile nav item | frontend | ☐ Not started |
 | 7 | Customer ticket conversation page | frontend | ☐ Not started |
@@ -709,6 +709,8 @@ the API yet.
     - An internal note did **not** appear.
     - Reply returned 201, close returned 200 with `can_reply: false`, and another
       user's request got 404.
+- **Regression:** the whole `support` suite, **99/99 OK** in 680 s on the committed
+  Task 3 code (throwaway `test_minishop_sup3f`).
 - **Test pitfall found and fixed:** after reading a `FileResponse`'s
   `streaming_content`, calling `response.close()` again fires `request_finished` a
   second time. Django then closes the database connection in the middle of the
@@ -720,19 +722,70 @@ the API yet.
 
 **Goal.** Support staff can find, read, answer and manage every ticket over the API.
 
-- [ ] Permission classes `CanViewSupportTickets`, `CanReplySupportTickets`,
+- [x] Permission classes `CanViewSupportTickets`, `CanReplySupportTickets`,
       `CanManageSupportTickets`.
-- [ ] Staff serializers: list row (with `needs_reply`, customer name and email,
+- [x] Staff serializers: list row (with `needs_reply`, customer name and email,
       assignee, priority), detail (every message including internal ones; customer,
       order and `allowed_transitions` blocks from §6), staff message, update, assign.
-- [ ] Views under `support/urls.py` at `staff/…`: list with every filter, `search` and
+- [x] Views under `support/urls.py` at `staff/…`: list with every filter, `search` and
       `ordering` (`AdminPagination` style, 20 per page), detail, messages, PATCH, assign,
       assignees, summary, attachment download.
-- [ ] Tests: the staff API cases from §12, including OPERATION_MANAGER reply-but-not-manage.
+- [x] Tests: the staff API cases from §12, including OPERATION_MANAGER reply-but-not-manage.
 
 **Done when.** `manage.py test support` passes; `manage.py check` is clean.
 
-**Status:** ☐ Not started
+**Status:** ✅ Done 2026-09-24
+
+- **Contract as built** (Tasks 9–10 rely on it):
+  - `POST staff/tickets/<n>/messages/` (201), `PATCH staff/tickets/<n>/` (200) and
+    `POST staff/tickets/<n>/assign/` (200) all return the **full staff ticket detail**.
+  - Staff status labels are the model's own ("Waiting on customer").
+  - `allowed_transitions` is a list of status codes.
+  - `order.total_amount` is a string (for example `"1250.00"`).
+  - Author names are real: customers by display name, else full name, else username;
+    staff by full name, else username; system lines read "System".
+  - Internal-note attachments use `/api/support/staff/attachments/<id>/`.
+- **List filters:**
+  - `status` takes a status code, `active` (everything except CLOSED) or `all`.
+  - `priority`, `category`.
+  - `assigned` takes `me`, `unassigned` or a user id.
+  - `needs_reply=true`.
+  - `search` matches ticket number, subject, customer username / email / first name /
+    last name, and order number.
+  - `ordering`: `±last_activity_at` (default newest), `±created_at`, `±priority`
+    (Low < Normal < High < Urgent).
+  - `page_size` up to 100.
+  - Any unknown filter value → 400, not silently ignored.
+- **`needs_reply`** lives on the model in one place. The `needs_reply` property and
+  `needs_reply_condition()` (a `Q`, used by the `SupportTicket.objects.needs_reply()`
+  queryset method and the summary count) implement the same D11 rule. The new manager
+  needed no migration.
+- **PATCH is all-or-nothing.** Priority/category and status changes run in one outer
+  transaction, so a refused status change also undoes a priority change sent with it
+  (tested). A body with none of the three fields → 400 `{"detail": "Nothing to
+  change."}`.
+- **Summary** returns `{by_status: {all 5 statuses}, active, needs_reply, unassigned,
+  assigned_to_me}`. The last four count only tickets that aren't closed. The grouped
+  query calls `order_by()` so `Meta.ordering` can't split the `GROUP BY`.
+- **Assign:** an unknown user id gets the same 400 as a user who can't be assigned, so
+  the endpoint doesn't reveal which ids exist.
+- **Permissions:** each staff view also requires `support.staff.view`, so a direct
+  grant of only `reply` or `manage` isn't enough to use the API.
+- **Verified:**
+  - `manage.py test support.tests.test_staff_api` **22/22 OK** in 214 s on a throwaway
+    `test_minishop_sup4` database.
+  - `manage.py check` is clean; `makemigrations --check` reports no changes.
+  - **Live check on the dev database**, in a rolled-back transaction with the file
+    deleted afterwards (0 tickets before and after):
+    - Summary and the `needs_reply` + search list found the new ticket.
+    - The assignees list returned 4 people.
+    - An internal note with a PNG was added; staff could download it, the customer got
+      404.
+    - A reply with `set_status=WAITING_ON_CUSTOMER` cleared `needs_reply`.
+    - The priority change and assignment each added an internal system line.
+    - The customer's view showed 3 messages and "Waiting on you", with no internal
+      text, priority or assignment.
+    - Resolving via PATCH worked, and the RESOLVED filter found the ticket.
 
 ---
 
