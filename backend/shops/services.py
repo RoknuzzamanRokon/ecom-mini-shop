@@ -3,7 +3,7 @@ from typing import Any, Optional, Tuple
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
-from django.db.models import Avg, Count, Q
+from django.db.models import Avg, BooleanField, Count, Q
 from django.db.models.expressions import RawSQL
 from django.utils import timezone
 
@@ -13,6 +13,12 @@ from .models import Shop
 
 # Reviews that count publicly: everything a moderator has not hidden.
 VISIBLE_REVIEWS = Q(customer_reviews__is_hidden=False)
+
+# Public nearby search limits. "Nearby" is a city-scale question, so the radius
+# is capped well below validate_radius()'s generic 1000 km default, and a
+# response never carries more shops than a map and a phone-sized list can show.
+NEARBY_MAX_RADIUS_KM = 50.0
+NEARBY_RESULT_LIMIT = 50
 
 
 class ShopError(Exception):
@@ -239,16 +245,20 @@ class ShopService:
         latitude: Any,
         longitude: Any,
         radius_km: Any,
-        max_radius_km: float = 1000.0,
+        max_radius_km: float = NEARBY_MAX_RADIUS_KM,
     ):
         """
         Executes a MySQL 8 native spatial query using ST_Distance_Sphere.
-        Returns public APPROVED/ACTIVE shops within radius_km, ordered nearest-first.
-        Excludes DRAFT, PENDING, SUSPENDED, and REJECTED shops.
+        Returns public APPROVED/ACTIVE shops within radius_km, ordered nearest-first
+        (ties by id), with the same average_rating / review_count annotations as
+        get_public_shops_queryset(). Excludes DRAFT, PENDING, SUSPENDED, and
+        REJECTED shops, and shops still at the POINT(0 0) "no coordinates" default.
+        Not sliced: callers apply NEARBY_RESULT_LIMIT after counting.
         """
         lat, lng = validate_coordinates(latitude, longitude)
         rad = validate_radius(radius_km, max_radius_km=max_radius_km)
 
+        # Built only from the validated floats above, and bound as a parameter.
         origin_wkt = f"POINT({lng:.7f} {lat:.7f})"
         radius_meters = rad * 1000.0
 
@@ -260,21 +270,24 @@ class ShopService:
             "ROUND(ST_Distance_Sphere(location, ST_GeomFromText(%s, 4326, 'axis-order=long-lat')) / 1000.0, 3)",
             (origin_wkt,),
         )
+        # Mirrors Point.is_empty_or_zero: POINT(0 0) is the column default and
+        # means the shop has never been given a location.
+        has_location_sql = RawSQL(
+            "NOT (ST_Latitude(location) = 0 AND ST_Longitude(location) = 0)",
+            (),
+            output_field=BooleanField(),
+        )
 
-        qs = (
-            Shop.objects.filter(
-                status__in=[Shop.STATUS_APPROVED, Shop.STATUS_ACTIVE]
-            )
+        return (
+            cls.get_public_shops_queryset()
+            .filter(has_location_sql)
             .annotate(
                 distance_meters=distance_meters_sql,
                 distance_km=distance_km_sql,
             )
-            .filter(
-                distance_meters__lte=radius_meters
-            )
-            .order_by("distance_meters")
+            .filter(distance_meters__lte=radius_meters)
+            .order_by("distance_meters", "id")
         )
-        return qs
 
     @classmethod
     @transaction.atomic

@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import F, Q
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status
@@ -26,10 +27,11 @@ from .serializers import (
     StaffShopSerializer,
 )
 from .services import (
+    NEARBY_MAX_RADIUS_KM,
+    NEARBY_RESULT_LIMIT,
     IneligibleSellerError,
     InvalidShopTransitionError,
     ShopService,
-    validate_coordinates,
     validate_radius,
 )
 
@@ -76,9 +78,10 @@ class PublicNearbyShopListView(APIView):
     Query parameters:
       - lat: float (latitude: [-90, 90])
       - lng: float (longitude: [-180, 180])
-      - radius: float (kilometers: > 0, max 1000)
-    Results are sorted nearest to farthest via MySQL ST_Distance_Sphere.
-    Draft, pending, suspended, and rejected shops are strictly excluded.
+      - radius: float (kilometers: > 0, max NEARBY_MAX_RADIUS_KM)
+    Results are sorted nearest to farthest via MySQL ST_Distance_Sphere, and hold
+    at most NEARBY_RESULT_LIMIT shops; "count" is every match inside the radius.
+    Draft, pending, suspended, rejected, and unlocated shops are strictly excluded.
     """
     permission_classes = [permissions.AllowAny]
 
@@ -93,18 +96,21 @@ class PublicNearbyShopListView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # The service raises Django's ValidationError (not DRF's) for bad input.
+        # Anything else is a server error and is left to DRF, so no internal
+        # error text ever reaches this public endpoint's response.
         try:
-            shops = ShopService.get_nearby_shops(latitude=lat, longitude=lng, radius_km=radius)
-            data = NearbyShopSerializer(shops, many=True).data
-            return Response({
-                "count": len(data),
-                "results": data,
-            }, status=status.HTTP_200_OK)
-        except ValidationError as e:
-            msg = e.message if hasattr(e, "message") else str(e)
-            return Response({"error": msg}, status=status.HTTP_400_BAD_REQUEST)
-        except Exception as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+            radius_km = validate_radius(radius, max_radius_km=NEARBY_MAX_RADIUS_KM)
+            shops = ShopService.get_nearby_shops(latitude=lat, longitude=lng, radius_km=radius_km)
+        except DjangoValidationError as e:
+            return Response({"error": " ".join(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response({
+            "count": shops.count(),
+            "radius_km": radius_km,
+            "limit": NEARBY_RESULT_LIMIT,
+            "results": NearbyShopSerializer(shops[:NEARBY_RESULT_LIMIT], many=True).data,
+        }, status=status.HTTP_200_OK)
 
 
 class PublicShopDetailView(generics.RetrieveAPIView):

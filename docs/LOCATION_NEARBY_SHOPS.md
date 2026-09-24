@@ -352,7 +352,7 @@ strings in `lat` (`1 OR 1=1`, `1);DROP`) → 400.
 
 | Task | Title | Side | Status |
 |---|---|---|---|
-| 1 | Harden and extend the nearby-shops API | backend | ⬜ |
+| 1 | Harden and extend the nearby-shops API | backend | ✅ Done |
 | 2 | Geolocation helper + "Use My Current Location" on both shop forms | frontend | ⬜ |
 | 3 | Admin API returns shop coordinates; admin shop page shows them | full-stack | ⬜ |
 | 4 | Customer location context + nearby API client and types | frontend | ⬜ |
@@ -367,20 +367,42 @@ strings in `lat` (`1 OR 1=1`, `1);DROP`) → 400.
 
 **Goal.** The existing endpoint returns only what a nearby UI needs, safely.
 
-- [ ] `shops/services.py`: add `NEARBY_MAX_RADIUS_KM = 50.0` and
+- [x] `shops/services.py`: add `NEARBY_MAX_RADIUS_KM = 50.0` and
       `NEARBY_RESULT_LIMIT = 50`. `get_nearby_shops` defaults to the 50 km cap, starts
       from `get_public_shops_queryset()` (ratings), excludes `POINT(0 0)`, orders by
       `distance_meters, id`.
-- [ ] `shops/serializers.py`: `NearbyShopSerializer` extends `PublicShopSerializer`
+- [x] `shops/serializers.py`: `NearbyShopSerializer` extends `PublicShopSerializer`
       and adds `distance_km`, `distance_meters`.
-- [ ] `shops/views.py`: catch Django's `ValidationError` and return its plain message;
+- [x] `shops/views.py`: catch Django's `ValidationError` and return its plain message;
       remove the `except Exception` catch-all; respond with `count` (total),
       `radius_km`, `limit`, `results` (first 50).
-- [ ] Tests from §13 (backend part, except admin).
+- [x] Tests from §13 (backend part, except admin).
 
 **Done when.** `manage.py test shops` passes, including the new tests.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done 2026-09-24
+
+- Unlocated shops are dropped with a `WHERE NOT (ST_Latitude(location) = 0 AND
+  ST_Longitude(location) = 0)` filter (a boolean `RawSQL` passed straight to
+  `.filter()`, so it adds no column and no `GROUP BY` entry).
+- The view validates the radius itself (it needs the value for `radius_km`), then the
+  service validates coordinates and radius again. Radius errors are reported first.
+- `count` is a second query (`COUNT(*)` over the grouped queryset); `results` is the
+  same queryset sliced to `LIMIT 50`. Two queries per request.
+- New tests (7): response shape + ratings ignore hidden reviews + no private fields +
+  numbers match `/api/shops/<slug>/`; unlocated shop excluded next to 0,0 while a
+  located one at 0.002,0.002 is returned; 50 km accepted, 50.01 and 1000 rejected;
+  ~1.52 km boundary in at 1.6, out at 1.5; equal distances ordered by id; result cap
+  (limit patched to 2) keeps `count` = 3; nine bad inputs (range, `inf`, `abc`,
+  `1 OR 1=1`, `1);DROP TABLE …`, bad radius) → 400 with a plain string message.
+- Smoke-checked against the dev database (read-only): from 23.78, 90.40 at 5 km the 4
+  located seed shops come back nearest first (1.574 → 4.594 km); the 6 unlocated shops
+  never appear.
+- Verified: `shops` **36/36 OK** (29 existing + 7 new) in 136 s on a throwaway
+  `test_minishop_loc1` database (created, then destroyed). `manage.py check` clean,
+  `makemigrations --check` reports no changes.
+- Left alone: `SellerShopLocationUpdateView` has the same DRF-vs-Django
+  `ValidationError` mix-up, but its serializer validates first, so it can't trigger.
 
 ---
 

@@ -1,12 +1,16 @@
 import math
+from unittest import mock
+
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.db import connection
+from django.http import QueryDict
 from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from customers.models import ShopReview
 from rbac.models import Role
 from rbac.services import assign_user_role
 from sellers.models import SellerProfile
@@ -14,6 +18,8 @@ from shop.models import Category, Product
 from shops.fields import Point
 from shops.models import Shop
 from shops.services import (
+    NEARBY_MAX_RADIUS_KM,
+    NEARBY_RESULT_LIMIT,
     IneligibleSellerError,
     InvalidShopTransitionError,
     ShopLimitExceededError,
@@ -711,6 +717,131 @@ class ShopSpatialAndNearbyTests(TestCase):
         # Malformed lat
         r7 = self.client.get("/api/shops/nearby/?lat=not_a_num&lng=90.4125&radius=5")
         self.assertEqual(r7.status_code, status.HTTP_400_BAD_REQUEST)
+
+    # F. Nearby API contract (location & nearby shop discovery, Task 1)
+    def test_nearby_response_shape_and_public_ratings(self):
+        """Results carry the public card fields, distance, and ratings that ignore hidden reviews."""
+        shop = Shop.objects.create(
+            owner=self.seller,
+            name="Rated Nearby Shop",
+            status=Shop.STATUS_ACTIVE,
+            location=Point(longitude=90.4172, latitude=23.7788),
+        )
+        ShopReview.objects.create(user=self.user_other, shop=shop, rating=4)
+        ShopReview.objects.create(user=self.user_suspended, shop=shop, rating=1, is_hidden=True)
+
+        response = self.client.get("/api/shops/nearby/?lat=23.7788&lng=90.4172&radius=5")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(response.data["radius_km"], 5.0)
+        self.assertEqual(response.data["limit"], NEARBY_RESULT_LIMIT)
+
+        result = response.data["results"][0]
+        self.assertEqual(result["slug"], shop.slug)
+        self.assertEqual(result["status"], Shop.STATUS_ACTIVE)
+        self.assertEqual(result["average_rating"], 4.0)
+        self.assertEqual(result["review_count"], 1)
+        self.assertAlmostEqual(result["latitude"], 23.7788, places=4)
+        self.assertAlmostEqual(result["distance_km"], 0.0, places=2)
+        self.assertIn("distance_meters", result)
+        for private_field in ("owner", "owner_id", "rejection_reason", "suspension_reason", "reviewed_by"):
+            self.assertNotIn(private_field, result)
+
+        detail = self.client.get(f"/api/shops/{shop.slug}/").data
+        self.assertEqual(result["average_rating"], detail["average_rating"])
+        self.assertEqual(result["review_count"], detail["review_count"])
+
+    def test_nearby_excludes_shops_without_coordinates(self):
+        """A shop still at the POINT(0 0) default never appears, even for a search next to 0,0."""
+        Shop.objects.create(owner=self.seller, name="Unlocated Shop", status=Shop.STATUS_ACTIVE)
+        located = Shop.objects.create(
+            owner=self.seller,
+            name="Near Null Island Shop",
+            status=Shop.STATUS_ACTIVE,
+            location=Point(longitude=0.002, latitude=0.002),
+        )
+
+        response = self.client.get("/api/shops/nearby/?lat=0.001&lng=0.001&radius=5")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual([r["id"] for r in response.data["results"]], [located.id])
+        self.assertEqual(response.data["count"], 1)
+
+    def test_nearby_radius_is_capped_at_public_maximum(self):
+        """The public endpoint accepts up to NEARBY_MAX_RADIUS_KM and rejects anything wider."""
+        base = "/api/shops/nearby/?lat=23.7788&lng=90.4172&radius="
+        self.assertEqual(self.client.get(f"{base}{NEARBY_MAX_RADIUS_KM:g}").status_code, status.HTTP_200_OK)
+        for radius in ("50.01", "1000"):
+            with self.subTest(radius=radius):
+                self.assertEqual(self.client.get(f"{base}{radius}").status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_nearby_radius_boundary(self):
+        """A shop ~1.52 km away is inside a 1.6 km radius and outside a 1.5 km one."""
+        shop = Shop.objects.create(
+            owner=self.seller,
+            name="Gulshan-2 Boundary Shop",
+            status=Shop.STATUS_ACTIVE,
+            location=Point(longitude=90.4168, latitude=23.7925),
+        )
+        base = "/api/shops/nearby/?lat=23.7788&lng=90.4172&radius="
+
+        inside = self.client.get(f"{base}1.6").data["results"]
+        self.assertEqual([r["id"] for r in inside], [shop.id])
+        self.assertGreater(inside[0]["distance_km"], 1.5)
+        self.assertLess(inside[0]["distance_km"], 1.6)
+
+        self.assertEqual(self.client.get(f"{base}1.5").data["results"], [])
+
+    def test_nearby_equal_distances_order_by_id(self):
+        """Shops at the same distance come back in a stable order: lowest id first."""
+        coords = Point(longitude=90.4125, latitude=23.8103)
+        first = Shop.objects.create(owner=self.seller, name="Twin A", status=Shop.STATUS_ACTIVE, location=coords)
+        second = Shop.objects.create(owner=self.seller, name="Twin B", status=Shop.STATUS_ACTIVE, location=coords)
+
+        response = self.client.get("/api/shops/nearby/?lat=23.8103&lng=90.4125&radius=1")
+        self.assertEqual([r["id"] for r in response.data["results"]], [first.id, second.id])
+
+    def test_nearby_result_limit_caps_results_but_not_count(self):
+        """results holds at most the limit, nearest first; count still reports every match."""
+        for offset in (0.0, 0.001, 0.002):
+            Shop.objects.create(
+                owner=self.seller,
+                name=f"Limit Shop {offset}",
+                status=Shop.STATUS_ACTIVE,
+                location=Point(longitude=90.4125, latitude=23.8103 + offset),
+            )
+
+        with mock.patch("shops.views.NEARBY_RESULT_LIMIT", 2):
+            response = self.client.get("/api/shops/nearby/?lat=23.8103&lng=90.4125&radius=5")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 3)
+        self.assertEqual(response.data["limit"], 2)
+        self.assertEqual(
+            [r["name"] for r in response.data["results"]],
+            ["Limit Shop 0.0", "Limit Shop 0.001"],
+        )
+
+    def test_nearby_invalid_input_returns_plain_error_message(self):
+        """Bad input is a 400 with a readable message, never a stringified list or server error text."""
+        cases = {
+            "lat=95&lng=90.4&radius=5": "Latitude",
+            "lat=-90.5&lng=90.4&radius=5": "Latitude",
+            "lat=23.8&lng=181&radius=5": "Longitude",
+            "lat=23.8&lng=inf&radius=5": "NaN or Infinite",
+            "lat=abc&lng=90.4&radius=5": "numeric",
+            "lat=1 OR 1=1&lng=90.4&radius=5": "numeric",
+            "lat=1);DROP TABLE shops_shop;--&lng=90.4&radius=5": "numeric",
+            "lat=23.8&lng=90.4&radius=abc": "radius",
+            "lat=23.8&lng=90.4&radius=-1": "radius",
+        }
+        for query, expected in cases.items():
+            with self.subTest(query=query):
+                response = self.client.get("/api/shops/nearby/", QueryDict(query))
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                message = response.data["error"]
+                self.assertIsInstance(message, str)
+                self.assertIn(expected, message)
+                self.assertNotIn("['", message)
 
 
 class PublicShopSearchTests(TestCase):

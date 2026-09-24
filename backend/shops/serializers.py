@@ -54,32 +54,17 @@ class PublicShopDetailSerializer(PublicShopSerializer):
         return rating_breakdown(obj.customer_reviews.visible())
 
 
-class NearbyShopSerializer(serializers.ModelSerializer):
+class NearbyShopSerializer(PublicShopSerializer):
     """
-    Public serializer for nearby shop search results including calculated distance.
+    Public nearby search result: the public shop card plus the distance from the
+    search origin. distance_km / distance_meters come from
+    ShopService.get_nearby_shops().
     """
-    latitude = serializers.FloatField(read_only=True)
-    longitude = serializers.FloatField(read_only=True)
     distance_km = serializers.FloatField(read_only=True)
     distance_meters = serializers.FloatField(read_only=True)
 
-    class Meta:
-        model = Shop
-        fields = [
-            "id",
-            "name",
-            "slug",
-            "description",
-            "logo",
-            "cover_image",
-            "phone",
-            "address",
-            "latitude",
-            "longitude",
-            "distance_km",
-            "distance_meters",
-            "created_at",
-        ]
+    class Meta(PublicShopSerializer.Meta):
+        fields = PublicShopSerializer.Meta.fields + ["distance_km", "distance_meters"]
         read_only_fields = fields
 
 
