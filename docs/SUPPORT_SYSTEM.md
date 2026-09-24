@@ -1,6 +1,6 @@
 # MiniShop — Customer Support Ticket System Plan
 
-**Created:** 2026-09-24 · **Baseline commit:** `2463421` · **Status:** In progress (Tasks 1–5 of 12 done; backend complete)
+**Created:** 2026-09-24 · **Baseline commit:** `2463421` · **Status:** In progress (Tasks 1–6 of 12 done; backend complete)
 
 This is the plan and task list for the support ticket feature. Work through the tasks
 in §13 **one at a time, in order**. Each task is one commit. When a task is done, tick
@@ -470,7 +470,7 @@ plans:
 | 3 | Customer API | backend | ✅ Done |
 | 4 | Staff API | backend | ✅ Done |
 | 5 | Frontend foundation: types, API clients, shared support components | frontend | ✅ Done |
-| 6 | Customer ticket list + new ticket form + profile nav item | frontend | ☐ Not started |
+| 6 | Customer ticket list + new ticket form + profile nav item | frontend | ✅ Done |
 | 7 | Customer ticket conversation page | frontend | ☐ Not started |
 | 8 | Customer entry points: order page, header menu, footer | frontend | ☐ Not started |
 | 9 | Admin `/admin/support` ticket list | frontend | ☐ Not started |
@@ -906,12 +906,12 @@ the API yet.
 
 **Goal.** A customer can see their tickets and open a new one.
 
-- [ ] `profile/layout.tsx`: a **Support** nav item with an unread badge
+- [x] `profile/layout.tsx`: a **Support** nav item with an unread badge
       (`getSupportUnreadCount`); prefix active match; redirect to
       `/login?next=<current path>`.
-- [ ] `app/profile/support/page.tsx`: Open / Closed tabs, ticket cards, pagination,
+- [x] `app/profile/support/page.tsx`: Open / Closed tabs, ticket cards, pagination,
       loading / error / empty states (the "My Reviews" page pattern).
-- [ ] `app/profile/support/new/page.tsx` (with `Suspense` for `useSearchParams`):
+- [x] `app/profile/support/new/page.tsx` (with `Suspense` for `useSearchParams`):
       category chips, subject, description + counter, related-order select prefilled
       from `?order=`, `AttachmentPicker`, submit → `/profile/support/<ticket_number>`,
       backend errors shown inline.
@@ -919,7 +919,76 @@ the API yet.
 **Done when.** A ticket with attachments can be created in the browser and appears in
 the list; `npm run build` passes; it works at 390 px.
 
-**Status:** ☐ Not started
+**Status:** ✅ Done 2026-09-24
+
+- **Profile layout:**
+  - The **Support** item (last in the nav, `support_agent` icon) appears only for a
+    user holding `support.view` (or `*`, or a superuser), so a staff account without
+    the CUSTOMER role doesn't get a link that would 403.
+  - The unread badge is re-fetched on every profile navigation, so opening a ticket
+    clears it. It has a screen-reader text ("1 ticket with a new reply").
+  - The active check is now `pathname === href || pathname.startsWith(href + "/")`,
+    and the active link has `aria-current="page"`.
+  - The login redirect reads `window.location` inside the effect, so the layout doesn't
+    need `useSearchParams` and a `Suspense` boundary. It sends
+    `/login?next=<path + query, encoded>`.
+- **Wider than planned: the active item scrolls into view on phones.** Below `lg` the
+  nav is one sideways-scrolling row, and Support, being last, was off-screen while
+  active.
+  - The layout now sets the row's own `scrollLeft` to centre the current item. It
+    never calls `scrollIntoView`, so the page itself can't jump.
+  - This helps every profile page, not only Support.
+- **List page:**
+  - Uses the My Reviews request-key loading pattern, so no `setState` runs in the
+    effect body.
+  - Relative times ("just now", "3 h ago") are measured from when the page loaded,
+    which keeps render pure.
+  - A ticket with a staff reply gets an accent border and a "New reply" marker.
+  - Each tab has its own empty state; Open offers "Open a ticket".
+  - 10 per page, with the existing `Pagination`.
+- **New-ticket form:**
+  - Category is a real radio group: `fieldset` / `legend`, visually hidden radios, and
+    the focus ring drawn on the chip via `has-focus-visible:`.
+  - `?order=<n>` preselects that order **and** the "Order & delivery" category.
+  - The order select lists the customer's 10 most recent orders as
+    "number · date · ৳total". A linked order that isn't among them still gets its own
+    option; the backend decides whether it is theirs.
+  - Subject and description have live counters and a note not to include passwords or
+    card numbers.
+  - Client-side checks mirror the backend's minimums (`aria-invalid` +
+    `aria-describedby`).
+  - Backend errors (for example the 5-open-ticket cap) show in a `role="alert"` box at
+    the top of the form.
+  - On success it goes to `/profile/support/<ticket_number>`. **That page arrives in
+    Task 7**; until then the link lands on the not-found page.
+- **Verified:**
+  - `npm run typecheck` passes, and `npm run build` compiles with `/profile/support` and
+    `/profile/support/new` both static.
+  - `eslint` on the layout and both pages is clean.
+  - **Browser:** headless Chrome driven over the DevTools protocol, logged in as
+    `smoke_cust_1` (3 orders) on the dev database.
+  - Setup note: port 3000 was already taken by the owner's own `next dev` (running
+    since 11:53), so the checks ran against it; it was left running. Django ran on
+    8001, started for the test and stopped afterwards.
+  - All of these passed with no console errors:
+    - Logged out, `/profile/support/new?order=…` → `/login?next=%2Fprofile%2Fsupport%2Fnew%3Forder%3D…`.
+    - The Support item is marked current on the list **and** on `/new`.
+    - `?order=` preselected the order and category; all 3 recent orders were listed
+      with ৳ totals.
+    - An empty submit showed both field errors.
+    - A PNG and a PDF showed as chips, and the PNG preview used a `blob:` URL.
+    - An SVG was refused by the picker while the two good files stayed.
+    - Submit created `TKT20260924601BF9` and navigated to its page.
+    - The Open list grew from 0 to 1, with subject, "Open", order number, category and
+      "just now". The backend stored the two files as `image/png` and
+      `application/pdf` under `private_media/support/…`.
+    - After a staff reply (added from the Django shell) the nav showed "1" from another
+      profile page, and the card showed "New reply" and "In progress".
+    - At 390 px: no horizontal overflow on the list or the form (two files chosen),
+      and the active Support item sits inside the nav row with `scrollX` 0.
+  - **Cleanup:** the test ticket (1 ticket, 3 messages, 2 attachments) and both files
+    were deleted afterwards; the dev database has 0 tickets again. Its 2 audit-log rows
+    (created, status change) remain, because the log is append-only.
 
 ---
 

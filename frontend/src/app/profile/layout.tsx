@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -9,7 +9,10 @@ import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import { useAuth } from "@/context/AuthContext";
 import { useProfile } from "@/context/ProfileContext";
-import { formatImageUrl } from "@/lib/api";
+import { formatImageUrl, getSupportUnreadCount } from "@/lib/api";
+import { getAuthToken } from "@/lib/auth";
+
+const SUPPORT_HREF = "/profile/support";
 
 const NAV_ITEMS = [
   { href: "/profile/settings", label: "Settings", icon: "settings", hint: "Photo, details & password" },
@@ -18,6 +21,7 @@ const NAV_ITEMS = [
   { href: "/profile/favorites", label: "Favorites", icon: "favorite", hint: "Products you saved" },
   { href: "/profile/reviews", label: "My Reviews", icon: "reviews", hint: "Ratings you have written" },
   { href: "/profile/addresses", label: "Addresses", icon: "location_on", hint: "Delivery locations" },
+  { href: SUPPORT_HREF, label: "Support", icon: "support_agent", hint: "Get help with a problem" },
 ];
 
 export default function ProfileLayout({ children }: { children: React.ReactNode }) {
@@ -25,12 +29,49 @@ export default function ProfileLayout({ children }: { children: React.ReactNode 
   const { profile } = useProfile();
   const router = useRouter();
   const pathname = usePathname();
+  const [supportUnread, setSupportUnread] = useState(0);
+
+  const permissions = user?.permissions ?? [];
+  const canUseSupport =
+    Boolean(user?.is_superuser) || permissions.includes("support.view") || permissions.includes("*");
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      router.replace("/login");
+      // Come back here after logging in (a "Contact Support" link, for example).
+      const here = window.location.pathname + window.location.search;
+      router.replace(`/login?next=${encodeURIComponent(here)}`);
     }
   }, [isLoading, isAuthenticated, router]);
+
+  // Refreshed on every profile navigation, so opening a ticket clears the badge.
+  useEffect(() => {
+    const token = getAuthToken();
+    if (!isAuthenticated || !canUseSupport || !token) return;
+    let cancelled = false;
+    getSupportUnreadCount(token)
+      .then((count) => {
+        if (!cancelled) setSupportUnread(count);
+      })
+      .catch(() => {
+        if (!cancelled) setSupportUnread(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, canUseSupport, pathname]);
+
+  const navItems = canUseSupport ? NAV_ITEMS : NAV_ITEMS.filter((item) => item.href !== SUPPORT_HREF);
+
+  // Below lg the nav is one sideways-scrolling row; bring the current item into
+  // view (Support, at the end, would otherwise be off-screen on phones). Sets
+  // scrollLeft on the row only, so the page itself never jumps.
+  const navRowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const row = navRowRef.current;
+    const active = row?.querySelector<HTMLElement>('[aria-current="page"]');
+    if (!row || !active || row.scrollWidth <= row.clientWidth) return;
+    row.scrollLeft = active.offsetLeft - (row.clientWidth - active.offsetWidth) / 2;
+  }, [pathname, isLoading, isAuthenticated, canUseSupport]);
 
   const displayName =
     profile?.display_name ||
@@ -88,13 +129,19 @@ export default function ProfileLayout({ children }: { children: React.ReactNode 
                 </div>
               </div>
 
-              <div className="bg-surface rounded-2xl border border-line shadow-sm p-2 flex lg:flex-col gap-1 overflow-x-auto">
-                {NAV_ITEMS.map((item) => {
-                  const isActive = pathname === item.href;
+              <div
+                ref={navRowRef}
+                className="relative bg-surface rounded-2xl border border-line shadow-sm p-2 flex lg:flex-col gap-1 overflow-x-auto"
+              >
+                {navItems.map((item) => {
+                  // Prefix match, so /profile/orders/<n> and /profile/support/<n> stay lit.
+                  const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+                  const badge = item.href === SUPPORT_HREF ? supportUnread : 0;
                   return (
                     <Link
                       key={item.href}
                       href={item.href}
+                      aria-current={isActive ? "page" : undefined}
                       className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors shrink-0 ${
                         isActive
                           ? "bg-primary text-on-primary font-bold shadow-sm"
@@ -114,6 +161,16 @@ export default function ProfileLayout({ children }: { children: React.ReactNode 
                           {item.hint}
                         </span>
                       </span>
+                      {badge > 0 && (
+                        <span
+                          className={`ml-auto min-w-5 h-5 px-1.5 rounded-full text-[11px] font-bold flex items-center justify-center shrink-0 ${
+                            isActive ? "bg-on-primary text-primary" : "bg-accent text-on-accent"
+                          }`}
+                        >
+                          {badge}
+                          <span className="sr-only"> {badge === 1 ? "ticket" : "tickets"} with a new reply</span>
+                        </span>
+                      )}
                     </Link>
                   );
                 })}
