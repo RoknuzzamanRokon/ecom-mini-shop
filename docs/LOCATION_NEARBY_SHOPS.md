@@ -1,6 +1,6 @@
 # MiniShop — Location & Nearby Shop Discovery Plan
 
-**Created:** 2026-09-24 · **Baseline commit:** `1c64fc1` · **Brief:** [`LOCATION_NEARBY_SHOPS_TASK.md`](./LOCATION_NEARBY_SHOPS_TASK.md) · **Status:** Planned
+**Created:** 2026-09-24 · **Baseline commit:** `1c64fc1` · **Brief:** [`LOCATION_NEARBY_SHOPS_TASK.md`](./LOCATION_NEARBY_SHOPS_TASK.md) · **Status:** All tasks (1–8) done
 
 This is the audit and task list for the location feature. Sections 1–16 follow the
 report the brief asks for. Work through the tasks in §14 **one at a time, in order**.
@@ -359,7 +359,7 @@ strings in `lat` (`1 OR 1=1`, `1);DROP`) → 400.
 | 5 | `/shops/nearby` page with radius control and result list | frontend | ✅ Done |
 | 6 | Interactive map (Leaflet + OSM) on the nearby page | frontend | ✅ Done |
 | 7 | Home page "Shops near you" bar + `/shops` entry link | frontend | ✅ Done |
-| 8 | Regression run and documentation close-out | docs | ⬜ |
+| 8 | Regression run and documentation close-out | docs | ✅ Done |
 
 **The requested feature is complete after Task 7.** Task 8 records the final checks.
 
@@ -640,11 +640,25 @@ build passes.
 
 ### Task 8 — Regression run and documentation close-out
 
-- [ ] Full `shop` + `shops` backend suites; `npm run typecheck`, `npm run build`.
-- [ ] Record results here; add the nearby contract to `docs/MINISHOP_REVIEW_STATE.md`
+- [x] Full `shop` + `shops` backend suites; `npm run typecheck`, `npm run build`.
+- [x] Record results here; add the nearby contract to `docs/MINISHOP_REVIEW_STATE.md`
       §6.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done 2026-09-24
+
+- Backend: `manage.py test shop shops --settings=config.settings.test --noinput` →
+  **461 tests, OK** in 4689 s (~78 min, serial) on a throwaway `test_minishop_loc8`
+  database (created, then destroyed). Includes every new test from Tasks 1 and 3.
+- Frontend: `npm run typecheck` and `npm run build` pass on the final tree (Task 7).
+- `docs/MINISHOP_REVIEW_STATE.md`: header line, §6 (nearby contract, limits,
+  `POINT(0 0)` rule, where coordinates are written), §12 (`/shops/nearby`), and a §21
+  history entry listing the commits.
+- **Dev database:** nothing to run. No migration and no new permission code, so
+  `migrate` / `seed_rbac` are not needed.
+- `frontend/AGENTS.md`: `next dev` rewrites it with Next 16's agent-rules block (the
+  content commit `5552532` removed). It was restored after the browser checks and is
+  not part of any commit. Setting `agentRules: false` in `next.config.ts` would stop
+  that; it's left as the project owner's call.
 
 ## 15. Risks / Open Questions
 
