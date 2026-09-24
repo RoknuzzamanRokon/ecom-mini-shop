@@ -165,3 +165,14 @@ export function formatRelativeTime(iso: string | null | undefined, now: number):
   if (days < 7) return `${days} d ago`;
   return formatSupportDateTime(iso).split(",")[0];
 }
+
+/**
+ * Fired on `window` after a ticket page has loaded a ticket (which marks its
+ * replies read), so the profile nav can re-count unread tickets without
+ * waiting for the next navigation.
+ */
+export const SUPPORT_UNREAD_EVENT = "minishop:support-unread-changed";
+
+export function notifySupportUnreadChanged(): void {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(SUPPORT_UNREAD_EVENT));
+}

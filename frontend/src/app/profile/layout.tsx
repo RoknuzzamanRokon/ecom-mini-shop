@@ -11,6 +11,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useProfile } from "@/context/ProfileContext";
 import { formatImageUrl, getSupportUnreadCount } from "@/lib/api";
 import { getAuthToken } from "@/lib/auth";
+import { SUPPORT_UNREAD_EVENT } from "@/lib/support";
 
 const SUPPORT_HREF = "/profile/support";
 
@@ -43,7 +44,16 @@ export default function ProfileLayout({ children }: { children: React.ReactNode 
     }
   }, [isLoading, isAuthenticated, router]);
 
-  // Refreshed on every profile navigation, so opening a ticket clears the badge.
+  // A ticket page announces when it has marked replies read; the count below
+  // re-runs, and its cleanup drops any older answer still in flight.
+  const [unreadCheck, setUnreadCheck] = useState(0);
+  useEffect(() => {
+    const recount = () => setUnreadCheck((n) => n + 1);
+    window.addEventListener(SUPPORT_UNREAD_EVENT, recount);
+    return () => window.removeEventListener(SUPPORT_UNREAD_EVENT, recount);
+  }, []);
+
+  // Refreshed on every profile navigation too.
   useEffect(() => {
     const token = getAuthToken();
     if (!isAuthenticated || !canUseSupport || !token) return;
@@ -58,7 +68,7 @@ export default function ProfileLayout({ children }: { children: React.ReactNode 
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, canUseSupport, pathname]);
+  }, [isAuthenticated, canUseSupport, pathname, unreadCheck]);
 
   const navItems = canUseSupport ? NAV_ITEMS : NAV_ITEMS.filter((item) => item.href !== SUPPORT_HREF);
 

@@ -1,6 +1,6 @@
 # MiniShop — Customer Support Ticket System Plan
 
-**Created:** 2026-09-24 · **Baseline commit:** `2463421` · **Status:** In progress (Tasks 1–6 of 12 done; backend complete)
+**Created:** 2026-09-24 · **Baseline commit:** `2463421` · **Status:** In progress (Tasks 1–7 of 12 done; backend complete)
 
 This is the plan and task list for the support ticket feature. Work through the tasks
 in §13 **one at a time, in order**. Each task is one commit. When a task is done, tick
@@ -471,7 +471,7 @@ plans:
 | 4 | Staff API | backend | ✅ Done |
 | 5 | Frontend foundation: types, API clients, shared support components | frontend | ✅ Done |
 | 6 | Customer ticket list + new ticket form + profile nav item | frontend | ✅ Done |
-| 7 | Customer ticket conversation page | frontend | ☐ Not started |
+| 7 | Customer ticket conversation page | frontend | ✅ Done |
 | 8 | Customer entry points: order page, header menu, footer | frontend | ☐ Not started |
 | 9 | Admin `/admin/support` ticket list | frontend | ☐ Not started |
 | 10 | Admin ticket detail: thread, reply / internal note, status, priority, assignee | frontend | ☐ Not started |
@@ -996,18 +996,114 @@ the list; `npm run build` passes; it works at 390 px.
 
 **Goal.** A customer can read the conversation, reply and close the ticket.
 
-- [ ] `app/profile/support/[ticketNumber]/page.tsx`: header (status, category, order
+- [x] `app/profile/support/[ticketNumber]/page.tsx`: header (status, category, order
       link), `TicketThread`, reply box with `AttachmentPicker`, **Close ticket** with a
       confirm step, the closed and resolved notes from §7.
-- [ ] Refetch on window focus, every 60 s while visible, and after every action (D12).
-- [ ] Attachments through `SecureAttachment` + `fetchSupportAttachment`.
-- [ ] Not found (someone else's ticket or a bad number) → a friendly "Ticket not found"
+- [x] Refetch on window focus, every 60 s while visible, and after every action (D12).
+- [x] Attachments through `SecureAttachment` + `fetchSupportAttachment`.
+- [x] Not found (someone else's ticket or a bad number) → a friendly "Ticket not found"
       with a link back to the list.
 
 **Done when.** Reply, reopen-by-reply and close work in the browser; the unread badge
 clears after opening; `npm run build` passes.
 
-**Status:** ☐ Not started
+**Status:** ✅ Done 2026-09-24
+
+- **Header:**
+  - Status badge, ticket number, subject, category, a link to the linked order
+    (`/profile/orders/<n>`), and the opening date.
+  - A **Close ticket** button while the ticket can be closed.
+- **Status notes:**
+  - RESOLVED: "We've marked this as resolved", saying that a reply reopens the ticket,
+    plus an "All sorted, close it" button.
+  - WAITING_ON_CUSTOMER: "We're waiting for your reply". This goes slightly beyond §7,
+    because it is the one status that asks the customer to act.
+- **Thread:** `TicketThread` with `viewer="customer"`. Attachments go through a
+  module-level loader that reads the token on every call, so `SecureAttachment` gets a
+  stable function, as it needs.
+- **Reply box:**
+  - Message counter (5000); files through `AttachmentPicker`; Ctrl/⌘ + Enter sends.
+  - Sending with no text and no file shows the backend's own rule inline ("Write a
+    message or attach a file.").
+  - Backend errors show in a `role="alert"` box and trigger a refetch, in case the team
+    closed the ticket meanwhile.
+  - When the ticket is CLOSED, the box is replaced by "This ticket is closed" and **Open
+    a new ticket**. That link carries the order over (`?order=<n>`) when the ticket had
+    one.
+- **Close:** reuses `AdminConfirmModal`, a generic dialog that calls no API, in its
+  non-destructive primary style. It gives role="dialog", focus trap, Escape and focus
+  restore. The dialog warns when an unsent reply would be discarded and shows a failed
+  close inline.
+- **Refreshing (D11):**
+  - The ticket is re-read every 60 s while the tab is visible, and on window focus or a
+    return to the tab (at most one read per 5 s).
+  - Every write answers with the whole ticket, and the page shows that directly.
+  - A generation counter drops any read that answers after a newer read or write, so a
+    slow poll can't undo a reply.
+  - Background refreshes keep the page as it is (no spinner). A failed background read
+    keeps the last good copy.
+- **Screen-reader announcements** (a polite live region): "Reply sent." (or "… The
+  ticket is open again." when the reply reopened it), "Ticket closed.", and "New reply
+  from MiniShop Support." when a refresh brings a staff message.
+- **Unread badge (`profile/layout.tsx`, `lib/support.ts`):**
+  - The page fires `SUPPORT_UNREAD_EVENT` after each successful read (`notifySupportUnreadChanged()`).
+    Opening a ticket marks it read, and the layout re-counts on that event.
+  - The re-count's effect cleanup drops the count started on navigation. That count
+    could otherwise answer after the mark-read and leave a stale "1" on screen.
+- **Ticket not found:** "Ticket not found" with **Back to my tickets**. This covers both
+  a made-up number and another customer's ticket (the API's 404, D8).
+- **Verified:**
+  - `npm run typecheck` passes. `npm run build` passes, with `/profile/support/[ticketNumber]`
+    dynamic (ƒ). `eslint` on the page, the layout and `lib/support.ts` is clean.
+  - **Browser:** headless Chrome over the DevTools protocol, logged in as `smoke_cust_1`,
+    against the dev database. The test data came from the Django shell: one ticket with
+    a PNG + PDF, a staff reply with an image that set "Waiting on customer", an internal
+    note with a PDF, and one ticket owned by another customer.
+  - Setup note: the owner's own `next dev` on 3000 (running since 11:53) answered 500
+    for the new route. Its worker had crashed ("Jest worker encountered 2 child process
+    exceptions"), while existing routes still returned 200. It was left untouched.
+    - Instead, the production build was served with `next start -p 3001`, next to
+      Django on 8001.
+    - The test Chrome ran with `--disable-web-security`, because CORS allows only port
+      3000.
+    - Both servers were stopped afterwards. Restarting `next dev` should make the route
+      work there too.
+  - All 20 checks passed, with no console errors:
+    - Before opening, the nav badge showed "1". After opening, it cleared on the ticket
+      page itself, with no navigation.
+    - The header showed "Waiting on you", the ticket number, the category, the order
+      link, the Close button and the waiting note.
+    - Thread layout: the customer on the right, staff on the left, system lines centred.
+    - Neither the internal note text nor its PDF appeared.
+    - Both images loaded as `blob:` thumbnails. The PDF button fetched an
+      `application/pdf` blob and opened it.
+    - An empty reply showed the inline error.
+    - A text + PNG reply turned the status to **Open** (reopened by reply) and added
+      the message and the "Reopened" line. The draft and files were cleared, and "Reply
+      sent. The ticket is open again." was announced. The new image showed as a
+      thumbnail.
+    - At 390 px there was no horizontal overflow.
+    - A staff reply posted from the shell appeared **on its own 54 s later** (60 s
+      refresh). The status became In progress, "New reply from MiniShop Support." was
+      announced, and no badge came back.
+    - The staff then resolved the ticket. A window focus refetched it, showing Resolved,
+      the resolved note, and the reply box still there.
+    - **Close ticket** opened the dialog with focus inside, and Escape dismissed it
+      (still Resolved). "All sorted, close it" followed by the confirm closed the
+      ticket:
+      - the status became Closed;
+      - the closed note appeared, with the `?order=` link;
+      - there was no reply box or Close button;
+      - "Ticket closed." was announced.
+    - A made-up number and the other customer's ticket both showed "Ticket not found"
+      with the link back.
+  - **Cleanup:** the test tickets and their private files were deleted after each run;
+    the dev database has 0 tickets. Their audit rows remain, because the log is
+    append-only.
+- **Noticed, not changed:** the public system line reads "Status changed to Waiting on
+  customer." (staff wording) while the customer's badge says "Waiting on you". That
+  text is written by `SupportTicketService` (Task 2). It could use the customer wording
+  for public lines if wanted.
 
 ---
 
