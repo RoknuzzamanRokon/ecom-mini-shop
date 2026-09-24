@@ -1,6 +1,6 @@
 # MiniShop — Customer Support Ticket System Plan
 
-**Created:** 2026-09-24 · **Baseline commit:** `2463421` · **Status:** In progress (Tasks 1–10 of 12 done; the feature is usable end to end)
+**Created:** 2026-09-24 · **Baseline commit:** `2463421` · **Status:** In progress (Tasks 1–11 of 12 done; the feature is usable end to end)
 
 This is the plan and task list for the support ticket feature. Work through the tasks
 in §13 **one at a time, in order**. Each task is one commit. When a task is done, tick
@@ -475,7 +475,7 @@ plans:
 | 8 | Customer entry points: order page, header menu, footer | frontend | ✅ Done |
 | 9 | Admin `/admin/support` ticket list | frontend | ✅ Done |
 | 10 | Admin ticket detail: thread, reply / internal note, status, priority, assignee | frontend | ✅ Done |
-| 11 | *(optional)* Auto-close resolved tickets after 7 days | backend | ☐ Not started |
+| 11 | *(optional)* Auto-close resolved tickets after 7 days | backend | ✅ Done |
 | 12 | Regression run and documentation close-out | docs | ☐ Not started |
 
 **The feature is usable end to end after Task 10.** Task 11 is an extra; Task 12 records
@@ -1475,18 +1475,106 @@ the internal note); `npm run build` passes.
 
 **Goal.** Resolved tickets don't stay open for ever.
 
-- [ ] `support/management/commands/close_resolved_tickets.py` with `--days` (default 7)
+- [x] `support/management/commands/close_resolved_tickets.py` with `--days` (default 7)
       and `--dry-run`. It closes `RESOLVED` tickets whose `resolved_at` is older than the
       cut-off and that have no newer customer message, through the service (system
       message + audit, actor `None`).
-- [ ] Tests: old → closed; recent → untouched; customer replied → untouched; dry run
+- [x] Tests: old → closed; recent → untouched; customer replied → untouched; dry run
       changes nothing.
-- [ ] Document how to schedule it (Windows Task Scheduler / cron). There is no scheduler
+- [x] Document how to schedule it (Windows Task Scheduler / cron). There is no scheduler
       in the project.
 
 **Done when.** Tests pass.
 
-**Status:** ☐ Not started
+**Status:** ✅ Done 2026-09-25
+
+- **Which tickets close** (`SupportTicketService.stale_resolved_tickets(days)`): status
+  `RESOLVED`, `resolved_at` at least `days` ago, **and** `last_activity_at` at least
+  `days` ago, **and** `last_customer_message_at` empty or not after `resolved_at`.
+  - **Wider than planned:** the `last_activity_at` condition means a public staff
+    follow-up after resolving ("Did the replacement arrive?") restarts the clock, so the
+    ticket isn't closed the day after staff asked the customer something.
+  - Internal notes, and priority, category or assignee changes, don't touch
+    `last_activity_at`, so they don't restart the clock.
+  - A customer reply normally reopens a resolved ticket anyway. The customer-message
+    condition guards the odd case where one didn't, however old the message is.
+- **Closing** (`SupportTicketService.auto_close_resolved(ticket_number, days)`):
+  - One transaction per ticket. The ticket is re-selected with the same conditions
+    under `select_for_update()`, so one that was reopened between the listing and the
+    close is left alone. The summary counts those.
+  - It goes through `_set_status` like any status change, with **no actor**. That
+    writes:
+    - the public thread line "Closed automatically after 7 days without a reply.";
+    - `closed_at` and `last_activity_at`;
+    - a `SUPPORT_TICKET_STATUS_CHANGED` audit row with `changed_by: "system"` and the
+      reason "Resolved, with no customer reply for 7 days.".
+  - The customer gets no unread marker: it is a system line, not a staff reply. The
+    ticket simply moves to their Closed tab.
+- **The command:**
+  - `--days` (default `AUTO_CLOSE_AFTER_DAYS = 7` in `services.py`; must be at least
+    1).
+  - `--dry-run` prints `would close TKT… (resolved 2026-09-17 14:02 UTC)` for each
+    ticket and changes nothing.
+  - A real run prints each ticket it closed and a one-line summary.
+  - Running it twice is harmless: the second run finds nothing.
+- **Not promised in the UI:** the customer's "resolved" note doesn't mention
+  auto-closing, because nothing runs the command until it is scheduled.
+- **Scheduling.** The project has no scheduler; run it once a day. `backend/.env` is
+  read from the backend folder whatever the working directory is. `manage.py` uses
+  `config.settings.dev` unless `DJANGO_SETTINGS_MODULE` says otherwise (there is no
+  production settings module yet).
+  - Try it first:
+
+    ```powershell
+    cd "D:\Rokon\ofc_git\New folder\minishop\backend"
+    venv\Scripts\python.exe manage.py close_resolved_tickets --dry-run
+    ```
+
+  - **Windows Task Scheduler** (PowerShell, run once as the account that runs the
+    backend; `-StartWhenAvailable` catches up after the machine was off at 03:00):
+
+    ```powershell
+    $backend = "D:\Rokon\ofc_git\New folder\minishop\backend"
+    $action = New-ScheduledTaskAction -Execute "$backend\venv\Scripts\python.exe" `
+      -Argument "manage.py close_resolved_tickets" -WorkingDirectory $backend
+    $trigger = New-ScheduledTaskTrigger -Daily -At 3am
+    $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable
+    Register-ScheduledTask -TaskName "MiniShop - close resolved support tickets" `
+      -Action $action -Trigger $trigger -Settings $settings `
+      -Description "Closes support tickets resolved 7+ days ago with no customer reply."
+    ```
+
+    Remove it with `Unregister-ScheduledTask -TaskName "MiniShop - close resolved
+    support tickets"`.
+  - **cron** (a Linux server; paths are examples):
+
+    ```cron
+    0 3 * * * cd /srv/minishop/backend && venv/bin/python manage.py close_resolved_tickets >> /var/log/minishop/close_resolved_tickets.log 2>&1
+    ```
+
+- **Verified:**
+  - `manage.py check` found no issues, and `makemigrations --check` found no changes;
+    this task needs no migration.
+  - **New tests:** `support/tests/test_auto_close.py`, **13/13** passing on MySQL
+    (throwaway `minishop_sup11` test database). They cover:
+    - which tickets close: an old one closes, a recent one stays;
+    - the customer-wrote-after-resolution guard: a recent message, and an old message
+      after resolution;
+    - a staff follow-up restarting the clock;
+    - only `RESOLVED` tickets being touched;
+    - `--days 3`, and `--days 0` / `-2` refused;
+    - what a close records: the public system line, no actor, the audit metadata and
+      reason, and no unread marker;
+    - a second run closing nothing;
+    - `--dry-run` changing nothing (no messages, no audit rows) and listing only the
+      stale ticket;
+    - a ticket reopened after it was listed being left alone, and the summary counting
+      it.
+  - **Full support suite:** **134/134** passing (121 existing + 13 new, 1172 s, serial,
+    `minishop_sup11b`).
+  - **Dev database:** `manage.py close_resolved_tickets --dry-run` printed "Dry run: 0
+    resolved ticket(s) quiet for 7+ day(s) would be closed." There are 0 tickets there,
+    so nothing changed. No scheduled task was created; that is the owner's call.
 
 ---
 

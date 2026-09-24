@@ -15,11 +15,12 @@ far are deleted again.
 """
 import uuid
 from contextlib import contextmanager
+from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import F, Q
 from django.utils import timezone
 
 from audit.services import AuditService
@@ -43,6 +44,8 @@ DESCRIPTION_MIN_LENGTH = 10
 MESSAGE_MAX_LENGTH = 5000
 REASON_MAX_LENGTH = 500
 MAX_UNRESOLVED_TICKETS = 5
+# D17: close_resolved_tickets closes a resolved ticket left quiet this long.
+AUTO_CLOSE_AFTER_DAYS = 7
 
 STATUS_LABELS = dict(SupportTicket.STATUS_CHOICES)
 CATEGORY_LABELS = dict(SupportTicket.CATEGORY_CHOICES)
@@ -522,3 +525,48 @@ class SupportTicketService:
         return User.objects.filter(is_active=True).filter(
             Q(is_superuser=True) | Q(pk__in=role_holders) | Q(pk__in=direct_holders)
         ).order_by("first_name", "last_name", "username")
+
+    # -------------------------------------------------------------- automation
+
+    @staticmethod
+    def stale_resolved_tickets(days=AUTO_CLOSE_AFTER_DAYS):
+        """
+        RESOLVED tickets that have sat untouched for `days`: resolved at least
+        that long ago, no public activity since (a staff follow-up restarts the
+        clock), and no customer message after the resolution.
+        """
+        cutoff = timezone.now() - timedelta(days=days)
+        return SupportTicket.objects.filter(
+            status=_RESOLVED,
+            resolved_at__lte=cutoff,
+            last_activity_at__lte=cutoff,
+        ).filter(
+            Q(last_customer_message_at__isnull=True)
+            | Q(last_customer_message_at__lte=F("resolved_at"))
+        )
+
+    @classmethod
+    def auto_close_resolved(cls, ticket_number, days=AUTO_CLOSE_AFTER_DAYS) -> bool:
+        """
+        Closes one stale resolved ticket on the system's behalf (no actor): the
+        usual public status line and audit entry. The conditions are checked
+        again under the row lock, so a ticket the customer answered or staff
+        reopened since it was listed is left alone. Returns whether it closed.
+        """
+        with transaction.atomic():
+            ticket = (
+                cls.stale_resolved_tickets(days)
+                .select_for_update()
+                .filter(ticket_number=ticket_number)
+                .first()
+            )
+            if ticket is None:
+                return False
+            cls._set_status(
+                ticket, _CLOSED, None, timezone.now(),
+                note=f"Closed automatically after {days} days without a reply.",
+                changed_by="system",
+                reason=f"Resolved, with no customer reply for {days} days.",
+            )
+            ticket.save()
+        return True
