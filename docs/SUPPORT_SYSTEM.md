@@ -1,6 +1,6 @@
 # MiniShop — Customer Support Ticket System Plan
 
-**Created:** 2026-09-24 · **Baseline commit:** `2463421` · **Status:** In progress (Task 1 of 12 done)
+**Created:** 2026-09-24 · **Baseline commit:** `2463421` · **Status:** In progress (Tasks 1–2 of 12 done)
 
 This is the plan and task list for the support ticket feature. Work through the tasks
 in §13 **one at a time, in order**. Each task is one commit. When a task is done, tick
@@ -463,7 +463,7 @@ plans:
 | Task | Title | Side | Status |
 |---|---|---|---|
 | 1 | `support` app: models, migration, private storage, read-only Django admin, permission codes | backend | ✅ Done |
-| 2 | `SupportTicketService` + attachment validator | backend | ☐ Not started |
+| 2 | `SupportTicketService` + attachment validator | backend | ✅ Done |
 | 3 | Customer API | backend | ☐ Not started |
 | 4 | Staff API | backend | ☐ Not started |
 | 5 | Frontend foundation: types, API clients, shared support components | frontend | ☐ Not started |
@@ -548,40 +548,94 @@ the API yet.
 
 **Goal.** All ticket rules live in one tested service, with no views yet.
 
-- [ ] `support/validators.py`: `validate_attachments(files)`. It enforces at most 5 files
+- [x] `support/validators.py`: `validate_attachments(files)`. It enforces at most 5 files
       and 5 MB each; detects the type from the content (Pillow `open()` + `verify()` for
       JPG / PNG / WebP, `%PDF-` header for PDF); rejects everything else; returns the
       detected content type and a cleaned original name for each file.
-- [ ] `support/services.py`: `SupportTicketError` (message → 400) and
+- [x] `support/services.py`: `SupportTicketError` (message → 400) and
       `SupportTicketService` with:
-  - [ ] `generate_ticket_number()` (`TKT<YYYYMMDD><6-HEX>`, retry on collision, like
+  - [x] `generate_ticket_number()` (`TKT<YYYYMMDD><6-HEX>`, retry on collision, like
         `generate_order_number`)
-  - [ ] `create_ticket(customer, category, subject, description, order_number=None,
+  - [x] `create_ticket(customer, category, subject, description, order_number=None,
         files=(), ip_address=None)`: order ownership, 5-unresolved cap (D13), ticket +
         first message + attachments, timestamps, `SUPPORT_TICKET_CREATED` audit
-  - [ ] `add_customer_reply(ticket, customer, body, files=())`: locks the ticket;
+  - [x] `add_customer_reply(ticket, customer, body, files=())`: locks the ticket;
         refuses `CLOSED`; reopens `WAITING_ON_CUSTOMER` / `RESOLVED` with a system
         message; updates `last_customer_message_at` and `last_activity_at`
-  - [ ] `close_by_customer(ticket, customer)`
-  - [ ] `add_staff_message(ticket, staff, body, files=(), is_internal=False,
+  - [x] `close_by_customer(ticket, customer)`
+  - [x] `add_staff_message(ticket, staff, body, files=(), is_internal=False,
         set_status=None, ip_address=None)`: the automatic `OPEN → IN_PROGRESS` move,
         `first_response_at`, `last_staff_reply_at` (public only); an internal note
         leaves all customer-visible fields alone
-  - [ ] `change_status(ticket, staff, new_status, reason="", ip_address=None)`:
+  - [x] `change_status(ticket, staff, new_status, reason="", ip_address=None)`:
         transition check, `resolved_at` / `closed_at`, public system message, audit
-  - [ ] `update_details(ticket, staff, priority=None, category=None, reason="",
+  - [x] `update_details(ticket, staff, priority=None, category=None, reason="",
         ip_address=None)`: internal system message, audit
-  - [ ] `assign(ticket, staff, assignee, ip_address=None)`: the assignee must be active
+  - [x] `assign(ticket, staff, assignee, ip_address=None)`: the assignee must be active
         and hold `support.staff.reply`; `None` unassigns; internal system message, audit
-  - [ ] `mark_read_by_customer(ticket)` and `get_assignable_staff()` (active users
+  - [x] `mark_read_by_customer(ticket)` and `get_assignable_staff()` (active users
         holding `support.staff.reply` through an active role or an active direct grant,
         plus SUPER_ADMINISTRATOR / superusers)
-- [ ] Every write runs in `transaction.atomic()` with `select_for_update()` on the ticket.
-- [ ] Tests: the service and attachment cases from §12.
+- [x] Every write runs in `transaction.atomic()` with `select_for_update()` on the ticket.
+- [x] Tests: the service and attachment cases from §12.
 
 **Done when.** `manage.py test support` passes, including the new tests.
 
-**Status:** ☐ Not started
+**Status:** ✅ Done 2026-09-24
+
+- **Signatures take a ticket number, not a ticket.** The customer methods are
+  `add_customer_reply(customer, ticket_number, body, files=(), ip_address=None)` and
+  `close_by_customer(customer, ticket_number, ip_address=None)`. The staff methods are
+  `add_staff_message / change_status / update_details / assign(staff, ticket_number,
+  …)`.
+  - The row lock and the ownership scope are one query:
+    `select_for_update().get(ticket_number=…, customer=customer)`.
+  - Another customer's ticket raises `SupportTicket.DoesNotExist`.
+  - **Task 3/4 views map** `DoesNotExist` → 404, `SupportTicketError` → 400
+    `{"detail": str(exc)}`, and Django `PermissionDenied` → 403 (DRF does that last one
+    by itself).
+- **The service checks permissions itself** (wider than planned):
+  - Customer methods need `support.create`.
+  - `add_staff_message` needs `support.staff.reply`, plus `support.staff.manage` when
+    `set_status` is given.
+  - `change_status`, `update_details` and `assign` need `support.staff.manage`.
+  - So no future caller can skip the check, which is the gap
+    `OrderService.transition_order_status` has.
+- **Errors:** `support/exceptions.py` holds `SupportTicketError` and its subclass
+  `AttachmentError`, so views catch one type.
+- **Rules settled while building:**
+  - A message may have an **empty body if it has at least one attachment**.
+  - An internal note **can't set a status**, but it **can** be added to a `CLOSED`
+    ticket. Public replies to a closed ticket are refused.
+  - A `set_status` equal to the current status is ignored.
+  - Leaving `RESOLVED` for an active status clears `resolved_at`; a reopen by the
+    customer does the same.
+  - A status-change `reason` goes to the audit log and into an **internal** system note
+    ("Status change reason: …"). The public line only says "Status changed to …".
+  - Every status change is audited, including the customer's reopen and close
+    (`metadata.changed_by`: `customer` / `staff`).
+  - Messages sent by the customer mark the ticket read for them.
+  - A blank or whitespace-only `order_number` means "no order".
+- **Ticket creation** takes a `select_for_update()` on the customer's user row first,
+  so two simultaneous requests can't both slip under the 5-ticket cap.
+- **Files:** they are written inside the transaction through
+  `_discard_files_on_error()`; if anything later in the transaction fails (tested by
+  making the audit write raise), the files written so far are deleted.
+- **Attachment names:** the stored name comes from the detected type ("receipt.jpg"
+  holding a PDF is stored and shown as "receipt.pdf"). Display names lose directories
+  and control characters (including the right-to-left override `U+202E`) and are cut
+  to 255 characters keeping the extension.
+- **Refused on purpose:** SVG, HTML, GIF, BMP, a ZIP renamed `.pdf`, text renamed
+  `.png`, and a truncated PNG.
+- **Constants** for serializers live in `support/services.py` (`SUBJECT_MIN_LENGTH`,
+  `MESSAGE_MAX_LENGTH`, `MAX_UNRESOLVED_TICKETS`, …) and `support/validators.py`
+  (`MAX_ATTACHMENTS_PER_MESSAGE`, `MAX_ATTACHMENT_BYTES`).
+- **Verified:** `manage.py test support` **82/82 OK** (34 from Task 1 + 15 validator +
+  33 service) in 372 s on a throwaway `test_minishop_sup2` database (created, then
+  destroyed). Temporary private-media directories are removed after each class.
+  `manage.py check` is clean; `makemigrations --check` reports no changes.
+- **Not tested:** real concurrent requests. The row lock is in place, but a threaded
+  race test against the remote MySQL wasn't attempted.
 
 ---
 
