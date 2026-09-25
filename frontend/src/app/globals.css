@@ -419,6 +419,450 @@
   --c-focus-ring: #60A5FA;
 }
 
+/* 6. Oxblood Ring (oxblood) — oxblood beads on a charcoal wire, rose-grey ground */
+:root[data-theme="oxblood"] {
+  --c-page-bg: #F4F1F3;
+  --c-surface: #FAF8F9;
+  --c-surface-alt: #EDE8EB;
+  --c-surface-sunken: #E5DFE2;
+  --c-border: #CCCCCC;
+  --c-border-subtle: #E3DDE0;
+  --c-text-strong: #1A1A1A;
+  --c-text-body: #333333;
+  --c-text-muted: #6B6468;
+  --c-text-faint: #948C90;
+  --c-primary: #8E1518;
+  --c-primary-hover: #6E0F12;
+  --c-primary-deep: #4D0507;
+  --c-on-primary: #FFFFFF;
+  --c-accent: #767676;
+  --c-accent-hover: #5E5E5E;
+  --c-on-accent: #FFFFFF;
+  --c-nav-bg: #222222;
+  --c-nav-strip-bg: #1A1A1A;
+  --c-nav-active-bg: #8E1518;
+  --c-nav-active-text: #FFFFFF;
+  --c-nav-text: #BBBBBB;
+  --c-price: #1A1A1A;
+  --c-sale-price: #C0181C;
+  --c-old-price: #777777;
+  --c-star: #8E1518;
+  --c-success: #3D6B4A;
+  --c-danger: #C0181C;
+  --c-badge-new: #444444;
+  --c-badge-hot: #C0181C;
+  --c-badge-top: #4D0507;
+  --c-badge-default: #E5DFE2;
+  --c-on-badge-default: #333333;
+  --c-focus-ring: #8E1518;
+}
+:root[data-theme="oxblood"].dark {
+  --c-page-bg: #110F10;
+  --c-surface: #1A1719;
+  --c-surface-alt: #252124;
+  --c-surface-sunken: #141213;
+  --c-border: #3A3538;
+  --c-border-subtle: #2A2629;
+  --c-text-strong: #F4F1F3;
+  --c-text-body: #CFC9CC;
+  --c-text-muted: #9C9699;
+  --c-text-faint: #6F696C;
+  --c-primary: #D0413F;
+  --c-primary-hover: #BA3634;
+  --c-primary-deep: #8E1518;
+  --c-on-primary: #FFFFFF;
+  --c-accent: #CCCCCC;
+  --c-accent-hover: #E0E0E0;
+  --c-on-accent: #1A1A1A;
+  --c-nav-bg: #1A1A1A;
+  --c-nav-strip-bg: #111010;
+  --c-nav-active-bg: #5A1012;
+  --c-nav-active-text: #FFFFFF;
+  --c-nav-text: #BBBBBB;
+  --c-price: #F4F1F3;
+  --c-sale-price: #F2545B;
+  --c-old-price: #857E81;
+  --c-star: #E0484B;
+  --c-success: #5A9E6E;
+  --c-danger: #F2545B;
+  --c-badge-new: #5C5659;
+  --c-badge-hot: #C8383B;
+  --c-badge-top: #8E1518;
+  --c-badge-default: #2A2629;
+  --c-on-badge-default: #D5D0D3;
+  --c-focus-ring: #E0484B;
+}
+
+/* 7. Krishnachura Bloom (krishnachura) */
+:root[data-theme="krishnachura"] {
+  --c-page-bg: #FFF3E6;
+  --c-surface: #FFFBF6;
+  --c-surface-alt: #FFE8D1;
+  --c-surface-sunken: #FDEBD9;
+  --c-border: #F0CCA8;
+  --c-border-subtle: #F8E0C8;
+  --c-text-strong: #2A1206;
+  --c-text-body: #4A2A1A;
+  --c-text-muted: #7A4A30;
+  --c-text-faint: #A57C63;
+  --c-primary: #B83800;
+  --c-primary-hover: #A02A00;
+  --c-primary-deep: #0A0200;
+  --c-on-primary: #FFFFFF;
+  --c-accent: #00A070;
+  --c-accent-hover: #00B47E;
+  --c-on-accent: #04180F;
+  --c-nav-bg: #B83A00;
+  --c-nav-strip-bg: #5C1D00;
+  --c-nav-active-bg: #FFC53D;
+  --c-nav-active-text: #3A1400;
+  --c-nav-text: #FFE0B0;
+  --c-price: #2A1206;
+  --c-sale-price: #C8175D;
+  --c-old-price: #A07860;
+  --c-star: #C27C00;
+  --c-success: #2E6E00;
+  --c-danger: #8F1A1A;
+  --c-badge-new: #047C55;
+  --c-badge-hot: #D0185E;
+  --c-badge-top: #7B3BD6;
+  --c-badge-default: #FCE0C4;
+  --c-on-badge-default: #5A2E14;
+  --c-focus-ring: #E0560F;
+}
+:root[data-theme="krishnachura"].dark {
+  --c-page-bg: #170A09;
+  --c-surface: #231110;
+  --c-surface-alt: #2E1813;
+  --c-surface-sunken: #1C0D0B;
+  --c-border: #4C2A22;
+  --c-border-subtle: #361D17;
+  --c-text-strong: #FFF1E4;
+  --c-text-body: #F0D9C6;
+  --c-text-muted: #C49A80;
+  --c-text-faint: #8F6A55;
+  --c-primary: #FF7A1F;
+  --c-primary-hover: #FF924A;
+  --c-primary-deep: #2A0C00;
+  --c-on-primary: #1F0A00;
+  --c-accent: #22DD9C;
+  --c-accent-hover: #55E8B4;
+  --c-on-accent: #03160E;
+  --c-nav-bg: #E8480C;
+  --c-nav-strip-bg: #3A1406;
+  --c-nav-active-bg: #FFC23D;
+  --c-nav-active-text: #2A1200;
+  --c-nav-text: #F5C9A5;
+  --c-price: #FFF1E4;
+  --c-sale-price: #FF5C93;
+  --c-old-price: #9C7A66;
+  --c-star: #FFC23D;
+  --c-success: #C6F25A;
+  --c-danger: #FF5260;
+  --c-badge-new: #13A06D;
+  --c-badge-hot: #E8336F;
+  --c-badge-top: #9B5CF0;
+  --c-badge-default: #3A2019;
+  --c-on-badge-default: #F0D9C6;
+  --c-focus-ring: #FF8A3D;
+}
+
+/* 8. Coral Lagoon (lagoon) */
+:root[data-theme="lagoon"] {
+  --c-page-bg: #E4F7F4;
+  --c-surface: #FAFFFE;
+  --c-surface-alt: #D8F2EE;
+  --c-surface-sunken: #DDF1EE;
+  --c-border: #B9DDD8;
+  --c-border-subtle: #CFEAE6;
+  --c-text-strong: #062A2C;
+  --c-text-body: #1D4447;
+  --c-text-muted: #46686A;
+  --c-text-faint: #6A8A8C;
+  --c-primary: #007672;
+  --c-primary-hover: #00615E;
+  --c-primary-deep: #00080A;
+  --c-on-primary: #FFFFFF;
+  --c-accent: #F55A45;
+  --c-accent-hover: #FF7461;
+  --c-on-accent: #04201F;
+  --c-nav-bg: #006A80;
+  --c-nav-strip-bg: #003A45;
+  --c-nav-active-bg: #5EE6DA;
+  --c-nav-active-text: #03282B;
+  --c-nav-text: #BDEFEA;
+  --c-price: #062A2C;
+  --c-sale-price: #D1224F;
+  --c-old-price: #6A8A8C;
+  --c-star: #D26E00;
+  --c-success: #0B6B30;
+  --c-danger: #B01E5A;
+  --c-badge-new: #00708F;
+  --c-badge-hot: #D6245A;
+  --c-badge-top: #9B2FC9;
+  --c-badge-default: #CFEAE6;
+  --c-on-badge-default: #1D4447;
+  --c-focus-ring: #00968A;
+}
+:root[data-theme="lagoon"].dark {
+  --c-page-bg: #051719;
+  --c-surface: #0A2226;
+  --c-surface-alt: #102F33;
+  --c-surface-sunken: #061B1E;
+  --c-border: #24494E;
+  --c-border-subtle: #173A3E;
+  --c-text-strong: #E8FBF8;
+  --c-text-body: #BEDFDB;
+  --c-text-muted: #86AEAC;
+  --c-text-faint: #628886;
+  --c-primary: #2DD4C5;
+  --c-primary-hover: #5CE8DA;
+  --c-primary-deep: #000000;
+  --c-on-primary: #021A1B;
+  --c-accent: #FF8878;
+  --c-accent-hover: #FFA093;
+  --c-on-accent: #1C0806;
+  --c-nav-bg: #00978B;
+  --c-nav-strip-bg: #04313A;
+  --c-nav-active-bg: #2DD4C5;
+  --c-nav-active-text: #021A1B;
+  --c-nav-text: #A3DCD7;
+  --c-price: #EFFFFD;
+  --c-sale-price: #FF5C8A;
+  --c-old-price: #658B89;
+  --c-star: #FFB020;
+  --c-success: #8CF5B4;
+  --c-danger: #FF3D6E;
+  --c-badge-new: #009A8E;
+  --c-badge-hot: #EC3470;
+  --c-badge-top: #B04FEE;
+  --c-badge-default: #173A3E;
+  --c-on-badge-default: #BEDFDB;
+  --c-focus-ring: #5CE8DA;
+}
+
+/* 9. Shapla Pop (shapla) */
+:root[data-theme="shapla"] {
+  --c-page-bg: #FFF0F7;
+  --c-surface: #FFFBFD;
+  --c-surface-alt: #FDE3F0;
+  --c-surface-sunken: #FAE8F1;
+  --c-border: #F0C6DA;
+  --c-border-subtle: #F8DDEA;
+  --c-text-strong: #2B0719;
+  --c-text-body: #4D1D36;
+  --c-text-muted: #7D4863;
+  --c-text-faint: #A8768F;
+  --c-primary: #C20C77;
+  --c-primary-hover: #A30A62;
+  --c-primary-deep: #18000F;
+  --c-on-primary: #FFFFFF;
+  --c-accent: #0098A6;
+  --c-accent-hover: #00ADBD;
+  --c-on-accent: #120510;
+  --c-nav-bg: #A60B66;
+  --c-nav-strip-bg: #6A0743;
+  --c-nav-active-bg: #FF5FB3;
+  --c-nav-active-text: #2B0719;
+  --c-nav-text: #FFDDEE;
+  --c-price: #2B0719;
+  --c-sale-price: #D4123F;
+  --c-old-price: #A07C8E;
+  --c-star: #C97200;
+  --c-success: #0B6E37;
+  --c-danger: #A8141E;
+  --c-badge-new: #00796E;
+  --c-badge-hot: #D4123F;
+  --c-badge-top: #6D28D9;
+  --c-badge-default: #F8DDEA;
+  --c-on-badge-default: #4D1D36;
+  --c-focus-ring: #C20C77;
+}
+:root[data-theme="shapla"].dark {
+  --c-page-bg: #12060D;
+  --c-surface: #1D0A16;
+  --c-surface-alt: #2A1022;
+  --c-surface-sunken: #170811;
+  --c-border: #4A2240;
+  --c-border-subtle: #331629;
+  --c-text-strong: #FFEAF4;
+  --c-text-body: #F2CFE0;
+  --c-text-muted: #C095AB;
+  --c-text-faint: #8A6078;
+  --c-primary: #FF4DAE;
+  --c-primary-hover: #FF73C0;
+  --c-primary-deep: #5A0B37;
+  --c-on-primary: #1A0512;
+  --c-accent: #33E6E0;
+  --c-accent-hover: #70F0EC;
+  --c-on-accent: #03201D;
+  --c-nav-bg: #F0409F;
+  --c-nav-strip-bg: #4D0A33;
+  --c-nav-active-bg: #FF4DAE;
+  --c-nav-active-text: #1A0512;
+  --c-nav-text: #FFC7E3;
+  --c-price: #FFEAF4;
+  --c-sale-price: #FF5C7A;
+  --c-old-price: #9A7088;
+  --c-star: #FFB020;
+  --c-success: #3EE08A;
+  --c-danger: #FF5A4A;
+  --c-badge-new: #0A9285;
+  --c-badge-hot: #E8233F;
+  --c-badge-top: #8B5CF6;
+  --c-badge-default: #33142A;
+  --c-on-badge-default: #F2CFE0;
+  --c-focus-ring: #FF73C0;
+}
+
+/* 10. Ultraviolet Spark (ultraviolet) */
+:root[data-theme="ultraviolet"] {
+  --c-page-bg: #F0E8FF;
+  --c-surface: #FDFBFF;
+  --c-surface-alt: #EADEFF;
+  --c-surface-sunken: #EFE7FD;
+  --c-border: #D9CAF2;
+  --c-border-subtle: #E7DCF9;
+  --c-text-strong: #1F1236;
+  --c-text-body: #42335B;
+  --c-text-muted: #62557C;
+  --c-text-faint: #7E7294;
+  --c-primary: #7424EC;
+  --c-primary-hover: #5E15D0;
+  --c-primary-deep: #160440;
+  --c-on-primary: #FFFFFF;
+  --c-accent: #F05A0A;
+  --c-accent-hover: #FF6F24;
+  --c-on-accent: #1A0833;
+  --c-nav-bg: #6116D6;
+  --c-nav-strip-bg: #420E9C;
+  --c-nav-active-bg: #FF6F24;
+  --c-nav-active-text: #1A0833;
+  --c-nav-text: #E0D4FF;
+  --c-price: #1F1236;
+  --c-sale-price: #D1146A;
+  --c-old-price: #8A7FA6;
+  --c-star: #E06000;
+  --c-success: #0A7040;
+  --c-danger: #D0152B;
+  --c-badge-new: #007A85;
+  --c-badge-hot: #D1146A;
+  --c-badge-top: #1D5FD0;
+  --c-badge-default: #EBE2FF;
+  --c-on-badge-default: #42335B;
+  --c-focus-ring: #8047F5;
+}
+:root[data-theme="ultraviolet"].dark {
+  --c-page-bg: #0B0515;
+  --c-surface: #120920;
+  --c-surface-alt: #25153A;
+  --c-surface-sunken: #0E0719;
+  --c-border: #3F2A5A;
+  --c-border-subtle: #2D1B43;
+  --c-text-strong: #F5F0FF;
+  --c-text-body: #DACFED;
+  --c-text-muted: #A797C4;
+  --c-text-faint: #7C6D97;
+  --c-primary: #904CF6;
+  --c-primary-hover: #7A35EC;
+  --c-primary-deep: #000000;
+  --c-on-primary: #FFFFFF;
+  --c-accent: #FF7A33;
+  --c-accent-hover: #FF9152;
+  --c-on-accent: #1A0833;
+  --c-nav-bg: #5A1AC8;
+  --c-nav-strip-bg: #260C4B;
+  --c-nav-active-bg: #FF7A33;
+  --c-nav-active-text: #1A0833;
+  --c-nav-text: #C9BBF0;
+  --c-price: #F7F3FF;
+  --c-sale-price: #FF4F9E;
+  --c-old-price: #847AA3;
+  --c-star: #FF9A3D;
+  --c-success: #34D98A;
+  --c-danger: #FF5468;
+  --c-badge-new: #0C969B;
+  --c-badge-hot: #E8237A;
+  --c-badge-top: #2F80E8;
+  --c-badge-default: #301E48;
+  --c-on-badge-default: #DACFED;
+  --c-focus-ring: #A57BFF;
+}
+
+/* 11. Kiwi & Guava (kiwi) */
+:root[data-theme="kiwi"] {
+  --c-page-bg: #EBF8EE;
+  --c-surface: #FCFFFD;
+  --c-surface-alt: #DCF4E3;
+  --c-surface-sunken: #E3F5E8;
+  --c-border: #BCE3C8;
+  --c-border-subtle: #D5EFDC;
+  --c-text-strong: #06240F;
+  --c-text-body: #1C3F28;
+  --c-text-muted: #46654F;
+  --c-text-faint: #6F8D78;
+  --c-primary: #007535;
+  --c-primary-hover: #005E2A;
+  --c-primary-deep: #000502;
+  --c-on-primary: #FFFFFF;
+  --c-accent: #FF3F8E;
+  --c-accent-hover: #FF5E9F;
+  --c-on-accent: #23030F;
+  --c-nav-bg: #0C7545;
+  --c-nav-strip-bg: #083D1F;
+  --c-nav-active-bg: #9EDB45;
+  --c-nav-active-text: #0E3A1A;
+  --c-nav-text: #CFF5A8;
+  --c-price: #0A2614;
+  --c-sale-price: #CC0F62;
+  --c-old-price: #6F8D78;
+  --c-star: #D46F00;
+  --c-success: #006E73;
+  --c-danger: #B3180F;
+  --c-badge-new: #008256;
+  --c-badge-hot: #D90F5E;
+  --c-badge-top: #7B2FE0;
+  --c-badge-default: #D5EFDC;
+  --c-on-badge-default: #1C3F28;
+  --c-focus-ring: #FF3F8E;
+}
+:root[data-theme="kiwi"].dark {
+  --c-page-bg: #04120A;
+  --c-surface: #0A1D12;
+  --c-surface-alt: #10281A;
+  --c-surface-sunken: #071710;
+  --c-border: #1F4A2E;
+  --c-border-subtle: #143522;
+  --c-text-strong: #EAFFF0;
+  --c-text-body: #C2E6CD;
+  --c-text-muted: #83AD91;
+  --c-text-faint: #5E8A6C;
+  --c-primary: #3DDC6E;
+  --c-primary-hover: #6AF08F;
+  --c-primary-deep: #000A04;
+  --c-on-primary: #010D05;
+  --c-accent: #FF7AB3;
+  --c-accent-hover: #FF98C5;
+  --c-on-accent: #22040F;
+  --c-nav-bg: #0E964B;
+  --c-nav-strip-bg: #062914;
+  --c-nav-active-bg: #3DDC6E;
+  --c-nav-active-text: #010D05;
+  --c-nav-text: #9FE7B5;
+  --c-price: #F0FFF4;
+  --c-sale-price: #FF5C9E;
+  --c-old-price: #678F74;
+  --c-star: #FFA928;
+  --c-success: #5EEAD4;
+  --c-danger: #FF5A4E;
+  --c-badge-new: #0FA062;
+  --c-badge-hot: #F0306E;
+  --c-badge-top: #9A55F5;
+  --c-badge-default: #173524;
+  --c-on-badge-default: #C2E6CD;
+  --c-focus-ring: #FF7AB3;
+}
+
 /* Base resets & typography */
 html, body {
   margin: 0;
@@ -604,4 +1048,313 @@ html, body {
 
 .nearby-map .nearby-map-popup-link:hover {
   text-decoration: underline;
+}
+
+/* ==========================================================================
+   Login ring (app/login/page.tsx)
+   The form sits inside a static inner ring; an outer ring of diamond beads
+   slowly turns around it. Wrong credentials flash the beads in the danger
+   colour and shake the form; a successful sign-in sinks both rings into the
+   centre before the redirect. Every colour is a theme token, so the ring
+   follows each palette and dark mode.
+   ========================================================================== */
+.login-ring {
+  position: relative;
+  width: min(520px, calc(100vw - 2rem));
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Inner ring: holds the form and never moves (except on success). */
+.login-ring__inner {
+  position: absolute;
+  width: 75%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 8px solid color-mix(in srgb, var(--c-text-strong) 80%, transparent);
+  background: var(--c-surface);
+  box-shadow:
+    inset 0 0 0 3px var(--c-text-faint),
+    0 2px 8px rgba(0, 0, 0, 0.35);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Outer decorative ring: two wires, a dashed track and the beads. */
+.login-ring__outer {
+  position: absolute;
+  width: 87.5%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  z-index: 1;
+  transform-origin: 50% 50%;
+  animation: login-ring-rotate 40s linear infinite;
+}
+
+.login-ring__wire {
+  position: absolute;
+  inset: 2.2%;
+  border-radius: 50%;
+  border: 3px solid var(--c-text-strong);
+}
+
+.login-ring__wire::before {
+  content: "";
+  position: absolute;
+  inset: 2.6%;
+  border-radius: 50%;
+  border: 2px solid var(--c-text-body);
+}
+
+.login-ring__track {
+  position: absolute;
+  inset: 4.4%;
+  border-radius: 50%;
+  border: 1px dashed color-mix(in srgb, var(--c-text-strong) 80%, transparent);
+}
+
+.login-ring__beads {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+}
+
+.login-ring__bead {
+  position: absolute;
+  width: 6.6%;
+  aspect-ratio: 1;
+  border-radius: 20%;
+  background: linear-gradient(135deg, var(--c-primary), var(--c-primary-deep));
+  transform: translate(-50%, -50%) rotate(45deg);
+  box-shadow:
+    0 2px 4px rgba(0, 0, 0, 0.35),
+    inset 2px 2px 3px rgba(255, 255, 255, 0.15);
+}
+
+.login-ring__beads.is-blinking .login-ring__bead {
+  animation: login-ring-bead-blink 0.35s ease-in-out 3;
+}
+
+/* The form, sized to fit inside the inner ring. */
+.login-ring__form {
+  width: 67%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: center;
+}
+
+.login-ring__form.is-shaking {
+  animation: login-ring-shake 0.45s ease-in-out;
+}
+
+.login-ring__title {
+  margin: 0 0 4px;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--c-text-strong);
+}
+
+.login-ring__subtitle {
+  margin: -8px 0 0;
+  font-size: 11px;
+  color: var(--c-text-muted);
+}
+
+.login-ring__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: left;
+}
+
+.login-ring__label {
+  padding-left: 2px;
+  font-size: 11px;
+  color: var(--c-text-muted);
+}
+
+.login-ring__input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--c-border);
+  border-radius: 20px;
+  font-size: 13px;
+  color: var(--c-text-strong);
+  background: var(--c-surface);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.login-ring__input::placeholder {
+  color: var(--c-text-faint);
+}
+
+.login-ring__input:focus {
+  border-color: var(--c-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--c-primary) 15%, transparent);
+}
+
+.login-ring__input:disabled {
+  opacity: 0.6;
+}
+
+.login-ring__error {
+  min-height: 14px;
+  margin-top: -4px;
+  font-size: 11px;
+  line-height: 14px;
+  color: var(--c-danger);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.login-ring__submit {
+  margin-top: 4px;
+  padding: 9px 0;
+  border: none;
+  border-radius: 20px;
+  background: linear-gradient(135deg, var(--c-primary), var(--c-primary-hover));
+  color: var(--c-on-primary);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s ease;
+}
+
+.login-ring__submit:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.login-ring__submit:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.login-ring__submit:focus-visible {
+  outline: 2px solid var(--c-focus-ring);
+  outline-offset: 2px;
+}
+
+.login-ring__submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Success: both rings sink into the centre, then a short welcome fades in. */
+.login-ring.is-success .login-ring__outer {
+  animation: login-ring-collapse 0.9s ease-in forwards;
+}
+
+.login-ring.is-success .login-ring__inner {
+  animation: login-ring-collapse 0.9s ease-in 0.15s forwards;
+}
+
+.login-ring__welcome {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.6s ease;
+}
+
+.login-ring__welcome.is-visible {
+  opacity: 1;
+}
+
+.login-ring__welcome h2 {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: var(--c-text-strong);
+}
+
+.login-ring__welcome p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--c-text-muted);
+}
+
+@keyframes login-ring-rotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes login-ring-bead-blink {
+  0%, 100% {
+    filter: brightness(1);
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+  }
+  50% {
+    background: var(--c-danger);
+    filter: brightness(1.4);
+    box-shadow: 0 0 16px 4px color-mix(in srgb, var(--c-danger) 95%, transparent);
+  }
+}
+
+@keyframes login-ring-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(7px); }
+  60% { transform: translateX(-5px); }
+  80% { transform: translateX(4px); }
+}
+
+@keyframes login-ring-collapse {
+  0% { transform: scale(1) rotate(0deg); opacity: 1; }
+  100% { transform: scale(0) rotate(360deg); opacity: 0; }
+}
+
+@media (max-width: 600px) {
+  .login-ring__form {
+    width: 68%;
+    gap: 8px;
+  }
+
+  .login-ring__title {
+    font-size: 16px;
+  }
+
+  .login-ring__subtitle {
+    display: none;
+  }
+
+  .login-ring__input {
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+
+  .login-ring__submit {
+    padding: 7px 0;
+    font-size: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-ring__outer,
+  .login-ring__beads.is-blinking .login-ring__bead,
+  .login-ring__form.is-shaking {
+    animation: none;
+  }
 }

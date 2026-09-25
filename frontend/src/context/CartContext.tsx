@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import { CartItem, Product, BackendCart } from "@/lib/types";
 import {
   getCart,
@@ -12,6 +12,10 @@ import {
 // Phase 2J: the byte-identical copy of this reader that used to live below is
 // gone; the three legacy access-token keys are resolved in one place now.
 import { getAuthToken } from "@/lib/auth";
+import { useAuth } from "@/context/AuthContext";
+
+// Items added while logged out live only in this browser under this key.
+const GUEST_CART_KEY = "minishop-cart";
 
 interface CartContextType {
   items: CartItem[];
@@ -37,6 +41,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
   const [hasUnavailableItems, setHasUnavailableItems] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
+  // null until auth has resolved once, then the last auth state we acted on.
+  const wasAuthenticated = useRef<boolean | null>(null);
 
   const applyBackendCart = useCallback((backendCart: BackendCart) => {
     const mapped: CartItem[] = (backendCart.items || []).map((bi) => {
@@ -68,14 +75,49 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
   }, [applyBackendCart]);
 
-  // Initial load: check auth or restore localStorage
-  useEffect(() => {
-    const token = getAuthToken();
-    if (token) {
-      refreshCart();
-    } else {
+  // Moves the logged-out cart into the account's server cart, one POST per
+  // item (the server adds to any quantity already there), then drops the local
+  // copy. Checkout orders from the server cart only, so without this a login
+  // mid-session left the page showing items the server had never seen.
+  const mergeGuestCart = useCallback(async (token: string) => {
+    let guestItems: CartItem[] = [];
+    try {
+      const saved = JSON.parse(localStorage.getItem(GUEST_CART_KEY) || "[]");
+      if (Array.isArray(saved)) guestItems = saved;
+    } catch {}
+    for (const item of guestItems) {
+      if (!item?.product?.id || !(item.quantity > 0)) continue;
       try {
-        const saved = localStorage.getItem("minishop-cart");
+        await addToCartApi(item.product.id, item.quantity, token);
+      } catch (err) {
+        // e.g. the product is no longer for sale; skip it rather than block login.
+        console.warn(`Could not move "${item.product.name}" into your cart:`, err);
+      }
+    }
+    try {
+      localStorage.removeItem(GUEST_CART_KEY);
+    } catch {}
+  }, []);
+
+  const loadAccountCart = useCallback(
+    async (token: string | null) => {
+      try {
+        if (token) {
+          await mergeGuestCart(token);
+          await refreshCart();
+        }
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [mergeGuestCart, refreshCart]
+  );
+
+  // Initial load: restore the guest cart; a logged-in cart loads via the auth effect below
+  useEffect(() => {
+    if (!getAuthToken()) {
+      try {
+        const saved = localStorage.getItem(GUEST_CART_KEY);
         if (saved) {
           const parsed = JSON.parse(saved);
           setItems(parsed);
@@ -83,13 +125,39 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       } catch {}
     }
     setMounted(true);
-  }, [refreshCart]);
+  }, []);
+
+  // Load (and merge into) the account cart on login, including a login that
+  // happens without a page reload.
+  useEffect(() => {
+    if (authLoading) return;
+    const prev = wasAuthenticated.current;
+    wasAuthenticated.current = isAuthenticated;
+    if (isAuthenticated && prev !== true) {
+      loadAccountCart(getAuthToken());
+    }
+  }, [isAuthenticated, authLoading, loadAccountCart]);
+
+  // Adjusted during render (not in an effect) so no stale frame shows. On
+  // login the cart reads as loading until the effect above has loaded it
+  // (checkout waits on that). On logout the server cart stays with the
+  // account, so the guest cart starts empty.
+  const [cartIsAccountCart, setCartIsAccountCart] = useState(false);
+  if (!authLoading && cartIsAccountCart !== isAuthenticated) {
+    setCartIsAccountCart(isAuthenticated);
+    if (isAuthenticated) {
+      setIsLoading(true);
+    } else {
+      setItems([]);
+      setHasUnavailableItems(false);
+    }
+  }
 
   // Save guest cart changes to localStorage
   useEffect(() => {
     if (mounted && !getAuthToken()) {
       try {
-        localStorage.setItem("minishop-cart", JSON.stringify(items));
+        localStorage.setItem(GUEST_CART_KEY, JSON.stringify(items));
       } catch {}
     }
   }, [items, mounted]);

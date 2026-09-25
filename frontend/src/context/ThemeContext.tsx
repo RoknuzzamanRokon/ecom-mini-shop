@@ -40,6 +40,42 @@ export const THEMES: ThemeOption[] = [
     subtitle: "The original bright blue & amber gold palette",
     swatches: ["#2563EB", "#FBBF24", "#1D4ED8", "#E11D48"],
   },
+  {
+    id: "oxblood",
+    name: "Oxblood Ring",
+    subtitle: "Oxblood beads on a charcoal wire, soft rose-grey ground",
+    swatches: ["#8E1518", "#767676", "#1A1A1A", "#C0181C"],
+  },
+  {
+    id: "krishnachura",
+    name: "Krishnachura Bloom",
+    subtitle: "Flame-tree blossom and marigold with monsoon-leaf jade",
+    swatches: ["#B83800", "#00A070", "#FFC53D", "#C8175D"],
+  },
+  {
+    id: "lagoon",
+    name: "Coral Lagoon",
+    subtitle: "Sunlit turquoise shallows over a hot coral reef",
+    swatches: ["#007672", "#F55A45", "#003A45", "#D1224F"],
+  },
+  {
+    id: "shapla",
+    name: "Shapla Pop",
+    subtitle: "Water-lily magenta with a splash of pond turquoise",
+    swatches: ["#C20C77", "#0098A6", "#6A0743", "#D4123F"],
+  },
+  {
+    id: "ultraviolet",
+    name: "Ultraviolet Spark",
+    subtitle: "Deep ultraviolet glow with a hot tangerine spark",
+    swatches: ["#7424EC", "#F05A0A", "#420E9C", "#D1146A"],
+  },
+  {
+    id: "kiwi",
+    name: "Kiwi & Guava",
+    subtitle: "Emerald kiwi and lime flesh with a hot-pink guava pop",
+    swatches: ["#007535", "#FF3F8E", "#9EDB45", "#CC0F62"],
+  },
 ];
 
 interface ThemeContextType {

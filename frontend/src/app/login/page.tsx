@@ -1,12 +1,32 @@
 "use client";
 
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { safeNextPath } from "@/lib/auth";
 import Header from "@/components/layout/Header";
 import Navbar from "@/components/layout/Navbar";
+
+// 26 diamond beads spaced evenly around the outer ring (percent of the ring box).
+// Rounded so the server and client render identical style strings.
+const BEADS = Array.from({ length: 26 }, (_, i) => {
+  const angle = (i / 26) * 2 * Math.PI;
+  return {
+    left: `${(50 + 48.5 * Math.sin(angle)).toFixed(2)}%`,
+    top: `${(50 - 48.5 * Math.cos(angle)).toFixed(2)}%`,
+  };
+});
+
+// How long the rings take to sink in (0.9s + the inner ring's 0.15s delay).
+const SUCCESS_ANIMATION_MS = 1050;
+
+function prefersReducedMotion() {
+  return (
+    typeof window !== "undefined" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
 
 export default function LoginPage() {
   return (
@@ -42,14 +62,56 @@ function LoginPageContent() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+
+  const formRef = useRef<HTMLFormElement>(null);
+  const beadsRef = useRef<HTMLDivElement>(null);
+  const errorFxTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // `login()` flips isAuthenticated before it resolves. Holding off while a
+  // submit is in flight or the success animation plays keeps this page on
+  // screen long enough for the rings to sink in; handleSubmit redirects.
+  const holdForAnimation = isSubmitting || isSuccess;
 
   // Redirect if already authenticated
   useEffect(() => {
-    if (!authLoading && isAuthenticated) {
+    if (!authLoading && isAuthenticated && !holdForAnimation) {
       const next = safeNextPath(searchParams.get("next"));
       router.replace(next);
     }
-  }, [isAuthenticated, authLoading, router, searchParams]);
+  }, [isAuthenticated, authLoading, holdForAnimation, router, searchParams]);
+
+  useEffect(
+    () => () => {
+      if (errorFxTimer.current) clearTimeout(errorFxTimer.current);
+      if (redirectTimer.current) clearTimeout(redirectTimer.current);
+    },
+    []
+  );
+
+  // Flash the beads and shake the form. Removing the class and forcing a
+  // reflow restarts the animations when errors come in quick succession.
+  const playErrorEffect = () => {
+    const beads = beadsRef.current;
+    const form = formRef.current;
+    if (!beads || !form) return;
+    beads.classList.remove("is-blinking");
+    form.classList.remove("is-shaking");
+    void beads.offsetWidth;
+    beads.classList.add("is-blinking");
+    form.classList.add("is-shaking");
+    if (errorFxTimer.current) clearTimeout(errorFxTimer.current);
+    errorFxTimer.current = setTimeout(() => {
+      beads.classList.remove("is-blinking");
+      form.classList.remove("is-shaking");
+    }, 1100);
+  };
+
+  const showError = (message: string) => {
+    setError(message);
+    playErrorEffect();
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,11 +119,11 @@ function LoginPageContent() {
 
     // Client-side validation
     if (!username.trim()) {
-      setError("Username is required.");
+      showError("Username is required.");
       return;
     }
     if (!password) {
-      setError("Password is required.");
+      showError("Password is required.");
       return;
     }
 
@@ -69,9 +131,17 @@ function LoginPageContent() {
     try {
       await login(username.trim(), password);
       const next = safeNextPath(searchParams.get("next"));
-      router.replace(next);
+      if (prefersReducedMotion()) {
+        router.replace(next);
+      } else {
+        setIsSuccess(true);
+        redirectTimer.current = setTimeout(
+          () => router.replace(next),
+          SUCCESS_ANIMATION_MS
+        );
+      }
     } catch (err) {
-      setError(
+      showError(
         err instanceof Error
           ? err.message
           : "Login failed. Please try again."
@@ -102,7 +172,7 @@ function LoginPageContent() {
   }
 
   // Already authenticated — will redirect via useEffect
-  if (isAuthenticated) {
+  if (isAuthenticated && !holdForAnimation) {
     return null;
   }
 
@@ -113,140 +183,130 @@ function LoginPageContent() {
         <Navbar />
       </div>
 
-      <main className="flex-1 flex items-center justify-center bg-page px-4 py-12">
-        <div className="w-full max-w-md">
-          {/* Card */}
-          <div className="bg-surface rounded-xl shadow-lg border border-line p-8">
-            {/* Header */}
-            <div className="text-center mb-8">
-              <div className="w-14 h-14 mx-auto mb-4 rounded-full bg-primary/10 flex items-center justify-center">
-                <span className="material-symbols-outlined text-[28px] text-accent">
-                  lock
-                </span>
-              </div>
-              <h1 className="text-2xl font-bold text-ink">Welcome Back</h1>
-              <p className="text-sm text-ink-muted mt-1">
+      <main className="flex-1 flex flex-col items-center justify-center bg-page px-4 py-10">
+        <div className={`login-ring${isSuccess ? " is-success" : ""}`}>
+          {/* Outer ring (decorative, rotating) */}
+          <div className="login-ring__outer" aria-hidden="true">
+            <div className="login-ring__wire" />
+            <div className="login-ring__track" />
+            <div ref={beadsRef} className="login-ring__beads">
+              {BEADS.map((pos, i) => (
+                <span key={i} className="login-ring__bead" style={pos} />
+              ))}
+            </div>
+          </div>
+
+          {/* Inner ring holding the form */}
+          <div className="login-ring__inner">
+            <form
+              ref={formRef}
+              onSubmit={handleSubmit}
+              className="login-ring__form"
+            >
+              <h1 className="login-ring__title">Welcome Back</h1>
+              <p className="login-ring__subtitle">
                 Sign in to your MiniShop account
               </p>
-            </div>
 
-            {/* Error Alert */}
-            {error && (
-              <div className="mb-6 p-3 rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 text-sm flex items-start gap-2">
-                <span className="material-symbols-outlined text-[18px] mt-0.5 shrink-0">
-                  error
-                </span>
-                <span>{error}</span>
-              </div>
-            )}
-
-            {/* Form */}
-            <form onSubmit={handleSubmit} className="space-y-5">
-              {/* Username */}
-              <div>
-                <label
-                  htmlFor="username"
-                  className="block text-sm font-medium text-ink mb-1.5"
-                >
+              <div className="login-ring__field">
+                <label htmlFor="username" className="login-ring__label">
                   Username
                 </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-[20px] text-ink-muted">
-                    person
-                  </span>
-                  <input
-                    id="username"
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder="Enter your username"
-                    autoComplete="username"
-                    autoFocus
-                    disabled={isSubmitting}
-                    className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-line bg-surface text-ink placeholder-ink-muted text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary disabled:opacity-60 transition-colors"
-                  />
-                </div>
+                <input
+                  id="username"
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="Enter your username"
+                  autoComplete="username"
+                  autoFocus
+                  disabled={isSubmitting || isSuccess}
+                  className="login-ring__input"
+                />
               </div>
 
-              {/* Password */}
-              <div>
-                <label
-                  htmlFor="password"
-                  className="block text-sm font-medium text-ink mb-1.5"
-                >
+              <div className="login-ring__field">
+                <label htmlFor="password" className="login-ring__label">
                   Password
                 </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-[20px] text-ink-muted">
-                    lock
-                  </span>
-                  <input
-                    id="password"
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Enter your password"
-                    autoComplete="current-password"
-                    disabled={isSubmitting}
-                    className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-line bg-surface text-ink placeholder-ink-muted text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary disabled:opacity-60 transition-colors"
-                  />
-                </div>
+                <input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Enter your password"
+                  autoComplete="current-password"
+                  disabled={isSubmitting || isSuccess}
+                  className="login-ring__input"
+                />
               </div>
 
-              {/* Submit */}
+              <div className="login-ring__error" role="alert">
+                {error}
+              </div>
+
               <button
                 type="submit"
-                disabled={isSubmitting}
-                className="w-full py-2.5 rounded-lg bg-primary hover:bg-primary-hover text-on-primary font-semibold text-sm transition-colors disabled:opacity-60 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                disabled={isSubmitting || isSuccess}
+                className="login-ring__submit"
               >
                 {isSubmitting ? (
                   <>
-                    <span className="material-symbols-outlined animate-spin text-[18px]">
+                    <span className="material-symbols-outlined animate-spin text-[16px]">
                       progress_activity
                     </span>
                     Signing in...
                   </>
                 ) : (
-                  <>
-                    <span className="material-symbols-outlined text-[18px]">
-                      login
-                    </span>
-                    Sign In
-                  </>
+                  "Sign In"
                 )}
               </button>
             </form>
-
-            {/* Registration Link */}
-            <div className="mt-6 pt-5 border-t border-line text-center">
-              <p className="text-sm text-ink-muted">
-                New to MiniShop?{" "}
-                <Link
-                  href={
-                    searchParams.get("next")
-                      ? `/register?next=${encodeURIComponent(searchParams.get("next")!)}`
-                      : "/register"
-                  }
-                  className="font-semibold text-accent hover:underline"
-                >
-                  Create an account
-                </Link>
-              </p>
-            </div>
-
-            {/* Back to Store */}
-            <div className="mt-4 text-center">
-              <Link
-                href="/"
-                className="text-xs text-ink-muted hover:text-ink inline-flex items-center gap-1 transition-colors"
-              >
-                <span className="material-symbols-outlined text-[14px]">
-                  arrow_back
-                </span>
-                Back to Store
-              </Link>
-            </div>
           </div>
+
+          {/* Shown once the rings have sunk in, while the redirect happens */}
+          <div
+            className={`login-ring__welcome${isSuccess ? " is-visible" : ""}`}
+            style={isSuccess ? { transitionDelay: "0.95s" } : undefined}
+            aria-live="polite"
+          >
+            {isSuccess && (
+              <>
+                <h2>Welcome back</h2>
+                <p>Signing you in…</p>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Registration + back links sit under the ring */}
+        <div
+          className={`mt-2 flex flex-col items-center gap-3 transition-opacity duration-300 ${
+            isSuccess ? "opacity-0" : ""
+          }`}
+        >
+          <p className="text-sm text-ink-muted">
+            New to MiniShop?{" "}
+            <Link
+              href={
+                searchParams.get("next")
+                  ? `/register?next=${encodeURIComponent(searchParams.get("next")!)}`
+                  : "/register"
+              }
+              className="font-semibold text-primary hover:underline"
+            >
+              Create an account
+            </Link>
+          </p>
+          <Link
+            href="/"
+            className="text-xs text-ink-muted hover:text-ink inline-flex items-center gap-1 transition-colors"
+          >
+            <span className="material-symbols-outlined text-[14px]">
+              arrow_back
+            </span>
+            Back to Store
+          </Link>
         </div>
       </main>
     </>

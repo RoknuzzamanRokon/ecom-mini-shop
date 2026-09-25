@@ -20,7 +20,7 @@ import { getAuthToken } from "@/lib/auth";
 
 export default function CheckoutPage() {
   const router = useRouter();
-  const { items, totalAmount, clearCart } = useCart();
+  const { items, totalAmount, clearCart, isLoading: cartLoading } = useCart();
   const { user, isAuthenticated } = useAuth();
 
   const [addresses, setAddresses] = useState<Address[]>([]);
@@ -509,7 +509,7 @@ export default function CheckoutPage() {
 
               <button
                 type="submit"
-                disabled={submitting}
+                disabled={submitting || cartLoading}
                 className="w-full mt-6 bg-primary hover:bg-primary-hover disabled:opacity-50 text-on-primary font-bold text-sm uppercase tracking-wider py-3.5 rounded-lg shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 {submitting ? (
