@@ -61,11 +61,28 @@ export interface Shop {
   created_at: string;
 }
 
+/** A product that matched a nearby product search (`?q=`), listed on its shop's card. */
+export interface NearbyMatchedProduct {
+  id: number;
+  name: string;
+  slug: string;
+  /** Decimal as a string, e.g. "3250.00". */
+  price: string;
+  old_price: string | null;
+  /** Relative media path; pass through formatImageUrl. */
+  image_url: string | null;
+  in_stock: boolean;
+}
+
 /** One GET /api/shops/nearby/ result: the public shop card plus its distance from the search point. */
 export interface NearbyShop extends Shop {
   /** Great-circle distance, 3 decimal places. */
   distance_km: number;
   distance_meters: number;
+  /** Only when the search had a `q`: every match at this shop. */
+  matched_product_count?: number;
+  /** Only when the search had a `q`: the first few matches, name matches first. */
+  matched_products?: NearbyMatchedProduct[];
 }
 
 export interface NearbyShopsResponse {
@@ -74,6 +91,8 @@ export interface NearbyShopsResponse {
   radius_km: number;
   /** The most shops `results` can hold (nearest first). */
   limit: number;
+  /** The product search text, echoed back only when one was sent. */
+  q?: string;
   results: NearbyShop[];
 }
 

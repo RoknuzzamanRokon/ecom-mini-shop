@@ -13,6 +13,7 @@ import NearbyShopCard, { NearbyShopCardSkeleton } from "@/components/shops/Nearb
 import NearbyShopsMap from "@/components/shops/NearbyShopsMap";
 import { useCustomerLocation } from "@/context/LocationContext";
 import {
+  NEARBY_QUERY_MAX_LENGTH,
   NEARBY_RADIUS_OPTIONS,
   getCategories,
   getNearbyShops,
@@ -21,10 +22,11 @@ import {
 import { Category, NearbyShopsResponse } from "@/lib/types";
 
 /**
- * /shops/nearby?radius=<km> — public shops near the customer's current location.
+ * /shops/nearby?q=<product>&radius=<km> — public shops near the customer's
+ * current location, optionally only those selling a matching product.
  *
- * The radius lives in the URL (back button, shareable). The coordinates never
- * do: they come from LocationContext, in memory only.
+ * The product search and radius live in the URL (back button, shareable). The
+ * coordinates never do: they come from LocationContext, in memory only.
  */
 export default function NearbyShopsPage() {
   const [categories, setCategories] = useState<Category[]>([]);
@@ -67,7 +69,8 @@ export default function NearbyShopsPage() {
           <div>
             <h1 className="text-2xl sm:text-3xl font-black text-ink tracking-tight">Nearby Shops</h1>
             <p className="text-xs sm:text-sm text-ink-body mt-0.5">
-              Shops closest to where you are right now.
+              Shops closest to where you are right now. Search for a product to see which of them
+              have it.
             </p>
           </div>
         </div>
@@ -89,14 +92,23 @@ interface NearbyResult {
   error: string | null;
 }
 
-function requestKeyFor(lat: number, lng: number, radius: number, attempt: number) {
-  return `${lat},${lng},${radius},${attempt}`;
+function requestKeyFor(lat: number, lng: number, radius: number, q: string, attempt: number) {
+  return JSON.stringify([lat, lng, radius, q, attempt]);
+}
+
+/** The page URL for a product search and radius; a blank search is left out. */
+function nearbyUrl(radius: number, q: string) {
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  params.set("radius", String(radius));
+  return `/shops/nearby?${params.toString()}`;
 }
 
 function NearbyShopsExplorer() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const radius = parseNearbyRadius(searchParams.get("radius"));
+  const q = (searchParams.get("q") ?? "").trim().slice(0, NEARBY_QUERY_MAX_LENGTH);
   const { status, position, error, permission, requestLocation } = useCustomerLocation();
 
   // Locate on arrival only when the browser won't show a prompt for it (D6).
@@ -116,13 +128,13 @@ function NearbyShopsExplorer() {
   const [result, setResult] = useState<NearbyResult | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
 
-  // One request per (location, radius, retry). Moving between radii quickly
-  // aborts the stale request; its late response can never overwrite a newer one.
+  // One request per (location, radius, search, retry). Changing any of them
+  // quickly aborts the stale request; its late response can never overwrite a newer one.
   useEffect(() => {
     if (lat === undefined || lng === undefined) return;
-    const key = requestKeyFor(lat, lng, radius, attempt);
+    const key = requestKeyFor(lat, lng, radius, q, attempt);
     const controller = new AbortController();
-    getNearbyShops({ latitude: lat, longitude: lng, radiusKm: radius }, controller.signal)
+    getNearbyShops({ latitude: lat, longitude: lng, radiusKm: radius, q }, controller.signal)
       .then((data) => setResult({ key, data, error: null }))
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;
@@ -133,10 +145,10 @@ function NearbyShopsExplorer() {
         });
       });
     return () => controller.abort();
-  }, [lat, lng, radius, attempt]);
+  }, [lat, lng, radius, q, attempt]);
 
   const requestKey =
-    lat === undefined || lng === undefined ? null : requestKeyFor(lat, lng, radius, attempt);
+    lat === undefined || lng === undefined ? null : requestKeyFor(lat, lng, radius, q, attempt);
   const current = result && result.key === requestKey ? result : null;
   const loading = requestKey !== null && current === null;
   const shops = current?.data?.results ?? [];
@@ -164,7 +176,12 @@ function NearbyShopsExplorer() {
   }, []);
 
   const changeRadius = (next: number) => {
-    router.replace(`/shops/nearby?radius=${next}`, { scroll: false });
+    router.replace(nearbyUrl(next, q), { scroll: false });
+  };
+
+  // A new search is a step the back button should undo; a radius change is not.
+  const changeQuery = (next: string) => {
+    router.push(nearbyUrl(radius, next.trim()), { scroll: false });
   };
 
   const widerRadius = NEARBY_RADIUS_OPTIONS.find((km) => km > radius);
@@ -173,18 +190,22 @@ function NearbyShopsExplorer() {
   let announcement = "";
   if (loading) announcement = `Loading shops within ${radius} km…`;
   else if (current?.error) announcement = current.error;
-  else if (current?.data) announcement = resultSummary(current.data, radius);
+  else if (current?.data) announcement = resultSummary(current.data, radius, q);
 
   return (
     <>
       <section
         aria-label="Search settings"
-        className="bg-surface border border-line rounded-2xl shadow-xs p-4 sm:p-5 flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4"
+        className="bg-surface border border-line rounded-2xl shadow-xs p-4 sm:p-5 flex flex-col gap-4"
       >
-        <div className="min-w-0 flex-1">
-          <CustomerLocationControl showStartActions={false} />
+        {/* Keyed on q so the box shows the URL's search again after back/forward. */}
+        <NearbyProductSearch key={q} initialQuery={q} onSearch={changeQuery} />
+        <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-4 pt-4 border-t border-line-subtle">
+          <div className="min-w-0 flex-1">
+            <CustomerLocationControl showStartActions={false} />
+          </div>
+          <NearbyRadiusPicker value={radius} onChange={changeRadius} />
         </div>
-        <NearbyRadiusPicker value={radius} onChange={changeRadius} />
       </section>
 
       <p className="sr-only" role="status" aria-live="polite">
@@ -197,7 +218,7 @@ function NearbyShopsExplorer() {
         ) : error ? (
           <LocationProblem />
         ) : (
-          <LocationPrompt />
+          <LocationPrompt q={q} />
         )
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
@@ -233,9 +254,13 @@ function NearbyShopsExplorer() {
               />
             ) : current?.data && current.data.results.length === 0 ? (
               <StateCard
-                icon="wrong_location"
-                title={`No shops within ${radius} km`}
-                body="No shop on MiniShop has a location inside this area yet."
+                icon={q ? "search_off" : "wrong_location"}
+                title={q ? `No shops within ${radius} km have “${q}”` : `No shops within ${radius} km`}
+                body={
+                  q
+                    ? "Try a wider area, a shorter search (one word often finds more), or see every shop nearby."
+                    : "No shop on MiniShop has a location inside this area yet."
+                }
                 action={
                   <>
                     {widerRadius && (
@@ -246,15 +271,21 @@ function NearbyShopsExplorer() {
                         Search within {widerRadius} km
                       </button>
                     )}
-                    <Link href="/shops" className={SECONDARY_LINK}>
-                      Browse all shops
-                    </Link>
+                    {q ? (
+                      <button type="button" onClick={() => changeQuery("")} className={SECONDARY_LINK}>
+                        Show all nearby shops
+                      </button>
+                    ) : (
+                      <Link href="/shops" className={SECONDARY_LINK}>
+                        Browse all shops
+                      </Link>
+                    )}
                   </>
                 }
               />
             ) : current?.data ? (
               <div className="flex flex-col gap-3">
-                <p className="text-sm font-semibold text-ink-body">{resultSummary(current.data, radius)}</p>
+                <p className="text-sm font-semibold text-ink-body">{resultSummary(current.data, radius, q)}</p>
                 <ol className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 gap-3">
                   {shops.map((shop, index) => (
                     <li key={shop.id}>
@@ -277,13 +308,84 @@ function NearbyShopsExplorer() {
   );
 }
 
-function resultSummary(data: NearbyShopsResponse, radius: number) {
+function resultSummary(data: NearbyShopsResponse, radius: number, q: string) {
   const shown = data.results.length;
   const noun = data.count === 1 ? "shop" : "shops";
+  const scope = q ? ` that ${data.count === 1 ? "has" : "have"} “${q}”` : "";
   if (data.count > shown) {
-    return `Showing the nearest ${shown} of ${data.count} ${noun} within ${radius} km`;
+    return `Showing the nearest ${shown} of ${data.count} ${noun} within ${radius} km${scope}`;
   }
-  return `${data.count} ${noun} within ${radius} km`;
+  return `${data.count} ${noun} within ${radius} km${scope}`;
+}
+
+/** "What are you looking for?": the product half of the search. Blank shows every nearby shop. */
+function NearbyProductSearch({
+  initialQuery,
+  onSearch,
+}: {
+  initialQuery: string;
+  onSearch: (q: string) => void;
+}) {
+  const [value, setValue] = useState(initialQuery);
+
+  return (
+    <form
+      role="search"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onSearch(value);
+      }}
+      className="flex flex-col gap-1.5"
+    >
+      <label
+        htmlFor="nearby-product-search"
+        className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted"
+      >
+        What are you looking for?
+      </label>
+      <div className="flex gap-2">
+        <div className="relative flex-1 min-w-0">
+          <span
+            aria-hidden="true"
+            className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-ink-muted"
+          >
+            search
+          </span>
+          <input
+            id="nearby-product-search"
+            type="search"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            maxLength={NEARBY_QUERY_MAX_LENGTH}
+            placeholder="A product, e.g. Task Desk Lamp"
+            className="w-full rounded-lg border border-line bg-surface-sunken py-2.5 pl-9 pr-9 text-sm text-ink placeholder-ink-faint focus:outline-hidden focus:border-primary focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary [&::-webkit-search-cancel-button]:hidden"
+          />
+          {value && (
+            <button
+              type="button"
+              onClick={() => {
+                setValue("");
+                if (initialQuery) onSearch("");
+              }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 flex h-6 w-6 items-center justify-center rounded-full text-ink-muted hover:bg-surface-alt hover:text-ink cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+                close
+              </span>
+              <span className="sr-only">Clear product search</span>
+            </button>
+          )}
+        </div>
+        <button type="submit" className={PRIMARY_BUTTON}>
+          <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+            travel_explore
+          </span>
+          <span className="hidden sm:inline">Find nearby</span>
+          <span className="sm:hidden">Find</span>
+        </button>
+      </div>
+    </form>
+  );
 }
 
 const PRIMARY_BUTTON =
@@ -323,17 +425,18 @@ function StateCard({
 }
 
 /** No location yet, and nothing has been asked: explain, then let the customer choose. */
-function LocationPrompt() {
+function LocationPrompt({ q }: { q: string }) {
   const { requestLocation } = useCustomerLocation();
   return (
     <StateCard
       icon="location_searching"
-      title="Find shops near you"
+      title={q ? `Find “${q}” near you` : "Find shops near you"}
       body={
         <>
           <p>
-            Share your current location to see the closest shops, how far away they are, and
-            where they are on a map.
+            {q
+              ? "Share your current location to see which shops close to you have it, how far away they are, and where they are on a map."
+              : "Share your current location to see the closest shops, how far away they are, and where they are on a map."}
           </p>
           <p className="mt-2 text-xs text-ink-muted">
             Your location is only used for this search. It isn&apos;t saved to your account or

@@ -104,6 +104,10 @@ export default function NearbyShopCard({
           </p>
         )}
 
+        {shop.matched_products && shop.matched_products.length > 0 && (
+          <MatchedProducts shop={shop} />
+        )}
+
         <div className="mt-2 flex items-center gap-4">
           {onShowOnMap && (
             <button
@@ -136,6 +140,67 @@ export default function NearbyShopCard({
         </div>
       </div>
     </article>
+  );
+}
+
+/**
+ * Product search results at this shop ("Has this:"), name matches first. The
+ * rows are client-side links, so the in-memory location survives the visit.
+ */
+function MatchedProducts({ shop }: { shop: NearbyShop }) {
+  const products = shop.matched_products ?? [];
+  const more = (shop.matched_product_count ?? products.length) - products.length;
+
+  return (
+    <div className="mt-2 rounded-lg border border-line-subtle bg-surface-alt/60 p-2">
+      <p className="text-[10px] font-extrabold uppercase tracking-wider text-accent">Has this:</p>
+      <ul className="mt-1 flex flex-col gap-1.5">
+        {products.map((product) => (
+          <li key={product.id}>
+            <Link
+              href={`/product/${product.slug}`}
+              onClick={(e) => e.stopPropagation()}
+              className="group flex items-center gap-2 rounded-md focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            >
+              <span className="w-9 h-9 shrink-0 rounded-md border border-line bg-surface overflow-hidden">
+                <Image
+                  src={formatImageUrl(product.image_url)}
+                  alt=""
+                  width={36}
+                  height={36}
+                  className="object-cover w-full h-full"
+                />
+              </span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-xs font-semibold text-ink group-hover:text-primary group-hover:underline">
+                  {product.name}
+                </span>
+                <span className="flex items-center gap-1.5 text-[11px]">
+                  <span className="font-bold text-ink">৳{product.price}</span>
+                  {product.old_price && (
+                    <span className="text-price-old line-through">৳{product.old_price}</span>
+                  )}
+                  {!product.in_stock && (
+                    <span className="rounded bg-danger/10 px-1 py-px text-[10px] font-bold text-danger">
+                      Out of stock
+                    </span>
+                  )}
+                </span>
+              </span>
+            </Link>
+          </li>
+        ))}
+      </ul>
+      {more > 0 && (
+        <Link
+          href={`/shop/${shop.slug}`}
+          onClick={(e) => e.stopPropagation()}
+          className="mt-1.5 inline-block text-[11px] font-bold text-primary hover:underline rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        >
+          +{more} more at this shop
+        </Link>
+      )}
+    </div>
   );
 }
 

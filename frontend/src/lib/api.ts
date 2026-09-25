@@ -391,8 +391,13 @@ export function parseNearbyRadius(value: string | null | undefined): number {
     : DEFAULT_NEARBY_RADIUS_KM;
 }
 
+/** Longest `q` the nearby endpoint accepts; longer searches get a 400. */
+export const NEARBY_QUERY_MAX_LENGTH = 100;
+
 /**
  * Public shops within `radiusKm` of a point, nearest first (GET /api/shops/nearby/).
+ * With a non-blank `q`, only shops selling a matching product come back, each
+ * with its matched products.
  *
  * Unlike the other public reads above there is no demo fallback: a failure
  * throws with the backend's message, because the nearby page shows a real
@@ -400,7 +405,7 @@ export function parseNearbyRadius(value: string | null | undefined): number {
  * only in this request and are not stored anywhere by the frontend.
  */
 export async function getNearbyShops(
-  params: { latitude: number; longitude: number; radiusKm: number },
+  params: { latitude: number; longitude: number; radiusKm: number; q?: string },
   signal?: AbortSignal
 ): Promise<NearbyShopsResponse> {
   const query = new URLSearchParams({
@@ -408,6 +413,8 @@ export async function getNearbyShops(
     lng: params.longitude.toFixed(6),
     radius: String(params.radiusKm),
   });
+  const q = params.q?.trim();
+  if (q) query.set("q", q);
   let res: Response;
   try {
     res = await fetch(`${API_BASE_URL}/api/shops/nearby/?${query.toString()}`, {

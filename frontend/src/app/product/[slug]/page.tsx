@@ -220,6 +220,17 @@ export default function ProductDetailPage() {
               </div>
             )}
 
+            {/* Other shops close to the customer that also have this product */}
+            <Link
+              href={`/shops/nearby?q=${encodeURIComponent(product.name)}`}
+              className="mt-2 self-start inline-flex items-center gap-1 text-xs font-semibold text-primary hover:underline rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+            >
+              <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+                near_me
+              </span>
+              Find in shops near you
+            </Link>
+
             {/* Description */}
             <p className="text-sm text-ink-body mt-4 leading-relaxed">
               {product.description}
