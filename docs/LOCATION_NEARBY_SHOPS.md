@@ -116,7 +116,7 @@ Frontend integration            lib/geolocation.ts ──► shop forms button  
 | D6 | The browser's permission prompt appears **only after a click**. If permission is already `granted`, the nearby page may locate automatically (no prompt appears). | "Must not be forced to grant location to browse". |
 | D7 | Shop forms: the button **only fills the two inputs**. Manual entry still works; the backend still validates. **No reverse geocoding**, no map picker. | Smallest correct change. Address stays a human-typed field. |
 | D8 | Map: **Leaflet 1.9 + OpenStreetMap tiles**, tile URL and attribution overridable with `NEXT_PUBLIC_MAP_TILE_URL` / `NEXT_PUBLIC_MAP_TILE_ATTRIBUTION`. | Free, no API key, BSD-2 licence, ~40 KB gz. See §7. |
-| D9 | The nearby UI is its own route **`/shops/nearby?radius=`** (next to `/shops`). Home gets an entry bar, not a map. | The home page is already hero + grid. A route gives the back button and a shareable radius. Coordinates never go in the URL (D5). |
+| D9 | The nearby UI is its own route **`/shops/nearby?radius=`** (next to `/shops`). Home gets an entry bar, not a map. *(2026-09-26: the home bar was removed; the entry points are now the header "Shops near you" link, `/shops`, and each product page — see [Follow-up](#follow-up--find-a-product-in-shops-near-you-2026-09-26).)* | The home page is already hero + grid. A route gives the back button and a shareable radius. Coordinates never go in the URL (D5). |
 | D10 | **No database change.** | §11. |
 
 ## 5. Proposed API Contract
@@ -131,6 +131,7 @@ Auth: none (AllowAny). Read-only.
 | `lat` | yes | number, finite, −90…90 | 400 |
 | `lng` | yes | number, finite, −180…180 | 400 |
 | `radius` | yes | km, finite, `> 0` and `<= 50` | 400 |
+| `q` | no | product search text, stripped, `<= 100` chars; blank = no filter (added 2026-09-26) | 400 |
 
 ```jsonc
 // 200
@@ -156,6 +157,24 @@ Auth: none (AllowAny). Read-only.
 // 400
 { "error": "Latitude must be between -90.0 and 90.0 degrees. Received: 95.0." }
 ```
+
+With `q` (added 2026-09-26), only shops owning a **publicly visible** product that
+matches it are kept — the catalog's own rule (`ProductService.search_q`: name,
+description or category name, case-insensitive phrase). The response then also has
+`"q"`, and every shop gets:
+
+```jsonc
+"matched_product_count": 5,   // every match at this shop
+"matched_products": [         // the first 3; name matches first, then by name
+  { "id": 41, "name": "Task Desk Lamp", "slug": "task-desk-lamp",
+    "price": "3250.00", "old_price": null,
+    "image_url": "/media/products/task-desk-lamp.jpg", "in_stock": true }
+]
+// 400: { "error": "Search text must be 100 characters or fewer." }
+```
+
+Without `q` the response is exactly as below. Stock is not filtered (like `/api/products/?q=`);
+`in_stock` says whether each match can be bought now.
 
 Visibility: only `APPROVED` / `ACTIVE` shops with real coordinates. Fields are exactly
 the public shop card fields (no owner, reasons, reviewer or timestamps beyond
@@ -610,7 +629,8 @@ build passes.
 **Goal.** Customers can find the feature from the home page and the shop directory.
 
 - [x] `src/components/home/NearbyShopsBar.tsx` with the states from §6; placed at the
-      top of the home page main column.
+      top of the home page main column. *(Removed 2026-09-26 at the user's request; see the
+      follow-up at the end.)*
 - [x] `/shops`: "Find Nearby Shops" link next to the sort control.
 - [x] Product search and the hero carousel behave exactly as before.
 
@@ -710,3 +730,33 @@ Header + Navbar untouched; everything works at phone width.
 - Marker clustering, bounding-box index prefilter (only if shops reach ~10k)
 - DRF throttling on public endpoints
 - Dark-mode map tiles
+
+---
+
+## Follow-up — find a product in shops near you (2026-09-26)
+
+**Why.** Customers wanted to ask "which shops near me have a *Task Desk Lamp*?". The two
+searches were separate: `/api/products/?q=` knows text, `/api/shops/nearby/` knows location.
+
+**What changed** (extends the endpoint, per D1; no new endpoint, no database change):
+
+- `GET /api/shops/nearby/` takes an optional `q` (see §5). `ShopService.get_nearby_shops`
+  gained `product_query`; `ShopService.get_matched_products_by_shop` fetches the matches for
+  the (at most 50) result shops in one query. The text rule lives in
+  `ProductService.search_q`, which `/api/products/?q=` now uses too, so both searches agree.
+- `/shops/nearby?q=<product>&radius=<km>`: a "What are you looking for?" box above the
+  location and radius controls. `q` is in the URL (shareable, back button); coordinates still
+  never are (D5). A new search is a history step; a radius change still replaces.
+- `NearbyShopCard` lists the matches ("Has this:", up to 3, price in ৳, "Out of stock" tag,
+  "+N more at this shop"). The map is unchanged.
+- Product pages link "Find in shops near you" → `/shops/nearby?q=<product name>`.
+- The home page "Shops near you" bar (`NearbyShopsBar.tsx`) was removed.
+
+**Tests.** `shops/tests.py::NearbyProductSearchTests` (11): filtering, radius and ordering,
+name/description/category matching, non-public products never qualifying a shop (draft,
+inactive, archived category, suspended seller), match listing and cap, blank `q`, the
+100-character limit.
+
+**Not done.** Word splitting / fuzzy matching (the match is one phrase, like product
+search), stock filtering, searching inside a shop from "+N more".
+
