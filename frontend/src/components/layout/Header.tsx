@@ -101,13 +101,15 @@ export default function Header({ onSearch, searchQuery = "" }: HeaderProps) {
 
         {/* Right Utility Actions */}
         <div className="flex items-center gap-4 text-on-primary shrink-0">
-          <a
-            href="#hot-deals"
-            className="hidden sm:flex items-center gap-1.5 text-xs font-semibold tracking-wide uppercase bg-primary-deep/40 hover:bg-primary-deep/60 px-2.5 py-1.5 rounded text-accent transition-colors"
+          {/* The nearby page asks for the location itself, so this is a plain link. */}
+          <Link
+            href="/shops/nearby"
+            title="Shops near you"
+            className="flex items-center gap-1.5 text-xs font-semibold tracking-wide uppercase bg-primary-deep/40 hover:bg-primary-deep/60 px-2.5 py-1.5 rounded text-accent transition-colors"
           >
-            <span className="material-symbols-outlined text-[16px]">local_offer</span>
-            <span>Today&apos;s Deal</span>
-          </a>
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">near_me</span>
+            <span className="sr-only sm:not-sr-only">Shops near you</span>
+          </Link>
 
           {/* Cart Action */}
           <button
