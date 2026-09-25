@@ -1,6 +1,6 @@
 # MiniShop — Customer Support Ticket System Plan
 
-**Created:** 2026-09-24 · **Baseline commit:** `2463421` · **Status:** In progress (Tasks 1–11 of 12 done; the feature is usable end to end)
+**Created:** 2026-09-24 · **Baseline commit:** `2463421` · **Status:** ✅ Done 2026-09-25 (Tasks 1–12; Task 11 was optional and is done)
 
 This is the plan and task list for the support ticket feature. Work through the tasks
 in §13 **one at a time, in order**. Each task is one commit. When a task is done, tick
@@ -476,7 +476,7 @@ plans:
 | 9 | Admin `/admin/support` ticket list | frontend | ✅ Done |
 | 10 | Admin ticket detail: thread, reply / internal note, status, priority, assignee | frontend | ✅ Done |
 | 11 | *(optional)* Auto-close resolved tickets after 7 days | backend | ✅ Done |
-| 12 | Regression run and documentation close-out | docs | ☐ Not started |
+| 12 | Regression run and documentation close-out | docs | ✅ Done |
 
 **The feature is usable end to end after Task 10.** Task 11 is an extra; Task 12 records
 the final checks.
@@ -1580,15 +1580,74 @@ the internal note); `npm run build` passes.
 
 ### Task 12 — Regression run and documentation close-out
 
-- [ ] Backend: `manage.py test support shop --settings=config.settings.test --noinput`
+- [x] Backend: `manage.py test support shop --settings=config.settings.test --noinput`
       (serial; `shop` alone takes about an hour).
-- [ ] Frontend: `npm run typecheck`, `npm run build`.
-- [ ] `docs/MINISHOP_REVIEW_STATE.md`: header line; §2 (new `support` app and
+- [x] Frontend: `npm run typecheck`, `npm run build`.
+- [x] `docs/MINISHOP_REVIEW_STATE.md`: header line; §2 (new `support` app and
       `/api/support/` mount); §4 (new codes); §11 (console module); §12 (new routes);
       §17 (support ticketing no longer missing); §21 history entry with the commits.
-- [ ] Record the results and the dev-database step (`migrate` + `seed_rbac`) here.
+- [x] Record the results and the dev-database step (`migrate` + `seed_rbac`) here.
 
-**Status:** ☐ Not started
+**Status:** ✅ Done 2026-09-25
+
+- **Backend regression** (serial, `--settings=config.settings.test --noinput`; this
+  machine has no `mysqldump`, so no `--parallel`). Two runs at once on separate
+  throwaway test databases, because the suite waits on the remote MySQL rather than the
+  CPU:
+
+  | Run (labels) | Result |
+  |---|---|
+  | `support rbac` (134 + 69; `rbac` too, because Task 1 changed `seed_rbac` and `rbac/widgets.py`) | `Ran 203 tests in 1847.421s … OK` |
+  | `shop.test_admin_governance` | `Ran 86 tests in 367.112s … OK` |
+  | `shop.test_shop_reviews shop.test_product_reviews shop.test_review_moderation shop.test_admin_site` | `Ran 101 tests in 1482.987s … OK` |
+  | `shop.test_admin_metrics shop.test_public_catalog shop.test_seller_product shop.test_orders shop.tests` | `Ran 110 tests in 2012.876s … OK` |
+  | `shop.test_staff_orders shop.test_inventory shop.test_payments shop.test_admin_phase1 shop.test_seller_orders shop.test_order_service_authorization shop.test_customer_orders` | `Ran 128 tests in 902.088s … OK` |
+  | **Total** | **628 tests (support 134, rbac 69, shop 425): 0 failures, 0 errors, none skipped** |
+
+  - **How `shop` was run:**
+    - The four `shop` runs cover all 17 `shop` test modules exactly once. The 425 total
+      matches the count of test methods in those modules.
+    - A single serial `manage.py test shop` was started first. It was stopped after
+      about 60 tests, because at the pace it was going it needed 2–3 more hours.
+    - Split four ways and run at once, all 425 finished in 47 minutes of wall-clock
+      time (08:07–08:54). The `support rbac` run took 38 minutes (07:26–08:05).
+  - **Cleanup:** every run destroyed its test database. The stopped run's half-built
+    `test_minishop_sup12a` was replaced and then destroyed by the run that reused the
+    name.
+  - **Not run:** the `customers`, `cart`, `sellers`, `shops`, `points` and `audit`
+    suites. The feature changed none of their code, and they were not part of this
+    task's command.
+
+- **Frontend:**
+  - `npm run typecheck` passes (exit 0).
+  - `npm run build` passes: 45 static pages, with `/profile/support`,
+    `/profile/support/new` and `/admin/support` static (○), and
+    `/profile/support/[ticketNumber]` and `/admin/support/[ticketNumber]` dynamic (ƒ).
+  - `eslint` is clean on every file the feature touched: the support pages and
+    components, `lib/support.ts`, `lib/auth.ts`, the profile layout, `Header`,
+    `Footer`, login, register, `admin-navigation.ts`, `AdminStatCard` and
+    `AdminStatusBadge`.
+- **Dev database step:** done 2026-09-24, after Task 2, at the owner's request (see
+  §10).
+  - `migrate` applied `support.0001_initial`.
+  - `seed_rbac` reported "5 permissions created (total 71) … 15 new role-permission
+    links created, 0 forbidden grant(s) revoked".
+  - No later task needed another migration or new permission code.
+  - Anyone else's database needs the same two commands:
+    `venv\Scripts\python.exe manage.py migrate` and then
+    `venv\Scripts\python.exe manage.py seed_rbac`.
+- **`docs/MINISHOP_REVIEW_STATE.md` updated:**
+  - The header, and §2 (the `support` app and the `/api/support/` mount).
+  - §4: the support codes, and seed totals corrected to 71 permissions / 8 roles /
+    220 links. The old 65 / 202 was already stale before this feature, because of
+    `reviews.moderate`.
+  - §11 (the support staff API and console module, plus the missing reviews row) and
+    §12 (the support routes, with the stale `/account/*` shims and missing admin
+    routes corrected).
+  - §13 and §14 (support rules and security), §15 (this re-run), §16 (#31 open
+    redirect, fixed; #32 `block` + `line-clamp`; #33 status-line wording), §17, §18
+    (decision 15: tickets change only through the service), §19, §20, and a §21
+    history entry with every commit.
 
 ---
 

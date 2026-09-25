@@ -2,7 +2,19 @@
 
 **Last full review:** 2026-09-17
 **Reviewed at commit:** `ce7cf2a` (`fix(inventory): prevent stock desynchronization`) — the last commit before the Task #6/#8 fixes; unchanged through the current HEAD.
-**Last targeted update:** 2026-09-24 — Location & nearby shop discovery (feature; plan and task log in `docs/LOCATION_NEARBY_SHOPS.md`). The existing `GET /api/shops/nearby/` is hardened (50 km radius cap, 50-result cap, unlocated shops excluded, plain 400 messages instead of a catch-all that echoed exception text) and extended with ratings; the admin shop API now returns coordinates; the shop forms get "Use My Current Location"; the storefront gets an in-memory `LocationContext`, a `/shops/nearby` page with a Leaflet + OpenStreetMap map, and entry points on `/` and `/shops`. No migration, no RBAC change. New dependency: `leaflet` (+ `@types/leaflet`). See §6, §12 and [Review History](#21-review-history).
+**Last targeted update:** 2026-09-25 — **Customer support ticket system** (feature; plan, decisions D1–D17 and a per-task log in `docs/SUPPORT_SYSTEM.md`).
+- **Backend:** a new `support` app mounted at `/api/support/`.
+  - Tickets, messages and private attachments (images/PDF, content-checked, stored outside `MEDIA_ROOT` and served only through authenticated endpoints).
+  - `SupportTicketService` is the only mutation path: status machine, row locks, audit.
+  - A customer API and a staff API (`/api/support/staff/`).
+  - Five new RBAC codes (`support.view`, `support.create`, `support.staff.view/reply/manage`).
+  - An optional `close_resolved_tickets` command.
+- **Frontend:** customer pages under `/profile/support`, entry points on the order page, the header menu and the footer, and a staff queue plus ticket page at `/admin/support`.
+- **Security fix found on the way:** `/login` and `/register` passed `?next=` straight to `router.replace()`, an open redirect. Now fixed (Known Issue #31).
+- One migration (`support/0001_initial`), applied to the dev database with `seed_rbac` on 2026-09-24.
+- See §2, §4, §11, §12, §15, §16, §17 and [Review History](#21-review-history).
+
+**Preceding targeted update:** 2026-09-24 — Location & nearby shop discovery (feature; plan and task log in `docs/LOCATION_NEARBY_SHOPS.md`). The existing `GET /api/shops/nearby/` is hardened (50 km radius cap, 50-result cap, unlocated shops excluded, plain 400 messages instead of a catch-all that echoed exception text) and extended with ratings; the admin shop API now returns coordinates; the shop forms get "Use My Current Location"; the storefront gets an in-memory `LocationContext`, a `/shops/nearby` page with a Leaflet + OpenStreetMap map, and entry points on `/` and `/shops`. No migration, no RBAC change. New dependency: `leaflet` (+ `@types/leaflet`). See §6, §12 and [Review History](#21-review-history).
 **Preceding targeted update:** 2026-09-23 — Phase 2K close-out (documentation only, no code changes). The route-level `loading.tsx`/`error.tsx`/`not-found.tsx` boundary work was already implemented and sitting in the working tree, uncommitted, when this pass started. A reconciliation audit found its "Done when" criterion — a forced fetch failure reaching `error.tsx` — is not met and cannot be met inside Phase 2K's own scope boundary: `frontend/src/lib/api.ts`'s public-read functions already convert fetch failures into demo data or `null` before a route boundary can see them, and that conversion **is** the "data-fetching logic" 2K was told not to touch. `docs/FUTURE_PLAN.md`'s Phase 2K section now carries a `Status: DONE` note that records what was actually delivered (real render-phase boundaries, working retry, `not-found.tsx` behind the existing `notFound()` calls) without the unmet claim, and a new named follow-up — **Fetch Error Propagation / Demo Fallback Policy** — is recorded under "Not in this roadmap" rather than invented as a new numbered phase. See [Review History](#21-review-history).
 **Preceding targeted update:** 2026-09-22 — Phase 2J: **client auth resilience.** A mid-session access-token expiry no longer surfaces as a generic error. Both API layers now recover from a 401 by refreshing once and retrying the original request once; the refresh is **single-flight**, so concurrent 401s produce one refresh, not one each. A failed or missing refresh token clears the stored tokens and notifies `AuthProvider`, which runs its existing client-side logout — so the console and storefront can no longer sit in a falsely-authenticated state. `frontend/src/lib/auth.ts` is now the **only** frontend module that names a token key: 53 authenticated `api.ts` functions moved to a shared wrapper, and a follow-up replaced the last 12 duplicated three-key readers across 6 application files. Known Issue #9 fixed (checkout `?redirect=` -> `?next=`), plus the same bug found in `SellerGuard`. **Frontend-only** — no backend file, no migration, no test framework, and no token revocation was added (none exists to add). Verification was source-level plus `tsc`/`build`; the 401 refresh path was **not** exercised at runtime. See [Review History](#21-review-history).
 **Preceding targeted update:** 2026-09-21 — Phase 2I: `/admin/audit-logs` **implemented**, the last management-console module. Frontend-only — no backend file changed. It consumes the existing, previously-uncalled `getAdminAuditLogs()` against the existing `GET /api/admin/audit-logs/`, gates on the existing `ADMIN_PERMISSIONS.auditView`, and is **read-only**: no mutation, export or retention tooling, which matches the endpoint's own `http_method_names = ["get", "head", "options"]`. Five of the helper's thirteen filter parameters are wired (actor, action, target type, start date, end date); the remaining eight are intentionally deferred. `npx tsc --noEmit` and `npm run build` both pass. The console now has no "Awaiting Implementation" module left. See [Review History](#21-review-history).
@@ -88,9 +100,10 @@ npm run build
 | `customers` | CustomerProfile, Address, Favorite, **Review** |
 | `cart` | Cart, CartItem (authenticated carts only) |
 | `audit` | AuditLog (append-only) + `AuditService` |
+| `support` | SupportTicket, TicketMessage, TicketAttachment; `SupportTicketService` (every ticket change: status machine, `select_for_update`, audit); private attachment storage (`support/storage.py`, `PRIVATE_MEDIA_ROOT = BASE_DIR/"private_media"`, gitignored); customer and staff APIs; `close_resolved_tickets` command. Added 2026-09-24/25 — `docs/SUPPORT_SYSTEM.md` |
 | `shop` | Product, Category, Order, OrderItem, ProductInventory, InventoryTransaction, Payment, Refund; `ProductService`, `OrderService`, `InventoryService`, `PaymentService`; `api_views.py`, `admin_views.py`; server-rendered catalogue template views (product list/detail only — the legacy cart/checkout/order-success views were removed 2026-09-21) |
 
-URL mounting (`config/urls.py:26-35`): `/admin/` → Django admin · `/api/auth/` → rbac · `/api/sellers/` → sellers · `/api/points/` → points · `/api/shops/` → shops · `/api/cart/` → cart · `/api/` → customers · `""` → shop (so shop's routes are literally `/api/...`).
+URL mounting (`config/urls.py:26-36`): `/admin/` → Django admin · `/api/auth/` → rbac · `/api/sellers/` → sellers · `/api/points/` → points · `/api/shops/` → shops · `/api/cart/` → cart · `/api/support/` → support (mounted before the broader `/api/` include) · `/api/` → customers · `""` → shop (so shop's routes are literally `/api/...`).
 
 ---
 
@@ -136,7 +149,22 @@ Models: `rbac/models.py` — `Role` (8 codes), `Permission` (`<resource>.<action
 
 **Protected roles:** `PROTECTED_ROLE_CODES = {SUPER_ADMINISTRATOR, ADMINISTRATOR}` (`shop/admin_serializers.py:21`), enforced at `shop/admin_views.py:183, 315, 452, 515`.
 
-**Roles** (`seed_rbac`): `SUPER_ADMINISTRATOR`, `ADMINISTRATOR`, `OPERATION_MANAGER`, `SALES_MANAGER`, `SALES_TEAM`, `FINANCE`, `SUPPORT_TEAM`, `CUSTOMER`. Seeding reports **65 permissions, 8 roles, 202 role-permission links**.
+**Roles** (`seed_rbac`): `SUPER_ADMINISTRATOR`, `ADMINISTRATOR`, `OPERATION_MANAGER`, `SALES_MANAGER`, `SALES_TEAM`, `FINANCE`, `SUPPORT_TEAM`, `CUSTOMER`.
+- A fresh database seeds **71 permissions, 8 roles, 220 role-permission links**. These totals were computed from `PERMISSIONS_DATA` / `ROLE_PERMISSIONS_MAPPING` / `FORBIDDEN_ROLE_PERMISSIONS` on 2026-09-25.
+- This line used to say 65 / 202, which was already stale: the same computation at `2463421`, before the support feature, gives 66 / 205. The difference is `reviews.moderate`, added in `ac7cdec`.
+- The support feature added the last 5 codes and 15 links.
+
+**Support codes** (2026-09-24):
+
+| Code | Allows | Seeded to |
+|---|---|---|
+| `support.view` | read your own tickets | CUSTOMER |
+| `support.create` | open, reply to and close your own tickets | CUSTOMER |
+| `support.staff.view` | the staff queue, tickets, summary, attachments | SUPPORT_TEAM, ADMINISTRATOR, OPERATION_MANAGER |
+| `support.staff.reply` | public replies and internal notes; being assignable | SUPPORT_TEAM, ADMINISTRATOR, OPERATION_MANAGER |
+| `support.staff.manage` | status, priority, category, assignee | SUPPORT_TEAM, ADMINISTRATOR |
+
+All three `support.staff.*` codes are in `FORBIDDEN_ROLE_PERMISSIONS[CUSTOMER]`, so a stray grant to CUSTOMER is revoked on the next `seed_rbac`.
 
 Seller-relevant grants: `SALES_TEAM` holds `products.view/create/update`, `orders.seller.*`, `inventory.*` — but **not** `products.delete` (`seed_rbac.py:188-194`). A seller needs `products.delete`, e.g. via `ADMINISTRATOR`, before the delete endpoint will work.
 
@@ -329,10 +357,19 @@ Distinct from Django's own admin at backend `/admin/`. They share no code and us
 | Customers | GET `/api/admin/customers/[<pk>/]` | `customers.admin.view` — **read-only** |
 | Metrics | GET `/api/admin/metrics/` | ad-hoc staff/role/`admin:access` check |
 | Audit logs | GET `/api/admin/audit-logs/` | `audit.view`/`audit.admin.view`/`users.admin.view`/`roles.admin.view`; `http_method_names` hard-limited to get/head/options |
+| Reviews | GET `/api/admin/reviews/<product\|shop>/`, POST `/<pk>/hide/`, POST `/<pk>/unhide/` | `reviews.moderate` (`CanModerateReviews`). Added in `ac7cdec`; this row was missing until 2026-09-25 |
+| Support tickets | GET `/api/support/staff/tickets/` (filters: status incl. `active`/`all`, priority, category, `assigned=me\|unassigned\|<id>`, `needs_reply`, search, ordering; 20/page) · GET/PATCH `/<ticket_number>/` · POST `/<ticket_number>/messages/` (multipart; reply or internal note, optional `set_status`) · POST `/<ticket_number>/assign/` · GET `assignees/` · GET `summary/` · GET `attachments/<id>/` | `support.staff.view` / `.reply` / `.manage`. **Not** in `shop/admin_views.py`: it lives in `support/views.py`, and every change goes through `SupportTicketService` |
 
 Every admin mutation writes an `AuditLog` (`ADMIN_USER_CREATED`, `ADMIN_ROLE_CREATED`, `ADMIN_SHOP_<ACTION>`, `ADMIN_PRODUCT_<ACTION>`, …) with actor, reason, previous/new state and client IP. Admin serializers use explicit `fields` + `read_only_fields`, exclude password/hash/token fields entirely (password is `write_only` on user create only), and redact `SENSITIVE_KEYS` from audit metadata (`admin_serializers.py:819`).
 
-**Frontend routes:** `/admin`, `/admin/login`, `/admin/profile`, and list/detail(/new) families for `shops`, `sellers`, `users`, `roles`, `products` (no `new`), `categories`, `customers`, **`orders`**, **`payments`** (list + detail, no `new` for either — orders/payments are never created by staff directly), plus **`audit-logs`** (list only, built 2026-09-21 in Phase 2I — read-only, so no detail, `new` or mutation route exists). The catch-all `/admin/[...slug]` and its "Awaiting Implementation" placeholder remain in place for any future nav entry, but as of 2026-09-21 **every** `ADMIN_NAV_ITEMS` entry resolves to a real page.
+**Frontend routes:** `/admin`, `/admin/login`, `/admin/profile`, and list/detail(/new) families for `shops`, `sellers`, `users`, `roles`, `products` (no `new`), `categories`, `customers`, **`orders`**, **`payments`** (list + detail, no `new` for either — orders/payments are never created by staff directly), plus **`audit-logs`** (list only, built 2026-09-21 in Phase 2I — read-only, so no detail, `new` or mutation route exists), **`reviews`** (list only, hide/restore from the row; `ac7cdec`), and:
+- **`support`** (built 2026-09-24): the queue at `/admin/support` and the ticket page at `/admin/support/[ticketNumber]`. There is no `new` route, because only customers open tickets.
+  - **Queue:** summary cards that work as filters, status tabs, and filters kept in the URL.
+  - **Ticket page:** the thread with internal notes marked, reply / internal-note composer, status buttons with a confirm step, priority, category, assignee, and customer, order and timeline cards.
+  - Controls are gated on `support.staff.reply` / `.manage`.
+  - Status changes, assignments and priority/category changes write `SUPPORT_TICKET_*` audit rows (`STATUS_CHANGED`, `ASSIGNED`, `UPDATED`; plus `CREATED` when a customer opens one).
+
+The catch-all `/admin/[...slug]` and its "Awaiting Implementation" placeholder remain in place for any future nav entry, but as of 2026-09-21 **every** `ADMIN_NAV_ITEMS` entry resolves to a real page.
 
 `AdminGuard` + `isManagementUser` (`frontend/src/lib/admin-auth.ts:52-76`) admits a user holding **any** of: `is_superuser`, `is_staff`, a management role code, or a permission matching `admin:access` / `*` / `*.admin.manage` / `*.staff.view`. This only controls console *navigation* — every backend endpoint still enforces its own permission code. Nav visibility is driven by `admin-navigation.ts`; the console's API layer is the dedicated `frontend/src/lib/admin-api.ts`.
 
@@ -347,15 +384,20 @@ Verified against `npm run build` output plus the actual `page.tsx` files.
 **Public:** `/`, `/product/[slug]`, `/shop/[slug]`, `/shops`, `/shops/nearby`, `/login`, `/register`, `/checkout`, `/order-success/[orderNumber]`
  — `/shops/nearby?radius=<km>` reads the customer's location from `context/LocationContext.tsx` (memory only; never in the URL, storage or the backend) and is the only page that loads Leaflet.
 
-**Customer:** `/profile` (redirects to `/profile/settings`), `/profile/settings`, `/profile/orders`, `/profile/orders/[orderNumber]`, `/profile/addresses`, `/profile/favorites`, `/profile/track`
- — plus `/account`, `/account/profile`, `/account/orders`, `/account/orders/[orderNumber]`, `/account/addresses`, which are **legacy redirect shims** into the `/profile/*` family (each file is a 4-line `redirect()`).
+**Customer:**
+- **Routes:** `/profile` (redirects to `/profile/settings`), `/profile/settings`, `/profile/orders`, `/profile/orders/[orderNumber]`, `/profile/addresses`, `/profile/favorites`, `/profile/reviews`, `/profile/track`, and **`/profile/support`, `/profile/support/new`, `/profile/support/[ticketNumber]`** (support tickets, 2026-09-24).
+- **Profile layout:** a guest is redirected to `/login?next=<path+query>`.
+- **Support entry points:** "Get help with this order" on `/profile/orders/[orderNumber]`, "Help & Support" in the header account menu (only for users holding `support.view`), and the footer "Contact Support" link.
+- **Correction (2026-09-25):** the `/account/*` redirect shims this line used to list were deleted in `9c7f621` ("chore: remove dead code") and no longer exist. `/profile/reviews` was missing.
 
 **Seller:** `/seller`, `/seller/shops`, `/seller/products`, `/seller/orders`, `/seller/wallet`, `/seller/profile`
  — flat pages only; the seller panel deliberately has **no `new` or `[id]` sub-routes**, create/edit is modal-based within each page. (The admin console uses the opposite convention.)
 
-**Management:** `/admin`, `/admin/login`, `/admin/profile`, `/admin/shops[/new|/[id]]`, `/admin/sellers[/new|/[id]]`, `/admin/users[/new|/[id]]`, `/admin/roles[/new|/[id]]`, `/admin/products[/[id]]`, `/admin/categories[/[id]]`, `/admin/customers[/[id]]`, `/admin/[...slug]`
+**Management:**
+- **Routes:** `/admin`, `/admin/login`, `/admin/profile`, `/admin/shops[/new|/[id]]`, `/admin/sellers[/new|/[id]]`, `/admin/users[/new|/[id]]`, `/admin/roles[/new|/[id]]`, `/admin/products[/[id]]`, `/admin/categories[/[id]]`, `/admin/customers[/[id]]`, `/admin/orders[/[id]]`, `/admin/payments[/[id]]`, `/admin/reviews`, `/admin/audit-logs`, **`/admin/support[/[ticketNumber]]`**, `/admin/[...slug]`.
+- **Correction (2026-09-25):** orders, payments, reviews and audit-logs were built earlier but missing from this list. The list now matches `npm run build`.
 
-Guards: `SellerGuard` (fetches `/api/sellers/dashboard/`, renders "Seller Account Required" on 404), `AdminGuard` (see above), and inline auth checks in `app/profile/layout.tsx`. A `ProtectedRoute` component exists but **is used by zero pages**.
+Guards: `SellerGuard` (fetches `/api/sellers/dashboard/`, renders "Seller Account Required" on 404), `AdminGuard` (see above), and inline auth checks in `app/profile/layout.tsx`. A `ProtectedRoute` component exists but **is used by zero pages**. `/login` and `/register` honour `?next=` only for a same-site path (`safeNextPath` in `lib/auth.ts`, 2026-09-24 — Known Issue #31).
 
 ---
 
@@ -382,6 +424,11 @@ Guards: `SellerGuard` (fetches `/api/sellers/dashboard/`, renders "Seller Accoun
 | API authorization is MiniShop RBAC, never Django `auth.Permission` | `rbac/services.has_user_permission` used by every permission class |
 | Only a wildcard holder may delegate beyond their own permissions | `get_undelegatable_permission_codes` |
 | `SUPER_ADMINISTRATOR` and `ADMINISTRATOR` are protected roles | `PROTECTED_ROLE_CODES` |
+| A customer sees and changes only their own support tickets; another customer's ticket or file is a safe 404 | `support/views.py` (`customer_tickets()` → `filter(customer=request.user)`); `SupportTicketService` looks tickets up with `customer=` under the row lock |
+| Internal notes and their attachments never reach the customer API | `CustomerTicketDetailSerializer` reads only `public_messages`; the customer download refuses internal attachments; tested in `support/tests/test_customer_api.py` |
+| Ticket status follows `SupportTicket.VALID_TRANSITIONS`; `CLOSED` is terminal; only a customer reply reopens a resolved or waiting ticket | `support/models.py`, `SupportTicketService` |
+| At most 5 unresolved tickets per customer | `SupportTicketService.create_ticket` (locks the customer's user row for the count) |
+| Support attachments: JPG/PNG/WebP/PDF by **content**, ≤ 5 per message, ≤ 5 MB each; private storage; authenticated download only, `nosniff` | `support/validators.py`, `support/storage.py`, `support/views.py::attachment_response` |
 
 ### Intended but NOT fully implemented
 
@@ -407,6 +454,13 @@ Guards: `SellerGuard` (fetches `/api/sellers/dashboard/`, renders "Seller Accoun
 - Anti-escalation on role editing; protected roles cannot be abused; role deletion guarded.
 - Admin serializers never expose password, hash or token fields; audit metadata redacts sensitive keys.
 - Audit logging on product mutations, all admin governance mutations, point adjustments, reviews and orders.
+- **Support tickets** (2026-09-24):
+  - Customer querysets are owner-scoped, with safe 404s.
+  - Internal notes are withheld at both the serializer and the download layer.
+  - Attachments are type-checked from their bytes (Pillow `verify()`, `%PDF-` header; SVG/HTML refused), stored under `PRIVATE_MEDIA_ROOT` (outside the `MEDIA_ROOT` that DEBUG serves publicly) with UUID names, and served only by authenticated endpoints with `X-Content-Type-Options: nosniff`.
+  - Every status, assignment and priority change goes through `SupportTicketService` under `select_for_update()` and writes an `AuditLog`.
+  - Message text is rendered as plain text, never as HTML.
+- **Open-redirect guard** (2026-09-24, #31): `/login` and `/register` follow `?next=` only when it parses to a path on the same site (`safeNextPath`).
 
 **Known security limitations** (see Known Issues for detail)
 
@@ -593,7 +647,31 @@ permissions at all**. That passed against a role-code check and fails against a 
 was added to its `setUp`; every user, role and assertion in the class is unchanged. The fixture is now realistic rather
 than the test being weakened.
 
+**Re-run 2026-09-25 (customer support ticket system, close-out):**
+- All runs were serial. This machine has no `mysqldump`, so `--parallel` can't clone databases.
+- Each run used its own throwaway `TEST_DATABASE_URL`, and several ran at once.
+- Every test database was destroyed afterwards.
+
+| Check | Result |
+|---|---|
+| `manage.py check` / `makemigrations --check --dry-run` | **Pass** — "System check identified no issues" / "No changes detected" (run in Tasks 1–11; `support/0001_initial` is the feature's only migration) |
+| `support rbac` (134 + 69) | **Pass** — `Ran 203 tests in 1847.421s … OK` |
+| `shop.test_admin_governance` | **Pass** — `Ran 86 tests in 367.112s … OK` |
+| `shop.test_shop_reviews shop.test_product_reviews shop.test_review_moderation shop.test_admin_site` | **Pass** — `Ran 101 tests in 1482.987s … OK` |
+| `shop.test_admin_metrics shop.test_public_catalog shop.test_seller_product shop.test_orders shop.tests` | **Pass** — `Ran 110 tests in 2012.876s … OK` |
+| `shop.test_staff_orders shop.test_inventory shop.test_payments shop.test_admin_phase1 shop.test_seller_orders shop.test_order_service_authorization shop.test_customer_orders` | **Pass** — `Ran 128 tests in 902.088s … OK` |
+| **Total** | **628 tests — support 134, rbac 69, shop 425 — 0 failures, 0 errors, none skipped** |
+| `npm run typecheck` / `npm run build` / `eslint` (every file the feature touched) | **Pass** — build: 45 static pages; the 5 support routes compiled |
+
+**How `shop` was run:**
+- The four runs cover all 17 `shop` test modules exactly once. 425 is the number of test methods in those modules.
+- One serial `manage.py test shop` was tried first and stopped after about 60 tests, because at that pace it needed 2–3 more hours.
+- Split four ways and run at once, all 425 finished in 47 minutes of wall-clock time.
+
+**Not re-run:** `customers`, `cart`, `sellers`, `shops`, `points` and `audit`. The feature changed none of their code, so the last whole-suite total (556, Phase 2D) is not re-established here.
+
 **Environment notes for whoever runs these next**
+- **No `mysqldump` (2026-09-24/25):** this machine has no `mysqldump` on PATH, so `--parallel` can't clone test databases. The substitute that worked: several serial `manage.py test <labels>` runs at once, each with its own `TEST_DATABASE_URL`. The suite is round-trip-bound, so they barely slow each other.
 - **Use the test settings.** `--settings=config.settings.test` is what makes the suite fast; without it you are back to ~92 minutes. Full command:
   `manage.py test --settings=config.settings.test --parallel --keepdb --noinput`.
 - Always pass `--noinput`; a stale `test_minishop` database otherwise blocks on an interactive prompt and an unattended run hangs forever.
@@ -644,6 +722,15 @@ than the test being weakened.
 | 28 | **New, found 2026-09-19 (Phase 2D).** The management dashboard now shows **৳0.00 revenue instead of no revenue** to finance-less operators. Phase 2D correctly stopped serving `total_revenue` to callers without `payments.view`, but the console decides whether to draw the card from `ADMIN_PERMISSIONS.metricRevenue = ["payments.view", "reports.view"]` matched with **any**-semantics (`admin-navigation.ts:123`, consumed at `admin/page.tsx:73`). An OPERATION_MANAGER holds `reports.view` but not `payments.view`, so the card still renders, and `AdminStatCard` maps a missing value to `formatTaka(0)` (`AdminStatCard.tsx:77`) — displaying a confident ৳0.00. Also note `AdminMetrics.total_revenue` is typed as a required `number` in `admin-api.ts:7`, which is now untrue on the wire. **The data leak is genuinely closed** (the value is absent from the HTTP response, verified against the serialized body); this is a display-correctness follow-up, not a security issue. Fix is one line: require `payments.view` for the card, and make the TS field optional. | Management Console / frontend | Low (misleading, not leaking) | **Open.** Phase 2D was explicitly forbidden from changing the frontend API client, the dashboard UI, or the console-access heuristic, so this was recorded rather than fixed. |
 | 29 | **New, found 2026-09-19 (Phase 2F).** The **SALE path has the same reservation-less gap** that Phase 2F just closed on the RELEASE path. `InventoryService.finalize_order_delivery` computes `qty = min(inventory.reserved_quantity, item.quantity)` (`shop/inventory_service.py:404`) with **no check that this order ever reserved anything**. `reserved_quantity` is shared across every open order for the product, so delivering an order that has no `RESERVATION` ledger row converts **another order's reserved units into sold units** — the other order's reservation silently evaporates, and when it is later cancelled it releases nothing. Reachability, restated 2026-09-21: the source that *created* such orders — the legacy storefront checkout, formerly `shop/views.py:111` — was deleted in Phase 2E, so **no new** reservation-less order can be created. The issue is **not** closed by that: every legacy order already in the database still has no `RESERVATION` ledger row, and `Order.VALID_TRANSITIONS` still allows `PENDING → CONFIRMED → PROCESSING → SHIPPED → DELIVERED` for it, so delivering one still converts another order's reserved units into sold units. Phase 2E removed the inflow, not the existing rows. The fix is the one-line mirror of 2F's: bound `qty` by `InventoryService._order_reserved_quantity(order, product)` (`:226`), which already exists and is already the correct computation. | Inventory / order lifecycle | **High** (same class as the release bug just fixed; corrupts a second order's reservation) | **Open by instruction.** Phase 2F's scope boundary explicitly forbade changing the SALE/finalization path. Code evidence only — no regression test was written for it, because writing one would have meant exercising the path 2F was told not to touch. |
 | 30 | **New, found 2026-09-19 (Phase 2F).** **Measured historical inventory drift** from the pre-2F release bug, audited read-only against the development database. Of **11** orders that have at least one `OrderItem`, **6 have no `RESERVATION` ledger row at all** (2 `CANCELLED`, 2 `CONFIRMED`, 2 `PENDING`) — every one of them created outside `OrderService`. **2 of those 6 were cancelled and wrote `RELEASE` rows totalling 4 units** that the orders never reserved. Two `ProductInventory` rows disagree with their own ledger (`RESERVE − RELEASE − SALE`): `product_id=6` "Smoke Product 14" has `reserved_quantity=0` against a ledger total of **−4** (4 more units released than were ever reserved, so 4 units of phantom availability were handed to `available_quantity`), and `product_id=7` "Smoke Pay Product" has `reserved_quantity=2` against a ledger total of **0**. 25 of 27 inventory rows are consistent. Note this is the shared remote **development** database and the affected products are smoke-test fixtures, so the absolute numbers are not production figures — but they confirm the mechanism fired in practice rather than only in theory. A repair would have to decide per product whether to trust the ledger or the counter, which is a data-migration question, not a service-logic one. | Inventory / data integrity | Medium (dev data; mechanism now closed going forward) | **Open by instruction.** Phase 2F's scope boundary explicitly forbade backfilling or repairing existing inventory rows and required any drift found to be recorded here with numbers instead. The audit script was read-only and wrote nothing. |
+| 31 | **Found 2026-09-24 (support Task 8).** **Open redirect on `/login` and `/register`.** Both passed `searchParams.get("next")` straight to `router.replace()`. For another origin Next's app router does a hard navigation (`isExternalURL` → `completeHardNavigation` in `next/dist/client/components/router-reducer/reducers/navigate-reducer.js`). So `/login?next=https://evil.example` sent a user off-site after logging in, and at once if they were already logged in; `//host`, `/\host` and a tab or newline between the slashes did the same. Confirmed from the router source, not exploited in a browser. | Frontend / auth | Medium | **FIXED 2026-09-24 (`193c0de`).** `safeNextPath()` in `frontend/src/lib/auth.ts` keeps `next` only if it starts with `/` and still has this site's origin after browser-style parsing; otherwise it uses `/`. Both login redirects and the register redirect use it. Checked against 17 inputs under Node, and in headless Chrome: `https://evil.invalid/`, `//evil.invalid` and `/\evil.invalid` all stayed on the site. |
+| 32 | **Found 2026-09-24 (support Task 9).** `block` and `line-clamp-N` on the same element: both set `display`, and `block` wins, so the clamp does nothing and long text wraps instead of truncating. Seen live on the new support queue (a `block line-clamp-1` line wrapped to two lines), and fixed there by dropping `block`. The same class pair is on **37 elements in 15 older files** (count by `className` on 2026-09-25, `inline-block` excluded):
+- `app/admin/{audit-logs,categories,customers,orders,orders/[id],payments,products,roles,sellers,sellers/[id],shops,users}/page.tsx`
+- `app/admin/roles/roleGovernance.tsx`
+- `app/profile/orders/[orderNumber]/page.tsx`
+- the storefront's `components/home/ProductCard.tsx`
+
+Only the support page was observed in a browser; the others should behave the same, since the classes are the same. | Frontend (cosmetic) | Low | **Open.** Not touched: outside the support feature's scope. The fix is to drop `block` wherever it sits next to `line-clamp-*`, then check the card and table layouts, which may have been sized around the unclamped text. |
+| 33 | **Found 2026-09-24 (support Task 7).** Public status lines in a ticket use the **staff** wording. `SupportTicketService` writes "Status changed to Waiting on customer." into the customer's thread, while the customer's badge reads "Waiting on you" (`CUSTOMER_STATUS_LABELS`). | Support (copy) | Low | **Open.** Cosmetic; the text is stored per message. Changing it means choosing the customer wording for public lines in `SupportTicketService._set_status`; existing messages keep the old text. |
 
 ---
 
@@ -658,7 +745,13 @@ Intentionally deferred or simply not built. These are **not** bugs.
 - **No seller-side product submission/publishing** — publication is staff-only.
 - **No seller-facing dedicated inventory page** in the seller panel (the API exists).
 - **Admin console modules not built**: none remain. `/admin/audit-logs` was the last one and was built 2026-09-21 (Phase 2I), after `/admin/orders` and `/admin/payments` on 2026-09-18 — see [Review History](#21-review-history). The audit-log module is read-only and wires 5 of the 13 filter parameters its API helper supports; the rest are deferred, not missing backend-side.
-- **No Support ticketing, reports/analytics, or notifications** — no backend at all for these.
+- **No reports/analytics or notifications** — no backend at all for these. (Support ticketing was listed here until 2026-09-24; it now exists — see §2 and `docs/SUPPORT_SYSTEM.md`.)
+- **Support ticketing is deliberately small:**
+  - **Notifications:** in-app unread / "needs reply" markers only; no email or push.
+  - **Refreshing:** pages refresh every 60 s and on focus; nothing is real-time.
+  - **Not included:** seller participation, a guest contact form, SLA timers, canned replies, satisfaction ratings, merging tickets, or staff opening tickets for customers.
+  - **Storage:** attachments sit on the one server's disk.
+  - **Auto-close:** resolved tickets are closed automatically only if `close_resolved_tickets` is scheduled. Nothing schedules it yet.
 - **Refunds do not restore inventory**; stock only returns on order cancellation.
 
 ---
@@ -681,6 +774,10 @@ Future work must not accidentally reverse these.
 12. **Seller panel = flat pages with modals; admin console = nested `new`/`[id]` routes.** Two deliberate conventions; follow whichever panel you are in.
 13. **Design tokens only** (`bg-surface`, `text-ink`, `border-line`, …) — never hardcoded Tailwind palette colors. Currency is always `৳`.
 14. **Sellers never self-register.** A `SellerProfile` is created only by authorized management, through `POST /api/admin/sellers/`. Phase 2L removed `POST /api/sellers/register/` rather than documenting an exception, so the reachable API surface and this invariant now agree. Note the contrast with decision 4: shop self-creation stays *routed* to give an explicit 403, because a client could plausibly call it; seller self-registration is *unrouted* (404), because nothing ever did. `sellers.services.create_seller_profile` remains the shared creation path — do not inline it into the admin view, and do not add a second creation surface.
+15. **Support tickets change only through `SupportTicketService`**, which checks its own permission codes, locks the ticket and writes the audit log. Django admin shows tickets **read-only** (no add, change or delete) for exactly this reason (the Known Issue #22 lesson).
+    - Internal notes never leave the staff API.
+    - Attachments stay in private storage and are served only by the authenticated download endpoints.
+    - Do not add a generic CRUD endpoint for tickets or messages, and do not move attachments under `MEDIA_ROOT`.
 
 ---
 
@@ -702,12 +799,22 @@ Reconstructed from source, tests and git history. Backend work was tracked as **
 | **Admin-assigned shop ownership + single-shop cap + seller product management** (Phase 1H/1I) | Complete | commit `b623553`; `shop/test_seller_product.py` |
 | **Product reviews & ratings** | Complete | commit `c4fb3b8`; `shop/test_product_reviews.py` |
 | **Legacy checkout IDOR fix** (Known Issues #1) | Complete, then **superseded 2026-09-21** by Phase 2E, which deleted the whole surface (view, template, route and `LegacyOrderAccessTests` alike) | was `shop/views.py`, `shop/permissions.py`, `shop/api_views.py`; `shop/tests.py::LegacyOrderAccessTests` |
+| **Customer support ticket system** (2026-09-24/25) | Complete (Tasks 1–12 in `docs/SUPPORT_SYSTEM.md`) | `backend/support/` (134 tests in `support/tests/`), `frontend/src/app/profile/support/`, `frontend/src/app/admin/support/`, `frontend/src/components/support/`; commits `1561d63` → `f4e702c` plus this close-out |
 
 ---
 
 ## 20. Current Project State
 
-**Last completed change:** **Phase 2D — one authorization system** (refactor + one server-side field gate). The two *order* `is_staff_override` tuples in `shop/api_views.py` now use `orders.staff.update` / `orders.staff.view`; `AdminMetricsAPIView` uses `CanViewPlatformMetrics` (`reports.view`); and `total_revenue` is withheld server-side from callers lacking `payments.view`. The four *inventory* tuples were deliberately left in place — no platform-wide inventory permission exists to convert them to (**#27**). New follow-up **#28**: the console still draws the revenue card for finance-less operators, now showing a misleading ৳0.00. No role grant changed. See §15, §16 and §21.
+> **Maintenance note (2026-09-25):** this section was last kept up to date at Phase 2D. The changes since then (Phases 2E–2L, the reviews moderation work, location & nearby shops, and the support ticket system below) are recorded in the header and in [Review History](#21-review-history), which are authoritative. The older paragraphs below are kept as history.
+
+**Latest completed feature:** **Customer support ticket system** (2026-09-24/25).
+- Logged-in customers open tickets (optionally about one of their orders, with images or PDFs), follow the conversation and close them.
+- Support staff work a queue in `/admin/support`: reply, write internal notes, assign, prioritise and move tickets through Open → In progress → Waiting on customer → Resolved → Closed.
+- New `support` app, 5 RBAC codes, 1 migration; an optional `close_resolved_tickets` command (not scheduled).
+- Also fixed an open redirect on `/login` / `/register` (#31) and recorded #32 and #33.
+- See §2, §4, §11, §12 and §21.
+
+**Last completed change (as of Phase 2D):** **Phase 2D — one authorization system** (refactor + one server-side field gate). The two *order* `is_staff_override` tuples in `shop/api_views.py` now use `orders.staff.update` / `orders.staff.view`; `AdminMetricsAPIView` uses `CanViewPlatformMetrics` (`reports.view`); and `total_revenue` is withheld server-side from callers lacking `payments.view`. The four *inventory* tuples were deliberately left in place — no platform-wide inventory permission exists to convert them to (**#27**). New follow-up **#28**: the console still draws the revenue card for finance-less operators, now showing a misleading ৳0.00. No role grant changed. See §15, §16 and §21.
 **Preceding change:** **Phase 2C — refund-aware revenue** (fix, new Known Issue #25). `total_revenue` is now captured payments **minus** settled refunds, so a ৳1 refund no longer erases a ৳10,000 payment; revenue is `Decimal` end to end. Backend-only — no dashboard or console UI changed. Found and recorded, but deliberately not fixed: **#26**, a payment accepts only one partial refund that leaves a balance. See §15, §16 and §21.
 **Preceding change:** **Phase 2B — green suite + first CI** (infrastructure). Known Issue #14 fixed on the template side (literal `৳` replaces `&#2547;`), so the backend suite is **green for the first time: 512 passed, 0 failed**. Added `npm run typecheck` and `.github/workflows/ci.yml` — backend tests against a MySQL 8 service container plus frontend typecheck/build, verification only. See §15 and §21.
 **Preceding change:** **Phase 2A — settings split + fast test suite** (infrastructure, no application behaviour change). `config/settings.py` became `config/settings/{base,dev,test}`; the full suite went from ~92 min to 13.1 min at the default worker count (10.2 min at `--parallel 32`), same pass/fail set. `tblib` added — without it `--parallel` aborted outright on the known #14 failure. See §15 and §21.
@@ -735,6 +842,44 @@ Reconstructed from source, tests and git history. Backend work was tracked as **
 ---
 
 ## 21. Review History
+
+### 2026-09-24/25 — Customer support ticket system (feature)
+
+- **Scope:** the owner asked for a support system where customers raise a problem and the support team handles it. `docs/SUPPORT_SYSTEM.md` holds the plan, decisions D1–D17, the API contract and a per-task log with full verification details; this entry only summarises.
+- **Owner's choices** (asked while planning):
+  - Only the customer and support staff take part; sellers never see tickets.
+  - Attachments are images + PDF and stay private.
+  - Only logged-in customers can open tickets.
+  - Notifications are in-app only.
+- **Found during the audit:**
+  - `SUPPORT_TEAM` existed with nothing ticket-related to do, and lacks `customers.admin.view`. So staff tickets carry their own customer contact block, and the assignee list has its own endpoint.
+  - `/media` is public whenever DEBUG is on, so private files live under a separate `PRIVATE_MEDIA_ROOT`.
+  - `adminRequest` could not send files, so `adminRawRequest` / `adminMultipartRequest` were added beside it.
+- **Found on the way:**
+  - The `/login` / `/register` open redirect, fixed (#31).
+  - The ineffective `block` + `line-clamp` pairs, recorded (#32).
+  - Staff wording in public status lines, recorded (#33).
+  - Stale entries in this file, corrected: the §4 seed totals, the missing §11 reviews row, and the §12 `/account/*` shims (deleted in `9c7f621`) and missing admin routes.
+- **Commits:**
+  - Backend: `1561d63` plan · `ec696d8` models, private storage, permission codes · `ce8e561` rbac regression run · `3009bb7` service + attachment checks · `d20e96b` dev-database migrate + seed · `1a299b8` customer API · `e864d62` staff API.
+  - Frontend: `611c245` types, API clients, shared components · `7873cd9` full support-suite run · `19869b2` customer list, new-ticket form, profile nav · `8d31125` customer conversation page · `193c0de` entry points + `?next=` fix · `34f46c6` staff queue · `3efea1b` staff ticket page.
+  - Command: `f4e702c` `close_resolved_tickets`.
+  - This close-out.
+- **Verification:**
+  - Backend: see §15, "Re-run 2026-09-25".
+  - **Every frontend task:** `npm run typecheck`, `npm run build`, `eslint` on the changed files, and a headless-Chrome walkthrough (DevTools protocol) against the dev API.
+  - **Tasks 7–10:** these used the production build on port 3001, because the owner's `next dev` answered 500 for newly added routes.
+  - **Task 10** ran the plan's full end-to-end flow with the customer and staff in separate browsers:
+    - The customer opened a ticket from an order page with two images.
+    - Staff filtered, assigned themselves, wrote an internal note with a PDF, replied and set Waiting on customer.
+    - The customer replied, which reopened the ticket. Staff resolved it, and the customer closed it.
+    - The customer never saw the internal note or any staff-only line.
+  - **Cleanup:** browser test data was deleted after each run. Audit rows written by those real flows remain, because the log is append-only.
+- **Dev database:** `migrate` (`support.0001_initial`) and `seed_rbac` on 2026-09-24: "5 permissions created (total 71) … 15 new role-permission links created, 0 forbidden grant(s) revoked".
+- **Not changed:** no existing model, and no order, payment or review behaviour. Django admin shows tickets read-only. Nothing schedules `close_resolved_tickets` (documented how, not done).
+- **Environment notes:**
+  - **No parallel tests:** this machine has no `mysqldump` on PATH, so `--parallel` (which clones the test database with it) can't run here. Every run in this feature was serial on a throwaway `TEST_DATABASE_URL`.
+  - **The owner's dev server:** their long-running `next dev` began answering 500 for routes added after it started ("Jest worker encountered 2 child process exceptions"). This is possibly related to `next build` being run in the same folder while it was up. Restarting it should clear this.
 
 ### 2026-09-24 — Location & nearby shop discovery (feature)
 
