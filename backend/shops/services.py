@@ -3,7 +3,7 @@ from typing import Any, Optional, Tuple
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
-from django.db.models import Avg, BooleanField, Count, Q
+from django.db.models import Avg, BooleanField, Case, Count, IntegerField, Q, Value, When
 from django.db.models.expressions import RawSQL
 from django.utils import timezone
 
@@ -19,6 +19,10 @@ VISIBLE_REVIEWS = Q(customer_reviews__is_hidden=False)
 # response never carries more shops than a map and a phone-sized list can show.
 NEARBY_MAX_RADIUS_KM = 50.0
 NEARBY_RESULT_LIMIT = 50
+# Longest product search text the nearby endpoint accepts (?q=).
+NEARBY_QUERY_MAX_LENGTH = 100
+# Matching products listed per shop in a nearby product search.
+NEARBY_MATCHED_PRODUCTS_SHOWN = 3
 
 
 class ShopError(Exception):
@@ -94,6 +98,32 @@ def validate_radius(radius_km: Any, max_radius_km: float = 1000.0) -> float:
         raise ValidationError(f"Search 'radius' cannot exceed {max_radius_km} km. Received: {rad}.")
 
     return round(rad, 4)
+
+
+def validate_product_query(value: Any) -> str:
+    """
+    Normalizes the optional nearby product search text: stripped, and "" when
+    missing or blank (meaning no product filter). Raises ValidationError when it
+    is longer than NEARBY_QUERY_MAX_LENGTH.
+    """
+    if value is None:
+        return ""
+    term = str(value).strip()
+    if len(term) > NEARBY_QUERY_MAX_LENGTH:
+        raise ValidationError(
+            f"Search text must be {NEARBY_QUERY_MAX_LENGTH} characters or fewer."
+        )
+    return term
+
+
+def matching_public_products(term: str):
+    """Publicly visible products matching the catalog search rule for term."""
+    # Imported here: shop.services pulls in cart/orders/points, which the shops
+    # app does not otherwise need at import time.
+    from shop.models import Product
+    from shop.services import ProductService
+
+    return Product.objects.public().filter(ProductService.search_q(term))
 
 
 class ShopService:
@@ -246,6 +276,7 @@ class ShopService:
         longitude: Any,
         radius_km: Any,
         max_radius_km: float = NEARBY_MAX_RADIUS_KM,
+        product_query: Optional[str] = None,
     ):
         """
         Executes a MySQL 8 native spatial query using ST_Distance_Sphere.
@@ -253,6 +284,8 @@ class ShopService:
         (ties by id), with the same average_rating / review_count annotations as
         get_public_shops_queryset(). Excludes DRAFT, PENDING, SUSPENDED, and
         REJECTED shops, and shops still at the POINT(0 0) "no coordinates" default.
+        With a product_query, only shops that own a publicly visible product
+        matching it (the catalog's own search rule) are kept.
         Not sliced: callers apply NEARBY_RESULT_LIMIT after counting.
         """
         lat, lng = validate_coordinates(latitude, longitude)
@@ -278,7 +311,7 @@ class ShopService:
             output_field=BooleanField(),
         )
 
-        return (
+        shops = (
             cls.get_public_shops_queryset()
             .filter(has_location_sql)
             .annotate(
@@ -288,6 +321,40 @@ class ShopService:
             .filter(distance_meters__lte=radius_meters)
             .order_by("distance_meters", "id")
         )
+
+        term = validate_product_query(product_query)
+        if term:
+            shops = shops.filter(pk__in=matching_public_products(term).values("shop_id"))
+        return shops
+
+    @classmethod
+    def get_matched_products_by_shop(cls, shop_ids, product_query: str):
+        """
+        For the nearby product search: every public product matching
+        product_query that belongs to one of shop_ids, grouped by shop id.
+        Name matches come before description/category matches, then by name.
+        One query, with the inventory row joined for Product.in_stock.
+        """
+        term = validate_product_query(product_query)
+        grouped = {shop_id: [] for shop_id in shop_ids}
+        if not term or not shop_ids:
+            return grouped
+        products = (
+            matching_public_products(term)
+            .filter(shop_id__in=shop_ids)
+            .select_related("inventory")
+            .annotate(
+                name_rank=Case(
+                    When(name__icontains=term, then=Value(0)),
+                    default=Value(1),
+                    output_field=IntegerField(),
+                )
+            )
+            .order_by("name_rank", "name", "id")
+        )
+        for product in products:
+            grouped[product.shop_id].append(product)
+        return grouped
 
     @classmethod
     @transaction.atomic

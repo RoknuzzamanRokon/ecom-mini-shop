@@ -1,8 +1,9 @@
 from rest_framework import serializers
 
 from customers.services import rating_breakdown
+from shop.models import Product
 from .models import Shop
-from .services import validate_coordinates
+from .services import NEARBY_MATCHED_PRODUCTS_SHOWN, validate_coordinates
 
 
 class PublicShopSerializer(serializers.ModelSerializer):
@@ -54,11 +55,39 @@ class PublicShopDetailSerializer(PublicShopSerializer):
         return rating_breakdown(obj.customer_reviews.visible())
 
 
+class NearbyMatchedProductSerializer(serializers.ModelSerializer):
+    """
+    A product that matched a nearby product search, as shown on the shop card.
+    Deliberately smaller than the catalog's ProductListSerializer: the shop is
+    the parent object, and ratings are not shown here.
+    """
+    image_url = serializers.SerializerMethodField()
+    in_stock = serializers.ReadOnlyField()
+
+    class Meta:
+        model = Product
+        fields = ["id", "name", "slug", "price", "old_price", "image_url", "in_stock"]
+        read_only_fields = fields
+
+    def get_image_url(self, obj):
+        # A relative media path, the same form as the shop's own logo field in
+        # this response (the nearby view passes no request to build absolute URLs).
+        if obj.image and hasattr(obj.image, "url"):
+            return obj.image.url
+        return None
+
+
 class NearbyShopSerializer(PublicShopSerializer):
     """
     Public nearby search result: the public shop card plus the distance from the
     search origin. distance_km / distance_meters come from
     ShopService.get_nearby_shops().
+
+    When the search had a product query, pass the matches as
+    context["matched_products"] ({shop_id: [Product, ...]}, from
+    ShopService.get_matched_products_by_shop) and each shop also gets
+    matched_product_count and its first NEARBY_MATCHED_PRODUCTS_SHOWN matches.
+    Without that context key the output is the plain nearby card.
     """
     distance_km = serializers.FloatField(read_only=True)
     distance_meters = serializers.FloatField(read_only=True)
@@ -66,6 +95,17 @@ class NearbyShopSerializer(PublicShopSerializer):
     class Meta(PublicShopSerializer.Meta):
         fields = PublicShopSerializer.Meta.fields + ["distance_km", "distance_meters"]
         read_only_fields = fields
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        matched = self.context.get("matched_products")
+        if matched is not None:
+            products = matched.get(instance.pk, [])
+            data["matched_product_count"] = len(products)
+            data["matched_products"] = NearbyMatchedProductSerializer(
+                products[:NEARBY_MATCHED_PRODUCTS_SHOWN], many=True, context=self.context
+            ).data
+        return data
 
 
 class SellerShopSerializer(serializers.ModelSerializer):

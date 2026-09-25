@@ -306,6 +306,20 @@ class ProductService:
             product.delete()
             logger.info("Product deleted: id=%s by seller=%s", product.id, seller.business_name)
 
+    @staticmethod
+    def search_q(term: str) -> Q:
+        """
+        The public product text search: a case-insensitive phrase match on the
+        product name, description or category name. Shared by the catalog
+        (?q= on /api/products/) and the nearby shop search (?q= on
+        /api/shops/nearby/) so the two always agree on what "matches" means.
+        """
+        return (
+            Q(name__icontains=term)
+            | Q(description__icontains=term)
+            | Q(category__name__icontains=term)
+        )
+
     @classmethod
     def get_public_products_queryset(cls):
         """

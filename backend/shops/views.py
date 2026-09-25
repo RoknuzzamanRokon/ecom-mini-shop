@@ -32,6 +32,7 @@ from .services import (
     IneligibleSellerError,
     InvalidShopTransitionError,
     ShopService,
+    validate_product_query,
     validate_radius,
 )
 
@@ -79,6 +80,10 @@ class PublicNearbyShopListView(APIView):
       - lat: float (latitude: [-90, 90])
       - lng: float (longitude: [-180, 180])
       - radius: float (kilometers: > 0, max NEARBY_MAX_RADIUS_KM)
+      - q: optional product search text (max NEARBY_QUERY_MAX_LENGTH chars). When
+        given, only shops with a public product matching it are returned, each
+        with matched_product_count and its first few matched_products, and the
+        response echoes "q". Without it the response is unchanged.
     Results are sorted nearest to farthest via MySQL ST_Distance_Sphere, and hold
     at most NEARBY_RESULT_LIMIT shops; "count" is every match inside the radius.
     Draft, pending, suspended, rejected, and unlocated shops are strictly excluded.
@@ -101,16 +106,31 @@ class PublicNearbyShopListView(APIView):
         # error text ever reaches this public endpoint's response.
         try:
             radius_km = validate_radius(radius, max_radius_km=NEARBY_MAX_RADIUS_KM)
-            shops = ShopService.get_nearby_shops(latitude=lat, longitude=lng, radius_km=radius_km)
+            term = validate_product_query(request.query_params.get("q"))
+            shops = ShopService.get_nearby_shops(
+                latitude=lat, longitude=lng, radius_km=radius_km, product_query=term
+            )
         except DjangoValidationError as e:
             return Response({"error": " ".join(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
 
-        return Response({
+        page = list(shops[:NEARBY_RESULT_LIMIT])
+        # No request in the context: shop logos stay relative paths, exactly as
+        # before q existed, and matched product images follow the same form.
+        context = {}
+        if term:
+            context["matched_products"] = ShopService.get_matched_products_by_shop(
+                [shop.pk for shop in page], term
+            )
+
+        body = {
             "count": shops.count(),
             "radius_km": radius_km,
             "limit": NEARBY_RESULT_LIMIT,
-            "results": NearbyShopSerializer(shops[:NEARBY_RESULT_LIMIT], many=True).data,
-        }, status=status.HTTP_200_OK)
+            "results": NearbyShopSerializer(page, many=True, context=context).data,
+        }
+        if term:
+            body["q"] = term
+        return Response(body, status=status.HTTP_200_OK)
 
 
 class PublicShopDetailView(generics.RetrieveAPIView):

@@ -152,11 +152,7 @@ class ProductListAPIView(generics.ListAPIView):
         search_query = self.request.query_params.get("q") or self.request.query_params.get("search")
         if search_query:
             term = search_query.strip()
-            queryset = queryset.filter(
-                Q(name__icontains=term)
-                | Q(description__icontains=term)
-                | Q(category__name__icontains=term)
-            ).distinct()
+            queryset = queryset.filter(ProductService.search_q(term)).distinct()
 
         # Ordering
         ordering = self.request.query_params.get("ordering")

@@ -1,4 +1,5 @@
 import math
+from decimal import Decimal
 from unittest import mock
 
 from django.contrib.auth import get_user_model
@@ -18,7 +19,9 @@ from shop.models import Category, Product
 from shops.fields import Point
 from shops.models import Shop
 from shops.services import (
+    NEARBY_MATCHED_PRODUCTS_SHOWN,
     NEARBY_MAX_RADIUS_KM,
+    NEARBY_QUERY_MAX_LENGTH,
     NEARBY_RESULT_LIMIT,
     IneligibleSellerError,
     InvalidShopTransitionError,
@@ -891,3 +894,179 @@ class PublicShopSearchTests(TestCase):
 
     def test_without_q_every_public_shop_is_listed(self):
         self.assertEqual(self._slugs(""), {self.books.slug, self.tea.slug, self.shoes.slug})
+
+
+class NearbyProductSearchTests(TestCase):
+    """
+    GET /api/shops/nearby/?q=: nearby shops that sell a product matching the
+    catalog's own search rule, nearest first, each with its matching products.
+    Origin for every request is Gulshan-1 (23.7788, 90.4172).
+    """
+    URL = "/api/shops/nearby/"
+    ORIGIN = {"lat": "23.7788", "lng": "90.4172"}
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_rbac")
+
+        def seller(username, status, **extra):
+            user = User.objects.create_user(
+                username=username, email=f"{username}@example.com", password="TestPassword123!"
+            )
+            return SellerProfile.objects.create(
+                user=user,
+                seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+                business_name=f"{username} Ltd",
+                status=status,
+                **extra,
+            )
+
+        cls.seller = seller("nearby_q_seller", SellerProfile.STATUS_ACTIVE)
+        cls.seller_suspended = seller(
+            "nearby_q_suspended", SellerProfile.STATUS_SUSPENDED, suspension_reason="Policy Violation"
+        )
+
+        cls.lighting = Category.objects.create(name="Lighting", slug="lighting", is_active=True)
+        cls.furniture = Category.objects.create(name="Furniture", slug="furniture", is_active=True)
+        cls.archived = Category.objects.create(name="Archived", slug="archived", is_active=False)
+
+        # ~0 km, ~1.52 km and ~10.6 km from the origin.
+        cls.gulshan1 = Shop.objects.create(
+            owner=cls.seller, name="Gulshan-1 Home", status=Shop.STATUS_ACTIVE,
+            location=Point(longitude=90.4172, latitude=23.7788),
+        )
+        cls.gulshan2 = Shop.objects.create(
+            owner=cls.seller, name="Gulshan-2 Home", status=Shop.STATUS_APPROVED,
+            location=Point(longitude=90.4168, latitude=23.7925),
+        )
+        cls.uttara = Shop.objects.create(
+            owner=cls.seller, name="Uttara Home", status=Shop.STATUS_ACTIVE,
+            location=Point(longitude=90.3978, latitude=23.8728),
+        )
+        # Nearby, but its seller is suspended, so none of its products are public.
+        cls.suspended_shop = Shop.objects.create(
+            owner=cls.seller_suspended, name="Suspended Home", status=Shop.STATUS_ACTIVE,
+            location=Point(longitude=90.4170, latitude=23.7790),
+        )
+
+        cls.lamp_g1 = cls.product(cls.gulshan1, "Task Desk Lamp", cls.lighting, stock=5)
+        cls.lamp_g2 = cls.product(cls.gulshan2, "Task Desk Lamp", cls.lighting, stock=0)
+        cls.lamp_uttara = cls.product(cls.uttara, "Task Desk Lamp", cls.lighting)
+        cls.product(cls.suspended_shop, "Task Desk Lamp", cls.lighting)
+        cls.chair_g1 = cls.product(cls.gulshan1, "Oak Chair", cls.furniture)
+
+    @classmethod
+    def product(cls, shop, name, category, description="", stock=10, **extra):
+        return Product.objects.create(
+            name=name,
+            slug=f"{name.lower().replace(' ', '-')}-{shop.pk}-{Product.objects.count()}",
+            category=category,
+            shop=shop,
+            description=description,
+            price=Decimal("3250.00"),
+            stock=stock,
+            status=extra.pop("status", Product.STATUS_PUBLISHED),
+            is_active=extra.pop("is_active", True),
+            **extra,
+        )
+
+    def setUp(self):
+        self.client = APIClient()
+
+    def get(self, radius=5, **params):
+        return self.client.get(self.URL, {**self.ORIGIN, "radius": radius, **params})
+
+    def search(self, q, radius=5):
+        response = self.get(radius=radius, q=q)
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        return response.data
+
+    def test_q_keeps_only_nearby_shops_selling_a_match_nearest_first(self):
+        data = self.search("Task Desk Lamp")
+        self.assertEqual([r["id"] for r in data["results"]], [self.gulshan1.id, self.gulshan2.id])
+        self.assertEqual(data["count"], 2)
+        self.assertEqual(data["q"], "Task Desk Lamp")
+
+    def test_radius_still_applies(self):
+        self.assertEqual([r["id"] for r in self.search("Task Desk Lamp", radius=1)["results"]], [self.gulshan1.id])
+        ids = [r["id"] for r in self.search("Task Desk Lamp", radius=20)["results"]]
+        self.assertEqual(ids, [self.gulshan1.id, self.gulshan2.id, self.uttara.id])
+
+    def test_shop_without_a_match_is_excluded(self):
+        data = self.search("Oak Chair")
+        self.assertEqual([r["id"] for r in data["results"]], [self.gulshan1.id])
+
+    def test_match_is_case_insensitive_and_partial(self):
+        ids = [r["id"] for r in self.search("desk lamp")["results"]]
+        self.assertEqual(ids, [self.gulshan1.id, self.gulshan2.id])
+
+    def test_matches_description_and_category_like_the_catalog(self):
+        self.product(self.gulshan2, "Reading Light", self.furniture, description="A warm bedside lantern.")
+        self.assertEqual([r["id"] for r in self.search("lantern")["results"]], [self.gulshan2.id])
+        # Category name "Furniture": the chair (Gulshan-1) and the reading light (Gulshan-2).
+        self.assertEqual(
+            [r["id"] for r in self.search("furniture")["results"]], [self.gulshan1.id, self.gulshan2.id]
+        )
+
+    def test_non_public_products_do_not_qualify_a_shop(self):
+        shop = Shop.objects.create(
+            owner=self.seller, name="Banani Home", status=Shop.STATUS_ACTIVE,
+            location=Point(longitude=90.4050, latitude=23.7940),
+        )
+        self.product(shop, "Hidden Draft Lamp", self.lighting, status=Product.STATUS_DRAFT)
+        self.product(shop, "Hidden Inactive Lamp", self.lighting, is_active=False)
+        self.product(shop, "Hidden Archived Lamp", self.archived)
+        self.assertEqual(self.search("Hidden")["results"], [])
+        # The suspended seller's lamp never qualifies its (otherwise public) shop.
+        ids = [r["id"] for r in self.search("Task Desk Lamp")["results"]]
+        self.assertNotIn(self.suspended_shop.id, ids)
+
+    def test_each_shop_lists_its_matches_with_stock_flag(self):
+        results = {r["id"]: r for r in self.search("Task Desk Lamp")["results"]}
+        g1 = results[self.gulshan1.id]
+        self.assertEqual(g1["matched_product_count"], 1)
+        self.assertEqual(
+            g1["matched_products"],
+            [{
+                "id": self.lamp_g1.id, "name": "Task Desk Lamp", "slug": self.lamp_g1.slug,
+                "price": "3250.00", "old_price": None, "image_url": None, "in_stock": True,
+            }],
+        )
+        self.assertFalse(results[self.gulshan2.id]["matched_products"][0]["in_stock"])
+
+    def test_name_matches_come_first_and_list_is_capped(self):
+        # Five matches for "lamp" at Gulshan-1: the desk lamp, three more named
+        # lamps, and one that only mentions lamps in its description.
+        self.product(self.gulshan1, "Candle Holder", self.furniture, description="Pairs well with a lamp.")
+        for name in ("Arc Floor Lamp", "Lamp Shade", "Wall Lamp"):
+            self.product(self.gulshan1, name, self.lighting)
+        g1 = next(r for r in self.search("lamp")["results"] if r["id"] == self.gulshan1.id)
+        self.assertEqual(g1["matched_product_count"], 5)
+        self.assertEqual(len(g1["matched_products"]), NEARBY_MATCHED_PRODUCTS_SHOWN)
+        self.assertEqual(
+            [p["name"] for p in g1["matched_products"]], ["Arc Floor Lamp", "Lamp Shade", "Task Desk Lamp"]
+        )
+
+    def test_blank_q_is_the_plain_nearby_search(self):
+        plain = self.get().data
+        blank = self.search("   ")
+        self.assertEqual(blank, plain)
+        self.assertNotIn("q", plain)
+        self.assertEqual(plain["count"], 3)  # includes the suspended seller's shop, as before
+        for shop in plain["results"]:
+            self.assertNotIn("matched_products", shop)
+            self.assertNotIn("matched_product_count", shop)
+
+    def test_q_too_long_is_rejected(self):
+        response = self.get(q="x" * (NEARBY_QUERY_MAX_LENGTH + 1))
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data, {"error": f"Search text must be {NEARBY_QUERY_MAX_LENGTH} characters or fewer."}
+        )
+        ok = self.get(q="x" * NEARBY_QUERY_MAX_LENGTH)
+        self.assertEqual(ok.status_code, status.HTTP_200_OK)
+
+    def test_service_filter_matches_the_endpoint(self):
+        shops = ShopService.get_nearby_shops(23.7788, 90.4172, 5, product_query="Oak Chair")
+        self.assertEqual([s.id for s in shops], [self.gulshan1.id])
+
