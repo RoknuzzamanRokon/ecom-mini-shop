@@ -97,6 +97,15 @@ body {
   box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15) !important;
 }
 
+/* A sticky element only sticks inside its parent. Django's base.css gives
+   #container `height: 100%` (one viewport), so the header scrolled away
+   after the first screen. Let the container grow with the page instead;
+   it still fills the viewport on short pages. */
+#container {
+  height: auto !important;
+  min-height: 100% !important;
+}
+
 #branding {
   display: flex !important;
   align-items: center !important;
