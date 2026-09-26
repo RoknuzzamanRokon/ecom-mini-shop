@@ -8,6 +8,23 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
+  <script>
+    /* Account menu (a <details> disclosure): close it on an outside click or
+       Escape, returning focus to its button after Escape. */
+    document.addEventListener("DOMContentLoaded", function () {
+      var menu = document.querySelector(".mp-usermenu");
+      if (!menu) return;
+      document.addEventListener("click", function (event) {
+        if (menu.open && !menu.contains(event.target)) menu.open = false;
+      });
+      document.addEventListener("keydown", function (event) {
+        if (event.key === "Escape" && menu.open) {
+          menu.open = false;
+          menu.querySelector("summary").focus();
+        }
+      });
+    });
+  </script>
 {% endblock %}
 
 {% block extrastyle %}
@@ -16,22 +33,84 @@
 {% endblock %}
 
 {% block branding %}
-  <div class="brand-wrapper">
-    <a href="{% url 'admin:index' %}" style="display: flex; align-items: center; gap: 10px; text-decoration: none;">
-      <!-- MiniShop SVG Mark -->
-      <svg width="130" height="32" viewBox="0 0 160 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect x="2" y="6" width="28" height="28" rx="8" fill="#BA8630"/>
-        <path d="M10 14h12l-1.5 11h-9L10 14z" stroke="#FFFFFF" stroke-width="2" stroke-linejoin="round"/>
-        <path d="M13 14v-2a3 3 0 0 1 6 0v2" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
-        <text x="38" y="26" fill="#FFFFFF" font-family="'Inter', sans-serif" font-weight="800" font-size="18" letter-spacing="-0.5px">MINISHOP</text>
+  <a class="mp-brand" href="{% url 'admin:index' %}" aria-label="MiniShop admin home">
+    <span class="mp-brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M9 12h14l-1.6 11.5H10.6L9 12z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
+        <path d="M12.5 12v-1.5a3.5 3.5 0 0 1 7 0V12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
       </svg>
-      <span class="brand-badge-tag">Admin Console</span>
+    </span>
+    <span class="mp-brand-name">MiniShop</span>
+    <span class="mp-brand-sep" aria-hidden="true"></span>
+    <span class="mp-brand-sub">Admin console</span>
+  </a>
+{% endblock %}
+
+{% comment %}
+  Replaces Django's "Welcome, admin. View site / Change password / Log out"
+  run of text and slashes. The storefront is the Next.js app (STOREFRONT_URL),
+  not Django's site_url, so "View site" is left out. Django's theme.js binds
+  to .theme-toggle, and #logout-form keeps the POST logout Django requires.
+{% endcomment %}
+{% block usertools %}
+{% if has_permission %}
+  {% firstof user.get_short_name user.get_username as display_name %}
+  <div id="user-tools" class="mp-usertools">
+    <a class="mp-hdr-btn" href="{{ storefront_url }}" target="_blank" rel="noopener noreferrer" title="Open the storefront in a new tab">
+      <span class="pulse-dot" aria-hidden="true"></span>
+      <span class="mp-hdr-btn-label">Storefront</span>
+      <span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>
     </a>
 
-    <!-- Live Next.js Storefront link with pulsing green activity dot -->
-    <a href="{{ storefront_url }}" target="_blank" rel="noopener noreferrer" class="storefront-live-pill" title="Open Next.js Storefront in new tab">
-      <span class="pulse-dot"></span>
-      <span>Storefront ↗</span>
-    </a>
+    {% include "admin/color_theme_toggle.html" %}
+
+    <span class="mp-hdr-divider" aria-hidden="true"></span>
+
+    <details class="mp-usermenu">
+      <summary title="Account">
+        <span class="mp-avatar" aria-hidden="true">{{ display_name|first|upper }}</span>
+        <span class="mp-usermenu-id">
+          <span class="mp-usermenu-name">{{ display_name }}</span>
+          <span class="mp-usermenu-role">{% if user.is_superuser %}Superuser{% else %}Staff{% endif %}</span>
+        </span>
+        <span class="material-symbols-outlined mp-usermenu-caret" aria-hidden="true">expand_more</span>
+        <span class="visually-hidden">Account menu</span>
+      </summary>
+
+      <div class="mp-usermenu-panel">
+        <div class="mp-usermenu-head">
+          <span class="mp-avatar mp-avatar-lg" aria-hidden="true">{{ display_name|first|upper }}</span>
+          <span class="mp-usermenu-head-text">
+            <span class="mp-usermenu-head-name">{{ display_name }}</span>
+            {% if user.email %}<span class="mp-usermenu-head-email">{{ user.email }}</span>{% endif %}
+          </span>
+        </div>
+
+        {% if user.is_active and user.is_staff %}
+          {% url 'django-admindocs-docroot' as docsroot %}
+          {% if docsroot %}
+            <a class="mp-usermenu-item" href="{{ docsroot }}">
+              <span class="material-symbols-outlined" aria-hidden="true">menu_book</span>
+              {% translate 'Documentation' %}
+            </a>
+          {% endif %}
+        {% endif %}
+        {% if user.has_usable_password %}
+          <a class="mp-usermenu-item" href="{% url 'admin:password_change' %}">
+            <span class="material-symbols-outlined" aria-hidden="true">key</span>
+            {% translate 'Change password' %}
+          </a>
+        {% endif %}
+
+        <form id="logout-form" method="post" action="{% url 'admin:logout' %}">
+          {% csrf_token %}
+          <button type="submit" class="mp-usermenu-item mp-usermenu-logout">
+            <span class="material-symbols-outlined" aria-hidden="true">logout</span>
+            {% translate 'Log out' %}
+          </button>
+        </form>
+      </div>
+    </details>
   </div>
+{% endif %}
 {% endblock %}

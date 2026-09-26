@@ -87,7 +87,9 @@ body {
   -webkit-backdrop-filter: blur(16px);
   border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
   color: var(--jp-header-text) !important;
-  padding: 10px 24px !important;
+  box-sizing: border-box !important;
+  min-height: 56px !important;
+  padding: 0 20px 0 24px !important;
   display: flex !important;
   align-items: center !important;
   justify-content: space-between !important;
@@ -119,53 +121,48 @@ body {
   font-weight: 800 !important;
 }
 
-.brand-wrapper {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  text-decoration: none;
-}
-
-.brand-wrapper svg {
-  height: 32px;
-  width: auto;
-  border-radius: 6px;
-}
-
-.brand-kanji-tag,
-.brand-badge-tag {
+/* Brand: mark, wordmark, and a quiet "Admin console" label. */
+.mp-brand {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  background: rgba(186, 134, 48, 0.2);
-  border: 1px solid rgba(186, 134, 48, 0.4);
-  color: #E2B35B;
-  font-size: 11px;
-  font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 6px;
-  letter-spacing: 0.5px;
+  gap: 10px;
+  text-decoration: none !important;
 }
 
-.storefront-live-pill {
+.mp-brand-mark {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  background: rgba(16, 185, 129, 0.15);
-  border: 1px solid rgba(16, 185, 129, 0.35);
-  color: #34D399;
-  font-size: 11px;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--jp-kinari-gold-hover), var(--jp-kinari-gold));
+  color: #FFFFFF;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 2px 6px rgba(0, 0, 0, 0.25);
+}
+
+.mp-brand-mark svg {
+  width: 20px;
+  height: 20px;
+}
+
+.mp-brand-name {
+  color: #FFFFFF;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.mp-brand-sep {
+  width: 1px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.mp-brand-sub {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 12.5px;
   font-weight: 600;
-  padding: 3px 10px;
-  border-radius: 9999px;
-  text-decoration: none;
-  transition: all 0.2s ease;
-  margin-left: 10px;
-}
-
-.storefront-live-pill:hover {
-  background: rgba(16, 185, 129, 0.25);
-  transform: translateY(-1px);
 }
 
 .pulse-dot {
@@ -183,57 +180,279 @@ body {
   100% { transform: scale(0.95); opacity: 0.8; }
 }
 
-/* User tools on header right */
-#user-tools {
+/* -- Right side: Storefront, theme, account menu ---------------------------
+   The header is dark navy in both themes, so these use fixed light-on-dark
+   values rather than --jp-* tokens. The account menu's panel is a light or
+   dark surface, so it does use tokens. */
+#user-tools.mp-usertools {
   display: flex !important;
   align-items: center !important;
-  /* Must wrap: the welcome text plus View site / Change password / Log out /
-     theme toggle measure ~465px, which overflowed the viewport on phones and
-     gave every admin page a horizontal scrollbar. */
-  flex-wrap: wrap !important;
-  justify-content: flex-end !important;
-  row-gap: 6px !important;
-  gap: 12px !important;
+  gap: 8px !important;
+  margin: 0 !important;
+  padding: 0 !important;
   min-width: 0 !important;
-  max-width: 100% !important;
+  /* Django's base.css shouts this area in uppercase. */
+  text-transform: none !important;
+  letter-spacing: normal !important;
   font-size: 13px !important;
-  color: rgba(255, 255, 255, 0.8) !important;
-}
-
-#user-tools strong {
-  color: #FFFFFF !important;
-  font-weight: 700 !important;
-}
-
-#user-tools a {
   color: rgba(255, 255, 255, 0.85) !important;
+}
+
+#user-tools .mp-hdr-btn,
+#user-tools .theme-toggle {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+  height: 34px !important;
+  margin: 0 !important;
+  border: 1px solid rgba(255, 255, 255, 0.14) !important;
+  border-radius: 8px !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: rgba(255, 255, 255, 0.88) !important;
   text-decoration: none !important;
-  padding: 5px 10px !important;
-  border-radius: 6px !important;
-  background: rgba(255, 255, 255, 0.08) !important;
-  transition: all 0.2s ease !important;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease !important;
 }
 
-#user-tools a:hover {
-  background: rgba(255, 255, 255, 0.18) !important;
-  color: #FFFFFF !important;
-}
-
-#user-tools button[type="submit"] {
-  background: rgba(225, 29, 72, 0.2) !important;
-  border: 1px solid rgba(225, 29, 72, 0.4) !important;
-  color: #FDA4AF !important;
-  padding: 5px 12px !important;
-  border-radius: 6px !important;
-  font-size: 12px !important;
+#user-tools .mp-hdr-btn {
+  gap: 8px !important;
+  padding: 0 12px !important;
+  font-size: 13px !important;
   font-weight: 600 !important;
-  cursor: pointer !important;
-  transition: all 0.2s ease !important;
 }
 
-#user-tools button[type="submit"]:hover {
-  background: rgba(225, 29, 72, 0.35) !important;
+#user-tools .mp-hdr-btn .material-symbols-outlined {
+  font-size: 16px;
+  opacity: 0.7;
+}
+
+#user-tools .theme-toggle {
+  width: 34px !important;
+  padding: 0 !important;
+}
+
+/* Each Django theme icon starts with a full-size square filled with
+   currentColor (Django colours it as the header background); keep that
+   square invisible and paint the glyph through `fill`. The symbols carry a
+   fixed 1.5rem size, so a smaller box would crop them: scale instead. */
+#user-tools .theme-toggle svg {
+  width: 1.5rem !important;
+  height: 1.5rem !important;
+  transform: scale(0.75);
+  color: transparent !important;
+  fill: rgba(255, 255, 255, 0.88) !important;
+}
+
+#user-tools .theme-toggle:hover svg {
+  fill: #FFFFFF !important;
+}
+
+#user-tools .mp-hdr-btn:hover,
+#user-tools .theme-toggle:hover,
+#user-tools .mp-usermenu > summary:hover,
+#user-tools .mp-usermenu[open] > summary {
+  background: rgba(255, 255, 255, 0.1) !important;
+  border-color: rgba(255, 255, 255, 0.22) !important;
   color: #FFFFFF !important;
+}
+
+#user-tools .mp-hdr-btn:focus-visible,
+#user-tools .theme-toggle:focus-visible,
+#user-tools .mp-usermenu > summary:focus-visible {
+  outline: 2px solid var(--jp-kinari-gold) !important;
+  outline-offset: 2px !important;
+}
+
+.mp-hdr-divider {
+  width: 1px;
+  height: 22px;
+  margin: 0 4px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+/* Account menu button: avatar, name over role, caret. */
+.mp-usermenu {
+  position: relative;
+}
+
+#user-tools .mp-usermenu > summary {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 38px;
+  padding: 0 8px 0 4px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  list-style: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+#user-tools .mp-usermenu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.mp-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--jp-kinari-gold-hover), var(--jp-kinari-gold));
+  color: #1A1206;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.mp-avatar-lg {
+  width: 38px;
+  height: 38px;
+  font-size: 15px;
+}
+
+.mp-usermenu-id {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  text-align: left;
+}
+
+.mp-usermenu-name {
+  color: #FFFFFF;
+  font-size: 13px;
+  font-weight: 700;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mp-usermenu-role {
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.mp-usermenu-caret {
+  font-size: 18px;
+  color: rgba(255, 255, 255, 0.6);
+  transition: transform 0.2s ease;
+}
+
+.mp-usermenu[open] .mp-usermenu-caret {
+  transform: rotate(180deg);
+}
+
+/* Dropdown panel: a normal page surface, so it follows the theme. */
+.mp-usermenu-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  /* Django right-aligns #user-tools. */
+  text-align: left;
+  right: 0;
+  z-index: 1100;
+  width: 264px;
+  padding: 6px;
+  border: 1px solid var(--jp-border-line);
+  border-radius: 12px;
+  background: var(--jp-bg-surface);
+  box-shadow: 0 16px 40px -8px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.mp-usermenu-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 6px;
+  padding: 10px 10px 12px;
+  border-bottom: 1px solid var(--jp-border-line);
+}
+
+.mp-usermenu-head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mp-usermenu-head-name {
+  color: var(--jp-text-ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.mp-usermenu-head-email {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--jp-text-ink-muted);
+  font-size: 12px;
+}
+
+#user-tools .mp-usermenu-panel form {
+  margin: 0;
+}
+
+#user-tools .mp-usermenu-item {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  box-sizing: border-box;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 9px 10px !important;
+  border: 0 !important;
+  border-radius: 8px !important;
+  background: none !important;
+  color: var(--jp-text-ink) !important;
+  font: inherit !important;
+  font-size: 13px !important;
+  font-weight: 500 !important;
+  text-align: left !important;
+  text-decoration: none !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  cursor: pointer;
+}
+
+#user-tools .mp-usermenu-item .material-symbols-outlined {
+  font-size: 18px;
+  color: var(--jp-text-ink-muted);
+}
+
+#user-tools .mp-usermenu-item:hover,
+#user-tools .mp-usermenu-item:focus-visible {
+  background: var(--jp-bg-surface-sunken) !important;
+  outline: none !important;
+}
+
+#user-tools .mp-usermenu-logout {
+  margin-top: 6px !important;
+  border-top: 1px solid var(--jp-border-line) !important;
+  border-radius: 0 0 8px 8px !important;
+  padding-top: 11px !important;
+  color: var(--jp-shu-vermilion) !important;
+}
+
+#user-tools .mp-usermenu-logout .material-symbols-outlined {
+  color: var(--jp-shu-vermilion);
+}
+
+#user-tools .mp-usermenu-logout:hover {
+  background: var(--jp-shu-vermilion-bg) !important;
+}
+
+/* Narrow windows: drop the text beside the avatar and the Storefront label. */
+@media (max-width: 900px) {
+  .mp-usermenu-id,
+  .mp-hdr-btn-label,
+  .mp-brand-sep,
+  .mp-brand-sub {
+    display: none;
+  }
 }
 
 /* --------------------------------------------------------------------------
@@ -244,22 +463,19 @@ body {
   border-bottom: 1px solid var(--jp-border-line) !important;
   padding: 10px 24px !important;
   font-size: 12px !important;
-  font-weight: 500 !important;
-  color: var(--jp-text-ink-muted) !important;
+  font-weight: 600 !important;
+  /* The current page and the separators are bare text; links are quieter. */
+  color: var(--jp-text-ink) !important;
   display: flex !important;
   align-items: center !important;
   gap: 6px !important;
 }
 
 .breadcrumbs a {
-  color: var(--jp-kachi-primary) !important;
+  color: var(--jp-text-ink-muted) !important;
   text-decoration: none !important;
-  font-weight: 600 !important;
+  font-weight: 500 !important;
   transition: color 0.15s ease !important;
-}
-
-[data-theme="dark"] .breadcrumbs a {
-  color: #60A5FA !important;
 }
 
 .breadcrumbs a:hover {
@@ -2123,7 +2339,6 @@ fieldset.module.mp-form .readonly {
    token blocks.
    -------------------------------------------------------------------------- */
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .breadcrumbs a { color: #60A5FA !important; }
   :root:not([data-theme="light"]) .messagelist li.success { color: #34D399 !important; }
   :root:not([data-theme="light"]) .module:hover { border-color: rgba(255, 255, 255, 0.16) !important; }
   :root:not([data-theme="light"]) .addlink { color: #34D399 !important; }
