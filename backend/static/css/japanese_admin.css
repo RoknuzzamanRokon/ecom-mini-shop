@@ -129,21 +129,24 @@ body {
   text-decoration: none !important;
 }
 
+/* The MiniShop icon (static/img/minishop-icon.png, from the storefront's
+   app/icon.png) on the same cream tile the storefront header uses: its blue
+   and orange need a light ground, so the tile stays light in both themes. */
 .mp-brand-mark {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
-  background: linear-gradient(135deg, var(--jp-kinari-gold-hover), var(--jp-kinari-gold));
-  color: #FFFFFF;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 2px 6px rgba(0, 0, 0, 0.25);
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: #FBF9F4;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 
-.mp-brand-mark svg {
-  width: 20px;
-  height: 20px;
+.mp-brand-mark img {
+  display: block;
+  width: 26px;
+  height: 26px;
 }
 
 .mp-brand-name {
@@ -1164,17 +1167,18 @@ body.theme-dark {
   min-width: 0;
 }
 
+/* The MiniShop icon on the header's cream tile (see .mp-brand-mark). */
 .sidebar-brand-icon {
-  font-size: 19px !important;
-  color: var(--sb-gold) !important;
-  background: var(--sb-gold-wash);
+  display: block;
+  box-sizing: border-box;
   width: 32px;
   height: 32px;
   flex: 0 0 32px;
+  padding: 3px;
+  border: 1px solid var(--sb-rule);
   border-radius: 9px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  background: #FBF9F4;
+  object-fit: contain;
 }
 
 .sidebar-brand-name {

@@ -5,6 +5,7 @@
 
 {% block extrahead %}
   {{ block.super }}
+  <link rel="icon" type="image/png" href="{% static 'img/minishop-icon.png' %}">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
@@ -35,10 +36,7 @@
 {% block branding %}
   <a class="mp-brand" href="{% url 'admin:index' %}" aria-label="MiniShop admin home">
     <span class="mp-brand-mark" aria-hidden="true">
-      <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M9 12h14l-1.6 11.5H10.6L9 12z" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"/>
-        <path d="M12.5 12v-1.5a3.5 3.5 0 0 1 7 0V12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>
-      </svg>
+      <img src="{% static 'img/minishop-icon.png' %}" alt="" width="26" height="26">
     </span>
     <span class="mp-brand-name">MiniShop</span>
     <span class="mp-brand-sep" aria-hidden="true"></span>
