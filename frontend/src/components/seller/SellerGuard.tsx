@@ -1,9 +1,9 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
+import SellerAccountRequired from "@/components/seller/SellerAccountRequired";
 import { getSellerDashboard } from "@/lib/api";
 import { getAuthToken } from "@/lib/auth";
 import { SellerDashboardData, SellerProfile, SellerCapabilities } from "@/lib/types";
@@ -93,35 +93,7 @@ export default function SellerGuard({ children }: { children: React.ReactNode })
 
   // Not a registered seller
   if (isNotSeller) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-page p-6 text-center">
-        <div className="max-w-md w-full bg-surface rounded-2xl border border-line p-8 shadow-sm flex flex-col items-center">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center mb-4">
-            <span className="material-symbols-outlined text-[36px]">storefront</span>
-          </div>
-          <h1 className="text-xl font-extrabold text-ink tracking-tight mb-2">
-            Seller Account Required
-          </h1>
-          <p className="text-xs text-ink-muted leading-relaxed mb-6">
-            The account <strong className="text-ink">{user?.email || user?.username}</strong> is not currently registered as a seller on MiniShop. To open your shop and sell products, please apply through platform administration.
-          </p>
-          <div className="flex flex-col sm:flex-row gap-3 w-full">
-            <Link
-              href="/"
-              className="flex-1 px-4 py-2.5 rounded-lg border border-line hover:bg-surface-alt text-ink font-bold text-xs uppercase tracking-wider transition-colors"
-            >
-              Storefront
-            </Link>
-            <Link
-              href="/profile"
-              className="flex-1 px-4 py-2.5 rounded-lg bg-primary hover:bg-primary-hover text-on-primary font-bold text-xs uppercase tracking-wider transition-colors shadow-sm"
-            >
-              Customer Profile
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
+    return <SellerAccountRequired account={user?.email || user?.username} />;
   }
 
   return (
