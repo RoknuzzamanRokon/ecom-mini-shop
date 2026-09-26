@@ -5,6 +5,13 @@ import { useRouter } from "next/navigation";
 import type { DivIcon, LayerGroup, Map as LeafletMap, Marker } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { formatDistance } from "@/lib/geolocation";
+import {
+  ROUTE_ATTRIBUTION,
+  RoadRoute,
+  TravelMode,
+  formatDuration,
+  getRoadRoute,
+} from "@/lib/routing";
 import { NearbyShop } from "@/lib/types";
 
 type Leaflet = typeof import("leaflet");
@@ -26,7 +33,16 @@ interface NearbyShopsMapProps {
   selectedShopId: number | null;
   /** A marker was clicked (the shop's id), or its popup was closed (null). */
   onSelectShop: (shopId: number | null) => void;
+  /** The shop to draw a road route to, from `center`; null for no route. */
+  routeTo: NearbyShop | null;
+  /** The route card's close button. */
+  onClearRoute: () => void;
   className?: string;
+}
+
+interface RouteResult {
+  route: RoadRoute | null;
+  error: string | null;
 }
 
 /**
@@ -37,7 +53,9 @@ interface NearbyShopsMapProps {
  * never the only way to read the results: the list beside it holds the same
  * shops, in the same order, with the same numbers.
  *
- * Moving or zooming the map never refetches anything.
+ * Moving or zooming the map never refetches anything. The only other request
+ * is the road route to `routeTo`, made once per shop, start point and travel
+ * mode (see lib/routing.ts), and only after the customer picks a shop.
  */
 export default function NearbyShopsMap({
   center,
@@ -45,6 +63,8 @@ export default function NearbyShopsMap({
   shops,
   selectedShopId,
   onSelectShop,
+  routeTo,
+  onClearRoute,
   className = "",
 }: NearbyShopsMapProps) {
   const router = useRouter();
@@ -54,6 +74,19 @@ export default function NearbyShopsMap({
   const markersRef = useRef(new Map<number, Marker>());
   const onSelectRef = useRef(onSelectShop);
   const selectedRef = useRef(selectedShopId);
+  const [mode, setMode] = useState<TravelMode>("foot");
+  // Every route fetched while the page is open, so picking a shop again is instant.
+  const [routes, setRoutes] = useState<Record<string, RouteResult>>({});
+
+  const routeToId = routeTo?.id ?? null;
+  const toLat = routeTo?.latitude ?? null;
+  const toLng = routeTo?.longitude ?? null;
+  const routeKey =
+    toLat === null || toLng === null
+      ? null
+      : JSON.stringify([center.latitude, center.longitude, toLat, toLng, mode]);
+  const routeResult = routeKey ? routes[routeKey] : undefined;
+  const road = routeResult?.route ?? null;
 
   useEffect(() => {
     onSelectRef.current = onSelectShop;
@@ -187,16 +220,66 @@ export default function NearbyShopsMap({
   useEffect(() => {
     selectedRef.current = selectedShopId;
     if (!leaflet) return;
+    // The route's shop stays highlighted after its popup closes.
     markersRef.current.forEach((marker, id) => {
-      const selected = id === selectedShopId;
-      marker.getElement()?.classList.toggle("is-selected", selected);
-      marker.setZIndexOffset(selected ? 500 : 0);
+      const highlighted = id === selectedShopId || id === routeToId;
+      marker.getElement()?.classList.toggle("is-selected", highlighted);
+      marker.setZIndexOffset(highlighted ? 500 : 0);
     });
     const marker = selectedShopId == null ? undefined : markersRef.current.get(selectedShopId);
     if (marker && !marker.isPopupOpen()) marker.openPopup();
-  }, [leaflet, selectedShopId, shops]);
+  }, [leaflet, selectedShopId, routeToId, shops]);
 
-  // 5. Keep Leaflet's idea of its size in step with responsive layouts.
+  // 5. Fetch the road route to the chosen shop, unless it is already known.
+  useEffect(() => {
+    if (routeKey === null || toLat === null || toLng === null || routes[routeKey]) return;
+    const controller = new AbortController();
+    const from = { latitude: center.latitude, longitude: center.longitude };
+    getRoadRoute(from, { latitude: toLat, longitude: toLng }, mode, controller.signal)
+      .then((route) => setRoutes((prev) => ({ ...prev, [routeKey]: { route, error: null } })))
+      .catch((err: unknown) => {
+        if (controller.signal.aborted) return;
+        const error = err instanceof Error ? err.message : "The route couldn't be loaded.";
+        setRoutes((prev) => ({ ...prev, [routeKey]: { route: null, error } }));
+      });
+    return () => controller.abort();
+  }, [routeKey, routes, center.latitude, center.longitude, toLat, toLng, mode]);
+
+  // 6. Draw the route: the road path over a casing, plus dotted legs from the
+  // exact points to the roads it starts and ends on. Refit only if it doesn't
+  // already fit; the extra top padding keeps a pin at the top edge whole (a
+  // pin stands ~37 px above its point).
+  useEffect(() => {
+    if (!leaflet || !road || toLat === null || toLng === null) return;
+    const { L, map } = leaflet;
+    const group: LayerGroup = L.layerGroup().addTo(map);
+    const here = L.latLng(center.latitude, center.longitude);
+    const shopAt = L.latLng(toLat, toLng);
+    const path = road.path.map(([lat, lng]) => L.latLng(lat, lng));
+
+    L.polyline([here, path[0]], { className: "nearby-map-route-gap", interactive: false }).addTo(group);
+    L.polyline([path[path.length - 1], shopAt], {
+      className: "nearby-map-route-gap",
+      interactive: false,
+    }).addTo(group);
+    L.polyline(path, { className: "nearby-map-route-casing", interactive: false }).addTo(group);
+    L.polyline(path, {
+      className: "nearby-map-route",
+      interactive: false,
+      attribution: ROUTE_ATTRIBUTION,
+    }).addTo(group);
+
+    const bounds = L.latLngBounds(path).extend(here).extend(shopAt);
+    if (!map.getBounds().contains(bounds)) {
+      map.fitBounds(bounds, { paddingTopLeft: [24, 48], paddingBottomRight: [24, 24], maxZoom: 18 });
+    }
+
+    return () => {
+      group.remove();
+    };
+  }, [leaflet, road, center.latitude, center.longitude, toLat, toLng]);
+
+  // 7. Keep Leaflet's idea of its size in step with responsive layouts.
   useEffect(() => {
     const element = containerRef.current;
     if (!leaflet || !element) return;
@@ -208,29 +291,166 @@ export default function NearbyShopsMap({
   return (
     // `isolate` keeps Leaflet's internal z-indexes (up to 1000) inside this box,
     // so the map can never paint over the sticky header.
+    // The route bar sits above the tiles rather than over them, so it never
+    // hides a popup, a pin or the zoom buttons; the map area shrinks to fit.
     <div
-      className={`relative isolate overflow-hidden rounded-2xl border border-line bg-surface-alt ${className}`}
+      className={`relative isolate overflow-hidden rounded-2xl border border-line bg-surface-alt flex flex-col ${className}`}
     >
-      <div
-        ref={containerRef}
-        role="region"
-        aria-label="Map of nearby shops. The same shops are listed, in the same order, beside the map."
-        className="nearby-map absolute inset-0"
-      />
-      {!leaflet && !loadFailed && (
-        <div className="absolute inset-0 flex items-center justify-center gap-2 text-xs font-semibold text-ink-muted">
-          <span aria-hidden="true" className="material-symbols-outlined text-[18px] animate-spin">
-            progress_activity
-          </span>
-          Loading map…
-        </div>
+      {leaflet && routeTo && routeKey && (
+        <RouteBar
+          shopName={routeTo.name}
+          mode={mode}
+          onModeChange={setMode}
+          result={routeResult}
+          onRetry={() =>
+            setRoutes((prev) => {
+              const next = { ...prev };
+              delete next[routeKey];
+              return next;
+            })
+          }
+          onClose={onClearRoute}
+        />
       )}
-      {loadFailed && (
-        <div className="absolute inset-0 flex items-center justify-center p-6 text-center text-xs text-ink-muted">
-          The map couldn&apos;t be loaded. Every result is still in the list.
-        </div>
-      )}
+      <div className="relative flex-1 min-h-0">
+        <div
+          ref={containerRef}
+          role="region"
+          aria-label="Map of nearby shops. The same shops are listed, in the same order, beside the map."
+          className="nearby-map absolute inset-0"
+        />
+        {!leaflet && !loadFailed && (
+          <div className="absolute inset-0 flex items-center justify-center gap-2 text-xs font-semibold text-ink-muted">
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px] animate-spin">
+              progress_activity
+            </span>
+            Loading map…
+          </div>
+        )}
+        {loadFailed && (
+          <div className="absolute inset-0 flex items-center justify-center p-6 text-center text-xs text-ink-muted">
+            The map couldn&apos;t be loaded. Every result is still in the list.
+          </div>
+        )}
+      </div>
     </div>
+  );
+}
+
+const TRAVEL_MODES: { mode: TravelMode; label: string; icon: string }[] = [
+  { mode: "foot", label: "Walk", icon: "directions_walk" },
+  { mode: "car", label: "Drive", icon: "directions_car" },
+];
+
+/**
+ * The route's summary along the top of the map: which shop, Walk / Drive, and
+ * the road distance and time. One row from `sm` up; on phones the shop name
+ * and close button get their own row.
+ */
+function RouteBar({
+  shopName,
+  mode,
+  onModeChange,
+  result,
+  onRetry,
+  onClose,
+}: {
+  shopName: string;
+  mode: TravelMode;
+  onModeChange: (mode: TravelMode) => void;
+  result: RouteResult | undefined;
+  onRetry: () => void;
+  onClose: () => void;
+}) {
+  let summary: React.ReactNode;
+  if (!result) {
+    summary = (
+      <span className="inline-flex items-center gap-1 text-ink-muted">
+        <span aria-hidden="true" className="material-symbols-outlined text-[14px] animate-spin">
+          progress_activity
+        </span>
+        Finding the road route…
+      </span>
+    );
+  } else if (result.error || !result.route) {
+    summary = (
+      <span className="flex flex-wrap items-center gap-x-2 text-danger">
+        {result.error}
+        <button
+          type="button"
+          onClick={onRetry}
+          className="font-bold text-primary hover:underline cursor-pointer rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        >
+          Retry
+        </button>
+      </span>
+    );
+  } else {
+    const { distanceKm, durationMinutes } = result.route;
+    summary = (
+      <span>
+        <strong className="text-sm text-ink">{formatDistance(distanceKm)}</strong>
+        <span className="text-ink-muted"> by road · </span>
+        <strong className="text-ink">{formatDuration(durationMinutes)}</strong>
+        <span className="text-ink-muted">
+          {mode === "foot" ? " walk" : " drive, without traffic"}
+        </span>
+      </span>
+    );
+  }
+
+  return (
+    <section
+      aria-label={`Route to ${shopName}`}
+      className="shrink-0 grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1.5 border-b border-line bg-surface px-3 py-2"
+    >
+      <p className="min-w-0 flex items-center gap-1.5 text-xs text-ink-muted">
+        <span aria-hidden="true" className="material-symbols-outlined text-[18px] text-accent shrink-0">
+          route
+        </span>
+        <span className="truncate">
+          Route to <strong className="font-bold text-ink">{shopName}</strong>
+        </span>
+      </p>
+
+      <button
+        type="button"
+        onClick={onClose}
+        className="sm:order-last flex h-7 w-7 items-center justify-center rounded-full text-ink-muted hover:bg-surface-alt hover:text-ink cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
+      >
+        <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
+          close
+        </span>
+        <span className="sr-only">Hide route</span>
+      </button>
+
+      <div className="col-span-2 sm:col-span-1 flex items-center gap-3 min-w-0">
+        <div className="inline-flex shrink-0 rounded-lg border border-line bg-surface-alt p-0.5">
+          {TRAVEL_MODES.map((option) => {
+            const active = option.mode === mode;
+            return (
+              <button
+                key={option.mode}
+                type="button"
+                aria-pressed={active}
+                onClick={() => onModeChange(option.mode)}
+                className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-bold transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary ${
+                  active ? "bg-primary text-on-primary shadow-xs" : "text-ink-muted hover:text-ink"
+                }`}
+              >
+                <span aria-hidden="true" className="material-symbols-outlined text-[15px]">
+                  {option.icon}
+                </span>
+                {option.label}
+              </button>
+            );
+          })}
+        </div>
+        <p aria-live="polite" className="min-w-0 text-[11px] leading-snug">
+          {summary}
+        </p>
+      </div>
+    </section>
   );
 }
 

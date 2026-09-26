@@ -794,6 +794,27 @@ class ShopSpatialAndNearbyTests(TestCase):
 
         self.assertEqual(self.client.get(f"{base}1.5").data["results"], [])
 
+    def test_nearby_sub_kilometre_radius(self):
+        """The storefront's custom radius goes down to 100 m: a shop ~150 m away is in at 0.2, out at 0.1."""
+        shop = Shop.objects.create(
+            owner=self.seller,
+            name="Around The Corner Shop",
+            status=Shop.STATUS_ACTIVE,
+            location=Point(longitude=90.4172, latitude=23.78015),
+        )
+        base = "/api/shops/nearby/?lat=23.7788&lng=90.4172&radius="
+
+        inside = self.client.get(f"{base}0.2")
+        self.assertEqual(inside.status_code, status.HTTP_200_OK)
+        self.assertEqual(inside.data["radius_km"], 0.2)
+        self.assertEqual([r["id"] for r in inside.data["results"]], [shop.id])
+        self.assertGreater(inside.data["results"][0]["distance_km"], 0.1)
+        self.assertLess(inside.data["results"][0]["distance_km"], 0.2)
+
+        outside = self.client.get(f"{base}0.1")
+        self.assertEqual(outside.status_code, status.HTTP_200_OK)
+        self.assertEqual(outside.data["results"], [])
+
     def test_nearby_equal_distances_order_by_id(self):
         """Shops at the same distance come back in a stable order: lowest id first."""
         coords = Point(longitude=90.4125, latitude=23.8103)

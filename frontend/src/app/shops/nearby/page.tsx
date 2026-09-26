@@ -15,6 +15,7 @@ import { useCustomerLocation } from "@/context/LocationContext";
 import {
   NEARBY_QUERY_MAX_LENGTH,
   NEARBY_RADIUS_OPTIONS,
+  formatNearbyRadius,
   getCategories,
   getNearbyShops,
   parseNearbyRadius,
@@ -127,6 +128,7 @@ function NearbyShopsExplorer() {
   const [attempt, setAttempt] = useState(0);
   const [result, setResult] = useState<NearbyResult | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [routeShopId, setRouteShopId] = useState<number | null>(null);
 
   // One request per (location, radius, search, retry). Changing any of them
   // quickly aborts the stale request; its late response can never overwrite a newer one.
@@ -153,27 +155,36 @@ function NearbyShopsExplorer() {
   const loading = requestKey !== null && current === null;
   const shops = current?.data?.results ?? [];
   const selectedShopId = shops.some((s) => s.id === selectedId) ? selectedId : null;
+  const routeShop = shops.find((s) => s.id === routeShopId) ?? null;
 
   const mapRef = useRef<HTMLDivElement>(null);
   const isDesktop = () => window.matchMedia("(min-width: 1024px)").matches;
+
+  // Picking a shop (card, "Show on map" or marker) also routes to it. Closing
+  // its popup clears the selection but keeps the route; the route card's own
+  // close button clears that.
+  const pickShop = useCallback((shopId: number | null) => {
+    setSelectedId(shopId);
+    if (shopId !== null) setRouteShopId(shopId);
+  }, []);
 
   // Marker → card: on desktop the list is beside the map, so bring the card
   // into view. On smaller screens the list is below the map; the marker's
   // popup already shows the shop, so the page stays where it is.
   const selectFromMap = useCallback((shopId: number | null) => {
-    setSelectedId(shopId);
+    pickShop(shopId);
     if (shopId !== null && isDesktop()) {
       document
         .getElementById(`nearby-shop-${shopId}`)
         ?.scrollIntoView({ block: "nearest", behavior: "smooth" });
     }
-  }, []);
+  }, [pickShop]);
 
   // Card → map: on smaller screens the map is above the list, so scroll up to it.
   const showOnMap = useCallback((shopId: number) => {
-    setSelectedId(shopId);
+    pickShop(shopId);
     if (!isDesktop()) mapRef.current?.scrollIntoView({ block: "start", behavior: "smooth" });
-  }, []);
+  }, [pickShop]);
 
   const changeRadius = (next: number) => {
     router.replace(nearbyUrl(next, q), { scroll: false });
@@ -188,7 +199,7 @@ function NearbyShopsExplorer() {
 
   // Location changes are announced by CustomerLocationControl; this covers results.
   let announcement = "";
-  if (loading) announcement = `Loading shops within ${radius} km…`;
+  if (loading) announcement = `Loading shops within ${formatNearbyRadius(radius)}…`;
   else if (current?.error) announcement = current.error;
   else if (current?.data) announcement = resultSummary(current.data, radius, q);
 
@@ -230,6 +241,8 @@ function NearbyShopsExplorer() {
               shops={shops}
               selectedShopId={selectedShopId}
               onSelectShop={selectFromMap}
+              routeTo={routeShop}
+              onClearRoute={() => setRouteShopId(null)}
               className="h-72 sm:h-96 lg:h-[calc(100dvh-10rem)] lg:min-h-105 lg:max-h-190"
             />
           </div>
@@ -255,7 +268,11 @@ function NearbyShopsExplorer() {
             ) : current?.data && current.data.results.length === 0 ? (
               <StateCard
                 icon={q ? "search_off" : "wrong_location"}
-                title={q ? `No shops within ${radius} km have “${q}”` : `No shops within ${radius} km`}
+                title={
+                  q
+                    ? `No shops within ${formatNearbyRadius(radius)} have “${q}”`
+                    : `No shops within ${formatNearbyRadius(radius)}`
+                }
                 body={
                   q
                     ? "Try a wider area, a shorter search (one word often finds more), or see every shop nearby."
@@ -268,7 +285,7 @@ function NearbyShopsExplorer() {
                         <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
                           zoom_out_map
                         </span>
-                        Search within {widerRadius} km
+                        Search within {formatNearbyRadius(widerRadius)}
                       </button>
                     )}
                     {q ? (
@@ -293,7 +310,7 @@ function NearbyShopsExplorer() {
                         shop={shop}
                         rank={index + 1}
                         selected={shop.id === selectedShopId}
-                        onSelect={setSelectedId}
+                        onSelect={pickShop}
                         onShowOnMap={showOnMap}
                       />
                     </li>
@@ -313,9 +330,9 @@ function resultSummary(data: NearbyShopsResponse, radius: number, q: string) {
   const noun = data.count === 1 ? "shop" : "shops";
   const scope = q ? ` that ${data.count === 1 ? "has" : "have"} “${q}”` : "";
   if (data.count > shown) {
-    return `Showing the nearest ${shown} of ${data.count} ${noun} within ${radius} km${scope}`;
+    return `Showing the nearest ${shown} of ${data.count} ${noun} within ${formatNearbyRadius(radius)}${scope}`;
   }
-  return `${data.count} ${noun} within ${radius} km${scope}`;
+  return `${data.count} ${noun} within ${formatNearbyRadius(radius)}${scope}`;
 }
 
 /** "What are you looking for?": the product half of the search. Blank shows every nearby shop. */
@@ -440,7 +457,8 @@ function LocationPrompt({ q }: { q: string }) {
           </p>
           <p className="mt-2 text-xs text-ink-muted">
             Your location is only used for this search. It isn&apos;t saved to your account or
-            anywhere else.
+            anywhere else. Picking a shop also sends it, with the shop&apos;s location, to the
+            map&apos;s routing service to draw the road there.
           </p>
         </>
       }

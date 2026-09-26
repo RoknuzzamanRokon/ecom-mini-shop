@@ -974,6 +974,36 @@ html, body {
   fill-opacity: 0.12;
 }
 
+/* Road route to the chosen shop: an accent line (the chosen pin's colour) on a
+   dark casing, so it reads on both light roads and dark tiles. Dotted legs join
+   the exact start and end points to the roads the route snaps to. */
+.nearby-map-route-casing,
+.nearby-map-route,
+.nearby-map-route-gap {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.nearby-map-route-casing {
+  stroke: var(--c-primary-deep);
+  stroke-width: 9;
+  stroke-opacity: 0.85;
+}
+
+.nearby-map-route {
+  stroke: var(--c-accent);
+  stroke-width: 5;
+  stroke-opacity: 1;
+}
+
+.nearby-map-route-gap {
+  stroke: var(--c-primary-deep);
+  stroke-width: 3;
+  stroke-opacity: 0.8;
+  stroke-dasharray: 1 7;
+}
+
 /* The customer: a solid dot with a slow pulse. */
 .nearby-map-me span {
   position: relative;

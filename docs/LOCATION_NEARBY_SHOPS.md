@@ -109,15 +109,16 @@ Frontend integration            lib/geolocation.ts ──► shop forms button  
 | # | Rule | Why |
 |---|---|---|
 | D1 | **Extend `GET /api/shops/nearby/`**; keep its `lat` / `lng` / `radius` names. No new endpoint, no unified search endpoint. | It already has the right shape and tests. Normal search (`/api/products/?q=`, `/api/shops/?q=`) is a different question (text match vs distance) and stays untouched. |
-| D2 | Public max radius **50 km**. UI options **1, 2, 5, 10, 20, 50 km**, default **5 km**. | Covers greater Dhaka at the top end; keeps queries and marker counts small. `validate_radius`'s own default (1000) is unchanged for other callers. |
+| D2 | Public max radius **50 km**. UI options **1, 2, 5, 10, 20, 50 km**, default **5 km**. *(2026-09-26: chips are now **500 m, 1, 2, 5, 10, 20, 50 km**, plus a custom box for any radius from **100 m** to 50 km, rounded to 10 m — see [Follow-up](#follow-up--short-radius-and-road-routes-2026-09-26).)* | Covers greater Dhaka at the top end; keeps queries and marker counts small. `validate_radius`'s own default (1000) is unchanged for other callers. |
 | D3 | At most **50 results**, nearest first. `count` is the total inside the radius, so the UI can say "showing 50 of 73". | Enough for a map and list on a phone; bounds response size. |
 | D4 | Shops at `POINT(0 0)` **never** appear in nearby results. | They have no real location. |
-| D5 | Customer location lives **only in memory** (a React context in the root layout). Not in `localStorage`, not in the URL, not stored on the server. It is sent only as the query of the nearby request. | Privacy. Survives client navigation (home → nearby → shop → back), gone on reload. |
+| D5 | Customer location lives **only in memory** (a React context in the root layout). Not in `localStorage`, not in the URL, not stored on the server. It is sent only as the query of the nearby request. *(2026-09-26: and, once the customer picks a shop, to the routing server for that shop's road route — D11.)* | Privacy. Survives client navigation (home → nearby → shop → back), gone on reload. |
 | D6 | The browser's permission prompt appears **only after a click**. If permission is already `granted`, the nearby page may locate automatically (no prompt appears). | "Must not be forced to grant location to browse". |
 | D7 | Shop forms: the button **only fills the two inputs**. Manual entry still works; the backend still validates. **No reverse geocoding**, no map picker. | Smallest correct change. Address stays a human-typed field. |
 | D8 | Map: **Leaflet 1.9 + OpenStreetMap tiles**, tile URL and attribution overridable with `NEXT_PUBLIC_MAP_TILE_URL` / `NEXT_PUBLIC_MAP_TILE_ATTRIBUTION`. | Free, no API key, BSD-2 licence, ~40 KB gz. See §7. |
 | D9 | The nearby UI is its own route **`/shops/nearby?radius=`** (next to `/shops`). Home gets an entry bar, not a map. *(2026-09-26: the home bar was removed; the entry points are now the header "Shops near you" link, `/shops`, and each product page — see [Follow-up](#follow-up--find-a-product-in-shops-near-you-2026-09-26).)* | The home page is already hero + grid. A route gives the back button and a shareable radius. Coordinates never go in the URL (D5). |
 | D10 | **No database change.** | §11. |
+| D11 | *(2026-09-26)* Road routes come from **OSRM**, called straight from the browser, by default FOSSGIS's public server (`routing.openstreetmap.de`, the one openstreetmap.org's directions use). URL and attribution overridable with `NEXT_PUBLIC_ROUTE_URL` / `NEXT_PUBLIC_ROUTE_ATTRIBUTION`. A request is made only after the customer picks a shop, once per shop, start point and travel mode. | Free, no key, CORS-open, walking and driving profiles. Same trade-off as the OSM tiles (D8): fair use only; heavy production traffic needs a self-hosted or commercial OSRM (an env change). |
 
 ## 5. Proposed API Contract
 
@@ -286,7 +287,9 @@ and `http://127.0.0.1:3000` count as secure, so desktop dev works. **A phone ope
 - No new permission (public, read-only, like `/api/shops/`). No throttle exists on any
   public endpoint today; adding DRF throttling is listed in "Not in this plan".
 - Privacy: customer location is never persisted (D5). Note that it does appear in the
-  request query string, so it can reach web-server access logs (see §15).
+  request query string, so it can reach web-server access logs (see §15). Picking a shop
+  also sends it, with the shop's location, to the routing server (D11); the no-location
+  prompt says so.
 - Shop forms: the button can't bypass anything — it only types into inputs the user
   could type into anyway.
 
@@ -690,9 +693,12 @@ build passes.
    ~100 m on the client. Not done now.
 3. **Radius cap 50 km / limit 50** are judgement calls (D2, D3).
 4. **Phone testing needs HTTPS** (§8).
-5. **6 of 10 dev shops have no coordinates**, so they will never appear nearby until a
+5. **Routing server policy in production (D11).** FOSSGIS's OSRM is fair-use, like the
+   OSM tiles, and it receives the customer's position on every route. Decide on a
+   self-hosted or commercial OSRM before real launch; switching is an env change.
+6. **6 of 10 dev shops have no coordinates**, so they will never appear nearby until a
    seller/admin sets them — which the Task 2 button makes easy.
-6. Desktop browsers without GPS often return a Wi-Fi/IP estimate hundreds of metres
+7. Desktop browsers without GPS often return a Wi-Fi/IP estimate hundreds of metres
    off; the accuracy display and low-accuracy warning exist for that.
 
 ## 16. Recommended Implementation Order
@@ -759,4 +765,43 @@ inactive, archived category, suspended seller), match listing and cap, blank `q`
 
 **Not done.** Word splitting / fuzzy matching (the match is one phrase, like product
 search), stock filtering, searching inside a shop from "+N more".
+
+---
+
+## Follow-up — short radius and road routes (2026-09-26)
+
+**Why.** Customers in dense areas wanted to search closer than 1 km (e.g. 100 m or 200 m),
+and to see how to *get* to a shop, not just where it is.
+
+**Radius** (frontend only; the backend already accepted any radius `> 0` and `<= 50`):
+
+- `lib/api.ts`: `NEARBY_RADIUS_OPTIONS` is now `[0.5, 1, 2, 5, 10, 20, 50]`.
+  `normalizeNearbyRadius()` accepts anything from `NEARBY_MIN_RADIUS_KM` (0.1) to
+  `NEARBY_MAX_RADIUS_KM` (50), rounded to 10 m; `parseNearbyRadius()` uses it for `?radius=`.
+  `formatNearbyRadius()` labels radii under 1 km in metres ("200 m").
+- `NearbyRadiusPicker`: the chips plus a **Custom** box (`km`, Enter or **Set**). Out-of-range
+  or non-numeric input shows "Enter 0.1 to 50 km". A custom radius shows in the box with the
+  active ring. The URL still carries it (`?radius=0.2`), and the empty state still offers the
+  next chip up.
+- 100 m is the floor because a phone's location fix is rarely better than ±10–50 m.
+
+**Road routes** (D11):
+
+- `lib/routing.ts`: `getRoadRoute(from, to, "foot" | "car")` calls OSRM and returns the road path,
+  distance and duration; errors come back as customer-facing messages.
+- Picking a shop (card, **Show on map** or marker) routes to it. The map draws the road in
+  the accent colour over a dark casing, with dotted legs from the exact points to the roads
+  OSRM snaps to, and refits only if the route doesn't already fit. A bar along the top of the
+  map shows "Route to *shop*", **Walk / Drive**, and the road distance and time ("drive, without
+  traffic", since OSRM has no live traffic). Closing the popup keeps the route; the bar's ×
+  clears it. The route's shop keeps its highlighted pin.
+- Routes are cached per (start, shop, mode) while the page is open. Failures show a Retry.
+
+**Tests.** `shops/tests.py::test_nearby_sub_kilometre_radius`: a shop ~150 m away is in at
+`radius=0.2` and out at `radius=0.1`. The frontend was checked in real Chrome (DevTools
+geolocation override) at 1280 px and 390 px: 200 m finds 1 shop, 100 m finds none and offers
+500 m, 0.05 is rejected, and walk and drive routes are drawn and cleared.
+
+**Not done.** Turn-by-turn directions, live traffic, public transport, rickshaw times,
+and hand-off to a phone's maps app.
 

@@ -379,16 +379,34 @@ export async function getShops(params?: {
   }
 }
 
-/** Radius choices (km) for nearby-shop search. The backend rejects anything over 50 km. */
-export const NEARBY_RADIUS_OPTIONS = [1, 2, 5, 10, 20, 50] as const;
+/** Preset radius chips (km) for nearby-shop search; any custom value in range works too. */
+export const NEARBY_RADIUS_OPTIONS = [0.5, 1, 2, 5, 10, 20, 50] as const;
 export const DEFAULT_NEARBY_RADIUS_KM = 5;
+/** 100 m: tighter than this is below what a phone's location fix can tell apart. */
+export const NEARBY_MIN_RADIUS_KM = 0.1;
+/** The backend rejects anything wider (NEARBY_MAX_RADIUS_KM in shops/services.py). */
+export const NEARBY_MAX_RADIUS_KM = 50;
 
-/** A `?radius=` value if it is one of NEARBY_RADIUS_OPTIONS, else the default. */
+/**
+ * A radius in km, rounded to 10 m, if it is inside NEARBY_MIN/MAX_RADIUS_KM;
+ * otherwise null. Shared by `?radius=` and the custom radius box.
+ */
+export function normalizeNearbyRadius(value: string | number | null | undefined): number | null {
+  if (value === null || value === undefined || value === "") return null;
+  const radius = Math.round(Number(value) * 100) / 100;
+  if (!Number.isFinite(radius)) return null;
+  return radius >= NEARBY_MIN_RADIUS_KM && radius <= NEARBY_MAX_RADIUS_KM ? radius : null;
+}
+
+/** A `?radius=` value if it is a valid radius (see normalizeNearbyRadius), else the default. */
 export function parseNearbyRadius(value: string | null | undefined): number {
-  const radius = Number(value);
-  return (NEARBY_RADIUS_OPTIONS as readonly number[]).includes(radius)
-    ? radius
-    : DEFAULT_NEARBY_RADIUS_KM;
+  return normalizeNearbyRadius(value) ?? DEFAULT_NEARBY_RADIUS_KM;
+}
+
+/** "200 m" under a kilometre, else "1.5 km" / "5 km", for radius labels and summaries. */
+export function formatNearbyRadius(km: number): string {
+  if (km < 1) return `${Math.round(km * 1000)} m`;
+  return `${Number(km.toFixed(2))} km`;
 }
 
 /** Longest `q` the nearby endpoint accepts; longer searches get a 400. */
