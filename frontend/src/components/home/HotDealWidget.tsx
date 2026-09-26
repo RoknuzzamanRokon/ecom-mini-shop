@@ -88,7 +88,10 @@ export default function HotDealWidget({ deal }: HotDealWidgetProps) {
       </div>
 
       {/* Deal Image Container with Discount Badge */}
-      <div className="relative bg-surface-alt rounded-lg overflow-hidden mb-3 aspect-[4/3] flex items-center justify-center">
+      <Link
+        href={`/product/${deal.slug}`}
+        className="relative bg-surface-alt rounded-lg overflow-hidden mb-3 aspect-[4/3] flex items-center justify-center"
+      >
         <Image
           src={imgSrc}
           alt={deal.name}
@@ -103,7 +106,7 @@ export default function HotDealWidget({ deal }: HotDealWidgetProps) {
             <span className="text-[9px] font-medium leading-none">OFF</span>
           </span>
         )}
-      </div>
+      </Link>
 
       {/* Countdown Timer Display */}
       <div className="grid grid-cols-4 gap-1.5 mb-3 text-center">

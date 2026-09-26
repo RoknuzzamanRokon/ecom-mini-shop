@@ -40,7 +40,10 @@ export default function ProductCard({ product, viewMode = "grid" }: ProductCardP
   if (viewMode === "list") {
     return (
       <div className="group bg-surface rounded-lg border border-line overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col sm:flex-row items-center p-2.5 gap-4">
-        <div className="relative aspect-[4/3] w-28 h-24 bg-surface-alt rounded-md overflow-hidden shrink-0">
+        <Link
+          href={`/product/${product.slug}`}
+          className="relative block aspect-[4/3] w-28 h-24 bg-surface-alt rounded-md overflow-hidden shrink-0"
+        >
           <Image
             src={imgSrc}
             alt={product.name}
@@ -58,7 +61,7 @@ export default function ProductCard({ product, viewMode = "grid" }: ProductCardP
               {badgeUpper}
             </span>
           )}
-        </div>
+        </Link>
 
         <div className="flex-1 flex flex-col justify-between w-full">
           <div>
@@ -125,23 +128,27 @@ export default function ProductCard({ product, viewMode = "grid" }: ProductCardP
     <div className="group bg-surface rounded-lg border border-line overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col">
       {/* Thumbnail - Shorter aspect ratio (4/3) for compact card */}
       <div className="relative aspect-[4/3] w-full bg-surface-alt overflow-hidden">
-        <Image
-          src={imgSrc}
-          alt={product.name}
-          fill
-          sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
-          onError={() => setImgSrc("/placeholder.svg")}
-          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-        />
-        {badgeUpper && (
-          <span
-            className={`absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase shadow-xs ${getBadgeClass(
-              badgeUpper
-            )}`}
-          >
-            {badgeUpper}
-          </span>
-        )}
+        {/* The link covers the photo but not the favorite button, which stays
+            a sibling so a button is never nested inside the anchor. */}
+        <Link href={`/product/${product.slug}`} className="absolute inset-0 block">
+          <Image
+            src={imgSrc}
+            alt={product.name}
+            fill
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 25vw"
+            onError={() => setImgSrc("/placeholder.svg")}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          />
+          {badgeUpper && (
+            <span
+              className={`absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase shadow-xs ${getBadgeClass(
+                badgeUpper
+              )}`}
+            >
+              {badgeUpper}
+            </span>
+          )}
+        </Link>
         <FavoriteButton
           productId={product.id}
           className="absolute top-2 left-2 z-10"
