@@ -883,6 +883,54 @@ html, body {
 }
 
 /* ==========================================================================
+   Header "Shops near you" link (components/layout/Header.tsx)
+   These rules are unlayered, so this box-shadow beats Tailwind's shadow and
+   ring utilities on the same element; the link draws its focus ring with an
+   outline instead.
+   ========================================================================== */
+.nearby-cta {
+  --nearby-cta-glow: color-mix(in srgb, var(--c-accent) 45%, transparent);
+  --nearby-cta-lift: inset 0 1px 0 rgb(255 255 255 / 0.25), 0 6px 16px -6px var(--nearby-cta-glow);
+  box-shadow: var(--nearby-cta-lift);
+  animation: nearby-cta-beacon 3s ease-out infinite;
+}
+
+.nearby-cta:hover {
+  --nearby-cta-glow: color-mix(in srgb, var(--c-accent) 70%, transparent);
+}
+
+/* A ring radiates out from the pill, then rests until the next one. */
+@keyframes nearby-cta-beacon {
+  0% {
+    box-shadow: var(--nearby-cta-lift), 0 0 0 0 color-mix(in srgb, var(--c-accent) 60%, transparent);
+  }
+  55%, 100% {
+    box-shadow: var(--nearby-cta-lift), 0 0 0 10px color-mix(in srgb, var(--c-accent) 0%, transparent);
+  }
+}
+
+/* A light sweep across the pill on hover or keyboard focus. */
+.nearby-cta::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(110deg, transparent 35%, rgb(255 255 255 / 0.35) 50%, transparent 65%);
+  transform: translateX(-100%);
+  pointer-events: none;
+}
+
+.nearby-cta:hover::after,
+.nearby-cta:focus-visible::after {
+  transform: translateX(100%);
+  transition: transform 0.75s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nearby-cta { animation: none; }
+  .nearby-cta::after { display: none; }
+}
+
+/* ==========================================================================
    Nearby shops map (components/shops/NearbyShopsMap.tsx)
    Leaflet's own stylesheet is imported by that component; these rules only
    re-colour it with the theme tokens, so the map follows every palette and

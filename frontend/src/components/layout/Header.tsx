@@ -101,14 +101,28 @@ export default function Header({ onSearch, searchQuery = "" }: HeaderProps) {
 
         {/* Right Utility Actions */}
         <div className="flex items-center gap-4 text-on-primary shrink-0">
-          {/* The nearby page asks for the location itself, so this is a plain link. */}
+          {/* The nearby page asks for the location itself, so this is a plain link.
+              Glow, beacon ring and hover sweep live in .nearby-cta (globals.css). */}
           <Link
             href="/shops/nearby"
             title="Shops near you"
-            className="flex items-center gap-1.5 text-xs font-semibold tracking-wide uppercase bg-primary-deep/40 hover:bg-primary-deep/60 px-2.5 py-1.5 rounded text-accent transition-colors"
+            className="nearby-cta group relative inline-flex items-center gap-2 overflow-hidden rounded-full bg-linear-to-r from-accent to-accent-hover p-1 sm:pr-3.5 text-[13px] font-semibold text-on-accent transition-transform duration-200 motion-safe:hover:-translate-y-px active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus"
           >
-            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">near_me</span>
-            <span className="sr-only sm:not-sr-only">Shops near you</span>
+            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-nav text-accent">
+              <span
+                aria-hidden="true"
+                className="material-symbols-outlined fill-active text-[17px] transition-transform duration-300 motion-safe:group-hover:rotate-12"
+              >
+                near_me
+              </span>
+            </span>
+            <span className="sr-only sm:not-sr-only whitespace-nowrap">Shops near you</span>
+            {/* Wrapped: the icon font's own display rule would beat `hidden`. */}
+            <span aria-hidden="true" className="hidden lg:flex -ml-1">
+              <span className="material-symbols-outlined text-[16px] transition-transform duration-200 motion-safe:group-hover:translate-x-0.5">
+                arrow_forward
+              </span>
+            </span>
           </Link>
 
           {/* Cart Action */}
