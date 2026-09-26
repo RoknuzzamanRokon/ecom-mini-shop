@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django import forms
 from django.contrib import admin, messages
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
@@ -52,8 +53,30 @@ class ProductImageInline(admin.TabularInline):
     fields = ("image", "order")
 
 
+class ProductAdminForm(forms.ModelForm):
+    """The card layout (see ProductAdmin.get_fieldsets) puts labels above fields, where
+    Django's trailing ":" reads oddly; money inputs get the ৳ prefix hook."""
+
+    HELP_TEXTS = {
+        "slug": "The product's web address. Filled in from the name.",
+        "badge": "Optional label on the product card: NEW, HOT, SALE or TOP.",
+    }
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("label_suffix", "")
+        super().__init__(*args, **kwargs)
+        for name, text in self.HELP_TEXTS.items():
+            if name in self.fields and not self.fields[name].help_text:
+                self.fields[name].help_text = text
+        for name in ("price", "old_price"):
+            if name in self.fields:
+                widget = self.fields[name].widget
+                widget.attrs["class"] = f"{widget.attrs.get('class', '')} mp-money".strip()
+
+
 @admin.register(Product)
 class ProductAdmin(StatusBadgeMixin, admin.ModelAdmin):
+    form = ProductAdminForm
     list_display = (
         "name",
         "category",
@@ -71,7 +94,41 @@ class ProductAdmin(StatusBadgeMixin, admin.ModelAdmin):
     list_filter = ("status", "category", "shop", "is_active", "badge")
     search_fields = ("name", "description", "shop__name", "shop__owner__business_name")
     prepopulated_fields = {"slug": ("name",)}
+    readonly_fields = ("current_image",)
     inlines = [ProductImageInline]
+
+    def get_fieldsets(self, request, obj=None):
+        # Cards in the order a product is written: what it is, what it costs,
+        # how it looks, whether it shows. "mp-form" is the stacked two-column
+        # card layout in japanese_admin.css; rows with a textarea or file input
+        # span both columns. Moderation is admin-only bookkeeping, so it starts
+        # folded away when adding and open when editing.
+        moderation_classes = ("mp-form",) if obj else ("mp-form", "collapse")
+        return (
+            ("Product details", {
+                "classes": ("mp-form",),
+                "fields": ("name", "slug", "category", "shop", "description"),
+            }),
+            ("Pricing & inventory", {
+                "classes": ("mp-form",),
+                "description": "Prices in Taka (৳). Old price is the struck-through “was” price; leave it empty when there is no discount.",
+                "fields": ("price", "old_price", "stock", "badge"),
+            }),
+            ("Main image", {
+                "classes": ("mp-form",),
+                "description": "Shown on product cards and first on the product page. Add more photos under Product images below.",
+                "fields": ("current_image", "image") if obj and obj.image else ("image",),
+            }),
+            ("Visibility", {
+                "classes": ("mp-form",),
+                "description": "Shown on the storefront only when active and Published, and its category and shop are live too.",
+                "fields": ("status", "is_active"),
+            }),
+            ("Moderation", {
+                "classes": moderation_classes,
+                "fields": ("submitted_at", "reviewed_at", "reviewed_by", "rejection_reason"),
+            }),
+        )
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('category', 'shop', 'shop__owner')
@@ -86,6 +143,12 @@ class ProductAdmin(StatusBadgeMixin, admin.ModelAdmin):
             return format_html('<img src="{}" style="height:40px;border-radius:4px;" />', obj.image.url)
         return "-"
     image_preview.short_description = "Image"
+
+    @admin.display(description="Current image")
+    def current_image(self, obj):
+        if not obj or not obj.image:
+            return "-"
+        return format_html('<img class="mp-image-preview" src="{}" alt="" />', obj.image.url)
 
 
 class OrderItemInline(admin.TabularInline):

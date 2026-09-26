@@ -655,6 +655,21 @@ input:focus, textarea:focus, select:focus {
   box-shadow: 0 0 0 3px rgba(186, 134, 48, 0.2) !important;
 }
 
+/* One height for every single-line control in a form. Django's base.css
+   fixes <select> at 1.875rem, so with the 9px padding above its text was
+   cut in half ("Draft" showed only its top). */
+.form-row input[type="text"],
+.form-row input[type="password"],
+.form-row input[type="email"],
+.form-row input[type="url"],
+.form-row input[type="number"],
+.form-row select:not([multiple]) {
+  box-sizing: border-box !important;
+  height: 40px !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+}
+
 /* Bottom submit bar */
 .submit-row {
   background: var(--jp-bg-surface) !important;
@@ -1444,6 +1459,56 @@ body.theme-dark {
   border-color: var(--jp-border-line) !important;
 }
 
+/* Section 6 gives every fieldset `padding: 20px 24px` on top of Django's
+   width: 100%, which pushed a tabular inline's card 50px past its column
+   (the Product images header ran off the right edge). The header strip and
+   table run edge to edge instead. */
+.inline-group .tabular fieldset.module {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  padding: 0 !important;
+}
+
+.inline-group .tabular fieldset.module > h2 {
+  margin: 0 !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--jp-border-line) !important;
+}
+
+.inline-group .tabular td input[type="file"] {
+  max-width: 100%;
+  font-size: 12px;
+  color: var(--jp-text-ink-muted);
+}
+
+.inline-group .tabular td input[type="file"]::file-selector-button {
+  margin-right: 10px;
+  padding: 7px 14px;
+  border: 1px solid var(--jp-border-line);
+  border-radius: 8px;
+  background: var(--jp-bg-surface-sunken);
+  color: var(--jp-text-ink);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.inline-group .tabular td input[type="number"] {
+  width: 96px !important;
+}
+
+/* Django stripes rows with --body-bg (near-black in its dark theme) and
+   floats the remove icon to the far right, away from its "Delete?" header. */
+.inline-group .tabular tbody tr {
+  background: transparent !important;
+}
+
+.inline-group .tabular .inline-deletelink {
+  float: none !important;
+  display: inline-block !important;
+  vertical-align: middle;
+}
+
 .inline-group .module > h2,
 .inline-group .module > h2.inline-heading {
   background: var(--jp-bg-surface-sunken) !important;
@@ -1601,6 +1666,448 @@ body.theme-dark {
 
 .object-tools a.mp-invoice-link:hover {
   background: var(--jp-kinari-gold-hover) !important;
+}
+
+/* --------------------------------------------------------------------------
+   10. CARD FORMS  (fieldset.mp-form)
+
+   Opt-in from a ModelAdmin: give a fieldset `"classes": ("mp-form",)`, as
+   ProductAdmin.get_fieldsets does. Each fieldset becomes a card with a header
+   strip, labels sit above their fields, and rows fill a two-column grid
+   (one column when the card is narrow). A row holding a textarea or a file
+   input spans both columns. With "collapse" the card folds into a
+   <details>, and the grid moves onto that element.
+
+   Every colour is a --jp-* token, so both themes and the OS-dark twin
+   come for free; nothing here needs a dark-mode duplicate.
+   -------------------------------------------------------------------------- */
+fieldset.module.mp-form,
+fieldset.module.mp-form > details {
+  --mp-gap: 20px;
+  display: grid !important;
+  /* At most two columns, and a single column once a column would drop under 280px. */
+  grid-template-columns: repeat(auto-fit, minmax(max(280px, calc(50% - var(--mp-gap))), 1fr));
+  column-gap: var(--mp-gap);
+  align-items: start;
+}
+
+fieldset.module.mp-form {
+  min-width: 0;
+  padding: 0 24px 8px !important;
+  margin-bottom: 20px !important;
+}
+
+fieldset.module.mp-form > details,
+fieldset.module.mp-form > h2,
+fieldset.module.mp-form > .description,
+fieldset.module.mp-form > details > summary {
+  grid-column: 1 / -1;
+}
+
+/* Chrome 131+ wraps everything after <summary> in a ::details-content box,
+   so the grid above only ever sees two children there. Move the grid onto
+   that box. Browsers without it drop this rule and lay the rows out on
+   <details> itself. */
+fieldset.module.mp-form > details::details-content {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(max(280px, calc(50% - var(--mp-gap))), 1fr));
+  column-gap: var(--mp-gap);
+  align-items: start;
+}
+
+/* Header strip: bleeds to the card edges over the side padding. The border
+   reset beats Django 5's own 1px box around .fieldset-heading and a
+   collapsible <summary>. */
+fieldset.module.mp-form > h2,
+fieldset.module.mp-form > details > summary {
+  margin: 0 -24px 6px !important;
+  padding: 14px 24px !important;
+  background: var(--jp-bg-surface-sunken) !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--jp-border-line) !important;
+}
+
+/* `:root` lifts this over `:root:not([data-theme="light"]) fieldset h2`, the
+   OS-dark twin of section 6's blue heading, which would otherwise tie and
+   win on source order. */
+:root fieldset.module.mp-form h2 {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 10px !important;
+  color: var(--jp-text-ink) !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+}
+
+fieldset.module.mp-form h2::before,
+#content-main:has(fieldset.mp-form) .inline-group .tabular fieldset.module > h2::before {
+  content: "";
+  width: 4px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--jp-kinari-gold);
+  flex: none;
+}
+
+/* Collapsible card: the summary is the header strip; the h2 inside is plain. */
+fieldset.module.mp-form > details > summary {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  list-style: none !important;
+  cursor: pointer !important;
+}
+
+fieldset.module.mp-form > details > summary::-webkit-details-marker {
+  display: none;
+}
+
+fieldset.module.mp-form > details > summary h2 {
+  margin: 0 !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: none !important;
+}
+
+fieldset.module.mp-form > details > summary::after {
+  content: "expand_more";
+  font-family: "Material Symbols Outlined";
+  font-size: 20px;
+  line-height: 1;
+  color: var(--jp-text-ink-muted);
+  transition: transform 0.2s ease;
+}
+
+fieldset.module.mp-form > details[open] > summary::after {
+  transform: rotate(180deg);
+}
+
+/* Folded: the strip is the whole card, so close up the bottom padding. */
+fieldset.module.mp-form > details:not([open]) > summary {
+  border-bottom: 0 !important;
+  margin-bottom: -8px !important;
+}
+
+fieldset.module.mp-form > .description {
+  margin: 10px 0 2px !important;
+  padding: 0 !important;
+  font-size: 12px !important;
+  line-height: 1.5 !important;
+  color: var(--jp-text-ink-muted) !important;
+}
+
+/* -- Rows ------------------------------------------------------------------ */
+fieldset.module.mp-form .form-row {
+  min-width: 0;
+  padding: 12px 0 !important;
+  border-bottom: 0 !important;
+  overflow: visible !important;
+}
+
+fieldset.module.mp-form .form-row:has(textarea),
+fieldset.module.mp-form .form-row:has(input[type="file"]),
+fieldset.module.mp-form .form-row:has(.mp-image-preview) {
+  grid-column: 1 / -1;
+}
+
+fieldset.module.mp-form .form-row .flex-container {
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 6px;
+}
+
+fieldset.module.mp-form label:not(.vCheckboxLabel) {
+  width: auto !important;
+  min-width: 0 !important;
+  padding: 0 !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: var(--jp-text-ink-body) !important;
+}
+
+fieldset.module.mp-form label.required {
+  font-weight: 700 !important;
+  color: var(--jp-text-ink) !important;
+}
+
+fieldset.module.mp-form label.required::after {
+  content: " *" !important;
+  display: inline !important;
+  color: var(--jp-shu-vermilion);
+}
+
+/* Django indents help and errors by the old 160px label column. */
+fieldset.module.mp-form div.help,
+fieldset.module.mp-form p.help,
+fieldset.module.mp-form ul.errorlist {
+  margin: 6px 0 0 !important;
+  padding: 0 !important;
+}
+
+fieldset.module.mp-form div.help {
+  font-size: 11.5px !important;
+  line-height: 1.45 !important;
+  color: var(--jp-text-ink-muted) !important;
+}
+
+/* Django prints errors above the label; below the field keeps labels level
+   with the neighbouring column when only one of the pair has an error. */
+fieldset.module.mp-form .form-row {
+  display: flex;
+  flex-direction: column;
+}
+
+fieldset.module.mp-form .form-row > ul.errorlist {
+  order: 1;
+}
+
+fieldset.module.mp-form ul.errorlist {
+  margin: 6px 0 0 !important;
+}
+
+fieldset.module.mp-form ul.errorlist li {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: var(--jp-shu-vermilion) !important;
+  background: var(--jp-shu-vermilion-bg) !important;
+  border-radius: 6px !important;
+  padding: 6px 10px !important;
+}
+
+fieldset.module.mp-form .errors input,
+fieldset.module.mp-form .errors select,
+fieldset.module.mp-form .errors textarea {
+  border-color: var(--jp-shu-vermilion) !important;
+}
+
+/* -- Controls fill their column -------------------------------------------- */
+fieldset.module.mp-form input[type="text"],
+fieldset.module.mp-form input[type="email"],
+fieldset.module.mp-form input[type="url"],
+fieldset.module.mp-form input[type="number"],
+fieldset.module.mp-form input[type="password"],
+fieldset.module.mp-form select,
+fieldset.module.mp-form textarea {
+  box-sizing: border-box !important;
+  width: 100% !important;
+  max-width: none !important;
+  margin: 0 !important;
+}
+
+fieldset.module.mp-form textarea {
+  min-height: 132px;
+  line-height: 1.55 !important;
+  resize: vertical;
+}
+
+/* Selects with edit / add / delete / view icons: the select takes the room. */
+fieldset.module.mp-form .related-widget-wrapper {
+  flex-wrap: nowrap !important;
+  align-items: center !important;
+  gap: 6px !important;
+  margin: 0 !important;
+}
+
+fieldset.module.mp-form .related-widget-wrapper > select {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+fieldset.module.mp-form .related-widget-wrapper-link {
+  flex: none;
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--jp-border-line);
+  border-radius: 8px;
+  background: var(--jp-bg-surface-sunken);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+fieldset.module.mp-form a.related-widget-wrapper-link[href]:hover {
+  border-color: var(--jp-kinari-gold);
+}
+
+fieldset.module.mp-form .related-widget-wrapper-link img {
+  width: 14px;
+  height: 14px;
+}
+
+/* ৳ inside money inputs (ProductAdminForm adds .mp-money). */
+fieldset.module.mp-form .flex-container:has(> input.mp-money) {
+  position: relative;
+}
+
+fieldset.module.mp-form .flex-container:has(> input.mp-money)::after {
+  content: "৳";
+  position: absolute;
+  left: 13px;
+  bottom: 11px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 18px;
+  color: var(--jp-text-ink-muted);
+  pointer-events: none;
+}
+
+fieldset.module.mp-form input.mp-money {
+  padding-left: 30px !important;
+}
+
+/* Checkbox: a bordered control the height of an input, aligned with the
+   field beside it (the empty space above stands in for that field's label). */
+fieldset.module.mp-form .flex-container.checkbox-row {
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 10px;
+  box-sizing: border-box;
+  min-height: 40px;
+  margin-top: 22px;
+  padding: 0 14px;
+  border: 1px solid var(--jp-border-line);
+  border-radius: 8px;
+  background: var(--jp-bg-surface);
+}
+
+fieldset.module.mp-form .checkbox-row input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0 !important;
+  accent-color: var(--jp-kachi-primary);
+}
+
+fieldset.module.mp-form .checkbox-row label.vCheckboxLabel {
+  padding: 0 !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  color: var(--jp-text-ink) !important;
+}
+
+/* Date + time: "Date [input] Today | cal" over "Time [input] Now | clock". */
+fieldset.module.mp-form p.datetime {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 10px;
+  margin: 0 !important;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--jp-text-ink-muted);
+}
+
+fieldset.module.mp-form p.datetime br {
+  display: none;
+}
+
+fieldset.module.mp-form p.datetime input {
+  width: 100% !important;
+  margin: 0 !important;
+}
+
+fieldset.module.mp-form .datetimeshortcuts {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+/* DateTimeShortcuts.js appends this note inside p.datetime, i.e. into the grid. */
+fieldset.module.mp-form .timezonewarning {
+  grid-column: 1 / -1;
+  margin: 2px 0 0 !important;
+  padding: 0 !important;
+  font-size: 11px !important;
+  font-weight: 500 !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  color: var(--jp-text-ink-muted) !important;
+}
+
+/* File input as a drop zone; the current file (edit page) sits above it. */
+fieldset.module.mp-form input[type="file"] {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 16px;
+  border: 1.5px dashed color-mix(in srgb, var(--jp-text-ink-muted) 45%, transparent);
+  border-radius: 10px;
+  background: var(--jp-bg-surface-sunken);
+  font-size: 12px;
+  color: var(--jp-text-ink-muted);
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+fieldset.module.mp-form input[type="file"]:hover {
+  border-color: var(--jp-kinari-gold);
+}
+
+fieldset.module.mp-form input[type="file"]::file-selector-button {
+  margin-right: 14px;
+  padding: 8px 16px;
+  border: 1px solid var(--jp-border-line);
+  border-radius: 8px;
+  background: var(--jp-bg-surface);
+  color: var(--jp-text-ink);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+fieldset.module.mp-form p.file-upload {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 0 !important;
+  font-size: 12px;
+  color: var(--jp-text-ink-muted);
+}
+
+fieldset.module.mp-form .mp-image-preview {
+  display: block;
+  width: 132px;
+  height: 132px;
+  object-fit: cover;
+  border: 1px solid var(--jp-border-line);
+  border-radius: 12px;
+  background: var(--jp-bg-surface-sunken);
+}
+
+fieldset.module.mp-form .readonly {
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+/* Tabular inlines on a card-form page (Product images) take the same header. */
+#content-main:has(fieldset.mp-form) .inline-group .tabular fieldset.module > h2 {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  padding: 14px 24px !important;
+  color: var(--jp-text-ink) !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.08em !important;
+}
+
+/* Line the first real column up with the header text; `.original` is
+   Django's zero-width column for hidden inputs. */
+#content-main:has(fieldset.mp-form) .inline-group .tabular thead th.original + th,
+#content-main:has(fieldset.mp-form) .inline-group .tabular tbody td.original + td,
+#content-main:has(fieldset.mp-form) .inline-group .tabular tr.add-row td {
+  padding-left: 24px !important;
 }
 
 /* --------------------------------------------------------------------------
