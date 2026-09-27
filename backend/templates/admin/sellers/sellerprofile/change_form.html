@@ -1,0 +1,117 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls %}
+
+{% comment %}
+  Resolves for sellers.SellerProfile only (admin/<app_label>/<model_name>/change_form.html).
+
+  The stock form is kept: SellerProfileAdmin.get_fieldsets lays it out as
+  mp-form cards. On the change page a profile header replaces the page title,
+  the raw "name (type) - STATUS" subtitle and the History button, and shows
+  what the cards do not: status, seller type, contact line, and the shop and
+  product counts. The counts are the annotations from
+  SellerProfileAdmin.get_queryset, which the change view's get_object reuses.
+  Styles: section 11 of japanese_admin.css.
+{% endcomment %}
+
+{% block content_title %}{% if not change %}{{ block.super }}{% endif %}{% endblock %}
+{% block content_subtitle %}{% if not change %}{{ block.super }}{% endif %}{% endblock %}
+
+{# History moves into the header's link row. #}
+{% block object-tools %}{% endblock %}
+
+{% block form_top %}{{ block.super }}
+{% if change and original.pk %}
+  <header class="mp-profile">
+    <div class="mp-profile-top">
+      <div class="mp-profile-id">
+        <span class="mp-profile-avatar" aria-hidden="true">{{ original.business_name|first|upper|default:"?" }}</span>
+        <div class="mp-profile-text">
+          <p class="mp-profile-eyebrow">{% translate "Seller profile" %} &middot; #{{ original.pk }}</p>
+          <h1 class="mp-profile-name">{{ original.business_name }}</h1>
+          <div class="mp-profile-chips">
+            <span class="mp-profile-status is-{{ original.status|lower }}">
+              <span class="material-symbols-outlined" aria-hidden="true">{% if original.status == "ACTIVE" %}check_circle{% elif original.status == "APPROVED" %}verified{% elif original.status == "UNDER_REVIEW" %}manage_search{% elif original.status == "SUSPENDED" %}block{% elif original.status == "REJECTED" %}cancel{% else %}hourglass_top{% endif %}</span>
+              {{ original.get_status_display }}
+            </span>
+            <span class="mp-profile-chip">
+              <span class="material-symbols-outlined" aria-hidden="true">{% if original.seller_type == "LIMITED_SHOP_OWNER" %}store{% elif original.seller_type == "PRODUCT_OWNER" %}inventory_2{% else %}storefront{% endif %}</span>
+              {{ original.get_seller_type_display }}
+            </span>
+          </div>
+          <ul class="mp-profile-contact">
+            <li>
+              <span class="material-symbols-outlined" aria-hidden="true">person</span>
+              &#64;{{ original.user.get_username }}
+            </li>
+            {% if original.business_email %}
+              <li>
+                <span class="material-symbols-outlined" aria-hidden="true">mail</span>
+                <a href="mailto:{{ original.business_email }}">{{ original.business_email }}</a>
+              </li>
+            {% endif %}
+            {% if original.business_phone %}
+              <li>
+                <span class="material-symbols-outlined" aria-hidden="true">call</span>
+                <a href="tel:{{ original.business_phone }}">{{ original.business_phone }}</a>
+              </li>
+            {% endif %}
+          </ul>
+        </div>
+      </div>
+
+      {% if not is_popup %}
+        <nav class="mp-profile-links" aria-label="{% translate 'Related pages' %}">
+          {% url opts|admin_urlname:'history' original.pk|admin_urlquote as history_url %}
+          <a class="mp-profile-btn" href="{% add_preserved_filters history_url %}">
+            <span class="material-symbols-outlined" aria-hidden="true">history</span>
+            {% translate "History" %}
+          </a>
+          {% if perms.shops.view_shop %}
+            <a class="mp-profile-btn" href="{% url 'admin:shops_shop_changelist' %}?owner__id__exact={{ original.pk }}">
+              <span class="material-symbols-outlined" aria-hidden="true">storefront</span>
+              {% translate "Shops" %}
+            </a>
+          {% endif %}
+          {% if perms.auth.view_user %}
+            <a class="mp-profile-btn" href="{% url 'admin:auth_user_change' original.user_id %}">
+              <span class="material-symbols-outlined" aria-hidden="true">manage_accounts</span>
+              {% translate "User account" %}
+            </a>
+          {% endif %}
+        </nav>
+      {% endif %}
+    </div>
+
+    {% if original.status == "SUSPENDED" and original.suspension_reason %}
+      <p class="mp-profile-notice">
+        <span class="material-symbols-outlined" aria-hidden="true">block</span>
+        <span><b>{% translate "Suspended" %}{% if original.suspended_at %} {{ original.suspended_at|date:"j M Y" }}{% endif %}:</b> {{ original.suspension_reason }}</span>
+      </p>
+    {% elif original.status == "REJECTED" and original.rejection_reason %}
+      <p class="mp-profile-notice">
+        <span class="material-symbols-outlined" aria-hidden="true">cancel</span>
+        <span><b>{% translate "Rejected" %}{% if original.reviewed_at %} {{ original.reviewed_at|date:"j M Y" }}{% endif %}:</b> {{ original.rejection_reason }}</span>
+      </p>
+    {% endif %}
+
+    <dl class="mp-profile-stats">
+      <div>
+        <dt>{% translate "Shops" %}</dt>
+        <dd>{{ original.shop_count }}</dd>
+      </div>
+      <div>
+        <dt>{% translate "Products" %}</dt>
+        <dd>{{ original.product_count }}</dd>
+      </div>
+      <div>
+        <dt>{% translate "Seller since" %}</dt>
+        <dd>{{ original.created_at|date:"j M Y" }}</dd>
+      </div>
+      <div>
+        <dt>{% translate "Last reviewed" %}</dt>
+        <dd>{% if original.reviewed_at %}{{ original.reviewed_at|date:"j M Y" }}{% else %}<span class="is-empty">{% translate "Not yet" %}</span>{% endif %}</dd>
+      </div>
+    </dl>
+  </header>
+{% endif %}
+{% endblock %}
