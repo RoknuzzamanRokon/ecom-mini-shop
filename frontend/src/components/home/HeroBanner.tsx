@@ -243,7 +243,7 @@ export default function HeroBanner({
               fill
               sizes="40vw"
               unoptimized
-              className="w-full h-full object-cover object-center mix-blend-multiply opacity-85 transition-opacity duration-300"
+              className="w-full h-full object-cover object-center hero-photo transition-opacity duration-300"
               priority
             />
           </div>
@@ -326,7 +326,7 @@ export default function HeroBanner({
             fill
             sizes="40vw"
             unoptimized
-            className="w-full h-full object-cover object-center mix-blend-multiply opacity-85 transition-opacity duration-500 animate-in fade-in"
+            className="w-full h-full object-cover object-center hero-photo transition-opacity duration-500 animate-in fade-in"
             priority
           />
         </div>

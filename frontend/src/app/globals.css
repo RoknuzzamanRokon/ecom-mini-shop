@@ -1658,3 +1658,21 @@ html, body {
     animation: none;
   }
 }
+
+/* ==========================================================================
+   Hero banner category photo (components/home/HeroBanner.tsx)
+   Light mode multiplies the photo into the surface so white product
+   backdrops disappear. In dark mode that multiply turns the photo almost
+   black, so it renders normally and fades in from the left edge instead.
+   ========================================================================== */
+.hero-photo {
+  mix-blend-mode: multiply;
+  opacity: 0.85;
+}
+
+:root.dark .hero-photo {
+  mix-blend-mode: normal;
+  opacity: 0.95;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 35%);
+  mask-image: linear-gradient(to right, transparent, #000 35%);
+}
