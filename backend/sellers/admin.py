@@ -23,6 +23,10 @@ class SellerProfileAdminForm(forms.ModelForm):
         for name, label in self.LABELS.items():
             if name in self.fields:
                 self.fields[name].label = label
+        # Short notes, not documents: the reasons sit side by side in one card.
+        for name in ("description", "rejection_reason", "suspension_reason"):
+            if name in self.fields:
+                self.fields[name].widget.attrs["rows"] = 4
 
 
 @admin.register(SellerProfile)
