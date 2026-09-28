@@ -2364,11 +2364,12 @@ fieldset.module.mp-form.mp-form--pair .form-row:has(textarea) {
 /* --------------------------------------------------------------------------
    11. PROFILE HEADER  (.mp-profile)
 
-   The card above the seller profile change form
-   (templates/admin/sellers/sellerprofile/change_form.html): avatar, name,
-   status and type chips, contact line, related-page links, an optional
-   suspension / rejection notice, and a stats strip. Same surface, radius
-   and shadow as the mp-form cards below it.
+   The seller card above the seller profile change form
+   (templates/admin/sellers/sellerprofile/change_form.html) and above the
+   shop list filtered to one seller (templates/admin/shops/shop/change_list.html):
+   avatar, name, status and type chips, contact line, related-page links, an
+   optional suspension / rejection notice, and a stats strip. Same surface,
+   radius and shadow as the mp-form cards.
 
    Colours are --jp-* tokens except the "in review" blue: --jp-kachi-primary
    is too dark to read on the dark surface, so this section carries its own

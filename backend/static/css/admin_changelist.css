@@ -191,6 +191,24 @@ body.change-list #toolbar .small.quiet {
   color: var(--jp-text-ink-muted) !important;
 }
 
+/* Under 1024px Django's responsive.css turns the search row into a nowrap
+   flex line. The result count above then takes a 100% basis on that one line
+   and squeezes the search box to a sliver whenever a filter or search is
+   active. Let the row wrap so the count drops beneath instead. */
+@media (max-width: 1024px) {
+  body.change-list #changelist-search > div {
+    flex: 1 1 100% !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: 8px !important;
+    max-width: none !important;
+  }
+
+  body.change-list #toolbar .small.quiet {
+    width: auto !important;
+  }
+}
+
 /* date_hierarchy drill-down strip (a <nav class="toplinks">, emitted between
    the toolbar and the grid by any admin that sets date_hierarchy). */
 body.change-list #changelist .toplinks {
@@ -1027,30 +1045,103 @@ body.model-sellerprofile #result_list tbody td.field-created_at {
 }
 
 /* -- Shop: checkbox + 6 columns ----------------------------------------
-   owner renders SellerProfile.__str__ -- "VitalCare Essentials (Full Shop
-   Owner) - ACTIVE", 47 characters whose tail repeats the seller type and
-   status. It truncates from the right so the business name that leads it
-   stays readable. */
+   shop_display is the row link: logo (or initial), name, and slug beneath.
+   owner_display is the owner's business name, linking to this list filtered
+   to that owner; filtered like that, ShopAdmin.get_list_display drops the
+   column and the shop column takes its share. */
 body.model-shop.change-list #result_list { --cl-layout: fixed; --cl-grid-min: 880px; }
 
 body.model-shop #result_list th.action-checkbox-column { width: 3% !important; }
-body.model-shop #result_list th.column-name            { width: 20% !important; }
-body.model-shop #result_list th.column-owner           { width: 25% !important; }
-body.model-shop #result_list th.column-status_badge    { width: 12% !important; }
+body.model-shop #result_list th.column-shop_display    { width: 29% !important; }
+body.model-shop #result_list th.column-owner_display   { width: 20% !important; }
+body.model-shop #result_list th.column-status_badge    { width: 11% !important; }
 body.model-shop #result_list th.column-product_count   { width: 9% !important; }
-body.model-shop #result_list th.column-phone           { width: 15% !important; }
-body.model-shop #result_list th.column-created_at      { width: 16% !important; }
+body.model-shop #result_list th.column-phone           { width: 14% !important; }
+body.model-shop #result_list th.column-created_at      { width: 14% !important; }
 
-body.model-shop #result_list tbody th.field-name,
-body.model-shop #result_list tbody td.field-owner {
+body.model-shop #result_list:not(:has(th.column-owner_display)) th.column-shop_display {
+  width: 49% !important;
+}
+
+body.model-shop #result_list tbody th.field-shop_display {
+  overflow: hidden !important;
+  text-overflow: clip !important;
+}
+
+body.model-shop #result_list tbody th.field-shop_display a {
+  display: flex !important;
+  align-items: center !important;
+  gap: 11px !important;
+  min-width: 0 !important;
+}
+
+body.model-shop #result_list tbody th.field-shop_display a:hover {
+  text-decoration: none !important;
+}
+
+body.model-shop #result_list tbody th.field-shop_display a:hover .mp-shop-name {
+  text-decoration: underline !important;
+}
+
+body.model-shop .mp-shop-mark {
+  flex: none;
+  box-sizing: border-box;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--jp-bg-surface-sunken);
+  box-shadow: 0 0 0 1px var(--jp-border-line);
+}
+
+/* No logo: the shop's initial on an indigo tint. */
+body.model-shop .mp-shop-mark.is-initial {
+  display: grid;
+  place-items: center;
+  background: rgba(33, 72, 107, 0.10);
+  box-shadow: inset 0 0 0 1px rgba(33, 72, 107, 0.18);
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--jp-kachi-primary);
+}
+
+body.model-shop .mp-shop-id {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+body.model-shop .mp-shop-name,
+body.model-shop .mp-shop-slug {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.model-shop .mp-shop-slug {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--jp-text-ink-muted);
+}
+
+body.model-shop #result_list tbody td.field-owner_display {
   white-space: nowrap !important;
   overflow: hidden !important;
   text-overflow: ellipsis !important;
 }
 
-body.model-shop #result_list tbody td.field-owner {
-  font-size: 11.5px !important;
-  color: var(--jp-text-ink-muted) !important;
+body.model-shop #result_list tbody td.field-owner_display a {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  color: var(--jp-text-ink-body) !important;
+  text-decoration: none !important;
+}
+
+body.model-shop #result_list tbody td.field-owner_display a:hover {
+  color: var(--jp-kinari-gold) !important;
+  text-decoration: underline !important;
 }
 
 /* Phone numbers compare digit by digit, so tabular figures and a little
@@ -2038,6 +2129,112 @@ body.change-list #changelist-filter li.selected a {
 }
 
 /* --------------------------------------------------------------------------
+   13. EMPTY STATE  (.mp-empty)
+   Opt-in from a model's change_list.html, which renders it in place of the
+   result list, actions bar and paginator when there are no rows (see
+   templates/admin/shops/shop/change_list.html). Models without one keep the
+   centred "0 <things>" paginator from section 3.
+   Also: a seller header (.mp-profile, japanese_admin.css section 11) above
+   the list must clear the floated object tools.
+   -------------------------------------------------------------------------- */
+body.change-list #content-main > .mp-profile {
+  clear: both;
+  margin-bottom: 18px;
+}
+
+body.change-list .mp-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 56px 24px 60px;
+  text-align: center;
+}
+
+body.change-list .mp-empty-icon {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  margin-bottom: 18px;
+  border-radius: 20px;
+  background: var(--jp-kinari-gold-bg);
+  box-shadow: inset 0 0 0 1px rgba(186, 134, 48, 0.28);
+  font-size: 32px !important;
+  color: var(--jp-kinari-gold);
+}
+
+/* `#content` lifts these over the changelist's own heading and paragraph rules. */
+body.change-list #content .mp-empty-title {
+  margin: 0 0 6px !important;
+  padding: 0 !important;
+  background: none !important;
+  border: 0 !important;
+  font-size: 18px !important;
+  font-weight: 800 !important;
+  letter-spacing: -0.01em !important;
+  text-transform: none !important;
+  color: var(--jp-text-ink) !important;
+}
+
+body.change-list #content .mp-empty-text {
+  max-width: 420px;
+  margin: 0 0 22px !important;
+  padding: 0 !important;
+  font-size: 13px !important;
+  line-height: 1.55 !important;
+  color: var(--jp-text-ink-muted) !important;
+}
+
+body.change-list .mp-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+body.change-list a.mp-empty-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 38px;
+  padding: 0 16px;
+  border: 1px solid var(--jp-border-line);
+  border-radius: 9px;
+  background: var(--jp-bg-surface);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--jp-text-ink) !important;
+  text-decoration: none !important;
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+body.change-list a.mp-empty-btn .material-symbols-outlined {
+  font-size: 18px;
+}
+
+body.change-list a.mp-empty-btn:hover {
+  border-color: var(--jp-kinari-gold);
+  background: var(--jp-kinari-gold-bg);
+}
+
+body.change-list a.mp-empty-btn.is-primary {
+  border-color: var(--jp-kachi-primary);
+  background: var(--jp-kachi-primary);
+  box-shadow: 0 4px 12px -4px rgba(33, 72, 107, 0.55);
+  color: #FFFFFF !important;
+}
+
+body.change-list a.mp-empty-btn.is-primary:hover {
+  border-color: var(--jp-kachi-hover);
+  background: var(--jp-kachi-hover);
+}
+
+body.change-list a.mp-empty-btn:focus-visible {
+  outline: 2px solid var(--jp-kinari-gold);
+  outline-offset: 2px;
+}
+
+/* --------------------------------------------------------------------------
    12. DARK SCHEME
    Twins of the [data-theme="dark"] rules above, for data-theme="auto" under a
    dark OS -- see the matching section in japanese_admin.css. Change one,
@@ -2074,6 +2271,12 @@ body.change-list #changelist-filter li.selected a {
   color: #05231A !important;
 }
 
+[data-theme="dark"] body.model-shop .mp-shop-mark.is-initial {
+  background: rgba(127, 179, 240, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(127, 179, 240, 0.24);
+  color: #7FB3F0;
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) body.change-list {
     --cl-zebra: rgba(255, 255, 255, 0.032);
@@ -2102,5 +2305,10 @@ body.change-list #changelist-filter li.selected a {
   :root:not([data-theme="light"]) body.change-list .paginator input[type="submit"] {
     background: #2BD39A !important;
     color: #05231A !important;
+  }
+  :root:not([data-theme="light"]) body.model-shop .mp-shop-mark.is-initial {
+    background: rgba(127, 179, 240, 0.12);
+    box-shadow: inset 0 0 0 1px rgba(127, 179, 240, 0.24);
+    color: #7FB3F0;
   }
 }

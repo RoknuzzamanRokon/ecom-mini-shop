@@ -1,17 +1,24 @@
 from django.contrib import admin
 from django.core.exceptions import ValidationError
-from django.db.models import Count
+from django.db.models import Count, Q
+from django.utils.html import format_html
 
 from audit.admin_mixins import ReasonRequiredActionMixin, StatusBadgeMixin
+from sellers.models import SellerProfile
 from .models import Shop
 from .services import ShopService, ShopError
+
+# The changelist query the seller profile's "Shops" link opens.
+OWNER_FILTER = 'owner__id__exact'
+
 
 @admin.register(Shop)
 class ShopAdmin(ReasonRequiredActionMixin, StatusBadgeMixin, admin.ModelAdmin):
     list_display = (
-        'name', 'owner', 'status_badge', 'product_count', 
+        'shop_display', 'owner_display', 'status_badge', 'product_count',
         'phone', 'created_at'
     )
+    list_display_links = ('shop_display',)
     list_filter = ('status', 'created_at')
     search_fields = ('name', 'slug', 'owner__user__username', 'phone')
     readonly_fields = (
@@ -40,6 +47,36 @@ class ShopAdmin(ReasonRequiredActionMixin, StatusBadgeMixin, admin.ModelAdmin):
         })
     )
 
+    def get_list_display(self, request):
+        # Filtered to one seller, the owner column would repeat the seller
+        # header above the list (templates/admin/shops/shop/change_list.html).
+        if request.GET.get(OWNER_FILTER):
+            return tuple(name for name in self.list_display if name != 'owner_display')
+        return self.list_display
+
+    def changelist_view(self, request, extra_context=None):
+        extra_context = {**(extra_context or {}), 'seller_filter': self._seller_filter(request)}
+        return super().changelist_view(request, extra_context)
+
+    def _seller_filter(self, request):
+        """The seller the list is filtered to, with shop and product totals for
+        the header; None when unfiltered or the id matches no seller."""
+        raw = request.GET.get(OWNER_FILTER, '')
+        if not raw.isdigit():
+            return None
+        return (
+            SellerProfile.objects.select_related('user')
+            .annotate(
+                shop_total=Count('shops', distinct=True),
+                active_shop_total=Count(
+                    'shops', filter=Q(shops__status=Shop.STATUS_ACTIVE), distinct=True
+                ),
+                product_total=Count('shops__products', distinct=True),
+            )
+            .filter(pk=int(raw))
+            .first()
+        )
+
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         qs = qs.select_related('owner', 'owner__user', 'reviewed_by')
@@ -50,6 +87,31 @@ class ShopAdmin(ReasonRequiredActionMixin, StatusBadgeMixin, admin.ModelAdmin):
         return obj.product_count
     product_count.short_description = 'Products'
     product_count.admin_order_field = 'product_count'
+
+    @admin.display(description='Shop', ordering='name')
+    def shop_display(self, obj):
+        # Logo (or initial), name and slug; Django wraps it in the row link.
+        if obj.logo:
+            mark = format_html('<img class="mp-shop-mark" src="{}" alt="">', obj.logo.url)
+        else:
+            mark = format_html(
+                '<span class="mp-shop-mark is-initial" aria-hidden="true">{}</span>',
+                obj.name[:1].upper() or '?',
+            )
+        return format_html(
+            '{}<span class="mp-shop-id"><span class="mp-shop-name">{}</span>'
+            '<span class="mp-shop-slug">{}</span></span>',
+            mark, obj.name, obj.slug,
+        )
+
+    @admin.display(description='Owner', ordering='owner__business_name')
+    def owner_display(self, obj):
+        # Links to this same list filtered to the owner, not to the seller page,
+        # so it needs no permission beyond the one already viewing shops.
+        return format_html(
+            '<a href="?{}={}" title="Show only this seller\'s shops">{}</a>',
+            OWNER_FILTER, obj.owner_id, obj.owner.business_name,
+        )
 
     def location_display(self, obj):
         if obj.location:

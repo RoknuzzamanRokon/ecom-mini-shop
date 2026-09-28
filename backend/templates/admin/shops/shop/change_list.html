@@ -1,0 +1,138 @@
+{% extends "admin/change_list.html" %}
+{% load i18n admin_urls %}
+
+{% comment %}
+  Resolves for shops.Shop only. "admin/change_list.html" here is the project's
+  global changelist skin, which in turn extends Django's.
+
+  Two additions, the rest is the stock changelist:
+  - Filtered to one seller (?owner__id__exact=<pk>, the seller profile's
+    "Shops" link), a seller header sits above the list. ShopAdmin.changelist_view
+    passes that seller as `seller_filter`, annotated with shop_total,
+    active_shop_total and product_total; ShopAdmin.get_list_display drops the
+    then-redundant owner column.
+  - With no rows, an empty state replaces the bare "0 Shops" line, the actions
+    bar that has nothing to act on, and the paginator.
+  Header styles: section 11 of japanese_admin.css. Empty state: section 13 of
+  admin_changelist.css.
+{% endcomment %}
+
+{% block object-tools %}{{ block.super }}
+{% if seller_filter %}
+  <header class="mp-profile">
+    <div class="mp-profile-top">
+      <div class="mp-profile-id">
+        <span class="mp-profile-avatar" aria-hidden="true">{{ seller_filter.business_name|first|upper|default:"?" }}</span>
+        <div class="mp-profile-text">
+          <p class="mp-profile-eyebrow">{% translate "Shops owned by" %}</p>
+          <h2 class="mp-profile-name">{{ seller_filter.business_name }}</h2>
+          <div class="mp-profile-chips">
+            <span class="mp-profile-status is-{{ seller_filter.status|lower }}">
+              <span class="material-symbols-outlined" aria-hidden="true">{% if seller_filter.status == "ACTIVE" %}check_circle{% elif seller_filter.status == "APPROVED" %}verified{% elif seller_filter.status == "UNDER_REVIEW" %}manage_search{% elif seller_filter.status == "SUSPENDED" %}block{% elif seller_filter.status == "REJECTED" %}cancel{% else %}hourglass_top{% endif %}</span>
+              {{ seller_filter.get_status_display }}
+            </span>
+            <span class="mp-profile-chip">
+              <span class="material-symbols-outlined" aria-hidden="true">{% if seller_filter.seller_type == "LIMITED_SHOP_OWNER" %}store{% elif seller_filter.seller_type == "PRODUCT_OWNER" %}inventory_2{% else %}storefront{% endif %}</span>
+              {{ seller_filter.get_seller_type_display }}
+            </span>
+          </div>
+          <ul class="mp-profile-contact">
+            <li>
+              <span class="material-symbols-outlined" aria-hidden="true">person</span>
+              &#64;{{ seller_filter.user.get_username }}
+            </li>
+            {% if seller_filter.business_email %}
+              <li>
+                <span class="material-symbols-outlined" aria-hidden="true">mail</span>
+                <a href="mailto:{{ seller_filter.business_email }}">{{ seller_filter.business_email }}</a>
+              </li>
+            {% endif %}
+          </ul>
+        </div>
+      </div>
+
+      {% if not is_popup %}
+        <nav class="mp-profile-links" aria-label="{% translate 'Related pages' %}">
+          {% if perms.sellers.view_sellerprofile %}
+            <a class="mp-profile-btn" href="{% url 'admin:sellers_sellerprofile_change' seller_filter.pk %}">
+              <span class="material-symbols-outlined" aria-hidden="true">badge</span>
+              {% translate "Seller profile" %}
+            </a>
+          {% endif %}
+          <a class="mp-profile-btn" href="?">
+            <span class="material-symbols-outlined" aria-hidden="true">filter_alt_off</span>
+            {% translate "All shops" %}
+          </a>
+        </nav>
+      {% endif %}
+    </div>
+
+    <dl class="mp-profile-stats">
+      <div>
+        <dt>{% translate "Shops" %}</dt>
+        <dd>{{ seller_filter.shop_total }}</dd>
+      </div>
+      <div>
+        <dt>{% translate "Active shops" %}</dt>
+        <dd>{{ seller_filter.active_shop_total }}</dd>
+      </div>
+      <div>
+        <dt>{% translate "Products" %}</dt>
+        <dd>{{ seller_filter.product_total }}</dd>
+      </div>
+      <div>
+        <dt>{% translate "Seller since" %}</dt>
+        <dd>{{ seller_filter.created_at|date:"j M Y" }}</dd>
+      </div>
+    </dl>
+  </header>
+{% endif %}
+{% endblock %}
+
+{% block result_list %}
+  {% if cl.result_count %}
+    {{ block.super }}
+  {% else %}
+    {% url cl.opts|admin_urlname:'add' as add_url %}
+    <div class="mp-empty">
+      {% if seller_filter and not seller_filter.shop_total %}
+        <span class="mp-empty-icon material-symbols-outlined" aria-hidden="true">storefront</span>
+        <h2 class="mp-empty-title">{% blocktranslate with name=seller_filter.business_name %}{{ name }} has no shops yet{% endblocktranslate %}</h2>
+        <p class="mp-empty-text">{% translate "Sellers can't open a shop themselves: staff create it here and assign it to the seller." %}</p>
+        <div class="mp-empty-actions">
+          {% if has_add_permission %}
+            <a class="mp-empty-btn is-primary" href="{{ add_url }}?owner={{ seller_filter.pk }}">
+              <span class="material-symbols-outlined" aria-hidden="true">add_business</span>
+              {% translate "Add a shop for this seller" %}
+            </a>
+          {% endif %}
+          <a class="mp-empty-btn" href="?">{% translate "View all shops" %}</a>
+        </div>
+      {% elif not cl.full_result_count %}
+        <span class="mp-empty-icon material-symbols-outlined" aria-hidden="true">storefront</span>
+        <h2 class="mp-empty-title">{% translate "No shops yet" %}</h2>
+        <p class="mp-empty-text">{% translate "Shops appear here once staff create one and assign it to a seller." %}</p>
+        {% if has_add_permission %}
+          <div class="mp-empty-actions">
+            <a class="mp-empty-btn is-primary" href="{{ add_url }}">
+              <span class="material-symbols-outlined" aria-hidden="true">add_business</span>
+              {% translate "Add a shop" %}
+            </a>
+          </div>
+        {% endif %}
+      {% else %}
+        <span class="mp-empty-icon material-symbols-outlined" aria-hidden="true">search_off</span>
+        <h2 class="mp-empty-title">{% translate "No shops match" %}</h2>
+        <p class="mp-empty-text">{% translate "Try a different search, or clear the filters." %}</p>
+        <div class="mp-empty-actions">
+          <a class="mp-empty-btn" href="?{% if seller_filter %}owner__id__exact={{ seller_filter.pk }}{% endif %}">
+            <span class="material-symbols-outlined" aria-hidden="true">filter_alt_off</span>
+            {% translate "Clear filters" %}
+          </a>
+        </div>
+      {% endif %}
+    </div>
+  {% endif %}
+{% endblock %}
+
+{% block pagination %}{% if cl.result_count %}{{ block.super }}{% endif %}{% endblock %}
