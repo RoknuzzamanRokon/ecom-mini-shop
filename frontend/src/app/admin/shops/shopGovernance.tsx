@@ -131,23 +131,25 @@ function getStatusRelevantActions(status: string): AdminShopStatusAction[] {
 }
 
 /**
- * Permission gate mirroring the backend exactly:
- *   - AdminShopStatusAPIView requires CanChangeAdminShopStatus to enter at all
- *     (shops.admin.manage OR shops.approve).
- *   - Inside _update_status, only 'approve' is allowed without
- *     shops.admin.manage; reject/suspend/reactivate all require it.
- * This is the real security-relevant check; getStatusRelevantActions above is
- * cosmetic only.
+ * Per-action permission sets, mirroring SHOP_STATUS_ACTION_PERMISSIONS in
+ * shop/admin_permissions.py: 'shops.approve' covers the review decision
+ * (approve or reject); suspend and reactivate have no narrow code and need
+ * 'shops.admin.manage'. This is the real security-relevant check;
+ * getStatusRelevantActions above is cosmetic only.
  */
+const ACTION_PERMISSIONS: Record<AdminShopStatusAction, string[]> = {
+  approve: ADMIN_PERMISSIONS.shopsApprove,
+  reject: ADMIN_PERMISSIONS.shopsApprove,
+  suspend: ADMIN_PERMISSIONS.shopsManage,
+  reactivate: ADMIN_PERMISSIONS.shopsManage,
+};
+
 function getPermittedActions(user: AuthUser | null | undefined): Set<AdminShopStatusAction> {
-  const permitted = new Set<AdminShopStatusAction>();
-  if (hasAnyPermission(user, ADMIN_PERMISSIONS.shopsApprove)) permitted.add("approve");
-  if (hasAnyPermission(user, ADMIN_PERMISSIONS.shopsManage)) {
-    permitted.add("reject");
-    permitted.add("suspend");
-    permitted.add("reactivate");
-  }
-  return permitted;
+  return new Set<AdminShopStatusAction>(
+    (Object.keys(ACTION_PERMISSIONS) as AdminShopStatusAction[]).filter((action) =>
+      hasAnyPermission(user, ACTION_PERMISSIONS[action])
+    )
+  );
 }
 
 /** Combines status relevance (cosmetic) with the real permission gate. */
@@ -233,15 +235,119 @@ export function canViewAdminShops(user: AuthUser | null | undefined): boolean {
 }
 
 /**
- * Mirrors CanManageAdminShops exactly: 'shops.admin.manage' plus the
- * superuser / SUPER_ADMINISTRATOR bypass. This is the gate for POST
- * /api/admin/shops/ (Phase 1H shop creation + owner assignment) —
- * AdminShopListAPIView.post uses the identical permission class. Holding
- * only 'shops.approve' (the narrower shopsApprove set) is NOT enough, exactly
- * as it is not enough for reject/suspend/reactivate above.
+ * Mirrors CanCreateAdminShops ('shops.create' OR 'shops.admin.manage'), the
+ * gate on POST /api/admin/shops/ (shop creation + owner assignment).
  */
-export function canManageAdminShops(user: AuthUser | null | undefined): boolean {
-  return hasAnyPermission(user, ADMIN_PERMISSIONS.shopsManage);
+export function canCreateAdminShops(user: AuthUser | null | undefined): boolean {
+  return hasAnyPermission(user, ADMIN_PERMISSIONS.shopsCreate);
+}
+
+/**
+ * Mirrors CanUpdateAdminShops ('shops.update' OR 'shops.admin.manage'), the
+ * gate on PATCH /api/admin/shops/<pk>/.
+ */
+export function canUpdateAdminShops(user: AuthUser | null | undefined): boolean {
+  return hasAnyPermission(user, ADMIN_PERMISSIONS.shopsUpdate);
+}
+
+// =============================================================================
+// PHONE NUMBERS
+// =============================================================================
+
+/** The main `phone` plus Shop.MAX_ADDITIONAL_PHONES (4) in shops/models.py. */
+export const MAX_SHOP_PHONES = 5;
+
+/** Shop.PHONE_MAX_LENGTH, the limit on every number. */
+const SHOP_PHONE_MAX_LENGTH = 30;
+
+/** A shop's numbers as form rows: the main `phone` first, always at least one row. */
+export function shopPhonesToRows(shop: Pick<AdminShop, "phone" | "additional_phones">): string[] {
+  const rows = [shop.phone, ...(shop.additional_phones ?? [])];
+  return rows.length > 0 ? rows : [""];
+}
+
+/**
+ * Form rows -> the API's `phone` + `additional_phones`. Blank rows are
+ * dropped first, so the first filled row becomes the main number even if the
+ * top row was left empty. The backend also trims and removes repeats.
+ */
+export function rowsToShopPhones(rows: string[]): { phone: string; additional_phones: string[] } {
+  const filled = rows.map((row) => row.trim()).filter(Boolean);
+  return { phone: filled[0] ?? "", additional_phones: filled.slice(1) };
+}
+
+/**
+ * Editable list of shop phone numbers. The first row is the main number
+ * (Shop.phone, the one public pages show); the rest are additional numbers.
+ */
+export function ShopPhoneListField({
+  idPrefix,
+  rows,
+  onChange,
+  disabled = false,
+  hint,
+}: {
+  idPrefix: string;
+  rows: string[];
+  onChange: (rows: string[]) => void;
+  disabled?: boolean;
+  hint?: React.ReactNode;
+}) {
+  return (
+    <fieldset>
+      <legend className="block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1.5">
+        Phone numbers
+      </legend>
+      <div className="space-y-2">
+        {rows.map((row, index) => (
+          <div key={index} className="flex items-center gap-2">
+            <input
+              id={`${idPrefix}-${index}`}
+              type="tel"
+              maxLength={SHOP_PHONE_MAX_LENGTH}
+              disabled={disabled}
+              value={row}
+              onChange={(e) => onChange(rows.map((r, i) => (i === index ? e.target.value : r)))}
+              placeholder="+880 1700 000000"
+              aria-label={index === 0 ? "Main phone number" : `Additional phone number ${index}`}
+              className="w-full bg-surface border border-line rounded-lg text-xs text-ink placeholder:text-ink-faint transition-colors focus:outline-none focus:border-primary focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary disabled:opacity-50 disabled:cursor-not-allowed px-2.5 py-2"
+            />
+            {index === 0 ? (
+              <span className="w-8 shrink-0 text-center text-[10px] font-bold uppercase tracking-wider text-ink-faint">
+                Main
+              </span>
+            ) : (
+              <button
+                type="button"
+                disabled={disabled}
+                onClick={() => onChange(rows.filter((_, i) => i !== index))}
+                aria-label={`Remove phone number ${index + 1}`}
+                className="w-8 h-8 shrink-0 inline-flex items-center justify-center rounded-lg border border-line text-ink-muted hover:text-danger hover:bg-surface-alt transition-colors cursor-pointer disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
+              >
+                <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+                  close
+                </span>
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
+      {rows.length < MAX_SHOP_PHONES && (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange([...rows, ""])}
+          className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline cursor-pointer disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary rounded-sm"
+        >
+          <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+            add
+          </span>
+          Add another number
+        </button>
+      )}
+      {hint}
+    </fieldset>
+  );
 }
 
 /**

@@ -541,6 +541,7 @@ class AdminShopSerializer(serializers.ModelSerializer):
             "slug",
             "description",
             "phone",
+            "additional_phones",
             "address",
             "latitude",
             "longitude",
@@ -582,6 +583,12 @@ class AdminShopCreateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=200, required=True)
     description = serializers.CharField(required=False, allow_blank=True, default="")
     phone = serializers.CharField(max_length=30, required=False, allow_blank=True, default="")
+    additional_phones = serializers.ListField(
+        child=serializers.CharField(max_length=Shop.PHONE_MAX_LENGTH, allow_blank=True),
+        required=False,
+        default=list,
+        help_text="Extra contact numbers beyond `phone`.",
+    )
     address = serializers.CharField(required=False, allow_blank=True, default="")
     latitude = serializers.FloatField(required=False, allow_null=True, default=None)
     longitude = serializers.FloatField(required=False, allow_null=True, default=None)
@@ -607,6 +614,75 @@ class AdminShopCreateSerializer(serializers.Serializer):
         lng = attrs.get("longitude")
         if (lat is not None and lng is None) or (lat is None and lng is not None):
             raise serializers.ValidationError("Both latitude and longitude must be provided together.")
+        attrs["additional_phones"] = validate_additional_phones(
+            attrs.get("additional_phones", []), attrs.get("phone", "")
+        )
+        return attrs
+
+
+def validate_additional_phones(phones, primary):
+    """Shop.normalize_additional_phones, then the count cap as a field error."""
+    phones = Shop.normalize_additional_phones(phones, primary)
+    if len(phones) > Shop.MAX_ADDITIONAL_PHONES:
+        raise serializers.ValidationError(
+            {"additional_phones": f"A shop can list at most {Shop.MAX_ADDITIONAL_PHONES} additional phone numbers."}
+        )
+    return phones
+
+
+class AdminShopUpdateSerializer(serializers.Serializer):
+    """
+    Admin edit of a shop's profile and location (PATCH /api/admin/shops/<pk>/).
+
+    The text fields match SellerShopUpdateSerializer, plus `additional_phones`
+    (normalized in the view against the primary `phone`). `owner`, `status` and
+    `slug` are not editable here: ownership is assigned at creation, status
+    only moves through the audited lifecycle endpoint, and the slug is the
+    shop's public URL. Logo and cover image are left to the seller, since the
+    console sends JSON, not multipart.
+
+    Latitude and longitude travel together. Both null clears the location back
+    to the unset POINT(0 0) default.
+    """
+
+    EDITABLE_FIELDS = ("name", "description", "phone", "additional_phones", "address")
+
+    name = serializers.CharField(max_length=200, required=False)
+    description = serializers.CharField(required=False, allow_blank=True)
+    phone = serializers.CharField(max_length=30, required=False, allow_blank=True)
+    additional_phones = serializers.ListField(
+        child=serializers.CharField(max_length=Shop.PHONE_MAX_LENGTH, allow_blank=True),
+        required=False,
+    )
+    address = serializers.CharField(required=False, allow_blank=True)
+    latitude = serializers.FloatField(required=False, allow_null=True)
+    longitude = serializers.FloatField(required=False, allow_null=True)
+    reason = serializers.CharField(
+        required=True,
+        max_length=500,
+        help_text="Required justification for the administrative edit.",
+    )
+
+    def validate_name(self, value):
+        name = value.strip()
+        if not name:
+            raise serializers.ValidationError("Shop name cannot be empty.")
+        return name
+
+    def validate(self, attrs):
+        if ("latitude" in attrs) != ("longitude" in attrs):
+            raise serializers.ValidationError(
+                {"detail": "Send latitude and longitude together."}
+            )
+        lat, lng = attrs.get("latitude"), attrs.get("longitude")
+        if (lat is None) != (lng is None):
+            raise serializers.ValidationError(
+                {"detail": "Both latitude and longitude must be provided together, or both cleared."}
+            )
+        if not any(field in attrs for field in (*self.EDITABLE_FIELDS, "latitude")):
+            raise serializers.ValidationError(
+                {"detail": "Provide at least one shop detail to update."}
+            )
         return attrs
 
 

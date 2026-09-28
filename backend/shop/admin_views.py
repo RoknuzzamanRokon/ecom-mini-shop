@@ -44,17 +44,19 @@ from sellers.services import (
 )
 from shop.admin_permissions import (
     SELLER_STATUS_ACTION_PERMISSIONS,
+    SHOP_STATUS_ACTION_PERMISSIONS,
     CanChangeAdminProductStatus,
     CanChangeAdminSellerStatus,
     CanChangeAdminShopStatus,
     CanCreateAdminSellers,
+    CanCreateAdminShops,
     CanManageAdminCategories,
     CanManageAdminProducts,
     CanManageAdminRoles,
-    CanManageAdminShops,
     CanManageAdminUsers,
     CanModerateReviews,
     CanUpdateAdminSellers,
+    CanUpdateAdminShops,
     CanViewAdminAuditLogs,
     CanViewAdminCustomers,
     CanViewAdminProducts,
@@ -87,14 +89,22 @@ from shop.admin_serializers import (
     AdminShopCreateSerializer,
     AdminShopSerializer,
     AdminShopStatusUpdateSerializer,
+    AdminShopUpdateSerializer,
+    validate_additional_phones,
     AdminUserCreateSerializer,
     AdminUserDetailSerializer,
     AdminUserListSerializer,
     AdminUserUpdateSerializer,
 )
 from shop.models import Category, Order, Payment, Product
+from shops.fields import Point
 from shops.models import Shop
-from shops.services import IneligibleSellerError, ShopLimitExceededError, ShopService
+from shops.services import (
+    IneligibleSellerError,
+    ShopLimitExceededError,
+    ShopService,
+    validate_coordinates,
+)
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -890,7 +900,7 @@ class AdminShopListAPIView(APIView):
     """
     def get_permissions(self):
         if self.request.method in ("POST", "PUT", "PATCH", "DELETE"):
-            return [IsAuthenticated(), CanManageAdminShops()]
+            return [IsAuthenticated(), CanCreateAdminShops()]
         return [IsAuthenticated(), CanViewAdminShops()]
 
     def get(self, request):
@@ -939,6 +949,7 @@ class AdminShopListAPIView(APIView):
                     name=data["name"],
                     description=data.get("description", ""),
                     phone=data.get("phone", ""),
+                    additional_phones=data.get("additional_phones", []),
                     address=data.get("address", ""),
                     latitude=data.get("latitude"),
                     longitude=data.get("longitude"),
@@ -973,16 +984,96 @@ class AdminShopListAPIView(APIView):
 
 class AdminShopDetailAPIView(APIView):
     """
-    GET /api/admin/shops/<int:pk>/
-    Inspect shop detail.
+    GET   /api/admin/shops/<int:pk>/
+    PATCH /api/admin/shops/<int:pk>/
+    Inspect shop detail, or edit its profile and location.
     """
-    permission_classes = [IsAuthenticated, CanViewAdminShops]
+    def get_permissions(self):
+        if self.request.method in ("PUT", "PATCH"):
+            return [IsAuthenticated(), CanUpdateAdminShops()]
+        return [IsAuthenticated(), CanViewAdminShops()]
 
     def get(self, request, pk):
         try:
             shop = Shop.objects.select_related("owner", "owner__user").prefetch_related("products").get(pk=pk)
         except Shop.DoesNotExist:
             raise NotFound("Shop not found.")
+        return Response(AdminShopSerializer(shop).data, status=status.HTTP_200_OK)
+
+    def patch(self, request, pk):
+        """
+        Edits name, description, phone numbers, address and location
+        (AdminShopUpdateSerializer). Gated by CanUpdateAdminShops
+        ('shops.update' or 'shops.admin.manage'). Unlike the seller-side
+        ShopService.update_shop, it does not require the owner to be
+        operational: an administrator may correct a suspended seller's shop.
+        Only changed values are audited; a request that changes nothing saves
+        nothing and logs nothing.
+        """
+        serializer = AdminShopUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        reason = data["reason"]
+
+        with transaction.atomic():
+            try:
+                shop = Shop.objects.select_for_update().get(pk=pk)
+            except Shop.DoesNotExist:
+                raise NotFound("Shop not found.")
+
+            # Normalize the extra numbers against the primary they will sit
+            # beside, so the diff below (and the audit log) matches what is saved.
+            if "phone" in data or "additional_phones" in data:
+                data["additional_phones"] = validate_additional_phones(
+                    data.get("additional_phones", shop.additional_phones),
+                    data.get("phone", shop.phone),
+                )
+
+            previous_state = {}
+            new_state = {}
+            for field in AdminShopUpdateSerializer.EDITABLE_FIELDS:
+                if field in data and getattr(shop, field) != data[field]:
+                    previous_state[field] = getattr(shop, field)
+                    new_state[field] = data[field]
+                    setattr(shop, field, data[field])
+
+            if "latitude" in data:
+                if data["latitude"] is None:
+                    new_location = Point(longitude=0.0, latitude=0.0)
+                    new_coords = (None, None)
+                else:
+                    try:
+                        lat, lng = validate_coordinates(data["latitude"], data["longitude"])
+                    except DjangoValidationError as exc:
+                        raise DRFValidationError({"detail": exc.messages})
+                    new_location = Point(longitude=lng, latitude=lat)
+                    new_coords = (lat, lng)
+                old_coords = (shop.latitude, shop.longitude)
+                if new_coords != old_coords:
+                    previous_state["latitude"], previous_state["longitude"] = old_coords
+                    new_state["latitude"], new_state["longitude"] = new_coords
+                    shop.location = new_location
+
+            if new_state:
+                try:
+                    shop.save()
+                except DjangoValidationError as exc:
+                    raise DRFValidationError(
+                        exc.message_dict if hasattr(exc, "message_dict") else {"detail": exc.messages}
+                    )
+
+                AuditService.log(
+                    action="ADMIN_SHOP_UPDATED",
+                    target=shop,
+                    actor=request.user,
+                    shop=shop,
+                    seller=shop.owner,
+                    reason=reason,
+                    previous_state=previous_state,
+                    new_state=new_state,
+                    ip_address=get_client_ip(request),
+                )
+
         return Response(AdminShopSerializer(shop).data, status=status.HTTP_200_OK)
 
 
@@ -1006,12 +1097,14 @@ class AdminShopStatusAPIView(APIView):
         action = serializer.validated_data["action"]
         reason = serializer.validated_data.get("reason", "")
 
-        # Granular RBAC enforcement: users holding only 'shops.approve' can only approve
+        # Granular RBAC enforcement: 'shops.approve' covers approve + reject;
+        # suspend and reactivate have no narrow code and need 'shops.admin.manage'.
         user = request.user
         actor_role_codes = get_user_role_codes(user)
         is_super = user.is_superuser or (Role.ROLE_SUPER_ADMINISTRATOR in actor_role_codes)
         if not is_super and not has_user_permission(user, "shops.admin.manage"):
-            if action != "approve":
+            required_permission = SHOP_STATUS_ACTION_PERMISSIONS.get(action)
+            if not required_permission or not has_user_permission(user, required_permission):
                 raise PermissionDenied(
                     f"You do not have permission to {action} shops. Broader shop management permission ('shops.admin.manage') is required."
                 )

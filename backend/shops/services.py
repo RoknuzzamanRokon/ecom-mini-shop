@@ -169,6 +169,7 @@ class ShopService:
         logo=None,
         cover_image=None,
         submit_for_review: bool = False,
+        additional_phones: Optional[list] = None,
     ) -> Shop:
         """Creates a new Shop for an eligible seller, optionally submitting directly for staff review."""
         cls.validate_seller_eligibility_for_creation(seller)
@@ -180,6 +181,7 @@ class ShopService:
             name=name.strip(),
             description=description.strip(),
             phone=phone.strip(),
+            additional_phones=list(additional_phones or []),
             address=address.strip(),
             status=initial_status,
         )

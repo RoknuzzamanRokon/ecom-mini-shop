@@ -40,6 +40,11 @@ class Shop(models.Model):
     logo = models.ImageField(upload_to="shops/logos/", blank=True, null=True)
     cover_image = models.ImageField(upload_to="shops/covers/", blank=True, null=True)
     phone = models.CharField(max_length=30, blank=True)
+    additional_phones = models.JSONField(
+        default=list,
+        blank=True,
+        help_text="Extra contact numbers beyond `phone`, as a list of strings.",
+    )
     address = models.TextField(blank=True)
     location = MySQLPointField(
         srid=4326,
@@ -102,7 +107,41 @@ class Shop(models.Model):
         """Returns True if the shop has a valid non-zero geographic coordinate."""
         return isinstance(self.location, Point) and not self.location.is_empty_or_zero
 
+    MAX_ADDITIONAL_PHONES = 4
+    PHONE_MAX_LENGTH = 30
+
+    @staticmethod
+    def normalize_additional_phones(phones, primary: str = "") -> list:
+        """
+        Trims each number and drops blanks, repeats, and copies of `primary`,
+        keeping the given order. Non-string entries are left in place for
+        clean() to reject rather than being silently coerced.
+        """
+        seen = {primary.strip()} if primary else set()
+        normalized = []
+        for phone in phones or []:
+            if isinstance(phone, str):
+                phone = phone.strip()
+                if not phone or phone in seen:
+                    continue
+                seen.add(phone)
+            normalized.append(phone)
+        return normalized
+
     def clean(self):
+        self.additional_phones = self.normalize_additional_phones(self.additional_phones, self.phone)
+        if any(
+            not isinstance(phone, str) or len(phone) > self.PHONE_MAX_LENGTH
+            for phone in self.additional_phones
+        ):
+            raise ValidationError(
+                {"additional_phones": f"Each phone number must be text of at most {self.PHONE_MAX_LENGTH} characters."}
+            )
+        if len(self.additional_phones) > self.MAX_ADDITIONAL_PHONES:
+            raise ValidationError(
+                {"additional_phones": f"A shop can list at most {self.MAX_ADDITIONAL_PHONES} additional phone numbers."}
+            )
+
         if self.status == self.STATUS_REJECTED and not self.rejection_reason:
             raise ValidationError({"rejection_reason": "A rejection reason is mandatory when rejecting a shop."})
 

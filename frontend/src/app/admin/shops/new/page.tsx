@@ -17,7 +17,13 @@ import { AdminConfirmModal } from "@/components/admin/shared";
 import UseCurrentLocationButton, {
   CoordinateMapLink,
 } from "@/components/location/UseCurrentLocationButton";
-import { ShopAccessNotice, canManageAdminShops, canViewAdminShops } from "../shopGovernance";
+import {
+  ShopAccessNotice,
+  ShopPhoneListField,
+  canCreateAdminShops,
+  canViewAdminShops,
+  rowsToShopPhones,
+} from "../shopGovernance";
 
 const FIELD_LABEL_CLASS =
   "block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1.5";
@@ -49,7 +55,7 @@ export default function AdminShopCreatePage() {
   const { user: actor } = useAuth();
 
   const canView = canViewAdminShops(actor);
-  const canManage = canManageAdminShops(actor);
+  const canCreate = canCreateAdminShops(actor);
   const canListSellers = hasAnyPermission(actor, ADMIN_PERMISSIONS.sellersView);
 
   const [selectedSeller, setSelectedSeller] = useState<AdminSeller | null>(null);
@@ -63,7 +69,10 @@ export default function AdminShopCreatePage() {
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [phone, setPhone] = useState("");
+  /** Row 0 is the main number; the rest become additional_phones. */
+  const [phoneRows, setPhoneRows] = useState<string[]>([""]);
+  /** The owner's business phone last copied into row 0, if the operator hasn't changed it since. */
+  const [autofilledPhone, setAutofilledPhone] = useState<string | null>(null);
   const [address, setAddress] = useState("");
   const [latitude, setLatitude] = useState("");
   const [longitude, setLongitude] = useState("");
@@ -110,16 +119,30 @@ export default function AdminShopCreatePage() {
     };
   }, [searchInput, canListSellers]);
 
-  const selectSeller = useCallback((row: AdminSeller) => {
-    setSelectedSeller(row);
-    setShowResults(false);
-    setSearchInput("");
-  }, []);
+  // The main number follows the selected owner's business phone until the
+  // operator types their own; a number they typed is never overwritten.
+  const selectSeller = useCallback(
+    (row: AdminSeller) => {
+      setSelectedSeller(row);
+      setShowResults(false);
+      setSearchInput("");
+      const mainPhone = phoneRows[0]?.trim() ?? "";
+      if (!mainPhone || phoneRows[0] === autofilledPhone) {
+        setPhoneRows([row.business_phone, ...phoneRows.slice(1)]);
+        setAutofilledPhone(row.business_phone || null);
+      }
+    },
+    [phoneRows, autofilledPhone]
+  );
 
   const clearSelectedSeller = useCallback(() => {
     setSelectedSeller(null);
     setManualSellerId("");
-  }, []);
+    if (autofilledPhone && phoneRows[0] === autofilledPhone) {
+      setPhoneRows(["", ...phoneRows.slice(1)]);
+    }
+    setAutofilledPhone(null);
+  }, [autofilledPhone, phoneRows]);
 
   const resolvedSellerId =
     selectedSeller?.id ?? (manualSellerId.trim() ? Number(manualSellerId.trim()) : null);
@@ -147,7 +170,7 @@ export default function AdminShopCreatePage() {
           seller_id: resolvedSellerId,
           name: name.trim(),
           description: description.trim(),
-          phone: phone.trim(),
+          ...rowsToShopPhones(phoneRows),
           address: address.trim(),
           latitude: latitude.trim() ? Number(latitude.trim()) : undefined,
           longitude: longitude.trim() ? Number(longitude.trim()) : undefined,
@@ -167,7 +190,7 @@ export default function AdminShopCreatePage() {
       resolvedSellerId,
       name,
       description,
-      phone,
+      phoneRows,
       address,
       latitude,
       longitude,
@@ -191,7 +214,7 @@ export default function AdminShopCreatePage() {
     return <ShopAccessNotice />;
   }
 
-  if (!canManage) {
+  if (!canCreate) {
     return (
       <div className="space-y-6">
         {backLink}
@@ -205,6 +228,7 @@ export default function AdminShopCreatePage() {
             <p className="text-sm font-bold text-ink">You are not authorized to create shops</p>
             <p className="text-xs text-ink-muted mt-1 max-w-md">
               Creating a shop requires{" "}
+              <code className="font-mono text-[11px]">shops.create</code> or{" "}
               <code className="font-mono text-[11px]">shops.admin.manage</code>. You can still
               browse existing shops.
             </p>
@@ -370,20 +394,24 @@ export default function AdminShopCreatePage() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div>
-            <label htmlFor="shop-phone" className={FIELD_LABEL_CLASS}>
-              Phone
-            </label>
-            <input
-              id="shop-phone"
-              type="text"
-              disabled={submitting}
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              placeholder="+880 1700 000000"
-              className={FIELD_CONTROL_CLASS}
-            />
-          </div>
+          <ShopPhoneListField
+            idPrefix="shop-phone"
+            rows={phoneRows}
+            onChange={setPhoneRows}
+            disabled={submitting}
+            hint={
+              autofilledPhone && phoneRows[0] === autofilledPhone && selectedSeller ? (
+                <p className="text-[10px] text-ink-faint mt-1.5">
+                  Main number filled from {selectedSeller.business_name}&apos;s business phone.
+                  Change it if the shop uses a different number.
+                </p>
+              ) : selectedSeller && !selectedSeller.business_phone ? (
+                <p className="text-[10px] text-ink-faint mt-1.5">
+                  {selectedSeller.business_name} has no business phone on file to fill in.
+                </p>
+              ) : null
+            }
+          />
           <div>
             <label htmlFor="shop-address" className={FIELD_LABEL_CLASS}>
               Address

@@ -20,7 +20,7 @@ import {
 import {
   SHOP_STATUS_LABELS,
   SHOP_STATUS_OPTIONS,
-  canManageAdminShops,
+  canCreateAdminShops,
   getAvailableShopActions,
   useShopStatusAction,
 } from "./shopGovernance";
@@ -245,7 +245,7 @@ function AdminShopsPageContent() {
     [user, requestAction]
   );
 
-  const canCreate = canManageAdminShops(user);
+  const canCreate = canCreateAdminShops(user);
 
   return (
     <div className="space-y-6">

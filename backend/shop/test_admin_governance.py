@@ -1878,3 +1878,286 @@ class AdminShopCreationTests(APITestCase):
         self.client.force_authenticate(user=self.seller_user)
         res = self.client.post("/api/admin/shops/", data=self._payload(), format="json")
         self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+
+class AdminShopGranularPermissionTests(APITestCase):
+    """
+    The narrow shop codes work in the admin console without
+    'shops.admin.manage': shops.create -> POST /api/admin/shops/,
+    shops.update -> PATCH /api/admin/shops/<pk>/, shops.approve ->
+    approve/reject. Suspend/reactivate still need 'shops.admin.manage'.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_rbac")
+
+        def staff_with(username, codes):
+            role = Role.objects.create(code=f"PROBE_{username.upper()}", name=f"Probe {username}")
+            for code in ["shops.view", *codes]:
+                RolePermission.objects.create(role=role, permission=Permission.objects.get(code=code))
+            user = User.objects.create_user(
+                username=username,
+                email=f"{username}@minishop.com",
+                password="ProbePassword123!",
+                is_staff=True,
+            )
+            assign_user_role(user, role.code)
+            return user
+
+        cls.viewer = staff_with("sg_viewer", [])
+        cls.approver = staff_with("sg_approver", ["shops.approve"])
+        cls.creator = staff_with("sg_creator", ["shops.create"])
+        cls.updater = staff_with("sg_updater", ["shops.update"])
+
+        seller_user = User.objects.create_user(
+            username="sg_seller", email="sg_seller@minishop.com", password="SellerPassword123!"
+        )
+        cls.seller = SellerProfile.objects.create(
+            user=seller_user,
+            seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+            business_name="Granular Shop Owner",
+            status=SellerProfile.STATUS_ACTIVE,
+        )
+
+    def setUp(self):
+        self.shop = Shop.objects.create(
+            owner=self.seller,
+            name="Granular Shop",
+            phone="01711111111",
+            status=Shop.STATUS_PENDING,
+        )
+
+    def _status(self, user, action, reason="Granular permission test"):
+        self.client.force_authenticate(user=user)
+        return self.client.post(
+            f"/api/admin/shops/{self.shop.id}/status/",
+            data={"action": action, "reason": reason},
+            format="json",
+        )
+
+    def _patch(self, user, payload):
+        self.client.force_authenticate(user=user)
+        return self.client.patch(f"/api/admin/shops/{self.shop.id}/", data=payload, format="json")
+
+    # --- status ---------------------------------------------------------------
+
+    def test_approve_permission_allows_approve_and_reject(self):
+        res = self._status(self.approver, "reject")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data["status"], Shop.STATUS_REJECTED)
+
+        res = self._status(self.approver, "approve")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data["status"], Shop.STATUS_ACTIVE)
+
+    def test_approve_permission_does_not_allow_suspend_or_reactivate(self):
+        self.shop.status = Shop.STATUS_ACTIVE
+        self.shop.save()
+        for action in ("suspend", "reactivate"):
+            res = self._status(self.approver, action)
+            self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN, msg=action)
+        self.shop.refresh_from_db()
+        self.assertEqual(self.shop.status, Shop.STATUS_ACTIVE)
+
+    def test_create_update_and_view_do_not_grant_status_changes(self):
+        for user in (self.viewer, self.creator, self.updater):
+            res = self._status(user, "approve")
+            self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN, msg=user.username)
+
+    # --- create ---------------------------------------------------------------
+
+    def _create_payload(self):
+        return {"seller_id": self.seller.id, "name": "Created By Probe", "reason": "Granular create"}
+
+    def test_create_permission_allows_shop_creation(self):
+        self.shop.delete()  # Shop Owners are capped at one shop.
+        self.client.force_authenticate(user=self.creator)
+        res = self.client.post("/api/admin/shops/", data=self._create_payload(), format="json")
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED, res.data)
+        self.assertEqual(res.data["owner_id"], self.seller.id)
+
+    def test_other_shop_permissions_do_not_grant_creation(self):
+        for user in (self.viewer, self.approver, self.updater):
+            self.client.force_authenticate(user=user)
+            res = self.client.post("/api/admin/shops/", data=self._create_payload(), format="json")
+            self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN, msg=user.username)
+        self.assertFalse(Shop.objects.filter(name="Created By Probe").exists())
+
+    # --- update ---------------------------------------------------------------
+
+    def test_update_permission_edits_details_and_location_with_audit(self):
+        res = self._patch(
+            self.updater,
+            {
+                "name": "  Renamed Shop ",
+                "phone": "01711111111",
+                "address": "House 5, Banani",
+                "latitude": 23.7936,
+                "longitude": 90.4043,
+                "reason": "Owner moved the shop",
+            },
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK, res.data)
+        self.assertEqual(res.data["name"], "Renamed Shop")
+        self.assertAlmostEqual(res.data["latitude"], 23.7936)
+        self.assertAlmostEqual(res.data["longitude"], 90.4043)
+
+        self.shop.refresh_from_db()
+        self.assertEqual(self.shop.slug, "granular-shop")  # public URL is stable
+        self.assertEqual(self.shop.status, Shop.STATUS_PENDING)
+
+        entry = AuditLog.objects.get(action="ADMIN_SHOP_UPDATED")
+        self.assertEqual(entry.actor, self.updater)
+        self.assertEqual(entry.metadata["reason"], "Owner moved the shop")
+        # Unchanged phone is not recorded.
+        self.assertEqual(
+            entry.metadata["previous_state"],
+            {"name": "Granular Shop", "address": "", "latitude": None, "longitude": None},
+        )
+        self.assertEqual(entry.metadata["new_state"]["name"], "Renamed Shop")
+
+    def test_update_can_clear_location(self):
+        self._patch(self.updater, {"latitude": 23.79, "longitude": 90.40, "reason": "Set"})
+        res = self._patch(self.updater, {"latitude": None, "longitude": None, "reason": "Clear"})
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertIsNone(res.data["latitude"])
+        self.shop.refresh_from_db()
+        self.assertFalse(self.shop.has_coordinates)
+
+    def test_update_cannot_change_owner_status_or_slug(self):
+        other_user = User.objects.create_user(
+            username="sg_other", email="sg_other@minishop.com", password="OtherPassword123!"
+        )
+        other_seller = SellerProfile.objects.create(
+            user=other_user,
+            seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+            business_name="Other Owner",
+            status=SellerProfile.STATUS_ACTIVE,
+        )
+        res = self._patch(
+            self.updater,
+            {
+                "description": "New description",
+                "owner": other_seller.id,
+                "owner_id": other_seller.id,
+                "status": Shop.STATUS_ACTIVE,
+                "slug": "hijacked",
+                "reason": "Tamper attempt",
+            },
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.shop.refresh_from_db()
+        self.assertEqual(self.shop.description, "New description")
+        self.assertEqual(self.shop.owner, self.seller)
+        self.assertEqual(self.shop.status, Shop.STATUS_PENDING)
+        self.assertEqual(self.shop.slug, "granular-shop")
+
+    def test_unchanged_update_writes_no_audit(self):
+        res = self._patch(self.updater, {"name": "Granular Shop", "reason": "No-op"})
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertFalse(AuditLog.objects.filter(action="ADMIN_SHOP_UPDATED").exists())
+
+    def test_update_validation(self):
+        cases = [
+            {"name": "New"},  # no reason
+            {"name": "   ", "reason": "Blank"},
+            {"latitude": 23.79, "reason": "Half a coordinate"},
+            {"latitude": 23.79, "longitude": None, "reason": "One null"},
+            {"latitude": 123.0, "longitude": 90.4, "reason": "Out of range"},
+            {"reason": "Nothing to change"},
+        ]
+        for payload in cases:
+            res = self._patch(self.updater, payload)
+            self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST, msg=payload)
+        self.shop.refresh_from_db()
+        self.assertEqual(self.shop.name, "Granular Shop")
+        self.assertFalse(self.shop.has_coordinates)
+
+    def test_other_shop_permissions_do_not_grant_update(self):
+        for user in (self.viewer, self.approver, self.creator):
+            res = self._patch(user, {"name": "Hijacked", "reason": "Not allowed"})
+            self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN, msg=user.username)
+        self.shop.refresh_from_db()
+        self.assertEqual(self.shop.name, "Granular Shop")
+
+
+class AdminShopPhoneNumberTests(APITestCase):
+    """Shop.additional_phones through POST /api/admin/shops/ and PATCH /api/admin/shops/<pk>/."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_rbac")
+        cls.admin = User.objects.create_user(
+            username="ph_admin", email="ph_admin@minishop.com", password="AdminPassword123!", is_staff=True
+        )
+        assign_user_role(cls.admin, Role.ROLE_ADMINISTRATOR)
+        seller_user = User.objects.create_user(
+            username="ph_seller", email="ph_seller@minishop.com", password="SellerPassword123!"
+        )
+        cls.seller = SellerProfile.objects.create(
+            user=seller_user,
+            seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+            business_name="Phone Seller",
+            business_phone="01700000001",
+            status=SellerProfile.STATUS_ACTIVE,
+        )
+
+    def setUp(self):
+        self.client.force_authenticate(user=self.admin)
+
+    def _create(self, **overrides):
+        payload = {"seller_id": self.seller.id, "name": "Phone Shop", "reason": "Phone test"}
+        payload.update(overrides)
+        return self.client.post("/api/admin/shops/", data=payload, format="json")
+
+    def test_create_with_additional_phones_normalizes_them(self):
+        res = self._create(
+            phone="01700000001",
+            additional_phones=[" 01800000002 ", "", "01700000001", "01800000002", "01900000003"],
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED, res.data)
+        # Trimmed; blanks, repeats and the primary number dropped; order kept.
+        self.assertEqual(res.data["additional_phones"], ["01800000002", "01900000003"])
+        shop = Shop.objects.get(pk=res.data["id"])
+        self.assertEqual(shop.phone, "01700000001")
+        self.assertEqual(shop.additional_phones, ["01800000002", "01900000003"])
+
+    def test_create_without_additional_phones_defaults_to_empty(self):
+        res = self._create(phone="01700000001")
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.data["additional_phones"], [])
+
+    def test_create_rejects_too_many_or_too_long_numbers(self):
+        too_many = [f"0180000000{i}" for i in range(Shop.MAX_ADDITIONAL_PHONES + 1)]
+        for extras in (too_many, ["0" * (Shop.PHONE_MAX_LENGTH + 1)]):
+            res = self._create(additional_phones=extras)
+            self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST, msg=extras)
+            self.assertIn("additional_phones", res.data)
+        self.assertFalse(Shop.objects.filter(name="Phone Shop").exists())
+
+    def test_update_edits_additional_phones_with_audit(self):
+        shop_id = self._create(phone="01700000001", additional_phones=["01800000002"]).data["id"]
+        res = self.client.patch(
+            f"/api/admin/shops/{shop_id}/",
+            data={"additional_phones": ["01800000002", "01900000003"], "reason": "Added a number"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK, res.data)
+        self.assertEqual(res.data["additional_phones"], ["01800000002", "01900000003"])
+        entry = AuditLog.objects.get(action="ADMIN_SHOP_UPDATED")
+        self.assertEqual(entry.metadata["previous_state"], {"additional_phones": ["01800000002"]})
+        self.assertEqual(
+            entry.metadata["new_state"], {"additional_phones": ["01800000002", "01900000003"]}
+        )
+
+    def test_promoting_an_extra_to_primary_removes_it_from_the_extras(self):
+        shop_id = self._create(phone="01700000001", additional_phones=["01800000002"]).data["id"]
+        res = self.client.patch(
+            f"/api/admin/shops/{shop_id}/",
+            data={"phone": "01800000002", "reason": "New main number"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data["phone"], "01800000002")
+        self.assertEqual(res.data["additional_phones"], [])

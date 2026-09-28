@@ -21,9 +21,16 @@ import { hasAnyPermission } from "./admin-auth";
 export const ADMIN_PERMISSIONS = {
   /** GET /api/admin/shops/ -> CanViewAdminShops */
   shopsView: ["shops.admin.manage", "shops.view"],
-  /** POST /api/admin/shops/<pk>/status/ -> CanChangeAdminShopStatus */
+  /** POST /api/admin/shops/ -> CanCreateAdminShops */
+  shopsCreate: ["shops.admin.manage", "shops.create"],
+  /** PATCH /api/admin/shops/<pk>/ -> CanUpdateAdminShops */
+  shopsUpdate: ["shops.admin.manage", "shops.update"],
+  /**
+   * POST /api/admin/shops/<pk>/status/ approve + reject ->
+   * SHOP_STATUS_ACTION_PERMISSIONS in shop/admin_permissions.py.
+   */
   shopsApprove: ["shops.admin.manage", "shops.approve"],
-  /** Reject / suspend / reactivate -> CanManageAdminShops */
+  /** Suspend / reactivate: no narrow code exists, so 'shops.admin.manage' only. */
   shopsManage: ["shops.admin.manage"],
 
   /** GET /api/admin/sellers/ -> CanViewAdminSellers */

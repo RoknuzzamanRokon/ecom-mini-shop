@@ -256,7 +256,10 @@ export interface AdminShop {
   name: string;
   slug: string;
   description: string;
+  /** The main number, the one public shop pages show. */
   phone: string;
+  /** Extra numbers beyond `phone` (Shop.additional_phones, at most 4). */
+  additional_phones: string[];
   address: string;
   /** null while the shop has no coordinates (the POINT(0 0) default). */
   latitude: number | null;
@@ -323,8 +326,8 @@ export async function getAdminShopDetail(token: string, id: number | string): Pr
 /**
  * POST /api/admin/shops/<id>/status/
  * Entry requires CanChangeAdminShopStatus (shops.admin.manage OR shops.approve).
- * The view then enforces per-action: only 'approve' is permitted on
- * shops.approve alone — reject/suspend/reactivate require shops.admin.manage.
+ * The view then enforces per-action: shops.approve alone permits approve and
+ * reject; suspend/reactivate require shops.admin.manage.
  */
 export async function updateAdminShopStatus(
   token: string,
@@ -355,6 +358,8 @@ export interface AdminShopCreatePayload {
   name: string;
   description?: string;
   phone?: string;
+  /** Extra numbers beyond `phone`; the backend trims them and drops blanks and repeats. */
+  additional_phones?: string[];
   address?: string;
   latitude?: number;
   longitude?: number;
@@ -363,7 +368,7 @@ export interface AdminShopCreatePayload {
 
 /**
  * POST /api/admin/shops/ -> 201 with the created AdminShop (status DRAFT).
- * Requires 'shops.admin.manage' (CanManageAdminShops).
+ * Requires 'shops.create' or 'shops.admin.manage' (CanCreateAdminShops).
  *
  * The backend rejects a seller_id that does not exist, or one that is
  * ineligible (ineligible status, PRODUCT_OWNER, or LIMITED_SHOP_OWNER already
@@ -376,6 +381,39 @@ export async function createAdminShop(
 ): Promise<AdminShop> {
   return adminRequest<AdminShop>("/api/admin/shops/", token, {
     method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * The writable surface of AdminShopUpdateSerializer, in full. Every field is
+ * optional but at least one must be sent. `latitude` and `longitude` travel
+ * together; both `null` clears the location. Owner, status and slug are not
+ * editable through this endpoint.
+ */
+export interface AdminShopUpdatePayload {
+  name?: string;
+  description?: string;
+  phone?: string;
+  additional_phones?: string[];
+  address?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  /** Required; recorded in the audit log. */
+  reason: string;
+}
+
+/**
+ * PATCH /api/admin/shops/<id>/ -> the updated AdminShop.
+ * Requires 'shops.update' or 'shops.admin.manage' (CanUpdateAdminShops).
+ */
+export async function updateAdminShop(
+  token: string,
+  id: number | string,
+  payload: AdminShopUpdatePayload
+): Promise<AdminShop> {
+  return adminRequest<AdminShop>(`/api/admin/shops/${id}/`, token, {
+    method: "PATCH",
     body: JSON.stringify(payload),
   });
 }

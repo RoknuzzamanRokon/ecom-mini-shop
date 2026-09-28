@@ -181,11 +181,55 @@ class CanManageAdminShops(BasePermission):
         return has_user_permission(user, "shops.admin.manage")
 
 
+class CanCreateAdminShops(BasePermission):
+    """Allows creating a shop and assigning its owner ('shops.create' or 'shops.admin.manage')."""
+    message = "You do not have permission to create shops."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
+            return True
+        return (
+            has_user_permission(user, "shops.admin.manage")
+            or has_user_permission(user, "shops.create")
+        )
+
+
+class CanUpdateAdminShops(BasePermission):
+    """Allows editing a shop's profile and location ('shops.update' or 'shops.admin.manage')."""
+    message = "You do not have permission to update shops."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
+            return True
+        return (
+            has_user_permission(user, "shops.admin.manage")
+            or has_user_permission(user, "shops.update")
+        )
+
+
+# The narrow permission a shop lifecycle action accepts in place of
+# 'shops.admin.manage'. 'shops.approve' covers the review decision (approve or
+# reject). There is no 'shops.suspend' in the catalogue, so suspend and
+# reactivate have no narrow code and stay with 'shops.admin.manage'.
+SHOP_STATUS_ACTION_PERMISSIONS = {
+    "approve": "shops.approve",
+    "reject": "shops.approve",
+}
+
+
 class CanChangeAdminShopStatus(BasePermission):
     """
     Allows shop status transitions based on granular permissions:
-    - 'approve' requires 'shops.approve' or 'shops.admin.manage'
-    - 'reject', 'suspend', 'reactivate' require 'shops.admin.manage'
+    - 'approve' / 'reject' require 'shops.approve' or 'shops.admin.manage'
+    - 'suspend' / 'reactivate' require 'shops.admin.manage'
+    This class only gates entry to the view; the view enforces the per-action
+    mapping in SHOP_STATUS_ACTION_PERMISSIONS.
     """
     message = "You do not have permission to update shop status."
 
