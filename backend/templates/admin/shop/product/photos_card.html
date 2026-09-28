@@ -1,0 +1,44 @@
+{% load i18n %}
+{% comment %}
+  The Photos card of the product form, included by change_form.html in place
+  of admin/includes/fieldset.html for the "mp-media" fieldset. Same outer
+  markup as that include (so section 10's mp-form card styles apply), but the
+  body is the main photo beside the gallery inline rather than label/field
+  rows. `fieldset` and `forloop` are the caller's.
+
+  The main photo is ProductPhotoInput (admin/widgets/mp_product_photo.html),
+  or current_image for a view-only account. Errors print above it, as
+  Django's own rows do for a single field.
+{% endcomment %}
+<fieldset class="module aligned {{ fieldset.classes }}" aria-labelledby="fieldset-0-{{ forloop.counter0 }}-heading">
+  <h2 id="fieldset-0-{{ forloop.counter0 }}-heading" class="fieldset-heading">
+    {{ fieldset.name }}
+    <span class="mp-count" data-mp-photo-count>{% if mp_product.photo_count %}{{ mp_product.photo_count }} photo{{ mp_product.photo_count|pluralize }}{% endif %}</span>
+  </h2>
+  {% if fieldset.description %}
+    <div class="description">{{ fieldset.description|safe }}</div>
+  {% endif %}
+
+  <div class="mp-media-body">
+    <div class="mp-media-cover">
+      {% for line in fieldset %}
+        {% for field in line %}
+          <div class="mp-media-field field-{{ field.field.name }}{% if field.errors %} errors{% endif %}">
+            {% if field.is_readonly %}
+              <div class="readonly">{{ field.contents }}</div>
+            {% else %}
+              {{ field.errors }}
+              {{ field.field }}
+            {% endif %}
+          </div>
+        {% endfor %}
+      {% endfor %}
+    </div>
+
+    <div class="mp-media-gallery">
+      {% for inline_admin_formset in inline_admin_formsets %}
+        {% include inline_admin_formset.opts.template %}
+      {% endfor %}
+    </div>
+  </div>
+</fieldset>

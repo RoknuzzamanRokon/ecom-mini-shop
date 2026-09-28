@@ -1,0 +1,133 @@
+{% load i18n %}
+{% comment %}
+  Gallery photos as image tiles, for shop.admin.ProductImageInline. Drawn
+  inside the product form's Photos card (admin/shop/product/photos_card.html).
+
+  Formset plumbing, as in mp_role.html: data-inline-type="stacked" is the
+  inlines.js dispatch path for non-<tr> rows. It selects
+  "#<prefix>-group .inline-related", clones "#<prefix>-empty" to add a row,
+  inserts the new row before that template, and appends its JS remove link to
+  the row's FIRST child (the tile's tool strip). `has_original` keeps that
+  remove link off saved rows, whose DELETE checkbox is the tile's bin button
+  instead. The management form, pk/fk inputs, the empty-form template and
+  every error list are still emitted.
+
+  inlines.js's own "Add another" row stays in the DOM but hidden: the "Add
+  photos" tile (a multiple file picker, unhidden by admin_product_form.js)
+  clicks it once per picked or dropped image and moves the file into the new
+  row. If the browser cannot move files between inputs, the script shows
+  Django's link instead.
+
+  A view-only account gets the photos and positions without any controls.
+{% endcomment %}
+<div class="js-inline-admin-formset inline-group mp-gallery"
+     id="{{ inline_admin_formset.formset.prefix }}-group"
+     data-inline-type="stacked"
+     data-inline-formset="{{ inline_admin_formset.inline_formset_data }}"
+     data-mp-gallery>
+
+  {{ inline_admin_formset.formset.management_form }}
+  {{ inline_admin_formset.formset.non_form_errors }}
+
+  <div class="mp-gallery-head">
+    <h3 class="mp-gallery-title">{% translate "Gallery" %}</h3>
+    {% if inline_admin_formset.has_change_permission or inline_admin_formset.has_add_permission %}
+      <p class="mp-gallery-hint">{% translate "Drag to reorder. Point at a photo to replace or open it." %}</p>
+    {% endif %}
+  </div>
+
+  <div class="mp-gallery-grid" data-mp-gallery-grid>
+    {% for inline_admin_form in inline_admin_formset %}
+      {% with form=inline_admin_form.form original=inline_admin_form.original %}
+      <div class="inline-related mp-tile{% if original %} has_original{% else %} is-new{% endif %}{% if forloop.last and inline_admin_formset.has_add_permission %} empty-form last-related{% endif %}{% if form.errors %} has-errors{% endif %}"
+           id="{{ inline_admin_formset.formset.prefix }}-{% if forloop.last and inline_admin_formset.has_add_permission %}empty{% else %}{{ forloop.counter0 }}{% endif %}"
+           data-mp-tile>
+
+        {# First child: inlines.js appends the remove link of an unsaved row here. #}
+        <div class="mp-tile-tools">
+          {% if original and inline_admin_formset.formset.can_delete and inline_admin_formset.has_delete_permission %}
+            <label class="mp-tile-bin" title="{% translate 'Remove this photo when saving' %}">
+              {{ inline_admin_form.deletion_field.field }}
+              <span class="material-symbols-outlined mp-bin-remove" aria-hidden="true">delete</span>
+              <span class="material-symbols-outlined mp-bin-undo" aria-hidden="true">undo</span>
+              <span class="mp-sr">{% translate "Remove this photo" %}</span>
+            </label>
+          {% endif %}
+        </div>
+
+        <div class="mp-tile-media">
+          {% if original %}
+            <img src="{{ original.image.url }}" alt="{% blocktranslate with n=original.order %}Gallery photo, position {{ n }}{% endblocktranslate %}" loading="lazy" draggable="false" data-mp-tile-img>
+            {% if inline_admin_formset.has_change_permission %}
+              <div class="mp-tile-overlay">
+                <label class="mp-tile-action" title="{% translate 'Replace this photo' %}">
+                  {{ form.image }}
+                  <span class="material-symbols-outlined" aria-hidden="true">sync</span>
+                  <span class="mp-sr">{% translate "Replace this photo" %}</span>
+                </label>
+                <a class="mp-tile-action" href="{{ original.image.url }}" target="_blank" rel="noopener" title="{% translate 'Open the photo in a new tab' %}">
+                  <span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>
+                  <span class="mp-sr">{% translate "Open" %}</span>
+                </a>
+              </div>
+            {% else %}
+              <a class="mp-tile-open" href="{{ original.image.url }}" target="_blank" rel="noopener">
+                <span class="mp-sr">{% translate "Open the photo in a new tab" %}</span>
+              </a>
+            {% endif %}
+          {% else %}
+            <img alt="" draggable="false" data-mp-tile-img hidden>
+            <label class="mp-tile-pick">
+              {{ form.image }}
+              <span class="material-symbols-outlined" aria-hidden="true">add_photo_alternate</span>
+              <span>{% translate "Choose photo" %}</span>
+            </label>
+          {% endif %}
+          <span class="mp-tile-flag" data-mp-tile-flag hidden></span>
+        </div>
+
+        <div class="mp-tile-foot">
+          {% if original and not inline_admin_formset.has_change_permission %}
+            <span class="mp-tile-pos-text">{% translate "Position" %} {{ original.order }}</span>
+          {% else %}
+            <span class="mp-tile-grip material-symbols-outlined" aria-hidden="true" title="{% translate 'Drag to reorder' %}">drag_indicator</span>
+            <label class="mp-tile-pos" for="{{ form.order.id_for_label }}"><span aria-hidden="true">#</span><span class="mp-sr">{{ form.order.label }}</span></label>
+            {{ form.order }}
+          {% endif %}
+        </div>
+
+        <p class="mp-tile-removed">{% translate "Removed on save" %}</p>
+
+        {% if form.is_bound and not original and not form.errors %}
+          {# A new row re-rendered after a failed save: browsers never refill a file input. #}
+          <p class="mp-tile-note">{% translate "Choose this photo again: a failed save drops files." %}</p>
+        {% endif %}
+
+        {% if form.non_field_errors or form.image.errors or form.order.errors %}
+          <div class="mp-tile-errors">
+            {{ form.non_field_errors }}
+            {{ form.image.errors }}
+            {{ form.order.errors }}
+          </div>
+        {% endif %}
+
+        {% if inline_admin_form.needs_explicit_pk_field %}{{ inline_admin_form.pk_field.field }}{% endif %}
+        {% if inline_admin_form.fk_field %}{{ inline_admin_form.fk_field.field }}{% endif %}
+      </div>
+      {% endwith %}
+    {% endfor %}
+
+    {% if inline_admin_formset.has_add_permission %}
+      <label class="mp-tile mp-tile-add" data-mp-add hidden>
+        <input type="file" accept="image/*" multiple class="mp-sr" data-mp-add-input>
+        <span class="material-symbols-outlined" aria-hidden="true">add_photo_alternate</span>
+        <b>{% translate "Add photos" %}</b>
+        <span>{% translate "or drop them here" %}</span>
+      </label>
+    {% endif %}
+  </div>
+
+  {% if not inline_admin_formset.formset.forms and not inline_admin_formset.has_add_permission %}
+    <p class="mp-gallery-empty">{% translate "No gallery photos." %}</p>
+  {% endif %}
+</div>

@@ -1,11 +1,14 @@
 from decimal import Decimal
 
 from django import forms
+from django.conf import settings
 from django.contrib import admin, messages
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
+from django.template.loader import render_to_string
 from django.urls import path
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 from django.db.models import Count
 from django.core.exceptions import PermissionDenied, ValidationError
 
@@ -47,31 +50,107 @@ class CategoryAdmin(admin.ModelAdmin):
     image_preview.short_description = "Image Preview"
 
 
-class ProductImageInline(admin.TabularInline):
+# Shop and seller statuses the storefront shows, as in Product.is_publicly_visible
+# and ProductQuerySet.public(). The product form's storefront checklist and
+# preview (admin_product_form.js) are built from these.
+LIVE_PARTNER_STATUSES = ("APPROVED", "ACTIVE")
+
+
+class ProductPhotoInput(forms.ClearableFileInput):
+    """The main photo as a preview panel with Upload / Replace / Remove / Open
+    (templates/admin/widgets/mp_product_photo.html).
+
+    Still a ClearableFileInput, so the file input and its "-clear" checkbox
+    post exactly as before. Rendered through the project template engine for
+    the reason rbac/widgets.py gives: the form renderer never sees
+    TEMPLATES["DIRS"], where every other admin override lives.
+    """
+
+    template_name = "admin/widgets/mp_product_photo.html"
+
+    def render(self, name, value, attrs=None, renderer=None):
+        context = self.get_context(name, value, attrs)
+        return mark_safe(render_to_string(self.template_name, context))
+
+
+class ProductImageInlineForm(forms.ModelForm):
+    class Meta:
+        # A bare file input: a tile shows the saved photo itself, so the
+        # "Currently: <path>" line of the admin's file widget has no place.
+        # An empty input on a saved row keeps its file.
+        widgets = {"image": forms.FileInput}
+        labels = {"order": "Position"}
+
+
+class ProductImageInline(admin.StackedInline):
+    """Gallery photos as image tiles inside the product form's Photos card
+    (templates/admin/edit_inline/mp_gallery.html).
+
+    extra=0: rows are added by the card's "Add photos" tile, one per picked or
+    dropped file (static/js/admin_product_form.js), so no blank row sits in
+    the grid waiting to fail validation.
+    """
+
     model = ProductImage
-    extra = 1
+    form = ProductImageInlineForm
+    extra = 0
     fields = ("image", "order")
+    template = "admin/edit_inline/mp_gallery.html"
 
 
 class ProductAdminForm(forms.ModelForm):
     """The card layout (see ProductAdmin.get_fieldsets) puts labels above fields, where
     Django's trailing ":" reads oddly; money inputs get the ৳ prefix hook."""
 
+    LABELS = {
+        "image": "Main photo",
+        "is_active": "Active",
+    }
+
     HELP_TEXTS = {
         "slug": "The product's web address. Filled in from the name.",
         "badge": "Optional label on the product card: NEW, HOT, SALE or TOP.",
+        "status": "Only Published products can appear on the storefront.",
+        "is_active": "Switch off to hide the product without changing its status.",
     }
+
+    class Meta:
+        widgets = {"image": ProductPhotoInput}
 
     def __init__(self, *args, **kwargs):
         kwargs.setdefault("label_suffix", "")
         super().__init__(*args, **kwargs)
+        for name, label in self.LABELS.items():
+            if name in self.fields:
+                self.fields[name].label = label
         for name, text in self.HELP_TEXTS.items():
-            if name in self.fields and not self.fields[name].help_text:
+            if name in self.fields:
                 self.fields[name].help_text = text
         for name in ("price", "old_price"):
             if name in self.fields:
                 widget = self.fields[name].widget
                 widget.attrs["class"] = f"{widget.attrs.get('class', '')} mp-money".strip()
+
+
+def storefront_checks(product):
+    """What decides whether `product` shows on the storefront, one check per
+    condition of Product.is_publicly_visible. Works on an unsaved product too
+    (the add form), where every relation may still be empty."""
+    category = product.category if product.category_id else None
+    shop = product.shop if product.shop_id else None
+    seller = shop.owner if shop else None
+    return [
+        {"key": "active", "ok": bool(product.is_active),
+         "label": "Active switch is on", "detail": ""},
+        {"key": "published", "ok": product.status == Product.STATUS_PUBLISHED,
+         "label": "Status is Published", "detail": product.get_status_display()},
+        {"key": "category", "ok": bool(category and category.is_active),
+         "label": "Category is active", "detail": category.name if category else "None chosen"},
+        {"key": "shop", "ok": bool(shop and shop.status in LIVE_PARTNER_STATUSES),
+         "label": "Shop is approved", "detail": shop.name if shop else "None chosen"},
+        {"key": "seller", "ok": bool(seller and seller.status in LIVE_PARTNER_STATUSES),
+         "label": "Seller is approved", "detail": seller.business_name if seller else "No shop"},
+    ]
 
 
 @admin.register(Product)
@@ -94,44 +173,114 @@ class ProductAdmin(StatusBadgeMixin, admin.ModelAdmin):
     list_filter = ("status", "category", "shop", "is_active", "badge")
     search_fields = ("name", "description", "shop__name", "shop__owner__business_name")
     prepopulated_fields = {"slug": ("name",)}
-    readonly_fields = ("current_image",)
+    readonly_fields = ("current_image", "storefront_checklist")
+    # The only inline: change_form.html draws it inside the Photos card.
     inlines = [ProductImageInline]
 
     def get_fieldsets(self, request, obj=None):
-        # Cards in the order a product is written: what it is, what it costs,
-        # how it looks, whether it shows. "mp-form" is the stacked two-column
-        # card layout in japanese_admin.css; rows with a textarea or file input
-        # span both columns. Moderation is admin-only bookkeeping, so it starts
-        # folded away when adding and open when editing.
+        # Cards in the order a product is written: what it is, how it looks,
+        # what it costs. "mp-form" is the stacked two-column card layout in
+        # japanese_admin.css. templates/admin/shop/product/change_form.html
+        # puts "mp-side" cards in the right-hand column and draws the
+        # "mp-media" card as the Photos card, with the gallery inline inside.
+        # Moderation is admin-only bookkeeping, so it starts folded away when
+        # adding and open when editing.
         moderation_classes = ("mp-form",) if obj else ("mp-form", "collapse")
+        # A view-only account gets the photo itself; the read-only form of
+        # the file field is only a link to its path.
+        can_edit = obj is None or self.has_change_permission(request, obj)
         return (
             ("Product details", {
                 "classes": ("mp-form",),
                 "fields": ("name", "slug", "category", "shop", "description"),
+            }),
+            ("Photos", {
+                "classes": ("mp-form", "mp-media"),
+                "description": "The main photo leads the product card and the product page; gallery photos follow it in position order.",
+                "fields": ("image",) if can_edit else ("current_image",),
             }),
             ("Pricing & inventory", {
                 "classes": ("mp-form",),
                 "description": "Prices in Taka (৳). Old price is the struck-through “was” price; leave it empty when there is no discount.",
                 "fields": ("price", "old_price", "stock", "badge"),
             }),
-            ("Main image", {
-                "classes": ("mp-form",),
-                "description": "Shown on product cards and first on the product page. Add more photos under Product images below.",
-                "fields": ("current_image", "image") if obj and obj.image else ("image",),
-            }),
-            ("Visibility", {
-                "classes": ("mp-form",),
-                "description": "Shown on the storefront only when active and Published, and its category and shop are live too.",
-                "fields": ("status", "is_active"),
-            }),
             ("Moderation", {
                 "classes": moderation_classes,
                 "fields": ("submitted_at", "reviewed_at", "reviewed_by", "rejection_reason"),
+            }),
+            ("Visibility", {
+                "classes": ("mp-form", "mp-side"),
+                "fields": ("status", "is_active", "storefront_checklist"),
             }),
         )
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('category', 'shop', 'shop__owner')
+
+    def render_change_form(self, request, context, add=False, change=False, form_url="", obj=None):
+        saved = obj
+        if obj is not None and obj.pk and request.method == "POST":
+            # A failed save re-renders with the posted values already copied
+            # onto `obj` by the form; the header describes the stored product.
+            saved = self.get_queryset(request).get(pk=obj.pk)
+        context.update(self._product_page_context(saved))
+        return super().render_change_form(request, context, add, change, form_url, obj)
+
+    def _product_page_context(self, obj):
+        """The summary header's figures (`mp_saved`, `mp_product`) and the data
+        the live checklist and storefront preview read (json_script
+        "mp-product-data")."""
+        Shop = Product._meta.get_field("shop").related_model
+        page_data = {
+            "categories": {
+                str(row["pk"]): {"name": row["name"], "live": row["is_active"]}
+                for row in Category.objects.values("pk", "name", "is_active")
+            },
+            "shops": {
+                str(row["pk"]): {
+                    "name": row["name"],
+                    "live": row["status"] in LIVE_PARTNER_STATUSES,
+                    "seller": row["owner__business_name"],
+                    "sellerLive": row["owner__status"] in LIVE_PARTNER_STATUSES,
+                }
+                for row in Shop.objects.values(
+                    "pk", "name", "status", "owner__business_name", "owner__status"
+                )
+            },
+        }
+        context = {"mp_product_data": page_data}
+        if obj is None or obj.pk is None:
+            return context
+
+        context["mp_saved"] = obj
+
+        inventory = ProductInventory.objects.filter(product=obj).first()
+        gallery = list(obj.images.all())
+        available = inventory.available_quantity if inventory else obj.stock
+        if available == 0:
+            stock_state = "out"
+        elif available <= LOW_STOCK_THRESHOLD:
+            stock_state = "low"
+        else:
+            stock_state = "ok"
+        is_live = obj.is_publicly_visible
+        storefront_url = getattr(settings, "STOREFRONT_URL", "http://localhost:3000").rstrip("/")
+        context["mp_product"] = {
+            "inventory": inventory,
+            "available": available,
+            "stock_state": stock_state,
+            "photo_count": len(gallery) + (1 if obj.image else 0),
+            # The storefront card shows the main photo or a placeholder, never a
+            # gallery photo; the header thumbnail may fall back to one.
+            "cover_url": obj.image.url if obj.image else "",
+            "thumb_url": obj.image.url if obj.image else (gallery[0].image.url if gallery else ""),
+            "is_live": is_live,
+            # The Next.js product page 404s for anything not public, so the
+            # link is offered only when it will open.
+            "storefront_url": f"{storefront_url}/product/{obj.slug}" if is_live else "",
+            "seller": obj.seller,
+        }
+        return context
 
     def seller_display(self, obj):
         seller = getattr(obj, 'seller', None)
@@ -144,11 +293,20 @@ class ProductAdmin(StatusBadgeMixin, admin.ModelAdmin):
         return "-"
     image_preview.short_description = "Image"
 
-    @admin.display(description="Current image")
+    @admin.display(description="Main photo")
     def current_image(self, obj):
         if not obj or not obj.image:
             return "-"
         return format_html('<img class="mp-image-preview" src="{}" alt="" />', obj.image.url)
+
+    @admin.display(description="Storefront checklist")
+    def storefront_checklist(self, obj):
+        checks = storefront_checks(obj)
+        return render_to_string("admin/shop/product/storefront_checklist.html", {
+            "checks": checks,
+            "passed": sum(check["ok"] for check in checks),
+            "total": len(checks),
+        })
 
 
 class OrderItemInline(admin.TabularInline):

@@ -1,0 +1,49 @@
+{% load i18n %}
+{% comment %}
+  The product as a storefront grid card (frontend ProductCard.tsx): 4:3
+  photo with the badge top right, category and shop, name, rating, price and
+  the struck-through old price exactly as the card prints them. Drawn from
+  the saved product; admin_product_form.js keeps it in step with the form as
+  you type, pick photos or change the category or shop. Rating and the cart
+  button are illustrative only.
+{% endcomment %}
+<section class="mp-side-card mp-preview" aria-labelledby="mp-preview-heading" data-mp-preview>
+  <h2 id="mp-preview-heading" class="mp-side-card-title">{% translate "Storefront preview" %}</h2>
+
+  <div class="mp-preview-card" aria-hidden="true">
+    <div class="mp-preview-media">
+      <img data-mp-preview-img alt=""{% if mp_product.cover_url %} src="{{ mp_product.cover_url }}"{% else %} hidden{% endif %}>
+      <span class="mp-preview-noimg" data-mp-preview-noimg{% if mp_product.cover_url %} hidden{% endif %}>
+        <span class="material-symbols-outlined">image</span>
+        {% translate "No main photo" %}
+      </span>
+      <span class="mp-preview-badge" data-mp-preview-badge data-badge="{{ original.badge|upper }}"{% if not original.badge %} hidden{% endif %}>{{ original.badge|upper }}</span>
+      <span class="mp-preview-fav material-symbols-outlined">favorite</span>
+    </div>
+    <div class="mp-preview-body">
+      <div class="mp-preview-meta">
+        <span class="mp-preview-category" data-mp-preview-category>{{ original.category.name|default:"General" }}</span>
+        <span class="mp-preview-shop"{% if not original.shop %} hidden{% endif %} data-mp-preview-shop-wrap>
+          <span class="material-symbols-outlined">storefront</span>
+          <span data-mp-preview-shop>{{ original.shop.name }}</span>
+        </span>
+      </div>
+      <p class="mp-preview-name" data-mp-preview-name>{{ original.name|default:_("Product name") }}</p>
+      <p class="mp-preview-stars">
+        <span class="material-symbols-outlined">star</span><span class="material-symbols-outlined">star</span><span class="material-symbols-outlined">star</span><span class="material-symbols-outlined">star</span><span class="material-symbols-outlined">star</span>
+      </p>
+      <div class="mp-preview-foot">
+        <p class="mp-preview-prices">
+          <span class="mp-preview-price" data-mp-preview-price>৳{{ original.price|default:"0.00" }}</span>
+          <s class="mp-preview-old" data-mp-preview-old{% if not original.old_price %} hidden{% endif %}>৳{{ original.old_price }}</s>
+        </p>
+        <span class="mp-preview-cart">
+          <span class="material-symbols-outlined">add_shopping_cart</span>
+          {% translate "Add to Cart" %}
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <p class="mp-preview-note">{% translate "Updates as you edit. Rating and cart button are for illustration." %}</p>
+</section>

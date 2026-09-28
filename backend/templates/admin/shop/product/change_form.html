@@ -1,0 +1,211 @@
+{% extends "admin/change_form.html" %}
+{% load i18n admin_urls static %}
+
+{% comment %}
+  Resolves for shop.Product only (admin/<app_label>/<model_name>/change_form.html).
+
+  The form is still ProductAdmin's own fieldsets and gallery inline; this
+  template only arranges them:
+
+    * On the change page a summary header replaces the page title and the
+      object tools: photo, name, status / storefront / stock / badge chips,
+      category, shop and seller, related-page links and a stats strip. It
+      reads `mp_saved`, the stored product, so a failed save does not show
+      the rejected values as if they were live.
+    * Two columns from 1280px: the cards in the main column, "mp-side" cards
+      and the storefront preview (which sticks while the page scrolls) on
+      the right. Below that the side cards follow the main ones, paired.
+    * The "mp-media" fieldset is drawn by photos_card.html, which puts the
+      gallery inline inside it, so inline_field_sets is emptied here.
+
+  mp_saved, mp_product and mp_product_data come from
+  ProductAdmin.render_change_form.
+  Styles: static/css/admin_product_form.css. Live behaviour (photo previews,
+  adding / reordering gallery photos, checklist, preview, price hint, badge
+  chips): static/js/admin_product_form.js. Both are progressive: without JS
+  the form still posts exactly as Django's stock one.
+{% endcomment %}
+
+{% block extrastyle %}{{ block.super }}
+<link rel="stylesheet" href="{% static 'css/admin_product_form.css' %}">
+{% endblock %}
+
+{% block extrahead %}{{ block.super }}
+{{ mp_product_data|json_script:"mp-product-data" }}
+<script src="{% static 'js/admin_product_form.js' %}" defer></script>
+{% endblock %}
+
+{% block content_title %}{% if not change %}{{ block.super }}{% endif %}{% endblock %}
+{% block content_subtitle %}{% if not change %}{{ block.super }}{% endif %}{% endblock %}
+
+{# History and the storefront link move into the header. #}
+{% block object-tools %}{% if not change %}{{ block.super }}{% endif %}{% endblock %}
+
+{% block form_top %}{{ block.super }}
+{% if change and mp_saved %}
+  <header class="mp-profile mp-product-hero">
+    <div class="mp-profile-top">
+      <div class="mp-profile-id">
+        {% if mp_product.thumb_url %}
+          <a class="mp-product-thumb" href="{{ mp_product.thumb_url }}" target="_blank" rel="noopener"
+             title="{% translate 'Open the photo in a new tab' %}">
+            <img src="{{ mp_product.thumb_url }}" alt="{{ mp_saved.name }}">
+          </a>
+        {% else %}
+          <span class="mp-product-thumb is-empty" aria-hidden="true">
+            <span class="material-symbols-outlined">image</span>
+          </span>
+        {% endif %}
+
+        <div class="mp-profile-text">
+          <p class="mp-profile-eyebrow">{% translate "Product" %} &middot; #{{ mp_saved.pk }}</p>
+          <h1 class="mp-profile-name">{{ mp_saved.name }}</h1>
+          <div class="mp-profile-chips">
+            <span class="mp-profile-status is-{{ mp_saved.status|lower }}">
+              <span class="material-symbols-outlined" aria-hidden="true">{% if mp_saved.status == "PUBLISHED" %}check_circle{% elif mp_saved.status == "APPROVED" %}verified{% elif mp_saved.status == "SUBMITTED" %}hourglass_top{% elif mp_saved.status == "REJECTED" %}cancel{% elif mp_saved.status == "UNPUBLISHED" %}visibility_off{% else %}edit_note{% endif %}</span>
+              {{ mp_saved.get_status_display }}
+            </span>
+            {% if mp_product.is_live %}
+              <span class="mp-profile-chip mp-chip-live">
+                <span class="mp-live-dot" aria-hidden="true"></span>
+                {% translate "Live on storefront" %}
+              </span>
+            {% else %}
+              <span class="mp-profile-chip mp-chip-hidden">
+                <span class="material-symbols-outlined" aria-hidden="true">visibility_off</span>
+                {% translate "Hidden from storefront" %}
+              </span>
+            {% endif %}
+            <span class="mp-profile-chip mp-chip-stock is-{{ mp_product.stock_state }}">
+              <span class="material-symbols-outlined" aria-hidden="true">inventory_2</span>
+              {% if mp_product.stock_state == "out" %}{% translate "Out of stock" %}{% elif mp_product.stock_state == "low" %}{% blocktranslate with n=mp_product.available %}Low stock &middot; {{ n }} left{% endblocktranslate %}{% else %}{% blocktranslate with n=mp_product.available %}In stock &middot; {{ n }}{% endblocktranslate %}{% endif %}
+            </span>
+            {% if mp_saved.badge %}
+              <span class="mp-profile-chip mp-chip-badge">
+                <span class="material-symbols-outlined" aria-hidden="true">sell</span>
+                {{ mp_saved.badge|upper }}
+              </span>
+            {% endif %}
+          </div>
+          <ul class="mp-profile-contact">
+            <li>
+              <span class="material-symbols-outlined" aria-hidden="true">category</span>
+              {% if perms.shop.view_category %}
+                <a href="{% url 'admin:shop_category_change' mp_saved.category_id %}">{{ mp_saved.category.name }}</a>
+              {% else %}{{ mp_saved.category.name }}{% endif %}
+            </li>
+            {% if mp_saved.shop %}
+              <li>
+                <span class="material-symbols-outlined" aria-hidden="true">storefront</span>
+                {% if perms.shops.view_shop %}
+                  <a href="{% url 'admin:shops_shop_change' mp_saved.shop_id %}">{{ mp_saved.shop.name }}</a>
+                {% else %}{{ mp_saved.shop.name }}{% endif %}
+              </li>
+            {% else %}
+              <li class="is-empty">
+                <span class="material-symbols-outlined" aria-hidden="true">storefront</span>
+                {% translate "No shop" %}
+              </li>
+            {% endif %}
+            {% if mp_product.seller %}
+              <li>
+                <span class="material-symbols-outlined" aria-hidden="true">badge</span>
+                {% if perms.sellers.view_sellerprofile %}
+                  <a href="{% url 'admin:sellers_sellerprofile_change' mp_product.seller.pk %}">{{ mp_product.seller.business_name }}</a>
+                {% else %}{{ mp_product.seller.business_name }}{% endif %}
+              </li>
+            {% endif %}
+          </ul>
+        </div>
+      </div>
+
+      {% if not is_popup %}
+        <nav class="mp-profile-links" aria-label="{% translate 'Related pages' %}">
+          {% if mp_product.storefront_url %}
+            <a class="mp-profile-btn mp-btn-primary" href="{{ mp_product.storefront_url }}" target="_blank" rel="noopener">
+              <span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>
+              {% translate "View on storefront" %}
+            </a>
+          {% endif %}
+          {% if mp_product.inventory and perms.shop.view_productinventory %}
+            <a class="mp-profile-btn" href="{% url 'admin:shop_productinventory_change' mp_product.inventory.pk %}">
+              <span class="material-symbols-outlined" aria-hidden="true">inventory</span>
+              {% translate "Inventory" %}
+            </a>
+          {% endif %}
+          {% url opts|admin_urlname:'history' mp_saved.pk|admin_urlquote as history_url %}
+          <a class="mp-profile-btn" href="{% add_preserved_filters history_url %}">
+            <span class="material-symbols-outlined" aria-hidden="true">history</span>
+            {% translate "History" %}
+          </a>
+        </nav>
+      {% endif %}
+    </div>
+
+    {% if mp_saved.status == "REJECTED" and mp_saved.rejection_reason %}
+      <p class="mp-profile-notice">
+        <span class="material-symbols-outlined" aria-hidden="true">cancel</span>
+        <span><b>{% translate "Rejected" %}{% if mp_saved.reviewed_at %} {{ mp_saved.reviewed_at|date:"j M Y" }}{% endif %}:</b> {{ mp_saved.rejection_reason }}</span>
+      </p>
+    {% endif %}
+
+    <dl class="mp-profile-stats mp-product-stats">
+      <div>
+        <dt>{% translate "Price" %}</dt>
+        <dd>
+          ৳{{ mp_saved.price|floatformat:"2g" }}
+          {% if mp_saved.discount_percent %}
+            <span class="mp-stat-sub"><s>৳{{ mp_saved.old_price|floatformat:"2g" }}</s> &middot; {{ mp_saved.discount_percent }}% {% translate "off" %}</span>
+          {% endif %}
+        </dd>
+      </div>
+      <div>
+        <dt>{% translate "Available" %}</dt>
+        <dd>{{ mp_product.available }}</dd>
+      </div>
+      <div>
+        <dt>{% translate "Reserved" %}</dt>
+        <dd>{% if mp_product.inventory %}{{ mp_product.inventory.reserved_quantity }}{% else %}<span class="is-empty">&mdash;</span>{% endif %}</dd>
+      </div>
+      <div>
+        <dt>{% translate "Sold" %}</dt>
+        <dd>{% if mp_product.inventory %}{{ mp_product.inventory.sold_quantity }}{% else %}<span class="is-empty">&mdash;</span>{% endif %}</dd>
+      </div>
+      <div>
+        <dt>{% translate "Photos" %}</dt>
+        <dd>{{ mp_product.photo_count }}</dd>
+      </div>
+      <div>
+        <dt>{% translate "Last updated" %}</dt>
+        <dd class="mp-stat-date">{{ mp_saved.updated_at|date:"j M Y" }}</dd>
+      </div>
+    </dl>
+  </header>
+{% endif %}
+{% endblock %}
+
+{% block field_sets %}
+<div class="mp-product-layout">
+  <div class="mp-product-main">
+    {% for fieldset in adminform %}
+      {% if "mp-media" in fieldset.classes %}
+        {% include "admin/shop/product/photos_card.html" %}
+      {% elif "mp-side" not in fieldset.classes %}
+        {% include "admin/includes/fieldset.html" with heading_level=2 prefix="fieldset" id_prefix=0 id_suffix=forloop.counter0 %}
+      {% endif %}
+    {% endfor %}
+  </div>
+
+  <aside class="mp-product-side" aria-label="{% translate 'Visibility and preview' %}">
+    {% for fieldset in adminform %}
+      {% if "mp-side" in fieldset.classes %}
+        {% include "admin/includes/fieldset.html" with heading_level=2 prefix="fieldset" id_prefix=0 id_suffix=forloop.counter0 %}
+      {% endif %}
+    {% endfor %}
+    {% include "admin/shop/product/storefront_preview.html" %}
+  </aside>
+</div>
+{% endblock %}
+
+{# Drawn inside the Photos card instead (photos_card.html). #}
+{% block inline_field_sets %}{% endblock %}

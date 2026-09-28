@@ -1,0 +1,1541 @@
+/* ==========================================================================
+   PRODUCT FORM  (templates/admin/shop/product/change_form.html)
+
+   Loaded by that template only, after japanese_admin.css, whose section 10
+   (mp-form cards) and section 11 (.mp-profile header) this builds on.
+
+     1. Tokens
+     2. Two-column layout
+     3. Summary header
+     4. Product details
+     5. Photos card: main photo
+     6. Photos card: gallery tiles
+     7. Pricing hint and badge chips
+     8. Side column: Visibility and checklist
+     9. Side column: storefront preview
+    10. Save bar
+    11. Small screens
+
+   Every rule is scoped under #product_form. The id also lifts these rules
+   over section 10's `fieldset.module.mp-form label / input` rules, which
+   would otherwise restyle every label and input in the Photos card; where
+   those carry !important, so do the overrides here.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. TOKENS
+   Colours not in the --jp-* palette: amber for "needs attention", the
+   storefront's primary for the preview's cart button, and the storefront's
+   badge colours (frontend/src/app/globals.css). Each has a dark twin, in
+   both the explicit and the OS-dark form, like section 11's --mp-info.
+   -------------------------------------------------------------------------- */
+#product_form {
+  --mp-warn: #B45309;
+  --mp-warn-bg: rgba(245, 158, 11, 0.14);
+  --mp-warn-line: rgba(245, 158, 11, 0.40);
+  --mp-primary: #21486B;
+  --mp-on-primary: #F7F4ED;
+  --mp-badge-new: #257C88;
+  --mp-badge-hot: #A93A28;
+  --mp-badge-top: #593066;
+  --mp-badge-default: #DDD5C4;
+  --mp-on-badge-default: #24313D;
+  --mp-photo-pill: rgba(255, 255, 255, 0.94);
+  --mp-photo-pill-ink: #19232D;
+}
+
+[data-theme="dark"] #product_form {
+  --mp-warn: #FBBF24;
+  --mp-warn-bg: rgba(251, 191, 36, 0.12);
+  --mp-warn-line: rgba(251, 191, 36, 0.32);
+  --mp-primary: #4C82AF;
+  --mp-on-primary: #0C151C;
+  --mp-badge-new: #38A0AE;
+  --mp-badge-hot: #E25E49;
+  --mp-badge-top: #965FB0;
+  --mp-badge-default: #283642;
+  --mp-on-badge-default: #CBD3D8;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) #product_form {
+    --mp-warn: #FBBF24;
+    --mp-warn-bg: rgba(251, 191, 36, 0.12);
+    --mp-warn-line: rgba(251, 191, 36, 0.32);
+    --mp-primary: #4C82AF;
+    --mp-on-primary: #0C151C;
+    --mp-badge-new: #38A0AE;
+    --mp-badge-hot: #E25E49;
+    --mp-badge-top: #965FB0;
+    --mp-badge-default: #283642;
+    --mp-on-badge-default: #CBD3D8;
+  }
+}
+
+/* Author display rules below would otherwise beat the `hidden` attribute. */
+#product_form [hidden] {
+  display: none !important;
+}
+
+/* Visually hidden, still focusable and announced. Covers the real inputs the
+   photo buttons wrap: Django renders the gallery ones without our class. */
+#product_form .mp-sr,
+#product_form .mp-tile input[type="file"],
+#product_form .mp-tile-bin input[type="checkbox"] {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  min-height: 0 !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  white-space: nowrap !important;
+}
+
+/* --------------------------------------------------------------------------
+   2. TWO-COLUMN LAYOUT
+   Cards on the left; Visibility and the preview on the right. The side
+   column stretches to the main column's height so the preview can stick
+   while the long main column scrolls past it.
+   -------------------------------------------------------------------------- */
+#product_form .mp-product-main,
+#product_form .mp-product-side {
+  min-width: 0;
+}
+
+/* One column below 1280px: Visibility and the preview share a row after the
+   main cards, instead of the preview stretching its 4:3 photo full width. */
+@media (min-width: 768px) and (max-width: 1279px) {
+  #product_form .mp-product-side {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 20px;
+    align-items: start;
+  }
+}
+
+@media (min-width: 1280px) {
+  #product_form .mp-product-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) clamp(300px, 30%, 360px);
+    column-gap: 20px;
+    align-items: stretch;
+  }
+
+  #product_form .mp-preview {
+    position: sticky;
+    top: 72px;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   3. SUMMARY HEADER  (.mp-profile.mp-product-hero)
+   Section 11's seller card, with a photo instead of the initial avatar and
+   a six-cell stats strip.
+   -------------------------------------------------------------------------- */
+#product_form .mp-product-thumb {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 88px;
+  height: 88px;
+  border: 1px solid var(--jp-border-line);
+  border-radius: 18px;
+  background: var(--jp-bg-surface-sunken);
+  overflow: hidden;
+  box-shadow: 0 8px 18px rgba(19, 43, 64, 0.14);
+}
+
+#product_form .mp-product-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.25s ease;
+}
+
+#product_form a.mp-product-thumb:hover img {
+  transform: scale(1.06);
+}
+
+#product_form a.mp-product-thumb:focus-visible {
+  outline: 2px solid var(--jp-kinari-gold);
+  outline-offset: 2px;
+}
+
+#product_form .mp-product-thumb.is-empty .material-symbols-outlined {
+  font-size: 34px;
+  color: var(--jp-text-ink-muted);
+}
+
+/* Product statuses (buckets as audit.admin_mixins.STATUS_COLORS). */
+#product_form .mp-profile-status.is-published {
+  border-color: color-mix(in srgb, var(--jp-tokiwa-green) 35%, transparent);
+  background: var(--jp-tokiwa-green-bg);
+  color: var(--jp-tokiwa-green);
+}
+
+#product_form .mp-profile-status.is-draft,
+#product_form .mp-profile-status.is-submitted {
+  border-color: var(--mp-warn-line);
+  background: var(--mp-warn-bg);
+  color: var(--mp-warn);
+}
+
+#product_form .mp-profile-status.is-unpublished {
+  border-color: color-mix(in srgb, var(--jp-shu-vermilion) 35%, transparent);
+  background: var(--jp-shu-vermilion-bg);
+  color: var(--jp-shu-vermilion);
+}
+
+#product_form .mp-chip-live {
+  color: var(--jp-tokiwa-green);
+}
+
+#product_form .mp-live-dot {
+  width: 8px;
+  height: 8px;
+  margin: 0 3px 0 4px;
+  border-radius: 50%;
+  background: var(--jp-tokiwa-green);
+  box-shadow: 0 0 0 3px var(--jp-tokiwa-green-bg);
+}
+
+#product_form .mp-chip-hidden {
+  color: var(--jp-text-ink-muted);
+}
+
+#product_form .mp-chip-stock.is-ok .material-symbols-outlined {
+  color: var(--jp-tokiwa-green);
+}
+
+#product_form .mp-chip-stock.is-low {
+  border-color: var(--mp-warn-line);
+  background: var(--mp-warn-bg);
+  color: var(--mp-warn);
+}
+
+#product_form .mp-chip-stock.is-out {
+  border-color: color-mix(in srgb, var(--jp-shu-vermilion) 35%, transparent);
+  background: var(--jp-shu-vermilion-bg);
+  color: var(--jp-shu-vermilion);
+}
+
+#product_form .mp-chip-badge {
+  border-color: color-mix(in srgb, var(--jp-kinari-gold) 40%, transparent);
+  background: var(--jp-kinari-gold-bg);
+  color: var(--jp-kinari-gold);
+  letter-spacing: 0.06em;
+}
+
+#product_form ul.mp-profile-contact li.is-empty {
+  color: var(--jp-text-ink-muted);
+}
+
+#product_form a.mp-profile-btn.mp-btn-primary {
+  border-color: transparent;
+  background: var(--jp-kinari-gold);
+  color: #19232D !important;
+  box-shadow: 0 4px 12px rgba(186, 134, 48, 0.28);
+}
+
+#product_form a.mp-profile-btn.mp-btn-primary .material-symbols-outlined {
+  color: inherit;
+}
+
+#product_form a.mp-profile-btn.mp-btn-primary:hover {
+  background: var(--jp-kinari-gold-hover);
+}
+
+#product_form dl.mp-product-stats {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+#product_form dl.mp-product-stats > div {
+  padding: 14px 20px;
+}
+
+#product_form .mp-stat-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--jp-text-ink-muted);
+}
+
+#product_form dl.mp-product-stats dd.mp-stat-date {
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+@media (max-width: 1100px) {
+  #product_form dl.mp-product-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  #product_form dl.mp-product-stats > div:nth-child(3n + 1) {
+    border-left: 0;
+  }
+
+  #product_form dl.mp-product-stats > div:nth-child(n + 4) {
+    border-top: 1px solid var(--jp-border-line);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   4. PRODUCT DETAILS
+   Category and Shop carry up to four related-object buttons each; beside a
+   neighbour, the select was left too narrow to read a shop's name.
+   -------------------------------------------------------------------------- */
+#product_form .mp-product-main fieldset.mp-form .form-row.field-category,
+#product_form .mp-product-main fieldset.mp-form .form-row.field-shop {
+  grid-column: 1 / -1;
+}
+
+/* --------------------------------------------------------------------------
+   5. PHOTOS CARD: MAIN PHOTO  (admin/widgets/mp_product_photo.html)
+   -------------------------------------------------------------------------- */
+#product_form fieldset.mp-media h2 .mp-count {
+  margin-left: auto;
+  padding: 2px 10px;
+  border: 1px solid var(--jp-border-line);
+  border-radius: 999px;
+  background: var(--jp-bg-surface);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--jp-text-ink-muted);
+}
+
+#product_form fieldset.mp-media h2 .mp-count:empty {
+  display: none;
+}
+
+#product_form .mp-media-body {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 20px 28px;
+  padding: 14px 0 18px;
+}
+
+#product_form .mp-media-cover {
+  flex: 0 1 260px;
+  min-width: 220px;
+}
+
+#product_form .mp-media-gallery {
+  flex: 1 1 300px;
+  min-width: 0;
+}
+
+/* View-only: current_image in place of the widget, at the widget's size. */
+#product_form .mp-media-field .mp-image-preview {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  object-fit: contain;
+  border-radius: 14px;
+}
+
+#product_form .mp-media-field ul.errorlist {
+  margin: 0 0 10px !important;
+}
+
+#product_form .mp-cover-frame {
+  position: relative;
+  aspect-ratio: 1;
+  border: 1px solid var(--jp-border-line);
+  border-radius: 14px;
+  background:
+    radial-gradient(circle at 50% 40%, var(--jp-bg-surface), var(--jp-bg-surface-sunken) 70%);
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+#product_form .mp-cover:not(.has-photo):not(.is-changed) .mp-cover-frame {
+  border: 1.5px dashed color-mix(in srgb, var(--jp-text-ink-muted) 45%, transparent);
+}
+
+#product_form .mp-cover-frame.is-drop {
+  border-color: var(--jp-kinari-gold);
+  box-shadow: 0 0 0 4px var(--jp-kinari-gold-bg);
+}
+
+/* Contain, not cover: the whole photo, uncropped. The preview card on the
+   right shows the storefront's 4:3 crop. */
+#product_form .mp-cover-img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  transition: opacity 0.2s ease, filter 0.2s ease;
+}
+
+#product_form .mp-cover.is-cleared .mp-cover-img {
+  opacity: 0.28;
+  filter: grayscale(1);
+}
+
+#product_form .mp-cover-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 20px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--jp-text-ink-muted);
+}
+
+#product_form .mp-cover-empty .material-symbols-outlined {
+  margin-bottom: 6px;
+  font-size: 40px;
+  color: var(--jp-kinari-gold);
+}
+
+#product_form .mp-cover-empty b {
+  font-size: 13px;
+  color: var(--jp-text-ink);
+}
+
+#product_form .mp-cover-tag {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px 3px 7px;
+  border-radius: 999px;
+  background: var(--jp-kinari-gold);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #19232D;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18);
+}
+
+#product_form .mp-cover-tag .material-symbols-outlined {
+  font-size: 14px;
+  font-variation-settings: "FILL" 1;
+}
+
+#product_form .mp-cover-state {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 10px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--jp-tokiwa-green);
+  font-size: 11.5px;
+  font-weight: 700;
+  text-align: center;
+  color: #FFFFFF;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+#product_form .mp-cover.is-cleared .mp-cover-state {
+  background: var(--jp-shu-vermilion);
+}
+
+#product_form .mp-cover-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+#product_form .mp-cover-actions .mp-btn {
+  flex: 1 1 0;
+  justify-content: center;
+}
+
+/* Open full size: a round button in the frame's top-right corner. */
+#product_form a.mp-cover-open {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+
+/* It opens the stored photo, so it goes once that is replaced or removed. */
+#product_form .mp-cover.is-changed .mp-cover-open,
+#product_form .mp-cover.is-cleared .mp-cover-open {
+  display: none !important;
+}
+
+/* Photo buttons. Real <label>s around their inputs, hence the !important
+   against section 10's label rule. */
+#product_form .mp-btn {
+  position: relative;
+  display: inline-flex !important;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  height: 34px;
+  padding: 0 12px !important;
+  border: 1px solid var(--jp-border-line);
+  border-radius: 8px;
+  background: var(--jp-bg-surface);
+  font-size: 12.5px !important;
+  font-weight: 700 !important;
+  line-height: 1;
+  color: var(--jp-text-ink) !important;
+  text-decoration: none !important;
+  cursor: pointer;
+  user-select: none;
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+#product_form .mp-btn .material-symbols-outlined {
+  font-size: 17px;
+  color: var(--jp-text-ink-muted);
+}
+
+#product_form .mp-btn:hover {
+  border-color: var(--jp-kinari-gold);
+  background: var(--jp-kinari-gold-bg);
+}
+
+#product_form .mp-btn-danger:hover {
+  border-color: var(--jp-shu-vermilion);
+  background: var(--jp-shu-vermilion-bg);
+}
+
+#product_form .mp-btn-danger:has(input:checked) {
+  border-color: var(--jp-shu-vermilion);
+  background: var(--jp-shu-vermilion-bg);
+  color: var(--jp-shu-vermilion) !important;
+}
+
+#product_form .mp-btn-danger:has(input:checked) .material-symbols-outlined {
+  color: inherit;
+}
+
+#product_form .mp-btn:focus-visible,
+#product_form .mp-btn:has(input:focus-visible),
+#product_form .mp-tile-action:focus-visible,
+#product_form .mp-tile-action:has(input:focus-visible),
+#product_form .mp-tile-bin:has(input:focus-visible),
+#product_form .mp-tile-pick:has(input:focus-visible),
+#product_form .mp-tile-add:has(input:focus-visible),
+#product_form .mp-badge-chip:focus-visible {
+  outline: 2px solid var(--jp-kinari-gold);
+  outline-offset: 2px;
+}
+
+#product_form .mp-cover-file {
+  margin: 8px 0 0 !important;
+  padding: 0 !important;
+  font-size: 11.5px !important;
+  line-height: 1.45;
+  color: var(--jp-text-ink-muted) !important;
+  overflow-wrap: anywhere;
+}
+
+/* --------------------------------------------------------------------------
+   6. PHOTOS CARD: GALLERY TILES  (admin/edit_inline/mp_gallery.html)
+   -------------------------------------------------------------------------- */
+#product_form .inline-group.mp-gallery {
+  margin: 0 !important;
+  padding: 0;
+  border-radius: 14px;
+  transition: box-shadow 0.15s ease;
+}
+
+#product_form .mp-gallery.is-drop {
+  box-shadow: 0 0 0 2px var(--jp-kinari-gold), 0 0 0 8px var(--jp-kinari-gold-bg);
+}
+
+#product_form .mp-gallery-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px 12px;
+  margin-bottom: 10px;
+}
+
+#product_form h3.mp-gallery-title {
+  margin: 0 !important;
+  padding: 0 !important;
+  background: none !important;
+  border: 0 !important;
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  color: var(--jp-text-ink-body) !important;
+}
+
+#product_form .mp-gallery-hint,
+#product_form .mp-gallery-empty {
+  margin: 0 !important;
+  padding: 0 !important;
+  font-size: 11.5px !important;
+  color: var(--jp-text-ink-muted) !important;
+}
+
+#product_form .mp-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px;
+}
+
+/* `.inline-group[data-inline-type=stacked] .inline-related` in Django's
+   responsive.css gives rows a 4px box and a top margin under 767px. */
+#product_form .mp-gallery .inline-related.mp-tile,
+#product_form .mp-gallery .mp-tile-add {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-width: 0;
+  margin: 0 !important;
+  border: 1px solid var(--jp-border-line);
+  border-radius: 12px;
+  background: var(--jp-bg-surface);
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+#product_form .mp-gallery .inline-related.mp-tile.empty-form {
+  display: none !important;
+}
+
+#product_form .mp-gallery .inline-related.mp-tile:hover {
+  border-color: color-mix(in srgb, var(--jp-kinari-gold) 55%, transparent);
+  box-shadow: 0 6px 18px -6px rgba(0, 0, 0, 0.18);
+}
+
+#product_form .mp-gallery .mp-tile.is-dragging {
+  opacity: 0.4;
+}
+
+#product_form .mp-gallery .mp-tile.has-errors {
+  border-color: var(--jp-shu-vermilion);
+}
+
+#product_form .mp-tile-media {
+  position: relative;
+  aspect-ratio: 1;
+  background: var(--jp-bg-surface-sunken);
+}
+
+#product_form .mp-tile-media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: opacity 0.2s ease, filter 0.2s ease;
+}
+
+/* Replace / Open over the photo: on hover or keyboard focus, always on touch. */
+#product_form .mp-tile-overlay {
+  position: absolute;
+  inset: auto 0 0 0;
+  display: flex;
+  justify-content: center;
+  gap: 6px;
+  padding: 22px 8px 8px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.55), transparent);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+#product_form .mp-tile:hover .mp-tile-overlay,
+#product_form .mp-tile:focus-within .mp-tile-overlay {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  #product_form .mp-tile-overlay {
+    opacity: 1;
+  }
+}
+
+#product_form .mp-tile-action {
+  display: inline-flex !important;
+  align-items: center;
+  justify-content: center;
+  width: 30px !important;
+  height: 30px;
+  padding: 0 !important;
+  border-radius: 50%;
+  background: var(--mp-photo-pill);
+  font-size: 11.5px !important;
+  font-weight: 700 !important;
+  color: var(--mp-photo-pill-ink) !important;
+  text-decoration: none !important;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+#product_form .mp-tile-action .material-symbols-outlined {
+  font-size: 16px;
+}
+
+#product_form .mp-tile-action:hover {
+  background: #FFFFFF;
+}
+
+/* Read-only tile: the whole photo opens full size. */
+#product_form .mp-tile-open {
+  position: absolute;
+  inset: 0;
+}
+
+/* Tool strip (first child): the bin on saved tiles, inlines.js's X on new ones. */
+#product_form .mp-tile-tools {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  display: flex;
+  gap: 6px;
+}
+
+#product_form .mp-tile-bin,
+#product_form .mp-tile-tools a.inline-deletelink {
+  display: grid !important;
+  place-items: center;
+  width: 30px !important;
+  height: 30px;
+  padding: 0 !important;
+  border-radius: 50%;
+  background: var(--mp-photo-pill);
+  color: var(--jp-shu-vermilion) !important;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+#product_form .mp-tile-bin .material-symbols-outlined {
+  font-size: 17px;
+}
+
+#product_form .mp-tile-bin:hover,
+#product_form .mp-tile-tools a.inline-deletelink:hover {
+  background: var(--jp-shu-vermilion);
+  color: #FFFFFF !important;
+}
+
+#product_form .mp-tile-bin .mp-bin-undo,
+#product_form .mp-tile-bin:has(input:checked) .mp-bin-remove {
+  display: none;
+}
+
+#product_form .mp-tile-bin:has(input:checked) .mp-bin-undo {
+  display: inline;
+}
+
+/* inlines.js writes a text link ("Remove") with Django's background icon. */
+#product_form .mp-tile-tools a.inline-deletelink {
+  float: none;
+  margin: 0;
+  text-indent: 0;
+  font-size: 0;
+  background-image: none;
+}
+
+#product_form .mp-tile-tools a.inline-deletelink::before {
+  content: "close";
+  font-family: "Material Symbols Outlined";
+  font-size: 18px;
+  line-height: 1;
+}
+
+#product_form .mp-tile-flag {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 1;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--jp-kinari-gold);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #19232D;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+/* New tile without a photo yet: the whole square picks one. */
+#product_form .mp-tile-pick {
+  position: absolute;
+  inset: 0;
+  display: flex !important;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 10px !important;
+  border: 1.5px dashed color-mix(in srgb, var(--jp-text-ink-muted) 45%, transparent);
+  border-radius: 11px 11px 0 0;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  color: var(--jp-text-ink-muted) !important;
+  text-align: center;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+#product_form .mp-tile-pick .material-symbols-outlined {
+  font-size: 28px;
+  color: var(--jp-kinari-gold);
+}
+
+#product_form .mp-tile.has-photo .mp-tile-pick {
+  border: 0;
+  opacity: 0;
+}
+
+#product_form .mp-tile.has-photo .mp-tile-pick:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.45);
+  color: #FFFFFF !important;
+}
+
+#product_form .mp-tile-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--jp-border-line);
+}
+
+#product_form .mp-tile-grip {
+  margin-left: -4px;
+  font-size: 18px;
+  color: var(--jp-text-ink-muted);
+  cursor: grab;
+}
+
+#product_form label.mp-tile-pos,
+#product_form .mp-tile-pos-text {
+  flex: 1;
+  text-align: right;
+  font-size: 10.5px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--jp-text-ink-muted) !important;
+}
+
+/* A "#" before the Position input; the word itself is for screen readers. */
+#product_form label.mp-tile-pos {
+  font-size: 13px !important;
+}
+
+#product_form fieldset.mp-form .mp-tile-foot input[type="number"] {
+  flex: none;
+  width: 56px !important;
+  height: 30px !important;
+  padding: 0 6px !important;
+  border-radius: 7px !important;
+  font-weight: 700 !important;
+  text-align: center;
+}
+
+/* Marked for removal: faded photo, a note, a red outline. */
+#product_form .mp-tile-removed {
+  position: absolute;
+  top: 50%;
+  left: 8px;
+  right: 8px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0 !important;
+  padding: 5px 8px !important;
+  border-radius: 8px;
+  background: var(--jp-shu-vermilion);
+  font-size: 11px !important;
+  font-weight: 700;
+  line-height: 1.3;
+  text-align: center;
+  color: #FFFFFF !important;
+  transform: translateY(-80%);
+}
+
+#product_form .mp-tile:has(.mp-tile-bin input:checked) {
+  border-color: var(--jp-shu-vermilion);
+}
+
+#product_form .mp-tile:has(.mp-tile-bin input:checked) .mp-tile-media img {
+  opacity: 0.3;
+  filter: grayscale(1);
+}
+
+#product_form .mp-tile:has(.mp-tile-bin input:checked) .mp-tile-overlay {
+  display: none;
+}
+
+#product_form .mp-tile:has(.mp-tile-bin input:checked) .mp-tile-removed {
+  display: flex;
+}
+
+#product_form .mp-tile-note {
+  margin: 0 !important;
+  padding: 0 10px 10px !important;
+  font-size: 11px !important;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--mp-warn) !important;
+}
+
+#product_form .mp-tile.has-photo .mp-tile-note {
+  display: none;
+}
+
+#product_form .mp-tile-errors {
+  padding: 0 10px 10px;
+}
+
+#product_form .mp-tile-errors ul.errorlist {
+  margin: 0 !important;
+}
+
+/* The "Add photos" tile: a label around a multiple file picker. Tiles carry
+   an inline `order` (their Position), so it pins itself after them. */
+#product_form .mp-gallery .mp-tile-add {
+  order: 100001;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 180px;
+  padding: 16px !important;
+  border: 1.5px dashed color-mix(in srgb, var(--jp-text-ink-muted) 45%, transparent);
+  background: var(--jp-bg-surface-sunken);
+  font-size: 11.5px !important;
+  font-weight: 600 !important;
+  text-align: center;
+  color: var(--jp-text-ink-muted) !important;
+  cursor: pointer;
+}
+
+#product_form .mp-tile-add .material-symbols-outlined {
+  margin-bottom: 4px;
+  font-size: 32px;
+  color: var(--jp-kinari-gold);
+}
+
+#product_form .mp-tile-add b {
+  font-size: 13px;
+  color: var(--jp-text-ink);
+}
+
+#product_form .mp-gallery .mp-tile-add:hover {
+  border-color: var(--jp-kinari-gold);
+  background: var(--jp-kinari-gold-bg);
+}
+
+/* inlines.js's own add row: kept for the script to click, shown only
+   where files cannot be moved between inputs. */
+#product_form .mp-gallery .add-row {
+  display: none !important;
+}
+
+#product_form .mp-gallery.mp-gallery-fallback .add-row {
+  display: flex !important;
+  order: 100002;
+  grid-column: 1 / -1;
+  padding: 0 !important;
+  border: 0 !important;
+  background: none !important;
+}
+
+/* --------------------------------------------------------------------------
+   7. PRICING HINT AND BADGE CHIPS  (added by admin_product_form.js)
+   -------------------------------------------------------------------------- */
+#product_form .mp-price-hint {
+  margin: 8px 0 0 !important;
+  padding: 7px 10px !important;
+  border-radius: 8px;
+  font-size: 12px !important;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+#product_form .mp-price-hint[data-tone="muted"] {
+  padding: 0 !important;
+  font-weight: 500;
+  color: var(--jp-text-ink-muted);
+}
+
+#product_form .mp-price-hint[data-tone="ok"] {
+  background: var(--jp-tokiwa-green-bg);
+  color: var(--jp-text-ink);
+}
+
+#product_form .mp-price-hint[data-tone="ok"] s {
+  color: var(--jp-text-ink-muted);
+}
+
+#product_form .mp-price-hint[data-tone="warn"] {
+  background: var(--mp-warn-bg);
+  color: var(--mp-warn);
+}
+
+#product_form .mp-badge-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+#product_form button.mp-badge-chip {
+  --chip: var(--jp-text-ink-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  margin: 0;
+  padding: 0 9px;
+  border: 1px solid var(--jp-border-line);
+  border-radius: 999px;
+  background: var(--jp-bg-surface);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--jp-text-ink-body);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background-color 0.15s ease, color 0.15s ease;
+}
+
+#product_form button.mp-badge-chip::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--chip);
+}
+
+#product_form button.mp-badge-chip[data-badge=""]::before {
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--jp-text-ink-muted);
+  background: none;
+}
+
+#product_form button.mp-badge-chip[data-badge="NEW"] { --chip: var(--mp-badge-new); }
+#product_form button.mp-badge-chip[data-badge="HOT"] { --chip: var(--mp-badge-hot); }
+#product_form button.mp-badge-chip[data-badge="SALE"] { --chip: var(--jp-kinari-gold); }
+#product_form button.mp-badge-chip[data-badge="TOP"] { --chip: var(--mp-badge-top); }
+
+#product_form button.mp-badge-chip:hover {
+  border-color: var(--chip);
+}
+
+#product_form button.mp-badge-chip[aria-pressed="true"] {
+  border-color: var(--chip);
+  background: color-mix(in srgb, var(--chip) 14%, transparent);
+  color: var(--jp-text-ink);
+}
+
+/* --------------------------------------------------------------------------
+   8. SIDE COLUMN: VISIBILITY AND CHECKLIST
+   -------------------------------------------------------------------------- */
+
+/* One column. Section 10's grid keeps each column at least 280px, which
+   is wider than a side card's content box. */
+#product_form fieldset.module.mp-form.mp-side {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Active as a switch. Still the same checkbox; only its drawing changes. */
+#product_form .mp-side .flex-container.checkbox-row {
+  margin-top: 0;
+  min-height: 44px;
+  justify-content: space-between;
+  flex-direction: row-reverse !important;
+}
+
+#product_form .mp-side .checkbox-row input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--jp-text-ink-muted) 40%, transparent);
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+#product_form .mp-side .checkbox-row input[type="checkbox"]::before {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s ease;
+}
+
+#product_form .mp-side .checkbox-row input[type="checkbox"]:checked {
+  background: var(--jp-tokiwa-green);
+}
+
+#product_form .mp-side .checkbox-row input[type="checkbox"]:checked::before {
+  transform: translateX(16px);
+}
+
+#product_form .mp-side .checkbox-row input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--jp-kinari-gold);
+  outline-offset: 2px;
+}
+
+#product_form .mp-side .checkbox-row label.vCheckboxLabel {
+  flex: 1;
+  cursor: pointer;
+}
+
+/* The checklist is a read-only field: drop section 10's locked-input box. */
+#product_form .field-storefront_checklist .readonly {
+  display: block !important;
+  min-height: 0 !important;
+  margin-top: 8px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  background: none !important;
+  font-weight: 400 !important;
+}
+
+#product_form .field-storefront_checklist > div > .flex-container > label {
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--jp-text-ink-muted) !important;
+}
+
+#product_form .mp-checklist {
+  border: 1px solid color-mix(in srgb, var(--jp-shu-vermilion) 28%, transparent);
+  border-radius: 12px;
+  overflow: hidden;
+  transition: border-color 0.2s ease;
+}
+
+#product_form .mp-checklist.is-live {
+  border-color: color-mix(in srgb, var(--jp-tokiwa-green) 35%, transparent);
+}
+
+#product_form .mp-checklist-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 !important;
+  padding: 10px 12px !important;
+  background: var(--jp-shu-vermilion-bg);
+  font-size: 13px !important;
+  font-weight: 800;
+  color: var(--jp-shu-vermilion) !important;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+#product_form .mp-checklist-summary::before {
+  content: "visibility_off";
+  font-family: "Material Symbols Outlined";
+  font-size: 18px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+#product_form .mp-checklist.is-live .mp-checklist-summary {
+  background: var(--jp-tokiwa-green-bg);
+  color: var(--jp-tokiwa-green) !important;
+}
+
+#product_form .mp-checklist.is-live .mp-checklist-summary::before {
+  content: "storefront";
+}
+
+#product_form .mp-checklist-title {
+  flex: 1;
+}
+
+#product_form .mp-checklist-score {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--jp-bg-surface);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+#product_form ul.mp-checklist-list {
+  margin: 0 !important;
+  padding: 4px 0 !important;
+  list-style: none;
+}
+
+#product_form ul.mp-checklist-list li {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 6px 12px 6px 38px !important;
+  list-style: none !important;
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+
+#product_form ul.mp-checklist-list li + li {
+  border-top: 1px solid var(--jp-border-line-subtle);
+}
+
+#product_form ul.mp-checklist-list li::before {
+  position: absolute;
+  top: 6px;
+  left: 12px;
+  font-family: "Material Symbols Outlined";
+  font-size: 18px;
+  line-height: 1;
+  font-variation-settings: "FILL" 1;
+}
+
+#product_form ul.mp-checklist-list li.is-ok::before {
+  content: "check_circle";
+  color: var(--jp-tokiwa-green);
+}
+
+#product_form ul.mp-checklist-list li.is-fail::before {
+  content: "cancel";
+  color: var(--jp-shu-vermilion);
+}
+
+#product_form .mp-check-label {
+  font-weight: 600;
+  color: var(--jp-text-ink);
+}
+
+#product_form li.is-fail .mp-check-label {
+  color: var(--jp-shu-vermilion);
+}
+
+#product_form .mp-check-detail {
+  overflow: hidden;
+  font-size: 11.5px;
+  color: var(--jp-text-ink-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#product_form .mp-check-detail:empty {
+  display: none;
+}
+
+/* --------------------------------------------------------------------------
+   9. SIDE COLUMN: STOREFRONT PREVIEW  (storefront_preview.html)
+   A card in the mp-form look, holding a copy of the storefront grid card.
+   -------------------------------------------------------------------------- */
+#product_form .mp-side-card {
+  margin: 0 0 20px;
+  border: 1px solid var(--jp-border-line);
+  border-radius: 14px;
+  background: var(--jp-bg-surface);
+  box-shadow: var(--jp-card-shadow);
+  overflow: hidden;
+}
+
+#content #product_form h2.mp-side-card-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 !important;
+  padding: 14px 20px !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--jp-border-line) !important;
+  background: var(--jp-bg-surface-sunken) !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.08em !important;
+  text-transform: uppercase !important;
+  color: var(--jp-text-ink) !important;
+}
+
+#content #product_form h2.mp-side-card-title::before {
+  content: "";
+  flex: none;
+  width: 4px;
+  height: 14px;
+  border-radius: 2px;
+  background: var(--jp-kinari-gold);
+}
+
+#product_form .mp-preview-card {
+  margin: 16px 20px 0;
+  border: 1px solid var(--jp-border-line);
+  border-radius: 10px;
+  background: var(--jp-bg-surface);
+  overflow: hidden;
+  box-shadow: 0 2px 10px -4px rgba(0, 0, 0, 0.14);
+}
+
+#product_form .mp-preview-media {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: var(--jp-bg-surface-sunken);
+  overflow: hidden;
+}
+
+#product_form .mp-preview-media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+#product_form .mp-preview-noimg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--jp-text-ink-muted);
+}
+
+#product_form .mp-preview-noimg .material-symbols-outlined {
+  font-size: 36px;
+  opacity: 0.6;
+}
+
+#product_form .mp-preview-badge {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--mp-badge-default);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--mp-on-badge-default);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+#product_form .mp-preview-badge[data-badge="NEW"] { background: var(--mp-badge-new); color: #FFFFFF; }
+#product_form .mp-preview-badge[data-badge="HOT"] { background: var(--mp-badge-hot); color: #FFFFFF; }
+#product_form .mp-preview-badge[data-badge="SALE"] { background: var(--jp-kinari-gold); color: #16222E; }
+#product_form .mp-preview-badge[data-badge="TOP"] { background: var(--mp-badge-top); color: #FFFFFF; }
+
+#product_form .mp-preview-fav {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--mp-photo-pill);
+  font-size: 16px;
+  color: var(--mp-photo-pill-ink);
+}
+
+#product_form .mp-preview-body {
+  padding: 10px 12px 12px;
+}
+
+#product_form .mp-preview-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--jp-text-ink-muted);
+}
+
+#product_form .mp-preview-category {
+  overflow: hidden;
+  letter-spacing: 0.06em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+#product_form .mp-preview-shop {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  max-width: 55%;
+}
+
+#product_form .mp-preview-shop > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#product_form .mp-preview-shop .material-symbols-outlined {
+  font-size: 12px;
+}
+
+#product_form .mp-preview-name {
+  margin: 3px 0 0 !important;
+  padding: 0 !important;
+  overflow: hidden;
+  font-size: 12.5px !important;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--jp-text-ink) !important;
+}
+
+#product_form .mp-preview-stars {
+  display: flex;
+  margin: 4px 0 !important;
+  padding: 0 !important;
+  color: color-mix(in srgb, var(--jp-text-ink-muted) 55%, transparent);
+}
+
+#product_form .mp-preview-stars .material-symbols-outlined {
+  font-size: 13px;
+}
+
+#product_form .mp-preview-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--jp-border-line);
+}
+
+#product_form .mp-preview-prices {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 6px;
+  min-width: 0;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+#product_form .mp-preview-price {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--jp-text-ink);
+}
+
+#product_form .mp-preview-old {
+  font-size: 11px;
+  color: var(--jp-text-ink-muted);
+}
+
+#product_form .mp-preview-cart {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding: 5px 9px;
+  border-radius: 6px;
+  background: var(--mp-primary);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--mp-on-primary);
+}
+
+#product_form .mp-preview-cart .material-symbols-outlined {
+  font-size: 15px;
+}
+
+#product_form .mp-preview-note {
+  margin: 10px 20px 16px !important;
+  padding: 0 !important;
+  font-size: 11px !important;
+  line-height: 1.45;
+  color: var(--jp-text-ink-muted) !important;
+}
+
+/* --------------------------------------------------------------------------
+   10. SAVE BAR
+   Stays in reach at the bottom of the window while the form scrolls, and
+   settles into place at the end of the form. Delete sits apart, on the left.
+   -------------------------------------------------------------------------- */
+#product_form .submit-row {
+  position: sticky;
+  bottom: 12px;
+  z-index: 30;
+  flex-wrap: wrap;
+  margin-top: 4px;
+  box-shadow: 0 10px 30px -8px rgba(0, 0, 0, 0.28), var(--jp-card-shadow) !important;
+}
+
+#product_form .submit-row a.deletelink {
+  order: -1;
+  margin-right: auto !important;
+}
+
+/* --------------------------------------------------------------------------
+   11. SMALL SCREENS
+   -------------------------------------------------------------------------- */
+@media (max-width: 720px) {
+  #product_form .mp-product-thumb {
+    width: 64px;
+    height: 64px;
+    border-radius: 14px;
+  }
+
+  #product_form dl.mp-product-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  #product_form dl.mp-product-stats > div {
+    padding: 12px 18px;
+  }
+
+  #product_form dl.mp-product-stats > div:nth-child(n) {
+    border-left: 1px solid var(--jp-border-line);
+    border-top: 0;
+  }
+
+  #product_form dl.mp-product-stats > div:nth-child(odd) {
+    border-left: 0;
+  }
+
+  #product_form dl.mp-product-stats > div:nth-child(n + 3) {
+    border-top: 1px solid var(--jp-border-line);
+  }
+
+  #product_form .mp-media-cover {
+    flex-basis: 100%;
+  }
+
+  #product_form .mp-gallery-grid {
+    grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+    gap: 10px;
+  }
+}
+
+/* Django's responsive.css stacks the save buttons on a phone, which made
+   the pinned bar cover a third of the screen: it stays at the end there. */
+@media (max-width: 767px) {
+  #product_form .submit-row {
+    position: static;
+  }
+}

@@ -1,0 +1,23 @@
+{% load i18n %}
+{% comment %}
+  ProductAdmin.storefront_checklist: one row per condition of
+  Product.is_publicly_visible, as last saved. admin_product_form.js re-runs
+  the same checks as the Visibility, Category and Shop fields change, reading
+  the category and shop statuses from json_script "mp-product-data".
+  Row icons and colours come from the is-ok / is-fail classes (CSS).
+{% endcomment %}
+<div class="mp-checklist{% if passed == total %} is-live{% endif %}" data-mp-checklist>
+  <p class="mp-checklist-summary" data-mp-checklist-summary aria-live="polite">
+    <span class="mp-checklist-title" data-mp-checklist-title>{% if passed == total %}{% translate "Visible on the storefront" %}{% else %}{% translate "Hidden from the storefront" %}{% endif %}</span>
+    <span class="mp-checklist-score" data-mp-checklist-score>{{ passed }}/{{ total }}</span>
+  </p>
+  <ul class="mp-checklist-list">
+    {% for check in checks %}
+      <li class="{% if check.ok %}is-ok{% else %}is-fail{% endif %}" data-check="{{ check.key }}">
+        <span class="mp-check-label">{{ check.label }}</span>
+        <span class="mp-check-detail" data-check-detail>{{ check.detail }}</span>
+        <span class="mp-sr" data-check-state>{% if check.ok %}{% translate "passes" %}{% else %}{% translate "fails" %}{% endif %}</span>
+      </li>
+    {% endfor %}
+  </ul>
+</div>

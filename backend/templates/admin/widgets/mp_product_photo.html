@@ -1,0 +1,50 @@
+{% load i18n %}
+{% comment %}
+  ProductPhotoInput (shop/admin.py): the product's main photo as a preview
+  panel. The same two controls as Django's ClearableFileInput post from here
+  -- the file input `widget.name` and, on a saved photo of an optional field,
+  the `widget.checkbox_name` clear checkbox -- each wrapped in the button
+  that operates it, so both still work without JS. admin_product_form.js adds
+  the instant preview, drag-and-drop onto the frame, and unticks Remove when
+  a new file is picked (Django rejects a form that sends both).
+{% endcomment %}
+<div class="mp-cover{% if widget.is_initial %} has-photo{% endif %}" data-mp-cover>
+  <div class="mp-cover-frame" data-mp-cover-frame>
+    <img class="mp-cover-img" data-mp-cover-img alt="{% translate 'Main photo' %}"{% if widget.is_initial %} src="{{ widget.value.url }}"{% else %} hidden{% endif %}>
+    <div class="mp-cover-empty" data-mp-cover-empty{% if widget.is_initial %} hidden{% endif %}>
+      <span class="material-symbols-outlined" aria-hidden="true">add_photo_alternate</span>
+      <b>{% translate "Add the main photo" %}</b>
+      <span>{% translate "Drop an image here or choose Upload." %}</span>
+    </div>
+    <span class="mp-cover-tag">
+      <span class="material-symbols-outlined" aria-hidden="true">star</span>
+      {% translate "Main photo" %}
+    </span>
+    {% if widget.is_initial %}
+      <a class="mp-tile-action mp-cover-open" href="{{ widget.value.url }}" target="_blank" rel="noopener" title="{% translate 'Open the photo in a new tab' %}">
+        <span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>
+        <span class="mp-sr">{% translate "Open the photo in a new tab" %}</span>
+      </a>
+    {% endif %}
+    <span class="mp-cover-state" data-mp-cover-state hidden></span>
+  </div>
+
+  <div class="mp-cover-actions">
+    <label class="mp-btn">
+      <input type="{{ widget.type }}" name="{{ widget.name }}" class="mp-sr" data-mp-cover-input{% for attr, value in widget.attrs.items %}{% if value is not False %} {{ attr }}{% if value is not True %}="{{ value|stringformat:'s' }}"{% endif %}{% endif %}{% endfor %}>
+      <span class="material-symbols-outlined" aria-hidden="true">upload</span>
+      <span data-mp-cover-upload-label>{% if widget.is_initial %}{% translate "Replace" %}{% else %}{% translate "Upload" %}{% endif %}</span>
+    </label>
+    {% if widget.is_initial %}
+      {% if not widget.required %}
+        <label class="mp-btn mp-btn-danger">
+          <input type="checkbox" name="{{ widget.checkbox_name }}" id="{{ widget.checkbox_id }}" class="mp-sr" data-mp-cover-clear{% if widget.attrs.disabled %} disabled{% endif %}{% if widget.attrs.checked %} checked{% endif %}>
+          <span class="material-symbols-outlined" aria-hidden="true">delete</span>
+          <span>{% translate "Remove" %}</span>
+        </label>
+      {% endif %}
+    {% endif %}
+  </div>
+
+  <p class="mp-cover-file" data-mp-cover-file>{% if widget.is_initial %}{{ widget.value.name }}{% else %}{% translate "JPG, PNG or WebP. Product cards crop photos to 4:3." %}{% endif %}</p>
+</div>
