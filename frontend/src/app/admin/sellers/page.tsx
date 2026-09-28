@@ -23,7 +23,7 @@ import {
   SELLER_TYPE_LABELS,
   SELLER_TYPE_OPTIONS,
   SellerAccessNotice,
-  canManageAdminSellers,
+  canCreateAdminSellers,
   canViewAdminSellers,
   getAvailableSellerActions,
   useSellerStatusAction,
@@ -55,7 +55,7 @@ function AdminSellersPageContent() {
   const searchParams = useSearchParams();
 
   const canView = canViewAdminSellers(user);
-  const canManage = canManageAdminSellers(user);
+  const canCreate = canCreateAdminSellers(user);
 
   const urlSearch = searchParams.get("search") ?? "";
   const urlStatus = searchParams.get("status") ?? "";
@@ -279,7 +279,7 @@ function AdminSellersPageContent() {
             lifecycle across the platform.
           </p>
         </div>
-        {canManage && (
+        {canCreate && (
           <Link
             href="/admin/sellers/new"
             className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-primary hover:bg-primary-hover text-on-primary text-xs font-bold transition-colors shrink-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"

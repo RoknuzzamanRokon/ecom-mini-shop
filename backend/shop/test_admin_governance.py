@@ -1288,6 +1288,227 @@ class AdminSellerCreationTests(APITestCase):
         self.assertIn("reason", res.data)
 
 
+class AdminSellerGranularPermissionTests(APITestCase):
+    """
+    The narrow seller codes work in the admin console without
+    'sellers.admin.manage': sellers.create -> POST /api/admin/sellers/,
+    sellers.update -> PATCH /api/admin/sellers/<pk>/, sellers.approve ->
+    approve/reject, sellers.suspend -> suspend/reactivate.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_rbac")
+
+        def staff_with(username, codes):
+            role = Role.objects.create(code=f"PROBE_{username.upper()}", name=f"Probe {username}")
+            for code in ["sellers.view", *codes]:
+                RolePermission.objects.create(role=role, permission=Permission.objects.get(code=code))
+            user = User.objects.create_user(
+                username=username,
+                email=f"{username}@minishop.com",
+                password="ProbePassword123!",
+                is_staff=True,
+            )
+            assign_user_role(user, role.code)
+            return user
+
+        cls.viewer = staff_with("gp_viewer", [])
+        cls.approver = staff_with("gp_approver", ["sellers.approve"])
+        cls.suspender = staff_with("gp_suspender", ["sellers.suspend"])
+        cls.creator = staff_with("gp_creator", ["sellers.create"])
+        cls.updater = staff_with("gp_updater", ["sellers.update"])
+
+        cls.target_user = User.objects.create_user(
+            username="gp_target", email="gp_target@minishop.com", password="TargetPassword123!"
+        )
+
+    def setUp(self):
+        seller_user = User.objects.create_user(
+            username=f"gp_seller_{SellerProfile.objects.count()}",
+            email="gp_seller@minishop.com",
+            password="SellerPassword123!",
+        )
+        self.pending = SellerProfile.objects.create(
+            user=seller_user,
+            seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+            business_name="Granular Pending",
+            business_email="pending@minishop.com",
+            status=SellerProfile.STATUS_PENDING,
+        )
+
+    def _status(self, user, action, reason="Granular permission test"):
+        self.client.force_authenticate(user=user)
+        return self.client.post(
+            f"/api/admin/sellers/{self.pending.id}/status/",
+            data={"action": action, "reason": reason},
+            format="json",
+        )
+
+    # --- status ---------------------------------------------------------------
+
+    def test_approve_permission_allows_approve_and_reject_only(self):
+        res = self._status(self.approver, "suspend")
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.pending.refresh_from_db()
+        self.assertEqual(self.pending.status, SellerProfile.STATUS_PENDING)
+        self.assertFalse(AuditLog.objects.filter(action="ADMIN_SELLER_SUSPEND").exists())
+
+        res = self._status(self.approver, "reject")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data["status"], SellerProfile.STATUS_REJECTED)
+
+        res = self._status(self.approver, "approve")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data["status"], SellerProfile.STATUS_ACTIVE)
+        self.assertTrue(
+            AuditLog.objects.filter(action="ADMIN_SELLER_APPROVE", actor=self.approver).exists()
+        )
+
+    def test_suspend_permission_allows_suspend_and_reactivate_only(self):
+        res = self._status(self.suspender, "approve")
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.pending.refresh_from_db()
+        self.assertEqual(self.pending.status, SellerProfile.STATUS_PENDING)
+
+        self.pending.status = SellerProfile.STATUS_ACTIVE
+        self.pending.save()
+
+        res = self._status(self.suspender, "suspend", reason="Policy review")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data["status"], SellerProfile.STATUS_SUSPENDED)
+
+        res = self._status(self.suspender, "reject")
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+
+        res = self._status(self.suspender, "reactivate")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data["status"], SellerProfile.STATUS_ACTIVE)
+
+    def test_view_only_cannot_change_status(self):
+        for action in ("approve", "reject", "suspend", "reactivate"):
+            res = self._status(self.viewer, action)
+            self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN, msg=action)
+
+    def test_create_and_update_permissions_do_not_grant_status_changes(self):
+        for user in (self.creator, self.updater):
+            res = self._status(user, "approve")
+            self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN, msg=user.username)
+
+    # --- create ---------------------------------------------------------------
+
+    def _create_payload(self):
+        return {
+            "user_id": self.target_user.id,
+            "business_name": "Granular Created",
+            "reason": "Granular create test",
+        }
+
+    def test_create_permission_allows_seller_creation(self):
+        self.client.force_authenticate(user=self.creator)
+        res = self.client.post("/api/admin/sellers/", data=self._create_payload(), format="json")
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.data["status"], SellerProfile.STATUS_PENDING)
+        self.assertTrue(
+            AuditLog.objects.filter(action="ADMIN_SELLER_CREATED", actor=self.creator).exists()
+        )
+
+    def test_other_seller_permissions_do_not_grant_creation(self):
+        for user in (self.viewer, self.approver, self.suspender, self.updater):
+            self.client.force_authenticate(user=user)
+            res = self.client.post("/api/admin/sellers/", data=self._create_payload(), format="json")
+            self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN, msg=user.username)
+        self.assertFalse(SellerProfile.objects.filter(user=self.target_user).exists())
+
+    # --- update ---------------------------------------------------------------
+
+    def _patch(self, user, payload):
+        self.client.force_authenticate(user=user)
+        return self.client.patch(
+            f"/api/admin/sellers/{self.pending.id}/", data=payload, format="json"
+        )
+
+    def test_update_permission_edits_business_details_with_audit(self):
+        res = self._patch(
+            self.updater,
+            {
+                "business_name": "  Renamed Business  ",
+                "business_phone": "01700000000",
+                "business_email": "pending@minishop.com",
+                "reason": "Seller asked for a rename",
+            },
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data["business_name"], "Renamed Business")
+        self.pending.refresh_from_db()
+        self.assertEqual(self.pending.business_phone, "01700000000")
+
+        entry = AuditLog.objects.get(action="ADMIN_SELLER_UPDATED")
+        self.assertEqual(entry.actor, self.updater)
+        self.assertEqual(entry.metadata["reason"], "Seller asked for a rename")
+        # Unchanged business_email is not recorded as a change.
+        self.assertEqual(
+            entry.metadata["previous_state"],
+            {"business_name": "Granular Pending", "business_phone": ""},
+        )
+        self.assertEqual(
+            entry.metadata["new_state"],
+            {"business_name": "Renamed Business", "business_phone": "01700000000"},
+        )
+
+    def test_update_cannot_change_status_or_seller_type(self):
+        res = self._patch(
+            self.updater,
+            {
+                "description": "Updated description",
+                "status": SellerProfile.STATUS_ACTIVE,
+                "seller_type": SellerProfile.TYPE_PRODUCT_OWNER,
+                "reason": "Tamper attempt",
+            },
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.pending.refresh_from_db()
+        self.assertEqual(self.pending.description, "Updated description")
+        self.assertEqual(self.pending.status, SellerProfile.STATUS_PENDING)
+        self.assertEqual(self.pending.seller_type, SellerProfile.TYPE_FULL_SHOP_OWNER)
+
+    def test_unchanged_update_writes_no_audit(self):
+        res = self._patch(
+            self.updater, {"business_name": "Granular Pending", "reason": "No-op edit"}
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertFalse(AuditLog.objects.filter(action="ADMIN_SELLER_UPDATED").exists())
+
+    def test_update_validation(self):
+        cases = [
+            {"business_name": "New Name"},  # no reason
+            {"business_name": "   ", "reason": "Blank name"},
+            {"business_email": "not-an-email", "reason": "Bad email"},
+            {"reason": "Nothing to change"},
+        ]
+        for payload in cases:
+            res = self._patch(self.updater, payload)
+            self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST, msg=payload)
+        self.pending.refresh_from_db()
+        self.assertEqual(self.pending.business_name, "Granular Pending")
+
+    def test_other_seller_permissions_do_not_grant_update(self):
+        for user in (self.viewer, self.approver, self.suspender, self.creator):
+            res = self._patch(user, {"business_name": "Hijacked", "reason": "Not allowed"})
+            self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN, msg=user.username)
+        self.pending.refresh_from_db()
+        self.assertEqual(self.pending.business_name, "Granular Pending")
+
+    def test_update_missing_seller_returns_404(self):
+        self.client.force_authenticate(user=self.updater)
+        res = self.client.patch(
+            "/api/admin/sellers/999999/",
+            data={"business_name": "Ghost", "reason": "Missing"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+
 class AdminShopCreationTests(APITestCase):
     """Phase 1H: POST /api/admin/shops/ creates a Shop and assigns an existing seller as owner."""
 

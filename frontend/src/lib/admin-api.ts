@@ -477,10 +477,9 @@ export async function getAdminSellerDetail(
 
 /**
  * POST /api/admin/sellers/<id>/status/
- * Requires CanManageAdminSellers — i.e. 'sellers.admin.manage' (or superuser /
- * SUPER_ADMINISTRATOR). Unlike the shop status endpoint there is NO granular
- * approve-only path here: 'sellers.approve' and 'sellers.suspend' gate the
- * legacy /api/sellers/<id>/approve|suspend/ endpoints, not this one.
+ * Requires CanChangeAdminSellerStatus: 'sellers.approve' for approve / reject,
+ * 'sellers.suspend' for suspend / reactivate, or 'sellers.admin.manage' for all
+ * four (plus the superuser / SUPER_ADMINISTRATOR bypass).
  *
  * The response body is the updated AdminSellerSerializer payload, which the
  * caller should treat as authoritative rather than optimistically guessing the
@@ -523,7 +522,7 @@ export interface AdminSellerCreatePayload {
 
 /**
  * POST /api/admin/sellers/ -> 201 with the created AdminSeller (status PENDING).
- * Requires 'sellers.admin.manage' (CanManageAdminSellers).
+ * Requires 'sellers.create' or 'sellers.admin.manage' (CanCreateAdminSellers).
  *
  * The backend rejects a user_id that does not exist, or one that already has a
  * SellerProfile, with a 400 field/validation error — this client does not
@@ -535,6 +534,36 @@ export async function createAdminSeller(
 ): Promise<AdminSeller> {
   return adminRequest<AdminSeller>("/api/admin/sellers/", token, {
     method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * The writable surface of AdminSellerUpdateSerializer, in full. Every detail
+ * field is optional, but at least one must be sent. `status` and
+ * `seller_type` are not editable through this endpoint.
+ */
+export interface AdminSellerUpdatePayload {
+  business_name?: string;
+  business_email?: string;
+  business_phone?: string;
+  tax_id?: string;
+  description?: string;
+  /** Required; recorded in the audit log. */
+  reason: string;
+}
+
+/**
+ * PATCH /api/admin/sellers/<id>/ -> the updated AdminSeller.
+ * Requires 'sellers.update' or 'sellers.admin.manage' (CanUpdateAdminSellers).
+ */
+export async function updateAdminSeller(
+  token: string,
+  id: number | string,
+  payload: AdminSellerUpdatePayload
+): Promise<AdminSeller> {
+  return adminRequest<AdminSeller>(`/api/admin/sellers/${id}/`, token, {
+    method: "PATCH",
     body: JSON.stringify(payload),
   });
 }

@@ -88,6 +88,73 @@ class CanManageAdminSellers(BasePermission):
         return has_user_permission(user, "sellers.admin.manage")
 
 
+class CanCreateAdminSellers(BasePermission):
+    """Allows creating a seller profile for an existing user ('sellers.create' or 'sellers.admin.manage')."""
+    message = "You do not have permission to create sellers."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
+            return True
+        return (
+            has_user_permission(user, "sellers.admin.manage")
+            or has_user_permission(user, "sellers.create")
+        )
+
+
+class CanUpdateAdminSellers(BasePermission):
+    """Allows editing a seller's business details ('sellers.update' or 'sellers.admin.manage')."""
+    message = "You do not have permission to update sellers."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
+            return True
+        return (
+            has_user_permission(user, "sellers.admin.manage")
+            or has_user_permission(user, "sellers.update")
+        )
+
+
+# The narrow permission each seller lifecycle action accepts in place of
+# 'sellers.admin.manage'. Same pairing as the legacy /api/sellers/ endpoints:
+# CanApproveSeller covers approve + reject, CanSuspendSeller suspend + reactivate.
+SELLER_STATUS_ACTION_PERMISSIONS = {
+    "approve": "sellers.approve",
+    "reject": "sellers.approve",
+    "suspend": "sellers.suspend",
+    "reactivate": "sellers.suspend",
+}
+
+
+class CanChangeAdminSellerStatus(BasePermission):
+    """
+    Allows entry to the seller status-transition endpoint based on granular
+    permissions:
+    - 'approve' / 'reject' require 'sellers.approve' or 'sellers.admin.manage'
+    - 'suspend' / 'reactivate' require 'sellers.suspend' or 'sellers.admin.manage'
+    This class only gates entry to the view (holding ANY one of the above is
+    enough to reach it); the view itself enforces the per-action mapping in
+    SELLER_STATUS_ACTION_PERMISSIONS, mirroring CanChangeAdminProductStatus.
+    """
+    message = "You do not have permission to update seller status."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
+            return True
+        return has_user_permission(user, "sellers.admin.manage") or any(
+            has_user_permission(user, code)
+            for code in set(SELLER_STATUS_ACTION_PERMISSIONS.values())
+        )
+
+
 class CanViewAdminShops(BasePermission):
     """Allows viewing admin shop directories and details."""
     message = "You do not have permission to view shops as admin."

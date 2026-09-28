@@ -16,6 +16,7 @@ import {
   getAdminSellerPointHistory,
   getAdminSellerWallet,
   getInsufficientPointsInfo,
+  updateAdminSeller,
 } from "@/lib/admin-api";
 import { formatCount, formatDateTime, humanizeToken } from "@/lib/admin-format";
 import {
@@ -36,6 +37,7 @@ import {
   SellerAccessNotice,
   canCreditSellerPoints,
   canDebitSellerPoints,
+  canUpdateAdminSellers,
   canViewAdminSellers,
   canViewSellerPoints,
   getAvailableSellerActions,
@@ -57,6 +59,27 @@ const ACTION_BUTTON_TONE: Record<string, string> = {
   danger: "bg-red-600 hover:bg-red-700 text-white focus-visible:outline-red-600",
   default: "border border-line text-ink hover:bg-surface-alt focus-visible:outline-primary",
 };
+
+/** AdminSellerUpdateSerializer.EDITABLE_FIELDS — status and seller_type are not editable. */
+const EDITABLE_SELLER_FIELDS = [
+  "business_name",
+  "business_email",
+  "business_phone",
+  "tax_id",
+  "description",
+] as const;
+
+type SellerDetailsForm = Pick<AdminSeller, (typeof EDITABLE_SELLER_FIELDS)[number]>;
+
+function toDetailsForm(seller: AdminSeller): SellerDetailsForm {
+  return {
+    business_name: seller.business_name,
+    business_email: seller.business_email,
+    business_phone: seller.business_phone,
+    tax_id: seller.tax_id,
+    description: seller.description,
+  };
+}
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -129,6 +152,69 @@ export default function AdminSellerDetailPage() {
   }, []);
   const { pendingAction, targetSeller, submitError, requestAction, cancel, confirm } =
     useSellerStatusAction(handleActionSuccess);
+
+  // ---------------------------------------------------------------------------
+  // Business details edit (sellers.update)
+  // ---------------------------------------------------------------------------
+
+  const canUpdate = canUpdateAdminSellers(user);
+  /** Non-null while the edit form is open. */
+  const [editValues, setEditValues] = useState<SellerDetailsForm | null>(null);
+  const [confirmingEdit, setConfirmingEdit] = useState(false);
+  const [editError, setEditError] = useState<string | null>(null);
+  const [detailsNotice, setDetailsNotice] = useState<string | null>(null);
+
+  const startEditing = useCallback(() => {
+    if (!seller) return;
+    setEditValues(toDetailsForm(seller));
+    setEditError(null);
+    setDetailsNotice(null);
+  }, [seller]);
+
+  const cancelEditing = useCallback(() => {
+    setEditValues(null);
+    setConfirmingEdit(false);
+    setEditError(null);
+  }, []);
+
+  // Only the fields that differ from the loaded seller, trimmed the way DRF's
+  // CharField trims them, so the audit log records real changes only.
+  const changedDetails = useMemo(() => {
+    const changes: Partial<SellerDetailsForm> = {};
+    if (!seller || !editValues) return changes;
+    for (const field of EDITABLE_SELLER_FIELDS) {
+      const value = editValues[field].trim();
+      if (value !== seller[field]) changes[field] = value;
+    }
+    return changes;
+  }, [seller, editValues]);
+  const hasDetailChanges = Object.keys(changedDetails).length > 0;
+  const editNameValid = Boolean(editValues?.business_name.trim());
+
+  const confirmEdit = useCallback(
+    async (reason: string) => {
+      if (!seller || !hasDetailChanges) return;
+      const token = getAuthToken();
+      if (!token) {
+        setEditError("No active session token was found. Please sign in again.");
+        return;
+      }
+      try {
+        setEditError(null);
+        // The PATCH response is authoritative; render it, not what was typed.
+        const updated = await updateAdminSeller(token, seller.id, { ...changedDetails, reason });
+        setSeller(updated);
+        setEditValues(null);
+        setConfirmingEdit(false);
+        setDetailsNotice("Seller details updated.");
+      } catch (err) {
+        setEditError(
+          err instanceof AdminApiError ? err.message : "Failed to update seller details."
+        );
+      }
+    },
+    [seller, hasDetailChanges, changedDetails]
+  );
 
   // ---------------------------------------------------------------------------
   // Points / Wallet (Phase 1G-C)
@@ -454,8 +540,20 @@ export default function AdminSellerDetailPage() {
             </p>
           </div>
 
-          {availableActions.length > 0 && (
+          {(availableActions.length > 0 || canUpdate) && (
             <div className="flex flex-wrap gap-2 shrink-0">
+              {canUpdate && !editValues && (
+                <button
+                  type="button"
+                  onClick={startEditing}
+                  className={`inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-bold uppercase tracking-wide transition-colors shadow-xs cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 ${ACTION_BUTTON_TONE.default}`}
+                >
+                  <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+                    edit
+                  </span>
+                  Edit details
+                </button>
+              )}
               {availableActions.map((descriptor) => (
                 <button
                   key={descriptor.action}
@@ -479,6 +577,125 @@ export default function AdminSellerDetailPage() {
           </p>
         )}
       </div>
+
+      {detailsNotice && (
+        <div
+          role="status"
+          className="rounded-xl border border-success/30 bg-success/10 p-3 flex items-start gap-2"
+        >
+          <span aria-hidden="true" className="material-symbols-outlined text-[18px] text-success shrink-0">
+            check_circle
+          </span>
+          <p className="text-xs font-semibold text-success">{detailsNotice}</p>
+        </div>
+      )}
+
+      {editValues && (
+        <section
+          aria-label="Edit seller details"
+          className="bg-surface rounded-2xl border border-line shadow-xs p-4 sm:p-6"
+        >
+          <h2 className="text-sm font-extrabold text-ink uppercase tracking-wider">
+            Edit Business Details
+          </h2>
+          <p className="text-xs text-ink-muted mt-1 mb-4">
+            Status and seller type are not editable here. Status only changes through the
+            lifecycle actions above.
+          </p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (!hasDetailChanges || !editNameValid) return;
+              setEditError(null);
+              setConfirmingEdit(true);
+            }}
+            className="space-y-4"
+          >
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label htmlFor="edit-seller-business-name" className={FIELD_LABEL_CLASS}>
+                  Business name <span className="text-danger">*</span>
+                </label>
+                <input
+                  id="edit-seller-business-name"
+                  type="text"
+                  required
+                  maxLength={200}
+                  value={editValues.business_name}
+                  onChange={(e) => setEditValues({ ...editValues, business_name: e.target.value })}
+                  className={FIELD_CONTROL_CLASS}
+                />
+              </div>
+              <div>
+                <label htmlFor="edit-seller-business-email" className={FIELD_LABEL_CLASS}>
+                  Business email
+                </label>
+                <input
+                  id="edit-seller-business-email"
+                  type="email"
+                  value={editValues.business_email}
+                  onChange={(e) => setEditValues({ ...editValues, business_email: e.target.value })}
+                  className={FIELD_CONTROL_CLASS}
+                />
+              </div>
+              <div>
+                <label htmlFor="edit-seller-business-phone" className={FIELD_LABEL_CLASS}>
+                  Business phone
+                </label>
+                <input
+                  id="edit-seller-business-phone"
+                  type="text"
+                  maxLength={30}
+                  value={editValues.business_phone}
+                  onChange={(e) => setEditValues({ ...editValues, business_phone: e.target.value })}
+                  className={FIELD_CONTROL_CLASS}
+                />
+              </div>
+              <div>
+                <label htmlFor="edit-seller-tax-id" className={FIELD_LABEL_CLASS}>
+                  Tax ID
+                </label>
+                <input
+                  id="edit-seller-tax-id"
+                  type="text"
+                  maxLength={100}
+                  value={editValues.tax_id}
+                  onChange={(e) => setEditValues({ ...editValues, tax_id: e.target.value })}
+                  className={FIELD_CONTROL_CLASS}
+                />
+              </div>
+            </div>
+            <div>
+              <label htmlFor="edit-seller-description" className={FIELD_LABEL_CLASS}>
+                Description
+              </label>
+              <textarea
+                id="edit-seller-description"
+                rows={3}
+                value={editValues.description}
+                onChange={(e) => setEditValues({ ...editValues, description: e.target.value })}
+                className={`${FIELD_CONTROL_CLASS} resize-y`}
+              />
+            </div>
+            <div className="flex flex-col sm:flex-row gap-2">
+              <button
+                type="submit"
+                disabled={!hasDetailChanges || !editNameValid}
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-primary hover:bg-primary-hover text-on-primary text-xs font-bold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              >
+                Save changes
+              </button>
+              <button
+                type="button"
+                onClick={cancelEditing}
+                className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg border border-line hover:bg-surface-alt text-xs font-bold text-ink transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Account holder */}
@@ -730,6 +947,29 @@ export default function AdminSellerDetailPage() {
         reasonPlaceholder="Explain the decision for the seller's record…"
         onConfirm={confirm}
         onCancel={cancel}
+      />
+
+      <AdminConfirmModal
+        open={confirmingEdit}
+        title="Update Seller Details"
+        message={
+          <>
+            Save changes to{" "}
+            <strong>{Object.keys(changedDetails).map(humanizeToken).join(", ")}</strong> for{" "}
+            <strong>{seller.business_name}</strong>?
+            {editError && <span className="block mt-2 font-semibold text-danger">{editError}</span>}
+          </>
+        }
+        confirmLabel="Save changes"
+        requireReason
+        reasonRequired
+        reasonLabel="Reason (recorded in the audit log)"
+        reasonPlaceholder="Explain why these details are being changed…"
+        onConfirm={confirmEdit}
+        onCancel={() => {
+          setConfirmingEdit(false);
+          setEditError(null);
+        }}
       />
 
       <AdminConfirmModal

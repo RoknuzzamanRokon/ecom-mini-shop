@@ -8,7 +8,8 @@
  *   - the real SellerProfile.STATUS_CHOICES / SELLER_TYPE_CHOICES labels
  *     (verified verbatim against sellers/models.py),
  *   - the lifecycle action catalogue and its confirmation copy,
- *   - the permission gate mirroring CanManageAdminSellers,
+ *   - the permission gates mirroring CanChangeAdminSellerStatus,
+ *     CanCreateAdminSellers and CanUpdateAdminSellers,
  *   - a mutation hook shared by the list and detail pages so the
  *     "confirm -> call API -> handle result" flow is written once,
  *   - the page-level access notice both routes render when the operator lacks
@@ -160,22 +161,24 @@ function getStatusRelevantActions(status: string): AdminSellerStatusAction[] {
 }
 
 /**
- * Permission gate mirroring the backend exactly.
- *
- * AdminSellerStatusAPIView is gated by CanManageAdminSellers, which accepts
- * ONLY 'sellers.admin.manage' (plus the superuser / SUPER_ADMINISTRATOR
- * bypass). There is no per-action split here: unlike CanChangeAdminShopStatus,
- * it does not accept an approve-only permission. 'sellers.approve' and
- * 'sellers.suspend' gate the separate legacy endpoints under /api/sellers/,
- * which this console deliberately does not call — a console that fell back to
- * another privileged endpoint after a 403 would be bypassing the admin
- * authorization boundary.
+ * Per-action permission sets, mirroring SELLER_STATUS_ACTION_PERMISSIONS in
+ * shop/admin_permissions.py: 'sellers.approve' covers approve + reject,
+ * 'sellers.suspend' covers suspend + reactivate, and 'sellers.admin.manage'
+ * covers all four (hasAnyPermission adds the superuser / "*" bypass).
  */
+const ACTION_PERMISSIONS: Record<AdminSellerStatusAction, string[]> = {
+  approve: ADMIN_PERMISSIONS.sellersApprove,
+  reject: ADMIN_PERMISSIONS.sellersApprove,
+  suspend: ADMIN_PERMISSIONS.sellersSuspend,
+  reactivate: ADMIN_PERMISSIONS.sellersSuspend,
+};
+
 function getPermittedActions(user: AuthUser | null | undefined): Set<AdminSellerStatusAction> {
-  if (!hasAnyPermission(user, ADMIN_PERMISSIONS.sellersManage)) {
-    return new Set<AdminSellerStatusAction>();
-  }
-  return new Set<AdminSellerStatusAction>(["approve", "reject", "suspend", "reactivate"]);
+  return new Set<AdminSellerStatusAction>(
+    (Object.keys(ACTION_PERMISSIONS) as AdminSellerStatusAction[]).filter((action) =>
+      hasAnyPermission(user, ACTION_PERMISSIONS[action])
+    )
+  );
 }
 
 /** Combines status relevance with the real permission gate. */
@@ -200,13 +203,19 @@ export function canViewAdminSellers(user: AuthUser | null | undefined): boolean 
 }
 
 /**
- * Mirrors CanManageAdminSellers exactly: 'sellers.admin.manage' plus the
- * superuser / SUPER_ADMINISTRATOR bypass. This is the gate for BOTH the
- * lifecycle actions above and POST /api/admin/sellers/ (seller creation) —
- * AdminSellerListAPIView.post uses the identical permission class.
+ * Mirrors CanCreateAdminSellers ('sellers.create' OR 'sellers.admin.manage'),
+ * the gate on POST /api/admin/sellers/.
  */
-export function canManageAdminSellers(user: AuthUser | null | undefined): boolean {
-  return hasAnyPermission(user, ADMIN_PERMISSIONS.sellersManage);
+export function canCreateAdminSellers(user: AuthUser | null | undefined): boolean {
+  return hasAnyPermission(user, ADMIN_PERMISSIONS.sellersCreate);
+}
+
+/**
+ * Mirrors CanUpdateAdminSellers ('sellers.update' OR 'sellers.admin.manage'),
+ * the gate on PATCH /api/admin/sellers/<pk>/.
+ */
+export function canUpdateAdminSellers(user: AuthUser | null | undefined): boolean {
+  return hasAnyPermission(user, ADMIN_PERMISSIONS.sellersUpdate);
 }
 
 // =============================================================================

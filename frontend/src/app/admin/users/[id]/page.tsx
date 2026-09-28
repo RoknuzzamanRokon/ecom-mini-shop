@@ -29,7 +29,7 @@ import {
   targetIsSuperAdministrator,
   userDisplayName,
 } from "../userGovernance";
-import { canManageAdminSellers } from "../../sellers/sellerGovernance";
+import { canCreateAdminSellers } from "../../sellers/sellerGovernance";
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -271,7 +271,7 @@ export default function AdminUserDetailPage() {
   const fullName = `${target.first_name} ${target.last_name}`.trim();
   const isSuperTarget = targetIsSuperAdministrator(target);
   const permissionGroups = groupPermissionCodesByResource(target.permissions);
-  const showSellerCreatePrompt = !target.seller_profile && canManageAdminSellers(actor);
+  const showSellerCreatePrompt = !target.seller_profile && canCreateAdminSellers(actor);
 
   return (
     <div className="space-y-6">

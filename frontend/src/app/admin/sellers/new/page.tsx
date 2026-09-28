@@ -18,7 +18,7 @@ import { AdminConfirmModal } from "@/components/admin/shared";
 import {
   SELLER_TYPE_OPTIONS,
   SellerAccessNotice,
-  canManageAdminSellers,
+  canCreateAdminSellers,
   canViewAdminSellers,
 } from "../sellerGovernance";
 
@@ -57,7 +57,7 @@ function AdminSellerCreatePageContent() {
   const { user: actor } = useAuth();
 
   const canView = canViewAdminSellers(actor);
-  const canManage = canManageAdminSellers(actor);
+  const canCreate = canCreateAdminSellers(actor);
   const canListUsers = hasAnyPermission(actor, ADMIN_PERMISSIONS.usersView);
 
   const prefilledUserId = searchParams.get("user_id");
@@ -242,7 +242,7 @@ function AdminSellerCreatePageContent() {
     return <SellerAccessNotice />;
   }
 
-  if (!canManage) {
+  if (!canCreate) {
     return (
       <div className="space-y-6">
         {backLink}
@@ -256,6 +256,7 @@ function AdminSellerCreatePageContent() {
             <p className="text-sm font-bold text-ink">You are not authorized to create sellers</p>
             <p className="text-xs text-ink-muted mt-1 max-w-md">
               Creating a seller profile requires{" "}
+              <code className="font-mono text-[11px]">sellers.create</code> or{" "}
               <code className="font-mono text-[11px]">sellers.admin.manage</code>. You can still
               browse existing seller applications.
             </p>

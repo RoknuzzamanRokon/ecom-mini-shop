@@ -425,6 +425,44 @@ class AdminSellerCreateSerializer(serializers.Serializer):
         return name
 
 
+class AdminSellerUpdateSerializer(serializers.Serializer):
+    """
+    Admin edit of a seller's business details (PATCH /api/admin/sellers/<pk>/).
+
+    The editable set is exactly SellerProfileUpdateSerializer's. `status` is
+    absent because it only moves through the audited lifecycle endpoint, and
+    `seller_type` because it decides shop eligibility (ShopService), which an
+    edit form must not be able to change after shops exist. Unknown keys such
+    as those two are ignored by DRF, not applied.
+    """
+
+    EDITABLE_FIELDS = ("business_name", "business_email", "business_phone", "tax_id", "description")
+
+    business_name = serializers.CharField(max_length=200, required=False)
+    business_email = serializers.EmailField(required=False, allow_blank=True)
+    business_phone = serializers.CharField(max_length=30, required=False, allow_blank=True)
+    tax_id = serializers.CharField(max_length=100, required=False, allow_blank=True)
+    description = serializers.CharField(required=False, allow_blank=True)
+    reason = serializers.CharField(
+        required=True,
+        max_length=500,
+        help_text="Required justification for the administrative edit.",
+    )
+
+    def validate_business_name(self, value):
+        name = value.strip()
+        if not name:
+            raise serializers.ValidationError("Business name cannot be empty.")
+        return name
+
+    def validate(self, attrs):
+        if not any(field in attrs for field in self.EDITABLE_FIELDS):
+            raise serializers.ValidationError(
+                {"detail": "Provide at least one seller detail to update."}
+            )
+        return attrs
+
+
 class AdminSellerStatusUpdateSerializer(serializers.Serializer):
     action = serializers.ChoiceField(
         choices=["approve", "reject", "suspend", "reactivate"],

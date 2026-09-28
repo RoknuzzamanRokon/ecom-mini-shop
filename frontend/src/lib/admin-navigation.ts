@@ -28,8 +28,18 @@ export const ADMIN_PERMISSIONS = {
 
   /** GET /api/admin/sellers/ -> CanViewAdminSellers */
   sellersView: ["sellers.admin.manage", "sellers.view"],
-  /** POST /api/admin/sellers/<pk>/status/ -> CanManageAdminSellers */
-  sellersManage: ["sellers.admin.manage"],
+  /** POST /api/admin/sellers/ -> CanCreateAdminSellers */
+  sellersCreate: ["sellers.admin.manage", "sellers.create"],
+  /** PATCH /api/admin/sellers/<pk>/ -> CanUpdateAdminSellers */
+  sellersUpdate: ["sellers.admin.manage", "sellers.update"],
+  /**
+   * POST /api/admin/sellers/<pk>/status/ -> CanChangeAdminSellerStatus gates
+   * entry, then AdminSellerStatusAPIView._update_status checks the action
+   * against SELLER_STATUS_ACTION_PERMISSIONS: approve + reject need
+   * 'sellers.approve', suspend + reactivate need 'sellers.suspend'.
+   */
+  sellersApprove: ["sellers.admin.manage", "sellers.approve"],
+  sellersSuspend: ["sellers.admin.manage", "sellers.suspend"],
 
   /**
    * GET /api/admin/products/ and /api/admin/products/<pk>/ -> CanViewAdminProducts.

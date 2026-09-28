@@ -43,15 +43,18 @@ from sellers.services import (
     suspend_seller,
 )
 from shop.admin_permissions import (
+    SELLER_STATUS_ACTION_PERMISSIONS,
     CanChangeAdminProductStatus,
+    CanChangeAdminSellerStatus,
     CanChangeAdminShopStatus,
+    CanCreateAdminSellers,
     CanManageAdminCategories,
     CanManageAdminProducts,
     CanManageAdminRoles,
-    CanManageAdminSellers,
     CanManageAdminShops,
     CanManageAdminUsers,
     CanModerateReviews,
+    CanUpdateAdminSellers,
     CanViewAdminAuditLogs,
     CanViewAdminCustomers,
     CanViewAdminProducts,
@@ -80,6 +83,7 @@ from shop.admin_serializers import (
     AdminRoleUpdateSerializer,
     AdminSellerSerializer,
     AdminSellerStatusUpdateSerializer,
+    AdminSellerUpdateSerializer,
     AdminShopCreateSerializer,
     AdminShopSerializer,
     AdminShopStatusUpdateSerializer,
@@ -617,7 +621,7 @@ class AdminSellerListAPIView(APIView):
     """
     def get_permissions(self):
         if self.request.method in ("POST", "PUT", "PATCH", "DELETE"):
-            return [IsAuthenticated(), CanManageAdminSellers()]
+            return [IsAuthenticated(), CanCreateAdminSellers()]
         return [IsAuthenticated(), CanViewAdminSellers()]
 
     def get(self, request):
@@ -650,12 +654,10 @@ class AdminSellerListAPIView(APIView):
         """
         Creates a SellerProfile for an existing user, in the PENDING state.
 
-        Gated by CanManageAdminSellers ('sellers.admin.manage'), the permission
-        that already governs every other arbitrary-target seller operation
-        (AdminSellerStatusAPIView). The seeded but unreferenced 'sellers.create'
-        is deliberately NOT wired up here: three roles hold it today on the
-        understanding that it grants nothing, and giving it meaning would
-        silently widen their authority without anyone assigning it.
+        Gated by CanCreateAdminSellers: 'sellers.create' or the broader
+        'sellers.admin.manage'. Until 2026-09-29 only the broader code counted,
+        which left a role granted 'sellers.create' in the role editor (e.g. a
+        customised Operation Manager) without any way to create a seller.
 
         Creation is intentionally inert beyond the profile itself — the seller
         starts PENDING and must go through the existing approval endpoints. No
@@ -712,16 +714,67 @@ class AdminSellerListAPIView(APIView):
 
 class AdminSellerDetailAPIView(APIView):
     """
-    GET /api/admin/sellers/<int:pk>/
-    Inspect seller application/profile detail.
+    GET   /api/admin/sellers/<int:pk>/
+    PATCH /api/admin/sellers/<int:pk>/
+    Inspect seller application/profile detail, or edit its business details.
     """
-    permission_classes = [IsAuthenticated, CanViewAdminSellers]
+    def get_permissions(self):
+        if self.request.method in ("PUT", "PATCH"):
+            return [IsAuthenticated(), CanUpdateAdminSellers()]
+        return [IsAuthenticated(), CanViewAdminSellers()]
 
     def get(self, request, pk):
         try:
             seller = SellerProfile.objects.select_related("user").prefetch_related("shops").get(pk=pk)
         except SellerProfile.DoesNotExist:
             raise NotFound("Seller profile not found.")
+        return Response(AdminSellerSerializer(seller).data, status=status.HTTP_200_OK)
+
+    def patch(self, request, pk):
+        """
+        Edits business details only (AdminSellerUpdateSerializer.EDITABLE_FIELDS).
+        Gated by CanUpdateAdminSellers ('sellers.update' or 'sellers.admin.manage').
+        Only fields whose value actually changes are written to the audit log;
+        a request that changes nothing saves nothing and logs nothing.
+        """
+        serializer = AdminSellerUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        reason = data["reason"]
+
+        with transaction.atomic():
+            try:
+                seller = SellerProfile.objects.select_for_update().get(pk=pk)
+            except SellerProfile.DoesNotExist:
+                raise NotFound("Seller profile not found.")
+
+            previous_state = {}
+            new_state = {}
+            for field in AdminSellerUpdateSerializer.EDITABLE_FIELDS:
+                if field in data and getattr(seller, field) != data[field]:
+                    previous_state[field] = getattr(seller, field)
+                    new_state[field] = data[field]
+                    setattr(seller, field, data[field])
+
+            if new_state:
+                try:
+                    seller.save()
+                except DjangoValidationError as exc:
+                    raise DRFValidationError(
+                        exc.message_dict if hasattr(exc, "message_dict") else {"detail": exc.messages}
+                    )
+
+                AuditService.log(
+                    action="ADMIN_SELLER_UPDATED",
+                    target=seller,
+                    actor=request.user,
+                    seller=seller,
+                    reason=reason,
+                    previous_state=previous_state,
+                    new_state=new_state,
+                    ip_address=get_client_ip(request),
+                )
+
         return Response(AdminSellerSerializer(seller).data, status=status.HTTP_200_OK)
 
 
@@ -732,7 +785,7 @@ class AdminSellerStatusAPIView(APIView):
     Transitions seller lifecycle (approve, reject, suspend, reactivate).
     Delegates strictly to domain service methods.
     """
-    permission_classes = [IsAuthenticated, CanManageAdminSellers]
+    permission_classes = [IsAuthenticated, CanChangeAdminSellerStatus]
 
     def post(self, request, pk):
         return self._update_status(request, pk)
@@ -745,6 +798,20 @@ class AdminSellerStatusAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         action = serializer.validated_data["action"]
         reason = serializer.validated_data.get("reason", "")
+
+        # Granular RBAC enforcement: 'sellers.approve' covers approve + reject,
+        # 'sellers.suspend' covers suspend + reactivate; 'sellers.admin.manage'
+        # covers all four.
+        user = request.user
+        actor_role_codes = get_user_role_codes(user)
+        is_super = user.is_superuser or (Role.ROLE_SUPER_ADMINISTRATOR in actor_role_codes)
+        if not is_super and not has_user_permission(user, "sellers.admin.manage"):
+            required_permission = SELLER_STATUS_ACTION_PERMISSIONS[action]
+            if not has_user_permission(user, required_permission):
+                raise PermissionDenied(
+                    f"You do not have permission to {action} sellers. "
+                    f"'{required_permission}' or 'sellers.admin.manage' is required."
+                )
 
         with transaction.atomic():
             try:
