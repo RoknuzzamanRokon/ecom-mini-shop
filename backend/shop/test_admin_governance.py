@@ -1509,6 +1509,158 @@ class AdminSellerGranularPermissionTests(APITestCase):
         self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
 
 
+class AdminSellerNewAccountCreationTests(APITestCase):
+    """POST /api/admin/sellers/ with `account`: new login account + seller profile in one call."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_rbac")
+
+        role = Role.objects.create(code="PROBE_NA_CREATOR", name="Probe new-account creator")
+        for code in ("sellers.view", "sellers.create"):
+            RolePermission.objects.create(role=role, permission=Permission.objects.get(code=code))
+        cls.creator = User.objects.create_user(
+            username="na_creator",
+            email="na_creator@minishop.com",
+            password="CreatorPassword123!",
+            is_staff=True,
+        )
+        assign_user_role(cls.creator, role.code)
+
+        # Seeded OPERATION_MANAGER: sellers.view only.
+        cls.viewer = User.objects.create_user(
+            username="na_viewer",
+            email="na_viewer@minishop.com",
+            password="ViewerPassword123!",
+            is_staff=True,
+        )
+        assign_user_role(cls.viewer, Role.ROLE_OPERATION_MANAGER)
+
+        cls.existing_user = User.objects.create_user(
+            username="na_existing", email="na_existing@minishop.com", password="ExistingPassword123!"
+        )
+
+    def _payload(self, **account_overrides):
+        account = {
+            "username": "na_new_seller",
+            "email": "NA_New_Seller@MiniShop.com",
+            "password": "NewSellerPass123!",
+            "password_confirm": "NewSellerPass123!",
+            "first_name": "Nadia",
+            "last_name": "Rahman",
+        }
+        account.update(account_overrides)
+        return {
+            "account": account,
+            "business_name": "Nadia Crafts",
+            "seller_type": SellerProfile.TYPE_LIMITED_SHOP_OWNER,
+            "reason": "Onboarding a seller without an account",
+        }
+
+    def _post(self, payload, user=None):
+        self.client.force_authenticate(user=user or self.creator)
+        return self.client.post("/api/admin/sellers/", data=payload, format="json")
+
+    def test_creates_account_and_seller_together(self):
+        res = self._post(self._payload())
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED, res.data)
+
+        new_user = User.objects.get(username="na_new_seller")
+        self.assertEqual(new_user.email, "na_new_seller@minishop.com")
+        self.assertEqual((new_user.first_name, new_user.last_name), ("Nadia", "Rahman"))
+        self.assertTrue(new_user.check_password("NewSellerPass123!"))
+        self.assertTrue(new_user.is_active)
+        self.assertFalse(new_user.is_staff)
+        self.assertFalse(new_user.is_superuser)
+        self.assertEqual(get_user_role_codes(new_user), set())
+
+        seller = SellerProfile.objects.get(user=new_user)
+        self.assertEqual(res.data["id"], seller.id)
+        self.assertEqual(res.data["username"], "na_new_seller")
+        self.assertEqual(seller.status, SellerProfile.STATUS_PENDING)
+        self.assertEqual(seller.seller_type, SellerProfile.TYPE_LIMITED_SHOP_OWNER)
+
+    def test_both_creations_are_audited_without_the_password(self):
+        self._post(self._payload())
+        new_user = User.objects.get(username="na_new_seller")
+
+        user_entry = AuditLog.objects.get(action="ADMIN_USER_CREATED", target_id=str(new_user.id))
+        self.assertEqual(user_entry.actor, self.creator)
+        self.assertEqual(user_entry.metadata["reason"], "Onboarding a seller without an account")
+        self.assertEqual(user_entry.metadata["new_state"]["roles"], [])
+        self.assertEqual(user_entry.metadata["new_state"]["source"], "seller_creation")
+
+        seller_entry = AuditLog.objects.get(action="ADMIN_SELLER_CREATED")
+        self.assertEqual(seller_entry.metadata["new_state"]["user_id"], new_user.id)
+        self.assertTrue(seller_entry.metadata["new_state"]["new_account"])
+
+        for entry in (user_entry, seller_entry):
+            self.assertNotIn("NewSellerPass123!", json.dumps(entry.metadata))
+
+    def test_privileged_account_fields_are_ignored(self):
+        res = self._post(
+            self._payload(is_staff=True, is_superuser=True, roles=[Role.ROLE_ADMINISTRATOR])
+        )
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        new_user = User.objects.get(username="na_new_seller")
+        self.assertFalse(new_user.is_staff)
+        self.assertFalse(new_user.is_superuser)
+        self.assertEqual(get_user_role_codes(new_user), set())
+
+    def test_view_only_cannot_create_account(self):
+        res = self._post(self._payload(), user=self.viewer)
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(User.objects.filter(username="na_new_seller").exists())
+
+    def test_user_id_and_account_are_mutually_exclusive(self):
+        both = self._payload()
+        both["user_id"] = self.existing_user.id
+        neither = self._payload()
+        del neither["account"]
+        for payload in (both, neither):
+            res = self._post(payload)
+            self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(User.objects.filter(username="na_new_seller").exists())
+        self.assertFalse(SellerProfile.objects.filter(user=self.existing_user).exists())
+
+    def test_account_validation(self):
+        cases = [
+            {"username": "NA_EXISTING"},  # case-insensitive duplicate
+            {"email": "na_existing@minishop.com"},
+            {"password_confirm": "SomethingElse123!"},
+            {"password": "abc", "password_confirm": "abc"},  # MinimumLengthValidator
+            {"username": "   "},
+        ]
+        for overrides in cases:
+            res = self._post(self._payload(**overrides))
+            self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST, msg=overrides)
+            self.assertIn("account", res.data, msg=overrides)
+        self.assertEqual(SellerProfile.objects.count(), 0)
+
+    def test_failed_profile_rolls_back_the_account(self):
+        from unittest import mock
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        with mock.patch(
+            "shop.admin_views.create_seller_profile",
+            side_effect=DjangoValidationError({"user": "Simulated profile failure."}),
+        ):
+            res = self._post(self._payload())
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(User.objects.filter(username="na_new_seller").exists())
+        self.assertFalse(AuditLog.objects.filter(action="ADMIN_USER_CREATED").exists())
+
+    def test_new_account_can_log_in(self):
+        self._post(self._payload())
+        self.client.force_authenticate(user=None)
+        res = self.client.post(
+            "/api/auth/token/",
+            data={"username": "na_new_seller", "password": "NewSellerPass123!"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK, res.data)
+
+
 class AdminShopCreationTests(APITestCase):
     """Phase 1H: POST /api/admin/shops/ creates a Shop and assigns an existing seller as owner."""
 

@@ -350,7 +350,7 @@ Distinct from Django's own admin at backend `/admin/`. They share no code and us
 |---|---|---|
 | Users | GET/POST `/api/admin/users/`, GET/PATCH `/<pk>/` | `users.admin.view` / `users.admin.manage` |
 | Roles | GET/POST `/api/admin/roles/`, GET/PATCH/DELETE `/<pk>/`, GET `/api/admin/permissions/` | `roles.admin.view` / `roles.admin.manage` |
-| Sellers | GET/POST `/api/admin/sellers/`, GET/PATCH `/<pk>/`, POST/PATCH `/<pk>/status/` | `sellers.admin.manage` covers all; each also accepts its narrow code: GET `sellers.view`, POST `sellers.create`, PATCH `/<pk>/` `sellers.update` (business details only, reason required), status approve/reject `sellers.approve`, suspend/reactivate `sellers.suspend` (2026-09-29) |
+| Sellers | GET/POST `/api/admin/sellers/`, GET/PATCH `/<pk>/`, POST/PATCH `/<pk>/status/` | `sellers.admin.manage` covers all; each also accepts its narrow code: GET `sellers.view`, POST `sellers.create` (existing `user_id`, or a new role-less login `account` created in the same transaction), PATCH `/<pk>/` `sellers.update` (business details only, reason required), status approve/reject `sellers.approve`, suspend/reactivate `sellers.suspend` (2026-09-29) |
 | Shops | GET/POST `/api/admin/shops/`, GET `/<pk>/`, POST/PATCH `/<pk>/status/` | `shops.admin.manage` (status also accepts `shops.approve`, approve-only) |
 | Products | GET `/api/admin/products/`, GET `/<pk>/`, POST/PATCH `/<pk>/status/` | `products.admin.manage`/`products.view`; per-action codes on status. **No create/update.** |
 | Categories | GET/POST `/api/admin/categories/`, GET/PATCH/DELETE `/<pk>/` | `categories.admin.manage` on **all** methods, reads included. Delete is blocked when products reference the category. |

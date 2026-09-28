@@ -652,28 +652,60 @@ class AdminSellerListAPIView(APIView):
 
     def post(self, request):
         """
-        Creates a SellerProfile for an existing user, in the PENDING state.
+        Creates a SellerProfile in the PENDING state, either for an existing
+        user (`user_id`) or for a brand-new login account (`account`) created
+        in the same transaction, so a failed profile never leaves an orphaned
+        account behind.
 
         Gated by CanCreateAdminSellers: 'sellers.create' or the broader
         'sellers.admin.manage'. Until 2026-09-29 only the broader code counted,
         which left a role granted 'sellers.create' in the role editor (e.g. a
         customised Operation Manager) without any way to create a seller.
 
-        Creation is intentionally inert beyond the profile itself — the seller
-        starts PENDING and must go through the existing approval endpoints. No
-        role is assigned, no wallet or point transaction is created, and no shop
-        or product is touched.
+        'sellers.create' is enough for the new-account path too, without
+        'users.admin.manage': the account it makes holds no role, no staff or
+        superuser flag, and so less than public registration, which grants
+        CUSTOMER. Granting roles or staff access stays with POST /api/admin/users/.
+
+        Creation is intentionally inert beyond the account and the profile —
+        the seller starts PENDING and must go through the existing approval
+        endpoints. No role is assigned, no wallet or point transaction is
+        created, and no shop or product is touched.
         """
         serializer = AdminSellerCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         reason = data["reason"]
+        account = data.get("account")
 
         with transaction.atomic():
-            try:
-                target_user = User.objects.select_for_update().get(pk=data["user_id"])
-            except User.DoesNotExist:
-                raise NotFound("User not found.")
+            if account:
+                target_user = User.objects.create_user(
+                    username=account["username"],
+                    email=account["email"],
+                    password=account["password"],
+                    first_name=account.get("first_name", "").strip(),
+                    last_name=account.get("last_name", "").strip(),
+                )
+                AuditService.log(
+                    action="ADMIN_USER_CREATED",
+                    target=target_user,
+                    actor=request.user,
+                    reason=reason,
+                    new_state={
+                        "username": target_user.username,
+                        "email": target_user.email,
+                        "is_active": target_user.is_active,
+                        "roles": [],
+                        "source": "seller_creation",
+                    },
+                    ip_address=get_client_ip(request),
+                )
+            else:
+                try:
+                    target_user = User.objects.select_for_update().get(pk=data["user_id"])
+                except User.DoesNotExist:
+                    raise NotFound("User not found.")
 
             try:
                 seller = create_seller_profile(
@@ -702,6 +734,7 @@ class AdminSellerListAPIView(APIView):
                     "seller_id": seller.id,
                     "user_id": target_user.id,
                     "username": target_user.username,
+                    "new_account": bool(account),
                     "business_name": seller.business_name,
                     "seller_type": seller.seller_type,
                     "status": seller.status,

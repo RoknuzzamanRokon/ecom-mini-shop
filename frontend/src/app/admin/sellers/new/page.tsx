@@ -32,6 +32,13 @@ interface SelectedUserSummary {
 const FIELD_LABEL_CLASS =
   "block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1.5";
 
+type AccountMode = "existing" | "new";
+
+const ACCOUNT_MODES: { value: AccountMode; label: string; icon: string }[] = [
+  { value: "existing", label: "Existing user", icon: "person_search" },
+  { value: "new", label: "New account", icon: "person_add" },
+];
+
 const FIELD_CONTROL_CLASS =
   "w-full bg-surface border border-line rounded-lg text-xs text-ink placeholder:text-ink-faint transition-colors focus:outline-none focus:border-primary focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary disabled:opacity-50 disabled:cursor-not-allowed px-2.5 py-2";
 
@@ -79,6 +86,16 @@ function AdminSellerCreatePageContent() {
   const [businessPhone, setBusinessPhone] = useState("");
   const [taxId, setTaxId] = useState("");
   const [description, setDescription] = useState("");
+
+  // "new" creates the login account in the same request (AdminSellerCreateSerializer.account).
+  const [accountMode, setAccountMode] = useState<AccountMode>("existing");
+  const [newUsername, setNewUsername] = useState("");
+  const [newEmail, setNewEmail] = useState("");
+  const [newFirstName, setNewFirstName] = useState("");
+  const [newLastName, setNewLastName] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newPasswordConfirm, setNewPasswordConfirm] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
 
   const [confirming, setConfirming] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -180,7 +197,15 @@ function AdminSellerCreatePageContent() {
   const resolvedUserId = selectedUser?.id ?? (manualUserId.trim() ? Number(manualUserId.trim()) : null);
   const userIdValid = resolvedUserId !== null && Number.isInteger(resolvedUserId) && resolvedUserId > 0;
 
-  const canSubmit = userIdValid && businessName.trim().length > 0;
+  const passwordMismatch = newPasswordConfirm.length > 0 && newPassword !== newPasswordConfirm;
+  const newAccountValid =
+    newUsername.trim().length > 0 &&
+    newEmail.trim().length > 0 &&
+    newPassword.length > 0 &&
+    newPassword === newPasswordConfirm;
+  const accountValid = accountMode === "new" ? newAccountValid : userIdValid;
+
+  const canSubmit = accountValid && businessName.trim().length > 0;
 
   const submit = useCallback(
     async (reason: string) => {
@@ -189,13 +214,28 @@ function AdminSellerCreatePageContent() {
         setError("No active session token was found. Please sign in again.");
         return;
       }
-      if (submitting || !userIdValid || resolvedUserId === null) return;
+      const target =
+        accountMode === "new"
+          ? {
+              account: {
+                username: newUsername.trim(),
+                email: newEmail.trim(),
+                password: newPassword,
+                password_confirm: newPasswordConfirm,
+                first_name: newFirstName.trim(),
+                last_name: newLastName.trim(),
+              },
+            }
+          : resolvedUserId !== null
+          ? { user_id: resolvedUserId }
+          : null;
+      if (submitting || !accountValid || !target) return;
 
       try {
         setSubmitting(true);
         setError(null);
         const created = await createAdminSeller(token, {
-          user_id: resolvedUserId,
+          ...target,
           business_name: businessName.trim(),
           seller_type: sellerType,
           business_email: businessEmail.trim(),
@@ -214,8 +254,15 @@ function AdminSellerCreatePageContent() {
     },
     [
       submitting,
-      userIdValid,
+      accountMode,
+      accountValid,
       resolvedUserId,
+      newUsername,
+      newEmail,
+      newPassword,
+      newPasswordConfirm,
+      newFirstName,
+      newLastName,
       businessName,
       sellerType,
       businessEmail,
@@ -273,8 +320,8 @@ function AdminSellerCreatePageContent() {
       <div>
         <h1 className="text-xl sm:text-2xl font-black text-ink tracking-tight">New seller</h1>
         <p className="text-xs text-ink-muted max-w-3xl mt-1">
-          Attaches a SellerProfile to an existing platform user — this does not create a user
-          account. The profile always starts in{" "}
+          Attach a seller profile to an existing platform user, or create a new login account for
+          the seller at the same time. The profile always starts in{" "}
           <code className="font-mono text-[11px]">PENDING</code> status; approving, rejecting or
           activating it is a separate governance step from the sellers list.
         </p>
@@ -283,11 +330,156 @@ function AdminSellerCreatePageContent() {
       <div className="bg-surface rounded-2xl border border-line shadow-xs p-6 space-y-5">
         {/* User selection */}
         <div>
-          <p className={FIELD_LABEL_CLASS}>
-            User <span className="text-red-600">*</span>
-          </p>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mb-2">
+            <p className="text-[10px] font-extrabold uppercase tracking-wider text-ink-muted">
+              Seller account <span className="text-danger">*</span>
+            </p>
+            <div
+              role="group"
+              aria-label="Seller account source"
+              className="inline-flex self-start rounded-lg border border-line bg-surface-alt/40 p-0.5"
+            >
+              {ACCOUNT_MODES.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  aria-pressed={accountMode === option.value}
+                  disabled={submitting}
+                  onClick={() => {
+                    setAccountMode(option.value);
+                    setError(null);
+                  }}
+                  className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-md text-[11px] font-bold transition-colors cursor-pointer disabled:opacity-40 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary ${
+                    accountMode === option.value
+                      ? "bg-primary text-on-primary shadow-xs"
+                      : "text-ink-muted hover:text-ink"
+                  }`}
+                >
+                  <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+                    {option.icon}
+                  </span>
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
 
-          {prefillLoading ? (
+          {accountMode === "new" ? (
+            <div className="rounded-xl border border-line bg-surface-alt/40 p-4 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label htmlFor="new-account-username" className={FIELD_LABEL_CLASS}>
+                    Username <span className="text-danger">*</span>
+                  </label>
+                  <input
+                    id="new-account-username"
+                    type="text"
+                    required
+                    maxLength={150}
+                    autoComplete="off"
+                    disabled={submitting}
+                    value={newUsername}
+                    onChange={(e) => setNewUsername(e.target.value)}
+                    className={FIELD_CONTROL_CLASS}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="new-account-email" className={FIELD_LABEL_CLASS}>
+                    Email <span className="text-danger">*</span>
+                  </label>
+                  <input
+                    id="new-account-email"
+                    type="email"
+                    required
+                    maxLength={254}
+                    autoComplete="off"
+                    disabled={submitting}
+                    value={newEmail}
+                    onChange={(e) => setNewEmail(e.target.value)}
+                    className={FIELD_CONTROL_CLASS}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="new-account-first-name" className={FIELD_LABEL_CLASS}>
+                    First name
+                  </label>
+                  <input
+                    id="new-account-first-name"
+                    type="text"
+                    maxLength={150}
+                    autoComplete="off"
+                    disabled={submitting}
+                    value={newFirstName}
+                    onChange={(e) => setNewFirstName(e.target.value)}
+                    className={FIELD_CONTROL_CLASS}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="new-account-last-name" className={FIELD_LABEL_CLASS}>
+                    Last name
+                  </label>
+                  <input
+                    id="new-account-last-name"
+                    type="text"
+                    maxLength={150}
+                    autoComplete="off"
+                    disabled={submitting}
+                    value={newLastName}
+                    onChange={(e) => setNewLastName(e.target.value)}
+                    className={FIELD_CONTROL_CLASS}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="new-account-password" className={FIELD_LABEL_CLASS}>
+                    Password <span className="text-danger">*</span>
+                  </label>
+                  <input
+                    id="new-account-password"
+                    type={showPassword ? "text" : "password"}
+                    required
+                    autoComplete="new-password"
+                    disabled={submitting}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className={FIELD_CONTROL_CLASS}
+                  />
+                </div>
+                <div>
+                  <label htmlFor="new-account-password-confirm" className={FIELD_LABEL_CLASS}>
+                    Confirm password <span className="text-danger">*</span>
+                  </label>
+                  <input
+                    id="new-account-password-confirm"
+                    type={showPassword ? "text" : "password"}
+                    required
+                    autoComplete="new-password"
+                    disabled={submitting}
+                    value={newPasswordConfirm}
+                    onChange={(e) => setNewPasswordConfirm(e.target.value)}
+                    aria-invalid={passwordMismatch}
+                    className={FIELD_CONTROL_CLASS}
+                  />
+                  {passwordMismatch && (
+                    <p className="text-[11px] text-danger mt-1">Passwords do not match.</p>
+                  )}
+                </div>
+              </div>
+              <label className="inline-flex items-center gap-2 text-[11px] font-semibold text-ink-muted cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showPassword}
+                  onChange={(e) => setShowPassword(e.target.checked)}
+                  className="accent-primary"
+                />
+                Show password
+              </label>
+              <p className="text-[10px] text-ink-faint">
+                Creates a login account with no roles and no staff access. The seller signs in with
+                this username and password. The backend checks that the username and email are not
+                already taken and applies the platform password rules.
+              </p>
+            </div>
+          ) : prefillLoading ? (
             <p className="text-xs text-ink-muted">Loading the selected user…</p>
           ) : selectedUser ? (
             <div className="flex items-center justify-between gap-3 rounded-xl border border-line bg-surface-alt/40 p-3">
@@ -507,7 +699,7 @@ function AdminSellerCreatePageContent() {
             }}
             className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg bg-primary hover:bg-primary-hover text-on-primary text-xs font-bold transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           >
-            Create seller profile
+            {accountMode === "new" ? "Create account & seller" : "Create seller profile"}
           </button>
           <button
             type="button"
@@ -522,20 +714,30 @@ function AdminSellerCreatePageContent() {
 
       <AdminConfirmModal
         open={confirming}
-        title="Create Seller Profile"
+        title={accountMode === "new" ? "Create Account & Seller Profile" : "Create Seller Profile"}
         message={
           <>
-            Create a seller profile for{" "}
-            <strong>{selectedUser ? selectedUser.username : `user #${resolvedUserId}`}</strong>{" "}
-            with business name <strong>{businessName}</strong>?
+            {accountMode === "new" ? (
+              <>
+                Create a new account <strong>{newUsername.trim()}</strong> ({newEmail.trim()}) and
+                a seller profile with business name <strong>{businessName}</strong>?
+              </>
+            ) : (
+              <>
+                Create a seller profile for{" "}
+                <strong>{selectedUser ? selectedUser.username : `user #${resolvedUserId}`}</strong>{" "}
+                with business name <strong>{businessName}</strong>?
+              </>
+            )}
             <span className="block mt-2 text-ink-muted">
+              {accountMode === "new" && "The account has no roles or staff access. "}
               The profile is created in PENDING status. It is not automatically approved or
               activated.
             </span>
             {error && <span className="block mt-2 font-semibold text-red-600">{error}</span>}
           </>
         }
-        confirmLabel="Create seller profile"
+        confirmLabel={accountMode === "new" ? "Create account & seller" : "Create seller profile"}
         requireReason
         reasonRequired
         reasonLabel="Reason (recorded in the audit log)"

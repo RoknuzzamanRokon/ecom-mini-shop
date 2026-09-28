@@ -182,12 +182,17 @@ function extractErrorMessage(errorBody: unknown, fallback: string): string {
     if (typeof body.message === "string") return body.message;
     if (typeof body.error === "string") return body.error;
 
-    const fieldMessages = Object.entries(body)
-      .filter((entry): entry is [string, string[]] => {
-        const value = entry[1];
-        return Array.isArray(value) && value.every((item) => typeof item === "string");
-      })
-      .map(([field, messages]) => `${field}: ${messages.join(" ")}`);
+    const fieldMessages = Object.entries(body).flatMap(([field, value]) => {
+      if (Array.isArray(value) && value.every((item) => typeof item === "string")) {
+        return [`${field}: ${value.join(" ")}`];
+      }
+      // A nested serializer's errors, e.g. {"account": {"username": ["..."]}}.
+      if (value && typeof value === "object" && !Array.isArray(value)) {
+        const nested = extractErrorMessage(value, "");
+        return nested ? [nested] : [];
+      }
+      return [];
+    });
     if (fieldMessages.length > 0) return fieldMessages.join(" ");
   }
   return fallback;
@@ -497,11 +502,25 @@ export async function updateAdminSellerStatus(
 }
 
 /**
+ * AdminAccountFieldsSerializer: a new login account created together with the
+ * seller profile. It never carries roles or staff flags — the backend ignores
+ * any it is sent.
+ */
+export interface AdminSellerAccountPayload {
+  username: string;
+  email: string;
+  password: string;
+  password_confirm: string;
+  first_name?: string;
+  last_name?: string;
+}
+
+/**
  * The writable surface of AdminSellerCreateSerializer, in full.
  *
- * Targets an EXISTING user by id — there is no way to create a user and a
- * seller profile in one call, and none is added here. `seller_type` defaults
- * to FULL_SHOP_OWNER server-side when omitted, matching
+ * Send exactly one of `user_id` (attach to an EXISTING user) or `account`
+ * (create a new login account in the same transaction). `seller_type`
+ * defaults to FULL_SHOP_OWNER server-side when omitted, matching
  * SellerProfile.TYPE_FULL_SHOP_OWNER. The created profile always starts
  * PENDING (sellers.services.create_seller_profile hardcodes it) — this
  * payload cannot set an initial status because the serializer has no such
@@ -509,7 +528,9 @@ export async function updateAdminSellerStatus(
  */
 export interface AdminSellerCreatePayload {
   /** Primary key of the existing user to attach the seller profile to. */
-  user_id: number;
+  user_id?: number;
+  /** A new account to create instead of targeting `user_id`. */
+  account?: AdminSellerAccountPayload;
   business_name: string;
   /** Exact SellerProfile.SELLER_TYPE_CHOICES value; defaults server-side to FULL_SHOP_OWNER. */
   seller_type?: string;
@@ -525,8 +546,9 @@ export interface AdminSellerCreatePayload {
  * Requires 'sellers.create' or 'sellers.admin.manage' (CanCreateAdminSellers).
  *
  * The backend rejects a user_id that does not exist, or one that already has a
- * SellerProfile, with a 400 field/validation error — this client does not
- * pre-check either condition, it only surfaces what the backend decides.
+ * SellerProfile, and an `account` whose username or email is taken, with a 400
+ * field/validation error — this client does not pre-check any of these, it
+ * only surfaces what the backend decides.
  */
 export async function createAdminSeller(
   token: string,

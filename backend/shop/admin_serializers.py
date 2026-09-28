@@ -134,26 +134,16 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
         }
 
 
-class AdminUserCreateSerializer(serializers.Serializer):
+class AdminAccountFieldsSerializer(serializers.Serializer):
     """
-    Admin-governed user creation (POST /api/admin/users/).
-
-    Deliberately NOT built on CustomerRegistrationSerializer: that serializer is
-    a PUBLIC endpoint's contract. It forbids any privileged field outright and
-    hardcodes the CUSTOMER role, because an anonymous caller must never
-    influence either. An authorized administrator legitimately needs to set
-    is_active and assign roles, so applying the public rules here would make the
-    endpoint useless, and relaxing them there would weaken public registration.
-    The two therefore stay separate on purpose.
-
-    What IS shared with public registration is the account-quality policy —
+    The login-account fields every admin path that creates a user collects, and
+    the account-quality policy they share with public registration:
     case-insensitive uniqueness of username and email, password confirmation,
-    and Django's configured password validators — because those protect the
-    account itself rather than the privilege boundary.
+    and Django's configured password validators. Those rules protect the
+    account itself rather than the privilege boundary, so they live here once.
 
-    `roles` and `is_active` are validated here only for shape. WHICH roles this
-    actor may grant is an authorization decision and is enforced in the view,
-    against the same rules as AdminUserDetailAPIView.patch.
+    Used directly as the nested `account` of AdminSellerCreateSerializer, and
+    extended by AdminUserCreateSerializer with the privileged fields.
     """
 
     username = serializers.CharField(max_length=150, required=True)
@@ -169,18 +159,6 @@ class AdminUserCreateSerializer(serializers.Serializer):
     )
     last_name = serializers.CharField(
         max_length=150, required=False, allow_blank=True, default=""
-    )
-    is_active = serializers.BooleanField(required=False, default=True)
-    roles = serializers.ListField(
-        child=serializers.CharField(max_length=50),
-        required=False,
-        default=list,
-        help_text="Role codes to assign atomically with creation.",
-    )
-    reason = serializers.CharField(
-        required=True,
-        max_length=500,
-        help_text="Required justification for the administrative creation.",
     )
 
     def validate_username(self, value):
@@ -214,6 +192,44 @@ class AdminUserCreateSerializer(serializers.Serializer):
         except DjangoValidationError as exc:
             raise serializers.ValidationError({"password": list(exc.messages)})
 
+        return attrs
+
+
+class AdminUserCreateSerializer(AdminAccountFieldsSerializer):
+    """
+    Admin-governed user creation (POST /api/admin/users/).
+
+    Deliberately NOT built on CustomerRegistrationSerializer: that serializer is
+    a PUBLIC endpoint's contract. It forbids any privileged field outright and
+    hardcodes the CUSTOMER role, because an anonymous caller must never
+    influence either. An authorized administrator legitimately needs to set
+    is_active and assign roles, so applying the public rules here would make the
+    endpoint useless, and relaxing them there would weaken public registration.
+    The two therefore stay separate on purpose.
+
+    What IS shared with public registration is the account-quality policy,
+    inherited from AdminAccountFieldsSerializer.
+
+    `roles` and `is_active` are validated here only for shape. WHICH roles this
+    actor may grant is an authorization decision and is enforced in the view,
+    against the same rules as AdminUserDetailAPIView.patch.
+    """
+
+    is_active = serializers.BooleanField(required=False, default=True)
+    roles = serializers.ListField(
+        child=serializers.CharField(max_length=50),
+        required=False,
+        default=list,
+        help_text="Role codes to assign atomically with creation.",
+    )
+    reason = serializers.CharField(
+        required=True,
+        max_length=500,
+        help_text="Required justification for the administrative creation.",
+    )
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
         # Duplicate role codes would make the assignment diff ambiguous.
         attrs["roles"] = sorted(set(attrs.get("roles", [])))
         return attrs
@@ -382,6 +398,12 @@ class AdminSellerCreateSerializer(serializers.Serializer):
     removed in Phase 2L (Known Issue #5). `user_id` and the governance `reason`
     are what distinguish an administered creation from the old self-service one.
 
+    Exactly one of `user_id` (attach to an existing user) or `account` (create
+    a new login account first, in the same transaction) must be sent. A new
+    account gets only the AdminAccountFieldsSerializer fields: no roles, no
+    staff or superuser flag, and is_active=True. Anything else sent inside
+    `account` is ignored.
+
     Seller-type validity, the initial status and the one-profile-per-user rule
     are NOT re-implemented here — they belong to SellerProfile.full_clean() and
     sellers.services.create_seller_profile, which this endpoint calls. The
@@ -390,8 +412,12 @@ class AdminSellerCreateSerializer(serializers.Serializer):
     """
 
     user_id = serializers.IntegerField(
-        required=True,
+        required=False,
         help_text="Primary key of the existing user to attach the seller profile to.",
+    )
+    account = AdminAccountFieldsSerializer(
+        required=False,
+        help_text="A new login account to create and attach the seller profile to, instead of user_id.",
     )
     business_name = serializers.CharField(max_length=200, required=True)
     seller_type = serializers.ChoiceField(
@@ -423,6 +449,13 @@ class AdminSellerCreateSerializer(serializers.Serializer):
         if not name:
             raise serializers.ValidationError("Business name cannot be empty.")
         return name
+
+    def validate(self, attrs):
+        if ("user_id" in attrs) == ("account" in attrs):
+            raise serializers.ValidationError(
+                {"detail": "Send either user_id for an existing user or account for a new one."}
+            )
+        return attrs
 
 
 class AdminSellerUpdateSerializer(serializers.Serializer):
