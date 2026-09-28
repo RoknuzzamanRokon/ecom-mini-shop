@@ -1129,7 +1129,8 @@ html, body {
 }
 
 /* ==========================================================================
-   Login ring (app/login/page.tsx)
+   Login ring (components/auth/LoginRing.tsx, used by app/login and
+   app/admin/login)
    The form sits inside a static inner ring; an outer ring of diamond beads
    slowly turns around it. Wrong credentials flash the beads in the danger
    colour and shake the form; a successful sign-in sinks both rings into the
@@ -1283,6 +1284,52 @@ html, body {
   opacity: 0.6;
 }
 
+/* Password input with the show / hide eye button inside its right end. */
+.login-ring__password {
+  position: relative;
+}
+
+.login-ring__password .login-ring__input {
+  padding-right: 36px;
+}
+
+.login-ring__reveal {
+  position: absolute;
+  top: 50%;
+  right: 5px;
+  transform: translateY(-50%);
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--c-text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.login-ring__reveal .material-symbols-outlined {
+  font-size: 18px;
+}
+
+.login-ring__reveal:hover:not(:disabled) {
+  color: var(--c-text-strong);
+  background: color-mix(in srgb, var(--c-text-strong) 8%, transparent);
+}
+
+.login-ring__reveal:focus-visible {
+  outline: 2px solid var(--c-focus-ring);
+  outline-offset: 1px;
+}
+
+.login-ring__reveal:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .login-ring__error {
   min-height: 14px;
   margin-top: -4px;
@@ -1421,6 +1468,20 @@ html, body {
   .login-ring__input {
     padding: 6px 8px;
     font-size: 11px;
+  }
+
+  .login-ring__password .login-ring__input {
+    padding-right: 30px;
+  }
+
+  .login-ring__reveal {
+    right: 3px;
+    width: 22px;
+    height: 22px;
+  }
+
+  .login-ring__reveal .material-symbols-outlined {
+    font-size: 16px;
   }
 
   .login-ring__submit {

@@ -7,26 +7,12 @@ import { useAuth } from "@/context/AuthContext";
 import { safeNextPath } from "@/lib/auth";
 import Header from "@/components/layout/Header";
 import Navbar from "@/components/layout/Navbar";
-
-// 26 diamond beads spaced evenly around the outer ring (percent of the ring box).
-// Rounded so the server and client render identical style strings.
-const BEADS = Array.from({ length: 26 }, (_, i) => {
-  const angle = (i / 26) * 2 * Math.PI;
-  return {
-    left: `${(50 + 48.5 * Math.sin(angle)).toFixed(2)}%`,
-    top: `${(50 - 48.5 * Math.cos(angle)).toFixed(2)}%`,
-  };
-});
-
-// How long the rings take to sink in (0.9s + the inner ring's 0.15s delay).
-const SUCCESS_ANIMATION_MS = 1050;
-
-function prefersReducedMotion() {
-  return (
-    typeof window !== "undefined" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches
-  );
-}
+import LoginRing, {
+  LoginRingPasswordField,
+  SUCCESS_ANIMATION_MS,
+  prefersReducedMotion,
+  useLoginRingEffects,
+} from "@/components/auth/LoginRing";
 
 export default function LoginPage() {
   return (
@@ -64,9 +50,7 @@ function LoginPageContent() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
 
-  const formRef = useRef<HTMLFormElement>(null);
-  const beadsRef = useRef<HTMLDivElement>(null);
-  const errorFxTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { formRef, beadsRef, playErrorEffect } = useLoginRingEffects();
   const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // `login()` flips isAuthenticated before it resolves. Holding off while a
@@ -84,29 +68,10 @@ function LoginPageContent() {
 
   useEffect(
     () => () => {
-      if (errorFxTimer.current) clearTimeout(errorFxTimer.current);
       if (redirectTimer.current) clearTimeout(redirectTimer.current);
     },
     []
   );
-
-  // Flash the beads and shake the form. Removing the class and forcing a
-  // reflow restarts the animations when errors come in quick succession.
-  const playErrorEffect = () => {
-    const beads = beadsRef.current;
-    const form = formRef.current;
-    if (!beads || !form) return;
-    beads.classList.remove("is-blinking");
-    form.classList.remove("is-shaking");
-    void beads.offsetWidth;
-    beads.classList.add("is-blinking");
-    form.classList.add("is-shaking");
-    if (errorFxTimer.current) clearTimeout(errorFxTimer.current);
-    errorFxTimer.current = setTimeout(() => {
-      beads.classList.remove("is-blinking");
-      form.classList.remove("is-shaking");
-    }, 1100);
-  };
 
   const showError = (message: string) => {
     setError(message);
@@ -184,100 +149,71 @@ function LoginPageContent() {
       </div>
 
       <main className="flex-1 flex flex-col items-center justify-center bg-page px-4 py-10">
-        <div className={`login-ring${isSuccess ? " is-success" : ""}`}>
-          {/* Outer ring (decorative, rotating) */}
-          <div className="login-ring__outer" aria-hidden="true">
-            <div className="login-ring__wire" />
-            <div className="login-ring__track" />
-            <div ref={beadsRef} className="login-ring__beads">
-              {BEADS.map((pos, i) => (
-                <span key={i} className="login-ring__bead" style={pos} />
-              ))}
-            </div>
-          </div>
-
-          {/* Inner ring holding the form */}
-          <div className="login-ring__inner">
-            <form
-              ref={formRef}
-              onSubmit={handleSubmit}
-              className="login-ring__form"
-            >
-              <h1 className="login-ring__title">Welcome Back</h1>
-              <p className="login-ring__subtitle">
-                Sign in to your MiniShop account
-              </p>
-
-              <div className="login-ring__field">
-                <label htmlFor="username" className="login-ring__label">
-                  Username
-                </label>
-                <input
-                  id="username"
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Enter your username"
-                  autoComplete="username"
-                  autoFocus
-                  disabled={isSubmitting || isSuccess}
-                  className="login-ring__input"
-                />
-              </div>
-
-              <div className="login-ring__field">
-                <label htmlFor="password" className="login-ring__label">
-                  Password
-                </label>
-                <input
-                  id="password"
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter your password"
-                  autoComplete="current-password"
-                  disabled={isSubmitting || isSuccess}
-                  className="login-ring__input"
-                />
-              </div>
-
-              <div className="login-ring__error" role="alert">
-                {error}
-              </div>
-
-              <button
-                type="submit"
-                disabled={isSubmitting || isSuccess}
-                className="login-ring__submit"
-              >
-                {isSubmitting ? (
-                  <>
-                    <span className="material-symbols-outlined animate-spin text-[16px]">
-                      progress_activity
-                    </span>
-                    Signing in...
-                  </>
-                ) : (
-                  "Sign In"
-                )}
-              </button>
-            </form>
-          </div>
-
-          {/* Shown once the rings have sunk in, while the redirect happens */}
-          <div
-            className={`login-ring__welcome${isSuccess ? " is-visible" : ""}`}
-            style={isSuccess ? { transitionDelay: "0.95s" } : undefined}
-            aria-live="polite"
+        <LoginRing
+          success={isSuccess}
+          beadsRef={beadsRef}
+          welcome={
+            <>
+              <h2>Welcome back</h2>
+              <p>Signing you in…</p>
+            </>
+          }
+        >
+          <form
+            ref={formRef}
+            onSubmit={handleSubmit}
+            className="login-ring__form"
           >
-            {isSuccess && (
-              <>
-                <h2>Welcome back</h2>
-                <p>Signing you in…</p>
-              </>
-            )}
-          </div>
-        </div>
+            <h1 className="login-ring__title">Welcome Back</h1>
+            <p className="login-ring__subtitle">
+              Sign in to your MiniShop account
+            </p>
+
+            <div className="login-ring__field">
+              <label htmlFor="username" className="login-ring__label">
+                Username
+              </label>
+              <input
+                id="username"
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                placeholder="Enter your username"
+                autoComplete="username"
+                autoFocus
+                disabled={isSubmitting || isSuccess}
+                className="login-ring__input"
+              />
+            </div>
+
+            <LoginRingPasswordField
+              value={password}
+              onChange={setPassword}
+              disabled={isSubmitting || isSuccess}
+            />
+
+            <div className="login-ring__error" role="alert">
+              {error}
+            </div>
+
+            <button
+              type="submit"
+              disabled={isSubmitting || isSuccess}
+              className="login-ring__submit"
+            >
+              {isSubmitting ? (
+                <>
+                  <span className="material-symbols-outlined animate-spin text-[16px]">
+                    progress_activity
+                  </span>
+                  Signing in...
+                </>
+              ) : (
+                "Sign In"
+              )}
+            </button>
+          </form>
+        </LoginRing>
 
         {/* Registration + back links sit under the ring */}
         <div

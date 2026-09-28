@@ -1,24 +1,31 @@
 "use client";
 
-import React, { useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import React, { useState, useEffect, useRef, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import Image from "next/image";
 import Link from "next/link";
 import { loginUser, getCurrentUser } from "@/lib/api";
-import { clearTokens, setTokens } from "@/lib/auth";
+import { clearTokens, safeNextPath, setTokens } from "@/lib/auth";
 import { isManagementUser } from "@/lib/admin-auth";
+import LoginRing, {
+  LoginRingPasswordField,
+  SUCCESS_ANIMATION_MS,
+  prefersReducedMotion,
+  useLoginRingEffects,
+} from "@/components/auth/LoginRing";
 
 export default function AdminLoginPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center bg-page">
-          <div className="flex flex-col items-center gap-3">
-            <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
-            <p className="text-xs font-semibold text-ink-muted uppercase tracking-wider">
-              Loading Console...
-            </p>
+        <AdminLoginShell>
+          <div className="flex items-center gap-2 text-ink-muted">
+            <span className="material-symbols-outlined animate-spin text-[24px]">
+              progress_activity
+            </span>
+            <span className="text-sm">Loading console...</span>
           </div>
-        </div>
+        </AdminLoginShell>
       }
     >
       <AdminLoginForm />
@@ -26,27 +33,88 @@ export default function AdminLoginPage() {
   );
 }
 
+/**
+ * The console has no storefront chrome, so the sign-in ring gets a slim brand
+ * bar in the navbar's colours instead of the storefront's search and links.
+ * Text is --c-nav-text, not --c-on-primary, which is near-black in dark mode.
+ */
+function AdminLoginShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen flex flex-col bg-page">
+      <header className="sticky top-0 z-40 w-full bg-nav shadow-sm">
+        <div className="max-w-[1360px] mx-auto px-4 sm:px-6 py-2.5 flex items-center gap-3">
+          <Link
+            href="/"
+            // The wordmark is dark navy, so the chip stays light in every theme
+            // rather than following --c-surface into dark mode (as in Header).
+            className="flex items-center bg-[#FBF9F4] px-3 py-1.5 rounded-lg shadow-sm border border-line/40 transition-transform active:scale-98"
+          >
+            <Image
+              src="/logo.png"
+              alt="MiniShop"
+              width={440}
+              height={149}
+              priority
+              className="h-8 w-auto"
+            />
+          </Link>
+          <span className="h-6 w-px bg-nav-text/30" aria-hidden="true" />
+          <span className="text-sm font-semibold tracking-wide text-nav-text">
+            Admin console
+          </span>
+        </div>
+      </header>
+
+      <main className="flex-1 flex flex-col items-center justify-center px-4 py-10">
+        {children}
+      </main>
+    </div>
+  );
+}
+
 function AdminLoginForm() {
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const redirectParam = searchParams.get("redirect") || "/admin";
+  // AdminGuard sets ?redirect= to the page that bounced here, but anyone can
+  // craft the link, so only a path on this site is followed.
+  const redirectTo = safeNextPath(searchParams.get("redirect"), "/admin");
 
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+
+  const { formRef, beadsRef, playErrorEffect } = useLoginRingEffects();
+  const redirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (redirectTimer.current) clearTimeout(redirectTimer.current);
+    },
+    []
+  );
+
+  const showError = (message: string) => {
+    setError(message);
+    playErrorEffect();
+  };
+
+  // A full page load rather than router.replace(), so AuthContext rehydrates
+  // from the tokens just stored.
+  const enterConsole = () => {
+    window.location.href = redirectTo;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
+    setError("");
 
     if (!username.trim() || !password) {
-      setError("Please enter your username and password.");
+      showError("Please enter your username and password.");
       return;
     }
 
-    setLoading(true);
-
+    setIsSubmitting(true);
     try {
       // 1. Obtain JWT tokens
       const tokens = await loginUser(username.trim(), password);
@@ -60,8 +128,7 @@ function AdminLoginForm() {
         // the legacy access-token keys it also clears cannot leave a
         // non-management session half-signed-in.
         clearTokens();
-        setError("Access denied: You do not have management portal permissions.");
-        setLoading(false);
+        showError("Access denied: You do not have management portal permissions.");
         return;
       }
 
@@ -69,122 +136,107 @@ function AdminLoginForm() {
       //    (Phase 2J) rather than raw localStorage literals.
       setTokens(tokens.access, tokens.refresh);
 
-      // 5. Redirect to management dashboard or preserved destination
-      // Using window.location.href to ensure full AuthContext state rehydration on navigation
-      window.location.href = redirectParam;
-    } catch (err: any) {
+      // 5. Sink the rings, then open the console at the preserved destination
+      if (prefersReducedMotion()) {
+        enterConsole();
+      } else {
+        setIsSuccess(true);
+        redirectTimer.current = setTimeout(enterConsole, SUCCESS_ANIMATION_MS);
+      }
+    } catch (err) {
       console.error("Management login failed:", err);
-      setError(
-        err?.message || "Invalid credentials. Please verify your username and password."
+      showError(
+        err instanceof Error && err.message
+          ? err.message
+          : "Invalid credentials. Please verify your username and password."
       );
-      setLoading(false);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8 bg-page">
-      <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
-        {/* Management Portal Badge */}
-        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary text-on-primary shadow-lg shadow-primary/20 mb-4">
-          <span className="material-symbols-outlined text-[36px]">admin_panel_settings</span>
-        </div>
-        <h2 className="text-2xl font-black text-ink tracking-tight">
-          MiniShop Management
-        </h2>
-        <p className="mt-1 text-xs uppercase font-bold tracking-widest text-ink-muted">
-          Staff & Operations Portal
-        </p>
-      </div>
+    <AdminLoginShell>
+      <LoginRing
+        success={isSuccess}
+        beadsRef={beadsRef}
+        welcome={
+          <>
+            <h2>Welcome back</h2>
+            <p>Opening the console…</p>
+          </>
+        }
+      >
+        <form ref={formRef} onSubmit={handleSubmit} className="login-ring__form">
+          <h1 className="login-ring__title">Staff Sign In</h1>
+          <p className="login-ring__subtitle">MiniShop management console</p>
 
-      <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md px-4">
-        <div className="bg-surface py-8 px-6 sm:px-10 rounded-2xl border border-line shadow-sm">
-          {error && (
-            <div className="mb-6 p-3.5 rounded-xl bg-red-500/10 border border-red-500/20 text-red-600 text-xs flex items-start gap-2.5">
-              <span className="material-symbols-outlined text-[18px] shrink-0 mt-0.5">
-                error
-              </span>
-              <span className="font-medium leading-relaxed">{error}</span>
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label
-                htmlFor="username"
-                className="block text-xs font-bold uppercase tracking-wider text-ink mb-1.5"
-              >
-                Staff Username / Email
-              </label>
-              <div className="relative">
-                <input
-                  id="username"
-                  name="username"
-                  type="text"
-                  autoComplete="username"
-                  required
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="admin or staff@minishop.com"
-                  className="w-full px-3.5 py-2.5 bg-surface-alt border border-line rounded-xl text-xs text-ink placeholder:text-ink-muted focus:outline-hidden focus:border-primary focus:ring-1 focus:ring-primary transition-colors"
-                />
-              </div>
-            </div>
-
-            <div>
-              <label
-                htmlFor="password"
-                className="block text-xs font-bold uppercase tracking-wider text-ink mb-1.5"
-              >
-                Password
-              </label>
-              <div className="relative">
-                <input
-                  id="password"
-                  name="password"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••••••"
-                  className="w-full px-3.5 py-2.5 bg-surface-alt border border-line rounded-xl text-xs text-ink placeholder:text-ink-muted focus:outline-hidden focus:border-primary focus:ring-1 focus:ring-primary transition-colors"
-                />
-              </div>
-            </div>
-
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-2.5 px-4 rounded-xl bg-primary hover:bg-primary-hover text-on-primary font-bold text-xs uppercase tracking-wider transition-all shadow-sm flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
-              >
-                {loading ? (
-                  <>
-                    <div className="h-4 w-4 border-2 border-on-primary border-t-transparent rounded-full animate-spin" />
-                    <span>Verifying Credentials...</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="material-symbols-outlined text-[18px]">login</span>
-                    <span>Sign In to Console</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </form>
-
-          <div className="mt-6 pt-6 border-t border-line flex items-center justify-between text-xs text-ink-muted">
-            <Link
-              href="/"
-              className="hover:text-ink transition-colors flex items-center gap-1 font-medium"
-            >
-              <span className="material-symbols-outlined text-[14px]">arrow_back</span>
-              <span>Back to Storefront</span>
-            </Link>
-            <span className="text-[10px] text-ink-muted">Authorized Personnel Only</span>
+          <div className="login-ring__field">
+            <label htmlFor="username" className="login-ring__label">
+              Username
+            </label>
+            <input
+              id="username"
+              name="username"
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="Enter your username"
+              autoComplete="username"
+              autoFocus
+              disabled={isSubmitting || isSuccess}
+              className="login-ring__input"
+            />
           </div>
-        </div>
+
+          <LoginRingPasswordField
+            value={password}
+            onChange={setPassword}
+            name="password"
+            disabled={isSubmitting || isSuccess}
+          />
+
+          <div className="login-ring__error" role="alert">
+            {error}
+          </div>
+
+          <button
+            type="submit"
+            disabled={isSubmitting || isSuccess}
+            className="login-ring__submit"
+          >
+            {isSubmitting ? (
+              <>
+                <span className="material-symbols-outlined animate-spin text-[16px]">
+                  progress_activity
+                </span>
+                Signing in...
+              </>
+            ) : (
+              "Sign In"
+            )}
+          </button>
+        </form>
+      </LoginRing>
+
+      {/* Access note + back link sit under the ring */}
+      <div
+        className={`mt-2 flex flex-col items-center gap-3 transition-opacity duration-300 ${
+          isSuccess ? "opacity-0" : ""
+        }`}
+      >
+        <p className="text-sm text-ink-muted inline-flex items-center gap-1.5">
+          <span className="material-symbols-outlined text-[16px]">lock</span>
+          Authorized personnel only
+        </p>
+        <Link
+          href="/"
+          className="text-xs text-ink-muted hover:text-ink inline-flex items-center gap-1 transition-colors"
+        >
+          <span className="material-symbols-outlined text-[14px]">arrow_back</span>
+          Back to Storefront
+        </Link>
       </div>
-    </div>
+    </AdminLoginShell>
   );
 }
