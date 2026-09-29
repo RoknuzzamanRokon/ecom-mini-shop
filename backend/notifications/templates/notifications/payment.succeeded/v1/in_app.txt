@@ -1,0 +1,4 @@
+{% load notification_format %}
+{% block title %}Payment received for order {{ order_number }}{% endblock %}
+{% block body %}We've received your payment of {{ amount|taka }} for order {{ order_number }} (payment {{ payment_number }}).{% endblock %}
+{% block action_url %}/profile/orders/{{ order_number }}{% endblock %}

@@ -1,0 +1,4 @@
+{% load notification_format %}
+{% block title %}Payment for order {{ order_number }} didn't go through{% endblock %}
+{% block body %}Your payment of {{ amount|taka }} for order {{ order_number }} didn't go through. You can try again from your order page.{% endblock %}
+{% block action_url %}/profile/orders/{{ order_number }}{% endblock %}

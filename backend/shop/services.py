@@ -14,6 +14,8 @@ from rest_framework.exceptions import NotFound, PermissionDenied
 from audit.services import AuditService
 from cart.models import Cart, CartItem
 from customers.models import Address
+from notifications import events
+from notifications.publisher import publish
 from points.models import PointTransaction
 from points.services import InsufficientPointsError, PointService
 from rbac.models import Role
@@ -696,6 +698,28 @@ class OrderService:
                 ip_address=ip_address,
             )
 
+            # 12. Notify the customer and each seller (commits with the order)
+            publish(
+                events.ORDER_PLACED,
+                payload={
+                    "order_id": order.pk,
+                    "order_number": order.order_number,
+                    "total_amount": str(order.total_amount),
+                    "items": [
+                        {
+                            "product_name": item_info["product_name"],
+                            "quantity": item_info["quantity"],
+                            "line_total": str(item_info["line_total"]),
+                            "seller_id": item_info["seller"].pk if item_info["seller"] else None,
+                        }
+                        for item_info in order_items_to_create
+                    ],
+                },
+                aggregate=order,
+                actor=actor or user,
+                idempotency_key=f"order:{order.order_number}:placed",
+            )
+
             logger.info(
                 "Order created: user=%s order_number=%s total=%s items=%d",
                 user.username,
@@ -763,6 +787,16 @@ class OrderService:
                 ip_address=ip_address,
             )
 
+            # The order's own customer acting means cancel_customer_order();
+            # anyone else reaching this method is staff.
+            is_customer = (
+                locked_order.user_id is not None
+                and getattr(actor, "pk", None) == locked_order.user_id
+            )
+            cls._publish_status_change(
+                locked_order, old_status, actor, changed_by="CUSTOMER" if is_customer else "STAFF"
+            )
+
             logger.info(
                 "Order status updated: order=%s old=%s new=%s actor=%s",
                 locked_order.order_number,
@@ -771,6 +805,22 @@ class OrderService:
                 getattr(actor, "username", "system"),
             )
             return locked_order
+
+    @staticmethod
+    def _publish_status_change(order: Order, old_status: str, actor, changed_by: str):
+        """One order.status_changed event, inside the transition's transaction."""
+        publish(
+            events.ORDER_STATUS_CHANGED,
+            payload={
+                "order_id": order.pk,
+                "order_number": order.order_number,
+                "from_status": old_status,
+                "to_status": order.status,
+                "changed_by": changed_by,
+            },
+            aggregate=order,
+            actor=actor,
+        )
 
     @classmethod
     def cancel_customer_order(
@@ -979,6 +1029,7 @@ class OrderService:
                 },
                 ip_address=ip_address,
             )
+            cls._publish_status_change(locked_order, old_status, actor, changed_by="SELLER")
 
             logger.info(
                 "Seller updated order status: order=%s seller=%s old=%s new=%s actor=%s",

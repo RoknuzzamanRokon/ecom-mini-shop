@@ -10,6 +10,8 @@ from django.db.models import Sum
 from django.utils import timezone
 
 from audit.services import AuditService
+from notifications import events
+from notifications.publisher import publish
 from shop.models import Order, Payment, Refund
 
 logger = logging.getLogger(__name__)
@@ -116,6 +118,15 @@ class PaymentService:
             )
             return payment
 
+    @staticmethod
+    def _payment_payload(payment: Payment, order: Optional[Order]) -> Dict[str, Any]:
+        return {
+            "payment_id": payment.pk,
+            "payment_number": payment.payment_number,
+            "order_number": order.order_number if order else "",
+            "amount": str(payment.amount),
+        }
+
     @classmethod
     def process_payment_success(
         cls,
@@ -183,6 +194,13 @@ class PaymentService:
                 },
                 ip_address=ip_address,
             )
+            publish(
+                events.PAYMENT_SUCCEEDED,
+                payload=cls._payment_payload(locked_payment, locked_order),
+                aggregate=locked_payment,
+                actor=actor,
+                idempotency_key=f"payment:{locked_payment.payment_number}:succeeded",
+            )
 
             logger.info(
                 "Payment success recorded: payment=%s order=%s amount=%s",
@@ -235,6 +253,15 @@ class PaymentService:
                     "reason": reason,
                 },
                 ip_address=ip_address,
+            )
+            # A failed payment can be retried and fail again, so each failure
+            # is its own event (the locked, state-checked transition guards
+            # against duplicates) rather than one per payment number.
+            publish(
+                events.PAYMENT_FAILED,
+                payload=cls._payment_payload(locked_payment, locked_payment.order),
+                aggregate=locked_payment,
+                actor=actor,
             )
 
             logger.info("Payment failed: payment=%s reason=%s", locked_payment.payment_number, reason)
@@ -337,6 +364,18 @@ class PaymentService:
                     "remaining_refundable": str(max(Decimal("0.00"), locked_payment.amount - new_cumulative_refunded)),
                 },
                 ip_address=ip_address,
+            )
+            publish(
+                events.REFUND_PROCESSED,
+                payload={
+                    "refund_id": refund.pk,
+                    "refund_number": refund.refund_number,
+                    "order_number": locked_order.order_number if locked_order else "",
+                    "amount": str(refund.amount),
+                },
+                aggregate=refund,
+                actor=actor,
+                idempotency_key=f"refund:{refund.refund_number}",
             )
 
             logger.info(

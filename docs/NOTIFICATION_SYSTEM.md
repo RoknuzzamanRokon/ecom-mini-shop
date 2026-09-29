@@ -1,6 +1,6 @@
 # MiniShop — Notification System Plan
 
-**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–7
+**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–8
 of 16 are done. From Task 3 on, the work is built on the §3 answers as proposed.
 
 This is the architecture and task list for the notification system. Work through the
@@ -270,7 +270,7 @@ switched off (D8); **○** is on by default and can be switched off; **—** mea
 | ↳ same event, second handler | — | each seller with items in the order, with only their own items (SELLER) | SELLER_ORDERS | ○ | (event, recipient) |
 | `order.status_changed` | `OrderService.transition_order_status` (`:633`), `transition_seller_order_status` (`:817`), `cancel_customer_order` (`:700`) | customer, for CONFIRMED, SHIPPED, DELIVERED, CANCELLED. Sellers of the order when the *customer* cancels. | ORDERS / SELLER_ORDERS | ○ for SHIPPED, DELIVERED, CANCELLED | UUID (the transition is guarded) |
 | `payment.succeeded` | `PaymentService.process_payment_success` (`shop/payment_service.py:120`) | customer | PAYMENTS | ● | `payment:{payment_number}:succeeded` |
-| `payment.failed` | `PaymentService.process_payment_failure` (`:196`) | customer | PAYMENTS | ● | `payment:{payment_number}:failed` |
+| `payment.failed` | `PaymentService.process_payment_failure` (`:196`) | customer | PAYMENTS | ● | UUID (a failed payment can be retried and fail again; changed in Task 8) |
 | `refund.processed` | `PaymentService.process_refund` (`:244`) | customer | PAYMENTS | ● | `refund:{refund_number}` |
 | `support.reply_received` | `SupportTicketService.add_staff_message` (`support/services.py:368`), **public replies only** | ticket owner, CUSTOMER or SELLER per the ticket's channel | SUPPORT | ○ | `support_message:{id}` |
 
@@ -510,7 +510,7 @@ and phone widths.
 | 5 | Router: audiences, handlers, preferences, rendering | backend | ✅ Done |
 | 6 | Worker: claims, leases, retries, dead letters, `run_notification_worker` | backend | ✅ Done |
 | 7 | Email channel: adapter, layout templates, settings | backend | ✅ Done |
-| 8 | Producers, wave 1: orders and payments | backend | ⬜ Not started |
+| 8 | Producers, wave 1: orders and payments | backend | ✅ Done |
 | 9 | Producers, wave 2: seller and shop lifecycle, shop submitted | backend | ⬜ Not started |
 | 10 | Producers, wave 3: product moderation, support, reviews, low stock, points | backend | ⬜ Not started |
 | 11 | Inbox and preferences API | backend | ⬜ Not started |
@@ -732,7 +732,7 @@ the same rules the view had:
 
 | Event | Required payload keys |
 |---|---|
-| `order.placed` | `order_id`, `order_number`, `total_amount` |
+| `order.placed` | `order_id`, `order_number`, `total_amount`, `items` (`[{product_name, quantity, line_total, seller_id}]`, added in Task 8) |
 | `order.status_changed` | `order_id`, `order_number`, `from_status`, `to_status`, `changed_by` (CUSTOMER · SELLER · STAFF) |
 | `payment.succeeded`, `payment.failed` | `payment_id`, `payment_number`, `order_number`, `amount` |
 | `refund.processed` | `refund_id`, `refund_number`, `order_number`, `amount` |
@@ -1080,14 +1080,81 @@ the same rules the view had:
 
 ### Task 8 — Producers, wave 1: orders and payments
 
-- [ ] `publish()` calls in `OrderService` (placed, status changed, customer cancellation)
+- [x] `publish()` calls in `OrderService` (placed, status changed, customer cancellation)
       and `PaymentService` (succeeded, failed, refund processed), inside their existing
       transactions.
-- [ ] Handlers and templates (in-app + email, per §5), including the per-seller item
+- [x] Handlers and templates (in-app + email, per §5), including the per-seller item
       filter for `order.placed`.
-- [ ] Tests: the producer and router tests in §13 for these events.
+- [x] Tests: the producer and router tests in §13 for these events.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done (2026-09-29).
+
+- **Checks run:** `check` and `makemigrations --check` are clean. The 42 tests that need
+  no database pass, including template coverage for the five handled events. Every
+  template was rendered with sample data and read.
+- **Smoke run against the dev MySQL:** I published `order.placed` and a customer
+  `order.status_changed` → CANCELLED for a real order (`ORD20260925F0F7A6`), with the fast
+  path off, and routed them. Each gave one CUSTOMER and one SELLER notification with the
+  expected text and an email delivery. I deleted every row afterwards.
+- **Not run yet:** the database-backed producer and router tests. They run in Task 16, as
+  the owner asked.
+
+**Producers** (each `publish()` sits after the service's audit row, inside its existing
+transaction):
+
+| Service method | Event | Idempotency key | Notes |
+|---|---|---|---|
+| `OrderService.create_order_from_cart` | `order.placed` | `order:{order_number}:placed` | The payload carries the snapshot lines, with each line's `seller_id`. |
+| `OrderService.transition_order_status` | `order.status_changed` | UUID | `changed_by` is CUSTOMER when the actor is the order's own customer (`cancel_customer_order` routes through here), otherwise STAFF. A refused transition raises before publishing. |
+| `OrderService.transition_seller_order_status` | `order.status_changed` | UUID | `changed_by` is SELLER. |
+| `PaymentService.process_payment_success` | `payment.succeeded` | `payment:{payment_number}:succeeded` | The idempotent repeat (already PAID) returns before publishing. |
+| `PaymentService.process_payment_failure` | `payment.failed` | UUID | **Changed from §5's natural key.** A payment can go FAILED → PENDING and fail again, and that second failure is a new fact. |
+| `PaymentService.process_refund` | `refund.processed` | `refund:{refund_number}` | It also fires for the automatic refund when a paid order is cancelled, so the customer hears about the cancellation and about the refund. |
+
+**Handlers** (`notifications/handlers/orders.py`, `payments.py`):
+
+- **`order.placed`:**
+  - The customer is told (ORDERS).
+  - Each seller with lines in the order is told (SELLER_ORDERS), with only their own lines
+    and their own total, taken from the payload (§4.7).
+- **`order.status_changed`:**
+  - The customer hears about CONFIRMED, SHIPPED, DELIVERED and CANCELLED; PROCESSING
+    tells no one. CONFIRMED is in-app only; the other three also email.
+  - Each seller in the order is told only when `changed_by` is CUSTOMER and the status is
+    CANCELLED. Staff and seller cancellations don't reach the other sellers. The
+    customer's free-text reason is never included.
+- **Payments and refunds:** the order's customer is told (PAYMENTS, email always on). A
+  failure's reason (the gateway text) isn't shown.
+- **Guest orders** (no user) have no one to tell and are skipped.
+
+**Templates:**
+
+- There are five in-app templates, under `notifications/templates/notifications/`:
+  `order.placed`, `order.status_changed`, `payment.succeeded`, `payment.failed` and
+  `refund.processed`.
+- Money is formatted with the `taka` filter.
+- Customer links go to `/profile/orders/<order_number>`. Seller links go to
+  `/seller/orders`: the Seller Center has no order-detail route to deep-link to.
+- There are no phone numbers or addresses (D11).
+
+**Performance to watch:** the fast path now runs in the request thread after the commit.
+For example, placing an order routes `order.placed` right away: a few more queries, which
+cost about 0.1 s each against the remote dev database. In a TestCase, `on_commit` never
+fires, so the existing test suites don't route anything.
+
+**Tests (`notifications/tests/test_orders_and_payments.py`):**
+
+- **Orders:** the payload, key and actor of an order; a refused order publishing nothing;
+  the customer's and each seller's wording (each seller sees only their own lines); email
+  destinations, including the seller business email.
+- **Status changes:**
+  - one event for a staff transition, and nothing for a refused one;
+  - CONFIRMED in-app only, PROCESSING silent, SHIPPED and DELIVERED emailed;
+  - a customer cancellation reaching every seller, while a staff one doesn't;
+  - `changed_by` SELLER for a seller transition.
+- **Payments:** success published once and emailed despite an opt-out (locked); failure;
+  refund; a refused refund publishing nothing; cancelling a paid order publishing both
+  events.
 
 ### Task 9 — Producers, wave 2: seller and shop lifecycle, shop submitted
 

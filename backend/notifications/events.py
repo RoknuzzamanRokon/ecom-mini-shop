@@ -69,7 +69,9 @@ EVENT_TYPES = {
         EventType(
             ORDER_PLACED, 1,
             {Audience.CUSTOMER: c.ORDERS, Audience.SELLER: c.SELLER_ORDERS},
-            _keys("order_id", "order_number", "total_amount"),
+            # items: [{product_name, quantity, line_total, seller_id}], the
+            # order's snapshot lines, so each seller is told only their own.
+            _keys("order_id", "order_number", "total_amount", "items"),
             IN_APP_AND_EMAIL,
         ),
         EventType(

@@ -1,0 +1,4 @@
+{% load notification_format %}
+{% block title %}Refund of {{ amount|taka }} for order {{ order_number }}{% endblock %}
+{% block body %}We've refunded {{ amount|taka }} for order {{ order_number }} (refund {{ refund_number }}). Depending on how you paid, it can take a few days to reach you.{% endblock %}
+{% block action_url %}/profile/orders/{{ order_number }}{% endblock %}

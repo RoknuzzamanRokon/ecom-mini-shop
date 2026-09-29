@@ -1,0 +1,8 @@
+{% load notification_format %}
+{% block title %}{% if audience == "SELLER" %}New order {{ order_number }}{% else %}Order {{ order_number }} placed{% endif %}{% endblock %}
+{% block body %}{% if audience == "SELLER" %}A customer ordered from your shop:
+{% for item in items %}
+{{ item.quantity }} × {{ item.product_name }}: {{ item.line_total|taka }}{% endfor %}
+
+Your items come to {{ seller_total|taka }}. Confirm the order when you're ready to prepare it.{% else %}We've received your order {{ order_number }} for {{ total_amount|taka }}. We'll let you know as it moves along.{% endif %}{% endblock %}
+{% block action_url %}{% if audience == "SELLER" %}/seller/orders{% else %}/profile/orders/{{ order_number }}{% endif %}{% endblock %}
