@@ -1,6 +1,6 @@
 # MiniShop — Notification System Plan
 
-**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–14
+**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–15
 of 16 are done. From Task 3 on, the work is built on the §3 answers as proposed.
 
 This is the architecture and task list for the notification system. Work through the
@@ -251,9 +251,8 @@ pagination, and no business logic in views.
   when the oldest PENDING event is older than 5 minutes or anything is DEAD, so a
   scheduler can alert on it.
 - **Retention.** `manage.py purge_notifications` applies D9.
-- **Runbook** (written in Task 15): run the worker in development and in a scheduled or
-  supervised setup (Windows Task Scheduler, systemd); requeue dead letters; read the
-  health output.
+- **Runbook:** §17 covers running the worker in development and under Windows Task
+  Scheduler or systemd, requeueing dead letters, and reading the health output.
 
 ---
 
@@ -533,7 +532,7 @@ and phone widths.
 | 12 | Frontend foundation: types, client, polling hook, bell component | frontend | ✅ Done |
 | 13 | Frontend surfaces: bells in three headers, three inbox pages | frontend | ✅ Done |
 | 14 | Preferences UI | frontend | ✅ Done |
-| 15 | Operations: admin actions, health and purge commands, logging, runbook | backend + docs | ⬜ Not started |
+| 15 | Operations: admin actions, health and purge commands, logging, runbook | backend + docs | ✅ Done |
 | 16 | Regression run and documentation close-out | docs | ⬜ Not started |
 
 **Milestones.** After Task 8, order and payment notifications reach the inbox (visible
@@ -1657,14 +1656,120 @@ afterwards. These checks passed:
 
 ### Task 15 — Operations: admin actions, health and purge commands, logging, runbook
 
-- [ ] Django admin actions **Requeue** (DEAD or FAILED → PENDING, attempts reset) and
+- [x] Django admin actions **Requeue** (DEAD or FAILED → PENDING, attempts reset) and
       **Retry now**, gated by `notifications.admin.manage` and audited.
-- [ ] `notification_health` (§4.8) and `purge_notifications --days` (D9).
-- [ ] A `LOGGING` config for the `notifications` logger.
-- [ ] A runbook section in this file: running the worker (development, Windows Task
+- [x] `notification_health` (§4.8) and `purge_notifications --days` (D9).
+- [x] A `LOGGING` config for the `notifications` logger.
+- [x] A runbook section in this file: running the worker (development, Windows Task
       Scheduler, systemd), scheduling health and purge, requeueing.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done (2026-09-29).
+
+- **Checks run:** `check` and `makemigrations --check` are clean; there's no migration.
+- **Smoke run against the dev MySQL**, with throwaway rows and accounts that were deleted
+  afterwards, along with their audit rows:
+  - `notification_health` said healthy and exited 0 on the empty queues. With a DEAD event
+    and a DEAD delivery it exited 1 with "Unhealthy: 1 dead event(s); 1 dead
+    delivery(ies)". After they were requeued it said healthy again.
+  - `purge_notifications --dry-run` counted 0 rows. Bad values for `--days` and
+    `--max-wait` were refused.
+  - Through the real admin, an ADMINISTRATOR saw both actions. Requeue turned a DEAD event
+    and a DEAD delivery into PENDING with 0 attempts. The ROUTED row that was also
+    selected was left alone, with a warning. Retry now made a FAILED event due now and
+    kept its 2 attempts. Each change wrote one audit row with the before and after state.
+  - An OPERATION_MANAGER (view code only) saw no actions, and a hand-made POST changed
+    nothing.
+  - With dev settings, a `notifications` log line printed with its timestamp. With test
+    settings, only warnings printed.
+  - A running worker stopped on SIGTERM with exit code 0, logging "started" and
+    "stopped", as the systemd unit in §17.4 expects.
+- **Runbook snippets:** the §17.4 systemd unit passes `systemd-analyze verify` (with this
+  machine's paths). The Windows Task Scheduler commands in §17.3 and §17.5 weren't tried,
+  because this machine runs Linux.
+- **Not run yet:** the new tests, which need the test database. They run in Task 16, as
+  the owner asked.
+
+**What exists now:**
+
+- **Admin actions** (`notifications/admin.py`), on the event and delivery changelists:
+  - **Requeue selected DEAD or FAILED rows:** back to PENDING, attempts reset to 0, due
+    now, and the lease cleared. `last_error` is kept for the record.
+  - **Retry selected FAILED rows now:** due now instead of after the backoff. The status
+    and the attempt count stay, so the row still dead-letters at the maximum.
+  - **Who can run them:** only holders of `notifications.admin.manage` (ADMINISTRATOR and
+    SUPER_ADMINISTRATOR). Django hides the actions from everyone else, and the actions
+    check the code again, so a hand-made POST can't run them either. The admin stays
+    view-only otherwise.
+  - **What they record:** one audit row per changed row, `NOTIFICATION_REQUEUED` or
+    `NOTIFICATION_RETRY_NOW`, with the status and attempts before and after.
+  - **How they're safe to run:** they lock the rows and change only those still in an
+    eligible status, so a worker claiming a row at the same moment is never overwritten.
+    They only change the queue; a running worker does the work. Other selected rows are
+    left alone with a warning.
+- **`notifications/operations.py`** holds the logic behind the actions and the two
+  commands, so tests can call it directly.
+- **`manage.py notification_health [--max-wait MINUTES]`:**
+  - It prints events by status, deliveries by channel and status, and how long the oldest
+    *due* row has waited for a worker.
+  - **What counts as due:** a PENDING or FAILED row whose `available_at` has passed, or a
+    PROCESSING row whose lease lapsed. A FAILED row still in its backoff isn't waiting.
+  - It exits 1 with "Unhealthy: …" when anything is DEAD, or when an event **or a
+    delivery** has waited longer than `--max-wait` (default 5 minutes). Otherwise it
+    exits 0. It's read-only.
+  - **Wider than §4.8 on purpose:** §4.8 names only the oldest PENDING event. But the fast
+    path routes events without a worker, so the likeliest fault, no worker running,
+    shows up only as emails piling up. Deliveries and lapsed leases count too.
+- **`manage.py purge_notifications [--days N] [--inbox-days N] [--dry-run]`** applies
+  D9. The defaults come from the new settings `NOTIFICATIONS["EVENT_RETENTION_DAYS"]` (90)
+  and `["INBOX_RETENTION_DAYS"]` (180).
+  - **Inbox notifications** older than `--inbox-days` go, with their deliveries, unless an
+    email of theirs is still in flight.
+  - **Finished deliveries** (SENT, SKIPPED, DEAD) and **finished events** (ROUTED, DEAD)
+    older than `--days` go.
+  - **Rows still in flight are never deleted,** however old.
+  - An inbox row that outlives its event keeps everything it shows; only its event link is
+    cleared.
+  - **How it deletes:** in batches of 1000, each batch in its own short transaction, with
+    the filter re-applied, so a row requeued in the meantime is spared.
+  - **Logging:** each run logs its counts on the `notifications` logger.
+- **Logging** (`config/settings/base.py` `LOGGING`):
+  - The `notifications` logger writes timestamped lines to stderr, at INFO by default or
+    at the level in the `NOTIFICATIONS_LOG_LEVEL` environment variable. Django's own
+    defaults are untouched.
+  - Together, the publisher, router and worker now log each event and delivery with its
+    id, type or channel, attempt and outcome. The worker gained the "sent on attempt N"
+    line.
+  - `config/settings/test.py` sets the logger to WARNING so the suite's output stays
+    readable. `assertLogs` sets its own level, so no test behaves differently.
+- **The runbook** is §17.
+- **Tests (`notifications/tests/test_operations.py`):**
+  - **Actions:**
+    - who sees them;
+    - Requeue on a mixed selection, with the audit rows;
+    - a requeued event being claimed by the next worker pass;
+    - Retry now keeping attempts;
+    - a viewer's POST changing nothing;
+    - the same actions on deliveries.
+  - **Health:**
+    - empty queues, and the counts;
+    - a stale event, a stale delivery and a lapsed lease;
+    - a backoff that isn't waiting;
+    - DEAD rows, `--max-wait`, and the duration format.
+  - **Purge:**
+    - D9 on a mixed set, with rows in flight spared;
+    - the event link cleared;
+    - the dry run matching the real run;
+    - the options, small batches, and refused values.
+
+**Two departures from the letter of the plan:**
+
+- **Purge isn't in the admin.** §7 says `notifications.admin.manage` can "run purges from
+  the admin", and §4.7 says admin purge actions are audited. Task 15's list asks only for
+  the command, which is what a daily schedule needs. So purge runs as the command and
+  writes no audit row; its counts go to the log. An admin button would be a small
+  follow-up if it's wanted.
+- **Two retention options instead of one.** D9 has two periods, so `--days` covers events
+  and deliveries (90) and `--inbox-days` covers the inbox (180).
 
 ### Task 16 — Regression run and documentation close-out
 
@@ -1694,6 +1799,11 @@ afterwards. These checks passed:
    any other environment must match.
 7. **Support noise.** If staff find `support.ticket_created` alerts noisy, the audience
    can narrow to the assignee only. It's a one-line handler change.
+8. **A DEAD row can't be dismissed.** `notification_health` stays unhealthy while anything
+   is DEAD (§4.8). A DEAD row leaves that state only by being requeued, or by being purged
+   after 90 days. So one row nobody wants retried keeps the check failing. If that turns
+   out to be noisy, the options are an "Abandon" admin action to a terminal state that
+   health ignores, or counting only recent dead letters. Both are small.
 
 ---
 
@@ -1704,6 +1814,190 @@ SMS and push delivery (the interface is ready); WebSockets or SSE; a message bro
 templates editable in the database; Bangla translations; per-user quiet hours;
 `product.submitted` (no producer); security and password-reset emails (no flows);
 notifying review authors about moderation.
+
+---
+
+## 17. Runbook
+
+For whoever keeps notifications running. The paths below are examples. `manage.py` uses
+`config.settings.dev` unless `DJANGO_SETTINGS_MODULE` says otherwise, and reads
+`backend/.env` from the backend folder whatever the working directory is.
+
+### 17.1 What needs to run
+
+| Job | How often | Without it |
+|---|---|---|
+| `run_notification_worker` | All the time | In-app notifications still arrive through the fast path. But **no email is sent**, failed events aren't retried, and rows a crashed request left behind wait forever. |
+| `notification_health` | Every 5 minutes | Nobody hears that the worker stopped or that something dead-lettered. |
+| `purge_notifications` | Once a day | The four tables grow without limit (D9). |
+
+Any number of workers can run at once; they never take the same row (§4.5).
+
+### 17.2 The worker in development
+
+Run it in its own terminal beside `runserver 8001`:
+
+```bash
+cd backend && source venv/bin/activate      # Windows: venv\Scripts\activate
+python manage.py run_notification_worker     # Ctrl+C stops it after the row in hand
+python manage.py run_notification_worker --once              # one pass, then exit
+python manage.py run_notification_worker --only deliveries   # just send emails
+```
+
+With dev settings, emails go to the console backend. They're printed in **the worker's**
+terminal, not `runserver`'s, because the worker sends them. To really send, set
+`EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend` and the `EMAIL_HOST…`
+variables in `backend/.env` (Task 7).
+
+### 17.3 The worker under Windows Task Scheduler
+
+Run it as one long-lived task that starts when you sign in. Task Scheduler doesn't keep a
+program's output, so `cmd /c` redirects it to a log file. Run this once in PowerShell, as
+the account that runs the backend:
+
+```powershell
+$backend = "D:\minishop\backend"
+New-Item -ItemType Directory -Force "$backend\logs" | Out-Null
+$action = New-ScheduledTaskAction -Execute "cmd.exe" -WorkingDirectory $backend `
+  -Argument '/c venv\Scripts\python.exe manage.py run_notification_worker >> logs\notification_worker.log 2>&1'
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+$settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) `
+  -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable
+Register-ScheduledTask -TaskName "MiniShop - notification worker" -Action $action `
+  -Trigger $trigger -Settings $settings `
+  -Description "Routes notification events and sends notification emails."
+Start-ScheduledTask -TaskName "MiniShop - notification worker"
+```
+
+- `ExecutionTimeLimit` zero means no time limit. The default would stop the worker
+  after 3 days.
+- **Signed in only:** registered like this, the task runs only while you're signed in.
+  To run it with nobody signed in, register it with `-User` and `-Password` ("Run whether
+  user is logged on or not").
+- **Without a long-running process:** a task repeating every minute that runs
+  `run_notification_worker --once` does the same work, one batch a minute, with up to a
+  minute's delay.
+- **Ending the task** kills the process without a signal, so it can't finish the row in
+  hand. Nothing is lost: whatever it had claimed is taken again once its 60 s lease runs
+  out.
+- **Removing it:** `Unregister-ScheduledTask -TaskName "MiniShop - notification worker"`.
+
+### 17.4 The worker under systemd
+
+A template unit, so that more workers are just more instances. Save it as
+`/etc/systemd/system/minishop-notifications@.service`:
+
+```ini
+[Unit]
+Description=MiniShop notification worker %i
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=minishop
+WorkingDirectory=/srv/minishop/backend
+ExecStart=/srv/minishop/backend/venv/bin/python manage.py run_notification_worker
+Restart=always
+RestartSec=5
+# SIGTERM: the worker finishes the row in hand, hands the rest of its batch back,
+# and exits. One email can take up to EMAIL_TIMEOUT (10 s).
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now minishop-notifications@1     # add @2, @3 … for more workers
+journalctl -u 'minishop-notifications@*' -f              # its log lines
+```
+
+### 17.5 Scheduling health and purge
+
+- **cron** (Linux). cron mails whatever a job prints to `MAILTO`. The health check prints
+  its report on stdout, which is discarded here, and "Unhealthy: …" on stderr, so mail
+  arrives only when something is wrong:
+
+  ```cron
+  MAILTO=ops@example.com
+  */5 * * * * cd /srv/minishop/backend && venv/bin/python manage.py notification_health > /dev/null
+  30 3 * * *  cd /srv/minishop/backend && venv/bin/python manage.py purge_notifications >> /var/log/minishop/purge_notifications.log 2>&1
+  ```
+
+- **Windows Task Scheduler.** It has no alert built in. The health task's **Last Run
+  Result** turns to `0x1` when the check fails, and its log file says why:
+
+  ```powershell
+  $backend = "D:\minishop\backend"
+  $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable
+  $health = New-ScheduledTaskAction -Execute "cmd.exe" -WorkingDirectory $backend `
+    -Argument '/c venv\Scripts\python.exe manage.py notification_health >> logs\notification_health.log 2>&1'
+  $every5 = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval (New-TimeSpan -Minutes 5)
+  Register-ScheduledTask -TaskName "MiniShop - notification health" -Action $health `
+    -Trigger $every5 -Settings $settings
+  $purge = New-ScheduledTaskAction -Execute "$backend\venv\Scripts\python.exe" `
+    -Argument "manage.py purge_notifications" -WorkingDirectory $backend
+  Register-ScheduledTask -TaskName "MiniShop - purge notifications" -Action $purge `
+    -Trigger (New-ScheduledTaskTrigger -Daily -At 3:30am) -Settings $settings
+  ```
+
+- **Before the first purge,** run `python manage.py purge_notifications --dry-run` to see
+  what it would delete.
+
+### 17.6 Reading the health output
+
+```text
+Notification health at 2026-09-29 13:46:48 UTC
+
+Events
+  PENDING 0 · PROCESSING 0 · ROUTED 412 · FAILED 1 · DEAD 0
+  Oldest waiting: 4s
+
+Deliveries
+  EMAIL: PENDING 3 · PROCESSING 0 · SENT 380 · FAILED 0 · DEAD 1 · SKIPPED 12
+  Oldest waiting: 7m 12s
+
+CommandError: Unhealthy: 1 dead delivery(ies); a delivery has waited 7m 12s for a worker.
+```
+
+- **Oldest waiting** is how long the oldest row that's *due* has sat unclaimed. With a
+  worker running, it stays within a few seconds. Minutes mean no worker is running, or
+  it's stuck. A FAILED row still in its backoff isn't due, so it doesn't count.
+- **FAILED** rows are waiting to retry, with backoff. That's normal after a brief SMTP
+  outage. They reach DEAD after 5 attempts for events, or 8 for deliveries.
+- **DEAD** rows need a person: read their `last_error` in the admin, fix the cause, then
+  requeue them (§17.7). The check stays unhealthy until then (§15 item 8).
+- **SKIPPED** deliveries had no usable address, or the server refused the recipient.
+  They're final, and they don't make the check fail.
+- **The exit code:** 0 is healthy and 1 is unhealthy. `--max-wait 15` relaxes the
+  waiting limit to 15 minutes.
+
+### 17.7 Requeueing
+
+In the Django admin (`http://localhost:8001/admin/`), under **Notifications**:
+
+1. Open **Notification events** or **Notification deliveries**, and filter **Status** by
+   DEAD (or FAILED).
+2. Open a row and read **Last error**. Fix the cause first: SMTP settings, a template, a
+   handler bug. Otherwise the row just fails again.
+3. Tick the rows, choose an action and press **Go**:
+   - **Requeue selected DEAD or FAILED rows (attempts reset):** they go back to PENDING
+     with a fresh set of attempts.
+   - **Retry selected FAILED rows now (attempts kept):** they skip the rest of their
+     backoff, for when the cause is fixed and waiting is pointless.
+4. The next worker pass picks them up. Nothing happens without a running worker.
+
+- **Who can:** the actions need `notifications.admin.manage` (ADMINISTRATOR and
+  SUPER_ADMINISTRATOR). With `notifications.admin.view` alone you can look but not act.
+- **What's recorded:** each changed row writes an audit entry, `NOTIFICATION_REQUEUED` or
+  `NOTIFICATION_RETRY_NOW`.
+- **What can't be requeued:**
+  - SKIPPED deliveries: their address was recorded at routing time, so a requeue would
+    skip again.
+  - PROCESSING rows: a worker holds them, and a dead worker's rows come back by themselves
+    when the lease runs out.
 
 ---
 

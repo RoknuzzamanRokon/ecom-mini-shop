@@ -27,6 +27,12 @@ ALLOWED_HOSTS = ["127.0.0.1", "localhost", "testserver"]
 # this is a low-iteration PBKDF2 rather than the usual MD5 swap.
 PASSWORD_HASHERS = ["config.settings.hashers.FastPBKDF2PasswordHasher"]
 
+# --- Logging ----------------------------------------------------------------
+# The notifications logger reports every routed event at INFO; across the suite
+# that is noise. Warnings and errors still print, and assertLogs() sets its own
+# level, so no test sees a difference.
+LOGGING["loggers"]["notifications"]["level"] = "WARNING"  # noqa: F405
+
 # --- Test database ----------------------------------------------------------
 # Still MySQL, deliberately. The suite's concurrency tests rely on real
 # ``SELECT ... FOR UPDATE`` row locking, which SQLite accepts and silently

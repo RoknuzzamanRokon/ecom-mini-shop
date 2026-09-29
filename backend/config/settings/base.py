@@ -261,4 +261,30 @@ NOTIFICATIONS = {
     # Per user, for the polled unread-count endpoint (§4.7). Each open tab
     # polls about once a minute.
     "UNREAD_COUNT_RATE": "120/min",
+    # How long purge_notifications keeps inbox rows, and events and
+    # deliveries (§3 D9).
+    "INBOX_RETENTION_DAYS": 180,
+    "EVENT_RETENTION_DAYS": 90,
+}
+
+# Logging. Only the `notifications` logger is configured (§4.8): the worker,
+# router and publisher log each event and delivery with its id, attempt and
+# outcome to stderr, where a scheduler, systemd or a redirect captures it.
+# Django's own logging defaults are kept.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "timestamped": {"format": "{asctime} {levelname} {name} {message}", "style": "{"},
+    },
+    "handlers": {
+        "notifications_console": {"class": "logging.StreamHandler", "formatter": "timestamped"},
+    },
+    "loggers": {
+        "notifications": {
+            "handlers": ["notifications_console"],
+            "level": os.environ.get("NOTIFICATIONS_LOG_LEVEL", "INFO"),
+            "propagate": False,
+        },
+    },
 }

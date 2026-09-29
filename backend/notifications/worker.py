@@ -292,13 +292,14 @@ class NotificationWorker:
                 notification_setting("DELIVERY_MAX_ATTEMPTS"),
             )
         else:
-            _finish(
+            if _finish(
                 NotificationDelivery, delivery.pk, self.worker_id,
                 status=NotificationDelivery.Status.SENT,
                 sent_at=timezone.now(),
                 provider_message_id=(result.provider_message_id or "")[:255],
                 last_error="",
-            )
+            ):
+                logger.info("Delivery %s: %s sent on attempt %d", delivery.pk, delivery.channel, delivery.attempts)
 
     def _bucket(self, channel):
         if channel not in self.buckets:
