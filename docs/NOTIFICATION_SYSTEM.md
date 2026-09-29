@@ -1,6 +1,6 @@
 # MiniShop — Notification System Plan
 
-**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–4
+**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–5
 of 16 are done. From Task 3 on, the work is built on the §3 answers as proposed.
 
 This is the architecture and task list for the notification system. Work through the
@@ -159,8 +159,8 @@ losing or duplicating anything.
    with `SELECT … FOR UPDATE SKIP LOCKED`. Two workers never take the same row.
 4. **Route.** Each event is routed in one transaction: run its handlers → resolve
    recipients → apply preferences → render → insert `notification` rows (in-app) and
-   `notification_delivery` rows (email) → mark the event ROUTED. Unique keys turn a re-run
-   into a no-op.
+   `notification_delivery` rows (email) → mark the event ROUTED. The row lock and the
+   ROUTED check turn a re-run into a no-op; the unique keys are the backstop.
 5. **Deliver.** The worker claims PENDING deliveries, sends them **outside** any
    transaction, then records SENT, or a retry with backoff, or DEAD.
 6. **Read.** The client polls the unread count, opens the inbox, and marks items read.
@@ -507,7 +507,7 @@ and phone widths.
 | 2 | Move product moderation into `ProductService` | backend (prerequisite) | ✅ Done |
 | 3 | `notifications` app: models, migration, registry, admin, permission codes | backend | ✅ Done |
 | 4 | Publisher: `publish()`, idempotency, on-commit fast path, settings | backend | ✅ Done |
-| 5 | Router: audiences, handlers, preferences, rendering | backend | ⬜ Not started |
+| 5 | Router: audiences, handlers, preferences, rendering | backend | ✅ Done |
 | 6 | Worker: claims, leases, retries, dead letters, `run_notification_worker` | backend | ⬜ Not started |
 | 7 | Email channel: adapter, layout templates, settings | backend | ⬜ Not started |
 | 8 | Producers, wave 1: orders and payments | backend | ⬜ Not started |
@@ -823,19 +823,93 @@ the same rules the view had:
 
 **Goal.** A PENDING event becomes inbox and delivery rows, exactly once.
 
-- [ ] `rbac.services.users_with_permission(code)` mirroring `has_user_permission`
+- [x] `rbac.services.users_with_permission(code)` mirroring `has_user_permission`
       (roles, direct grants, `*`), with superusers per D5, plus the agreement tests.
-- [ ] A handler registry (`@handles("…")` → recipients with audience and context).
-- [ ] `preferences.effective_channels(user, category)` with locks (D8).
-- [ ] Rendering: the template per event, version and channel, giving title, body and
+- [x] A handler registry (`@handles("…")` → recipients with audience and context).
+- [x] `preferences.effective_channels(user, category)` with locks (D8).
+- [x] Rendering: the template per event, version and channel, giving title, body and
       `action_url`. A missing template fails the template-coverage test.
-- [ ] `route_event(event_id)` in one transaction: lock the event; skip it if ROUTED;
+- [x] `route_event(event_id)` in one transaction: lock the event; skip it if ROUTED;
       bulk-insert inbox and delivery rows; mark ROUTED. Apply the fan-out cap. Connect the
       Task 4 fast path.
-- [ ] Tests: the router list in §13, using a test-only event type (real handlers come in
+- [x] Tests: the router list in §13, using a test-only event type (real handlers come in
       Tasks 8–10).
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done (2026-09-29).
+
+- **Checks run:** `check` and `makemigrations --check` are clean. The 36 tests that need no
+  database pass, including rendering and template coverage.
+- **Not run yet:** the database-backed tests (router, preferences, fast path and the RBAC
+  agreement matrix). They run in Task 16, as the owner asked.
+
+**What exists now:**
+
+- **`rbac.services.users_with_permission(code)`** returns a queryset of the users who hold
+  `code`. That means an active role, through an active assignment, that grants the code,
+  grants `*`, or is SUPER_ADMINISTRATOR; or an active direct grant of the code or `*`.
+  - **Two deliberate differences from `has_user_permission`:** `is_superuser` alone
+    doesn't count (D5), and inactive accounts are left out, because they can't sign in.
+  - **SUPER_ADMINISTRATOR role holders are included,** because D5 counts anyone who holds
+    the code through a role. The role holds every code, so they get every staff alert.
+    If that's too noisy, handlers can narrow the audience; §15 item 7 already notes this
+    for support tickets.
+- **`notifications/handlers/`:**
+  - `@handles(event_type)` registers a function that takes an event and yields
+    `Recipient(user, audience, context={}, channels=None)`.
+  - `context` adds template variables for that one recipient.
+  - `channels` narrows the external channels, e.g. email only for some statuses; in-app
+    is always kept.
+  - Handlers run in registration order. `NotificationsConfig.ready()` imports the
+    package, which will import one module per area in Tasks 8–10.
+- **`preferences.py`:** `effective_channels(user, category)` gives the category's default
+  channels, minus those switched off, but locked channels always stay.
+  `load_overrides()` fetches the preferences for every recipient of an event in one query.
+- **`rendering.py`:**
+  - The template for an event is `notifications/<event_type>/v<version>/<channel>.txt`.
+  - The in-app template has `title`, `body` and `action_url` blocks, each rendered and
+    stripped.
+  - The output is plain text and isn't HTML-escaped, because the apps escape it on
+    display. HTML email (Task 7) will autoescape.
+  - A title longer than 200 characters is shortened with "…".
+  - `action_url` must be an app path starting with `/`. `//host`, `/\host`, absolute
+    URLs, relative paths and links over 500 characters are refused.
+  - A missing template or block fails loudly.
+- **`routing.py` `route_event(event_id, skip_locked=False)`**, in one transaction:
+  1. It locks the event with `select_for_update` and leaves it alone if it's ROUTED or
+     DEAD.
+  2. It runs the handlers. A recipient whose audience the event doesn't reach is refused.
+  3. It keeps one row per user (the first audience wins, because `unique(recipient, event)`
+     allows one inbox row) and re-reads users in one query, so anyone deleted or
+     deactivated since is skipped.
+  4. It applies `FANOUT_CAP` and logs a warning when the cap bites.
+  5. It works out the channels: the event's, then the person's preferences, then the
+     handler's narrowing, with in-app always kept.
+  6. It renders each inbox row and bulk-inserts the inbox rows, then the delivery rows.
+     There's no `INSERT IGNORE`: on MySQL that would also turn truncation errors into
+     warnings.
+  7. It marks the event ROUTED.
+
+  **Error handling:** any exception rolls all of it back and propagates, and the event
+  stays as it was for the worker (Task 6) to retry.
+
+  **Email address:** the router records the address at routing time. For now it's
+  `User.email`; with no address, the delivery row is SKIPPED. Task 7 adds the seller's
+  business email.
+- **The fast path is connected.** `publisher.route_after_commit()` calls
+  `route_event(event_id, skip_locked=True)`, so a request never waits on an event a worker
+  is holding.
+- **Tests:**
+  - `rbac/test_users_with_permission.py`: a 13-account matrix and agreement with
+    `has_user_permission`.
+  - `notifications/tests/`:
+    - `test_preferences.py`;
+    - `test_rendering.py`;
+    - `test_template_coverage.py`: every event type with a handler has its in-app
+      template;
+    - `test_routing.py`: the §13 router list, plus a missing template, a failing
+      handler, a bad audience, dead and missing events, and the fast path end to end.
+  - They use a test-only event type, `test.happened`, whose templates live in
+    `notifications/tests/templates` and are visible only to these tests.
 
 ### Task 6 — Worker: claims, leases, retries, dead letters, `run_notification_worker`
 

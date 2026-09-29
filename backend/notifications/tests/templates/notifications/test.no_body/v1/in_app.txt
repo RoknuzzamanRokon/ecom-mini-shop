@@ -1,0 +1,2 @@
+{% block title %}No body here{% endblock %}
+{% block action_url %}/nowhere{% endblock %}

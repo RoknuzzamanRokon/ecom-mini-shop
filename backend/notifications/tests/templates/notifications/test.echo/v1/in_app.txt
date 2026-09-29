@@ -1,0 +1,3 @@
+{% block title %}{{ title }}{% endblock %}
+{% block body %}{{ body }}{% endblock %}
+{% block action_url %}{{ link }}{% endblock %}

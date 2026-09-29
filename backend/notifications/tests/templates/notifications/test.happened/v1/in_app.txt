@@ -1,0 +1,3 @@
+{% block title %}Thing {{ thing }} happened{% endblock %}
+{% block body %}Hello {{ recipient.username }}, {{ thing }} happened{% if note %} ({{ note }}){% endif %}.{% endblock %}
+{% block action_url %}/things/{{ thing }}{% endblock %}

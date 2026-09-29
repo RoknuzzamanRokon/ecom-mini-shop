@@ -1,6 +1,7 @@
 from typing import Set
 from django.contrib.auth import get_user_model
-from .models import Permission, Role, UserRole
+from django.db.models import Q
+from .models import Permission, Role, UserPermission, UserRole
 
 User = get_user_model()
 
@@ -80,6 +81,33 @@ def has_user_permission(user, permission_code: str) -> bool:
         return True
 
     return permission_code in user_perms
+
+
+def users_with_permission(permission_code: str):
+    """
+    The reverse of has_user_permission(): every active user who holds
+    `permission_code`, as a queryset. Used to find who to notify, so it follows
+    the same rules through the same paths:
+
+    - an active role, through an active assignment, that grants the code, the
+      "*" wildcard, or is SUPER_ADMINISTRATOR (which holds every code);
+    - an active direct grant of the code or of "*".
+
+    Two deliberate differences, because this answers "who should be told"
+    rather than "who may act" (docs/NOTIFICATION_SYSTEM.md §3 D5):
+    is_superuser alone doesn't count, or superusers would receive every staff
+    alert on the platform; and inactive accounts, which can't sign in, are
+    left out.
+    """
+    codes = [permission_code, "*"]
+    role_holders = UserRole.objects.filter(is_active=True, role__is_active=True).filter(
+        Q(role__code=Role.ROLE_SUPER_ADMINISTRATOR)
+        | Q(role__role_permissions__permission__code__in=codes)
+    )
+    direct_holders = UserPermission.objects.filter(is_active=True, permission__code__in=codes)
+    return User.objects.filter(is_active=True).filter(
+        Q(pk__in=role_holders.values("user_id")) | Q(pk__in=direct_holders.values("user_id"))
+    )
 
 
 def has_user_any_permission(user, *permission_codes: str) -> bool:

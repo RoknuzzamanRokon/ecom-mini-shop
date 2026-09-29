@@ -111,11 +111,14 @@ def _fast_path(event_id):
 def route_after_commit(event_id):
     """
     The fast path (§4.4 step 2): route the event in this process as soon as
-    its transaction commits. A no-op until the router exists (Task 5); the
-    event stays PENDING for the worker either way, so a failure here loses
-    nothing.
+    its transaction commits. An event another process is already routing is
+    skipped, not waited for. Whatever happens, the event is never lost: until
+    it's ROUTED it stays in the outbox for the worker.
     """
-    return None
+    # Imported here so importing the publisher never pulls in the router.
+    from .routing import route_event
+
+    route_event(event_id, skip_locked=True)
 
 
 def _validated_payload(definition, payload):
