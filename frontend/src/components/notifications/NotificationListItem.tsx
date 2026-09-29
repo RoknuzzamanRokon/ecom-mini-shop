@@ -6,8 +6,9 @@ import { formatRelativeTime } from "@/lib/support";
 import { notificationIcon, type AppNotification } from "@/lib/notifications";
 
 /**
- * One notification as a button: category icon, title, body, relative time and
- * an unread dot. Shared by the bell's dropdown (one-line body) and the inbox
+ * One notification as a button: category icon (accent-tinted when HIGH
+ * priority, i.e. it needs acting on), title, body, relative time and an
+ * unread dot. Shared by the bell's dropdown (one-line body) and the inbox
  * pages (full body). `now` comes from the caller so rendering stays pure.
  */
 export default function NotificationListItem({
@@ -42,7 +43,7 @@ export default function NotificationListItem({
         aria-hidden="true"
         className={clsx(
           "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full",
-          high ? "bg-danger/10 text-danger" : "bg-primary/10 text-primary"
+          high ? "bg-accent/15 text-accent" : "bg-primary/10 text-primary"
         )}
       >
         <span className="material-symbols-outlined text-[18px]">{notificationIcon(notification.category)}</span>
@@ -54,8 +55,9 @@ export default function NotificationListItem({
         </span>
         <span
           className={clsx(
-            "mt-0.5 block text-xs leading-relaxed text-ink-muted",
-            compact ? "line-clamp-1" : "whitespace-pre-line"
+            "mt-0.5 text-xs leading-relaxed text-ink-muted",
+            // line-clamp sets its own display, so `block` only goes on the full body.
+            compact ? "line-clamp-1" : "block whitespace-pre-line"
           )}
         >
           {notification.body}

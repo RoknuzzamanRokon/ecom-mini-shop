@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { getManagementRoleLabel } from "@/lib/admin-auth";
+import NotificationBell from "@/components/notifications/NotificationBell";
 
 export default function AdminHeader({
   onMenuToggle,
@@ -53,6 +54,8 @@ export default function AdminHeader({
           <span className="material-symbols-outlined text-[16px]">visibility</span>
           <span>Storefront</span>
         </Link>
+
+        <NotificationBell audience="STAFF" />
 
         {/* User Account Dropdown */}
         <div className="relative">

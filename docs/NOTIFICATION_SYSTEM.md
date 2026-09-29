@@ -1,6 +1,6 @@
 # MiniShop — Notification System Plan
 
-**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–12
+**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–13
 of 16 are done. From Task 3 on, the work is built on the §3 answers as proposed.
 
 This is the architecture and task list for the notification system. Work through the
@@ -531,7 +531,7 @@ and phone widths.
 | 10 | Producers, wave 3: product moderation, support, reviews, low stock, points | backend | ✅ Done |
 | 11 | Inbox and preferences API | backend | ✅ Done |
 | 12 | Frontend foundation: types, client, polling hook, bell component | frontend | ✅ Done |
-| 13 | Frontend surfaces: bells in three headers, three inbox pages | frontend | ⬜ Not started |
+| 13 | Frontend surfaces: bells in three headers, three inbox pages | frontend | ✅ Done |
 | 14 | Preferences UI | frontend | ⬜ Not started |
 | 15 | Operations: admin actions, health and purge commands, logging, runbook | backend + docs | ⬜ Not started |
 | 16 | Regression run and documentation close-out | docs | ⬜ Not started |
@@ -1487,13 +1487,79 @@ it. There used to be two copies, in `shop/admin.py` and `shop/metrics.py`.
 
 ### Task 13 — Frontend surfaces: bells in three headers, three inbox pages
 
-- [ ] Bells in `Header.tsx` (CUSTOMER), `SellerHeader.tsx` (SELLER) and `AdminHeader.tsx`
+- [x] Bells in `Header.tsx` (CUSTOMER), `SellerHeader.tsx` (SELLER) and `AdminHeader.tsx`
       (STAFF).
-- [ ] The pages `/profile/notifications`, `/seller/notifications` and
+- [x] The pages `/profile/notifications`, `/seller/notifications` and
       `/admin/notifications`, from one shared inbox component.
-- [ ] A browser check (§13, frontend).
+- [x] A browser check (§13, frontend).
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done (2026-09-29).
+
+- **Checks run:** `npx tsc --noEmit` and `npm run build` pass (the three routes build as
+  static pages), and `eslint` on the changed files is clean.
+- **Browser check:** **24 of 24 checks passed**, driving system `google-chrome
+  --headless=new` over CDP against the running dev servers (§13, frontend). Details below.
+
+**What exists now:**
+
+- **The bells.**
+  - The storefront `Header.tsx` has `<NotificationBell audience="CUSTOMER" tone="nav" />`
+    beside the cart; it renders only when signed in.
+  - `SellerHeader.tsx` and `AdminHeader.tsx` have the SELLER and STAFF bells beside the
+    account menu.
+- **`components/notifications/NotificationInbox.tsx`** is the one inbox, used by the three
+  new routes:
+  - `app/profile/notifications` (inside the profile layout, under the storefront header);
+  - `app/seller/notifications` (inside `SellerGuard`);
+  - `app/admin/notifications` (inside `AdminGuard`).
+  - **Controls:** a heading with an intro line per audience, All / Unread tabs,
+    **Mark all read**, and **Load more** with the keyset cursor.
+  - **States:** loading, empty ("No notifications yet." or "You're all caught up."), and an
+    error with Retry, following the support list's pattern.
+  - **Opening a notification** marks it read and follows its link.
+  - **Staying in sync:** the page listens for `minishop:notifications-changed`, so marking
+    all read from the bell refreshes it. It ignores its own announcements, so its paging
+    isn't reset.
+- **Two fixes the browser check led to** in `NotificationListItem`:
+  - The dropdown's one-line body now really clamps: `block` was overriding `line-clamp`'s
+    display.
+  - HIGH priority is tinted `accent` rather than `danger`, because "Your seller account is
+    approved" (HIGH) read as an error in red.
+
+**The browser check** used a throwaway dev account (customer, SUPPORT_TEAM role and an
+ACTIVE seller profile). It had 25 CUSTOMER notifications (22 unread, one HIGH), 3 SELLER and
+2 STAFF. The account and all its rows were deleted afterwards. These checks passed:
+
+- **Storefront bell:** it shows "22" and the label "22 unread notifications".
+- **Dropdown:** it opens with 10 items and `aria-expanded="true"`.
+  - ArrowDown enters the list and moves through it.
+  - Escape closes it and puts focus back on the bell.
+  - A click outside closes it.
+- **The inbox page:**
+  - it lists 20, **Load more** adds the last 5, and the button then disappears;
+  - the Unread tab shows the first 20 of 22 unread;
+  - opening one follows its link and the badge drops to 21;
+  - **Mark all read** clears the badge and every unread dot.
+- **Themes and sizes:** dark theme (`minishop-dark`) at desktop and phone widths, and
+  light. At 390 px the dropdown fits the screen and there's no horizontal scroll.
+- **Seller Center and Console:** `/seller/notifications` lists 3 and its bell counts 3;
+  `/admin/notifications` lists 2 and its bell counts 2; each dropdown opens.
+- **No uncaught page exceptions.**
+- Screenshots of each state were reviewed.
+
+**A header problem found in the check, not caused by this task:** in dark mode, the
+storefront header's icons are nearly invisible on its dark bar. That includes the
+**existing cart icon and account name**, as well as the new bell. `Header.tsx` colours
+them `text-on-primary`, which is `#0C151C` in the dark palette, on `bg-nav`. The bell
+follows its neighbours, so it's affected the same way. Fixing it means choosing a nav-bar
+foreground token for the whole header, which is a design decision outside this task.
+
+**Dev-server notes:**
+
+- The running `runserver 8001` child had stopped serving. Touching `config/settings/*.py`
+  let its autoreloader restart it.
+- The running `next dev` answered 404 for the new `/admin/notifications` until the page
+  file was touched.
 
 ### Task 14 — Preferences UI
 

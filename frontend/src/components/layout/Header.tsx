@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCart } from "@/context/CartContext";
+import NotificationBell from "@/components/notifications/NotificationBell";
 import { useAuth } from "@/context/AuthContext";
 import { isManagementUser } from "@/lib/admin-auth";
 import { canUseSupport } from "@/lib/support";
@@ -124,6 +125,8 @@ export default function Header({ onSearch, searchQuery = "" }: HeaderProps) {
               </span>
             </span>
           </Link>
+
+          <NotificationBell audience="CUSTOMER" tone="nav" />
 
           {/* Cart Action */}
           <button

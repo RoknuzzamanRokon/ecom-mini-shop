@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { useSeller } from "./SellerGuard";
 import { useAuth } from "@/context/AuthContext";
+import NotificationBell from "@/components/notifications/NotificationBell";
 
 export default function SellerHeader({
   onMenuToggle,
@@ -47,6 +48,8 @@ export default function SellerHeader({
           <span className="material-symbols-outlined text-[16px]">visibility</span>
           <span>View Store</span>
         </Link>
+
+        <NotificationBell audience="SELLER" />
 
         {/* User Account Dropdown */}
         <div className="relative">
