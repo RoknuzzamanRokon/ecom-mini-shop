@@ -1,6 +1,6 @@
 # MiniShop — Notification System Plan
 
-**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–13
+**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–14
 of 16 are done. From Task 3 on, the work is built on the §3 answers as proposed.
 
 This is the architecture and task list for the notification system. Work through the
@@ -532,7 +532,7 @@ and phone widths.
 | 11 | Inbox and preferences API | backend | ✅ Done |
 | 12 | Frontend foundation: types, client, polling hook, bell component | frontend | ✅ Done |
 | 13 | Frontend surfaces: bells in three headers, three inbox pages | frontend | ✅ Done |
-| 14 | Preferences UI | frontend | ⬜ Not started |
+| 14 | Preferences UI | frontend | ✅ Done |
 | 15 | Operations: admin actions, health and purge commands, logging, runbook | backend + docs | ⬜ Not started |
 | 16 | Regression run and documentation close-out | docs | ⬜ Not started |
 
@@ -1542,6 +1542,8 @@ ACTIVE seller profile). It had 25 CUSTOMER notifications (22 unread, one HIGH), 
   - **Mark all read** clears the badge and every unread dot.
 - **Themes and sizes:** dark theme (`minishop-dark`) at desktop and phone widths, and
   light. At 390 px the dropdown fits the screen and there's no horizontal scroll.
+  (Wrong for the signed-in storefront header, which was 8 px too wide. Task 14 found and
+  fixed it.)
 - **Seller Center and Console:** `/seller/notifications` lists 3 and its bell counts 3;
   `/admin/notifications` lists 2 and its bell counts 2; each dropdown opens.
 - **No uncaught page exceptions.**
@@ -1563,10 +1565,95 @@ foreground token for the whole header, which is a design decision outside this t
 
 ### Task 14 — Preferences UI
 
-- [ ] The categories × channels toggle table, with locked rows, linked from each inbox.
-- [ ] A browser check.
+- [x] The categories × channels toggle table, with locked rows, linked from each inbox.
+- [x] A browser check.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done (2026-09-29).
+
+- **Checks run:** `npx tsc --noEmit` and `npm run build` pass (the three new routes build
+  as static pages), and `eslint` on the changed files is clean.
+- **Browser check:** **41 of 41 checks passed**, driving system `google-chrome
+  --headless=new` over CDP against the running dev servers. Details below.
+- **Not run yet:** the backend tests, which run in Task 16 as the owner asked. This task
+  changed no backend code.
+
+**What exists now:**
+
+- **`components/notifications/NotificationPreferences.tsx`** is the one settings page,
+  used by three new routes:
+  - `app/profile/notifications/settings` (CUSTOMER);
+  - `app/seller/notifications/settings` (SELLER);
+  - `app/admin/notifications/settings` (STAFF).
+- **What it shows.** It loads `GET /preferences/?audience=…`, so each surface lists only
+  its own categories: 3 for customers, 8 for sellers and 1 for staff. It's a table with a
+  Category column and In-app and Email columns.
+  - **Each cell** is a switch (`<input type="checkbox" role="switch">`), named for example
+    "Your orders, Email".
+  - **A locked channel** is shown on and disabled, with the note "Required" linked by
+    `aria-describedby`. That's every in-app cell, plus email for PAYMENTS and ACCOUNT.
+  - **A channel the category doesn't use** (email for INVENTORY, REVIEWS and WALLET) is a
+    dash, with the screen-reader text "Not sent by email".
+- **How saving works.** Each switch saves on its own, with a `PUT` naming only that
+  toggle. There's no Save button.
+  - The switch moves at once, and every switch waits until the answer is in.
+  - The page then shows the backend's copy of the settings.
+  - A spoken status line confirms the change, for example "Your orders: email
+    notifications off."
+  - If the save is refused, the switch goes back and the status line shows the backend's
+    own words.
+- **Around the table:**
+  - An intro line says that everything always reaches the inbox and that the choices apply
+    to the whole account. SUPPORT, for example, appears for both customers and sellers,
+    and it's one setting.
+  - There are loading, empty, and error-with-Retry states, as on the inbox.
+  - A back link returns to that surface's inbox.
+- **Linked from each inbox:** `NotificationInbox` has a **Settings** link beside **Mark all
+  read**. The paths are `NOTIFICATION_SETTINGS_PATHS` in `lib/notifications.ts`.
+- **A fix to Task 13's header:** in the storefront `Header.tsx`, the right-hand group and
+  the header row now use `gap-1` and `gap-2` on phones, and keep `gap-4` from `sm` up.
+  - **Why:** when signed in, the bell made the header 8 px wider than a 390 px screen, so
+    every storefront page scrolled sideways. At 375 px it was 24 px too wide. Task 13's
+    phone check missed this.
+  - **Checked:** no horizontal scroll at 390, 375 or 360 px, and the desktop header is
+    unchanged. The icons keep their 36 px buttons.
+
+**The browser check** used a throwaway dev account: a customer with the SUPPORT_TEAM role
+and an ACTIVE seller profile. The account and its 12 preference audit rows were deleted
+afterwards. These checks passed:
+
+- **Getting there:** each inbox's **Settings** link opens its settings page, and the back
+  link returns to the inbox.
+- **Customer:**
+  - it lists Your orders, Payments and refunds, and Support replies;
+  - every in-app switch is on, disabled and marked Required;
+  - Payments email is locked, and Orders and Support email can be switched.
+- **Saving:**
+  - Space on a focused switch turned Orders email off, and the status line said so;
+  - the backend stored the change, and it was still off after a reload;
+  - a click turned it back on, and the sparse row was removed;
+  - a refused save (a `400` injected into `fetch`) showed the error and put the switch
+    back, and the backend was untouched.
+- **Seller:**
+  - it lists 8 categories;
+  - Low stock, New reviews, and Points and wallet have no email switch;
+  - Seller account email is locked;
+  - Shop email went off and back on, and the backend agreed.
+- **Staff:** it lists "Work waiting for you", with a switchable email.
+- **Themes and sizes:** dark and light, at desktop and phone widths. There's no horizontal
+  scroll at 390 px, or at 375 and 360 px after the header fix.
+- **No errors:** no Next.js dev-overlay issues and no uncaught page exceptions.
+- Screenshots of each state were reviewed.
+
+**Found in the check, not fixed here:**
+
+- **Material Symbols icons ignore Tailwind size classes app-wide.** Every icon's computed
+  size is 24 px whatever its `text-[Npx]` class says. That includes the notification
+  components from Tasks 12 and 13. The likely cause is that the Google Fonts stylesheet's
+  `font-size: 24px` isn't in a CSS layer, so it beats Tailwind v4's utilities layer. Fixing
+  it would change icon sizes across every surface, so it's outside this task. This page
+  avoids the problem: its "Required" note has no lock glyph.
+- **The storefront header's icons in dark mode** are still nearly invisible, as Task 13
+  recorded.
 
 ### Task 15 — Operations: admin actions, health and purge commands, logging, runbook
 

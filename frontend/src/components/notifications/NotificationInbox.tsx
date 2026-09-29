@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { getAuthToken } from "@/lib/auth";
 import {
   NOTIFICATIONS_CHANGED_EVENT,
+  NOTIFICATION_SETTINGS_PATHS,
   getNotifications,
   markAllNotificationsRead,
   markNotificationRead,
@@ -34,8 +36,8 @@ interface Loaded {
 /**
  * The whole inbox for one audience (docs/NOTIFICATION_SYSTEM.md §9), shared by
  * /profile/notifications, /seller/notifications and /admin/notifications.
- * All or Unread, "Load more" by keyset cursor, and Mark all read. Opening a
- * notification marks it read and follows its link.
+ * All or Unread, "Load more" by keyset cursor, Mark all read, and a link to
+ * the settings. Opening a notification marks it read and follows its link.
  */
 export default function NotificationInbox({ audience }: { audience: NotificationAudience }) {
   const router = useRouter();
@@ -155,17 +157,28 @@ export default function NotificationInbox({ audience }: { audience: Notification
           <h1 className="text-xl font-bold text-ink">Notifications</h1>
           <p className="text-xs text-ink-muted mt-0.5">{INTROS[audience]}</p>
         </div>
-        <button
-          type="button"
-          onClick={markAllRead}
-          disabled={loading || !hasUnread}
-          className="inline-flex items-center gap-2 bg-surface text-ink border border-line hover:bg-surface-alt font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-lg transition-colors cursor-pointer disabled:cursor-default disabled:text-ink-faint disabled:hover:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
-        >
-          <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
-            done_all
-          </span>
-          Mark all read
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={markAllRead}
+            disabled={loading || !hasUnread}
+            className="inline-flex items-center gap-2 bg-surface text-ink border border-line hover:bg-surface-alt font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-lg transition-colors cursor-pointer disabled:cursor-default disabled:text-ink-faint disabled:hover:bg-surface focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
+              done_all
+            </span>
+            Mark all read
+          </button>
+          <Link
+            href={NOTIFICATION_SETTINGS_PATHS[audience]}
+            className="inline-flex items-center gap-2 bg-surface text-ink border border-line hover:bg-surface-alt font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-lg transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
+              tune
+            </span>
+            Settings
+          </Link>
+        </div>
       </div>
 
       <div role="tablist" aria-label="Show" className="flex gap-2">

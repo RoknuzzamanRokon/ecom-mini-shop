@@ -61,6 +61,13 @@ export const NOTIFICATION_INBOX_PATHS: Record<NotificationAudience, string> = {
   STAFF: "/admin/notifications",
 };
 
+/** Where each audience chooses its notification channels, linked from its inbox. */
+export const NOTIFICATION_SETTINGS_PATHS: Record<NotificationAudience, string> = {
+  CUSTOMER: "/profile/notifications/settings",
+  SELLER: "/seller/notifications/settings",
+  STAFF: "/admin/notifications/settings",
+};
+
 /** Material Symbols per category (backend/notifications/categories.py). */
 const CATEGORY_ICONS: Record<string, string> = {
   ORDERS: "local_shipping",
