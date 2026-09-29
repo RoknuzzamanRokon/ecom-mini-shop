@@ -34,8 +34,11 @@ const API_BASE_URL =
  * `retried` is internal. The retry recurses exactly once and the recursive
  * call is passed `true`, so a second 401 is returned to the caller as-is —
  * there is no third request.
+ *
+ * Exported for the notification client (lib/notifications.ts), which uses the
+ * same transport rather than a second copy of it.
  */
-async function customerRequest(
+export async function customerRequest(
   endpoint: string,
   token?: string | null,
   options: RequestInit = {},

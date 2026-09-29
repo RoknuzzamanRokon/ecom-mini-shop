@@ -1,6 +1,6 @@
 # MiniShop — Notification System Plan
 
-**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–11
+**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–12
 of 16 are done. From Task 3 on, the work is built on the §3 answers as proposed.
 
 This is the architecture and task list for the notification system. Work through the
@@ -530,7 +530,7 @@ and phone widths.
 | 9 | Producers, wave 2: seller and shop lifecycle, shop submitted | backend | ✅ Done |
 | 10 | Producers, wave 3: product moderation, support, reviews, low stock, points | backend | ✅ Done |
 | 11 | Inbox and preferences API | backend | ✅ Done |
-| 12 | Frontend foundation: types, client, polling hook, bell component | frontend | ⬜ Not started |
+| 12 | Frontend foundation: types, client, polling hook, bell component | frontend | ✅ Done |
 | 13 | Frontend surfaces: bells in three headers, three inbox pages | frontend | ⬜ Not started |
 | 14 | Preferences UI | frontend | ⬜ Not started |
 | 15 | Operations: admin actions, health and purge commands, logging, runbook | backend + docs | ⬜ Not started |
@@ -1423,14 +1423,67 @@ it. There used to be two copies, in `shop/admin.py` and `shop/metrics.py`.
 
 ### Task 12 — Frontend foundation: types, client, polling hook, bell component
 
-- [ ] `lib/notifications.ts`: types and API calls through the existing authenticated
+- [x] `lib/notifications.ts`: types and API calls through the existing authenticated
       client, plus the `minishop:notifications-changed` event helper.
-- [ ] A `useUnreadNotifications(audience)` hook: 60 s visible-tab polling, re-count on
+- [x] A `useUnreadNotifications(audience)` hook: 60 s visible-tab polling, re-count on
       navigation and on the event.
-- [ ] `components/notifications/NotificationBell.tsx` and its dropdown list (§9).
-- [ ] `npx tsc --noEmit` and `npm run build`.
+- [x] `components/notifications/NotificationBell.tsx` and its dropdown list (§9).
+- [x] `npx tsc --noEmit` and `npm run build`.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done (2026-09-29).
+
+- **Checks run:** `npx tsc --noEmit` and `npm run build` pass. `eslint` on the new files
+  is clean; the only findings in `lib/api.ts` were already there, two `any` errors and
+  three unused-variable warnings.
+- **Not mounted yet:** the bell goes into the headers in Task 13, which also does the
+  browser check.
+
+**What exists now:**
+
+- **`lib/notifications.ts`:**
+  - **Types:** `NotificationAudience`, `AppNotification`, `NotificationPage`, and the
+    preference types, shaped as §8 describes.
+  - **Client:** `getNotifications` (with `unread` and `cursor`),
+    `getUnreadNotificationCount`, `markNotificationRead`, `markAllNotificationsRead`,
+    `getNotificationPreferences` and `updateNotificationPreferences`.
+  - **Transport:** every call goes through `customerRequest`, the app's existing
+    authenticated transport with one token refresh and one retry. It's now exported from
+    `lib/api.ts` so it isn't copied.
+  - **Errors** surface the backend's own `detail` text.
+  - **The shared event:** `NOTIFICATIONS_CHANGED_EVENT` (`minishop:notifications-changed`)
+    and `notifyNotificationsChanged()`, following the `SUPPORT_UNREAD_EVENT` pattern.
+  - **Helpers:** `NOTIFICATION_INBOX_PATHS` (the three §9 inbox routes),
+    `notificationIcon(category)` (Material Symbols) and `formatUnreadBadge()` ("99+").
+- **`components/notifications/useUnreadNotifications.ts`:**
+  - It re-counts on every navigation, on the event, and when the tab becomes visible
+    again.
+  - It polls every 60 s while `document.visibilityState` is `visible`; a hidden tab
+    doesn't poll.
+  - A failed count (offline, throttled) keeps the last number rather than flashing to
+    zero.
+- **`components/notifications/NotificationListItem.tsx`:** one notification as a button,
+  shared by the dropdown and the Task 13 inbox pages.
+  - It shows the category icon (tinted `danger` for HIGH priority), the title (bold while
+    unread), the body, the relative time from `formatRelativeTime`, and an unread dot with
+    screen-reader text.
+  - The body is one line in the dropdown and full, keeping its paragraphs, on a page.
+- **`components/notifications/NotificationBell.tsx`** (`audience`, and `tone` of `"nav"`
+  for the storefront's dark bar or `"surface"` for the Seller Center and Console
+  headers):
+  - **The button:** a bell with a `danger` badge ("99+" past 99) and an accessible label
+    such as "3 unread notifications", with `aria-expanded` and `aria-controls`.
+  - **The dropdown:** the 10 newest notifications, reloaded on each opening, with
+    **Mark all read** (disabled when nothing is unread) and **View all**. It has loading,
+    empty ("You're all caught up.") and error-with-retry states.
+  - **Clicking an item** marks it read, announces the change and opens its `action_url`.
+  - **Keyboard:** Enter or Space toggles it, ArrowDown from the bell enters the list,
+    ArrowUp and ArrowDown move between items, and Escape closes it and puts focus back on
+    the bell.
+  - **It closes** on a click outside and on navigation.
+  - **Layout:** on phones it's a full-width panel under the header; from `sm` up it's a
+    384 px dropdown anchored right.
+  - **Style:** design tokens only (`bg-surface`, `text-ink`, `border-line`, `bg-danger`,
+    `text-primary`…).
 
 ### Task 13 — Frontend surfaces: bells in three headers, three inbox pages
 
