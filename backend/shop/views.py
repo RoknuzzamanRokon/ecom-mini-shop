@@ -1,47 +1,36 @@
+"""
+The backend serves no storefront pages: the Next.js app at
+settings.STOREFRONT_URL is the storefront, and this project is its API and
+the Django admin.
+
+These three routes used to render the legacy Django-template catalogue. The
+site root now opens the admin (its login page when signed out). The category
+and product routes redirect to the matching Next.js page, so old links and
+`Category.get_absolute_url()` / `Product.get_absolute_url()` (the admin's
+"View on site") still land somewhere real. The redirects are temporary (302)
+so a browser never caches them against a STOREFRONT_URL that changes.
+"""
+from urllib.parse import quote, urlencode
+
 from django.conf import settings
-from django.core.paginator import Paginator
-from django.db.models import Q
-from django.shortcuts import get_object_or_404, render
-
-from .models import Category, Product
+from django.shortcuts import redirect
 
 
-def product_list(request, category_slug=None):
-    products = Product.objects.filter(is_active=True).select_related("category")
+def _to_storefront(path, **params):
+    url = settings.STOREFRONT_URL.rstrip("/") + path
+    if params:
+        url = f"{url}?{urlencode(params)}"
+    return redirect(url)
 
-    category = None
-    if category_slug:
-        category = get_object_or_404(Category, slug=category_slug, is_active=True)
-        products = products.filter(category=category)
 
-    query = request.GET.get("q", "").strip()
-    if query:
-        products = products.filter(
-            Q(name__icontains=query) | Q(category__name__icontains=query)
-        ).distinct()
+def backend_home(request):
+    return redirect("admin:index")
 
-    paginator = Paginator(products, settings.PRODUCTS_PER_PAGE)
-    page_obj = paginator.get_page(request.GET.get("page"))
 
-    hot_deal = (
-        Product.objects.filter(is_active=True, old_price__isnull=False)
-        .exclude(old_price__lte=0)
-        .order_by("-created_at")
-        .first()
-    )
-
-    context = {
-        "page_obj": page_obj,
-        "products": page_obj.object_list,
-        "category": category,
-        "hot_deal": hot_deal,
-        "search_query": query,
-    }
-    return render(request, "shop/product_list.html", context)
+def category(request, category_slug):
+    # The storefront's own category link (Navbar.tsx) is /?category=<slug>.
+    return _to_storefront("/", category=category_slug)
 
 
 def product_detail(request, slug):
-    product = get_object_or_404(
-        Product.objects.select_related("category"), slug=slug, is_active=True
-    )
-    return render(request, "shop/product_detail.html", {"product": product})
+    return _to_storefront(f"/product/{quote(slug)}")

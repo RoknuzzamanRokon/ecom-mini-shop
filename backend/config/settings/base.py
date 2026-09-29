@@ -92,7 +92,6 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
-                'shop.context_processors.shop_context',
             ],
         },
     },
@@ -191,10 +190,10 @@ PRIVATE_MEDIA_ROOT = BASE_DIR / 'private_media'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-PRODUCTS_PER_PAGE = 12
-
 # CORS settings
-# Public Next.js storefront, linked from the admin chrome.
+# Public Next.js storefront, linked from the admin chrome. The backend has no
+# storefront pages: /category/<slug>/ and /product/<slug>/ redirect here, and
+# "/" opens the admin.
 STOREFRONT_URL = os.environ.get("STOREFRONT_URL", "http://localhost:3000")
 
 CORS_ALLOWED_ORIGINS = [

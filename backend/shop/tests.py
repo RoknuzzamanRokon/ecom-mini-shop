@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from django.urls import reverse
 
 from rbac.models import Role
@@ -57,55 +57,34 @@ class ShopTestCase(TestCase):
         )
 
 
-class ProductListViewTests(ShopTestCase):
-    def test_homepage_loads(self):
-        response = self.client.get(reverse("shop:product_list"))
+@override_settings(STOREFRONT_URL="http://storefront.test/")
+class LegacyPageRedirectTests(ShopTestCase):
+    """The backend renders no storefront pages. The site root opens the admin;
+    the old catalogue routes, and the models' get_absolute_url() behind the
+    admin's "View on site", send visitors to the Next.js app."""
+
+    def assertRedirectsTo(self, path, expected):
+        response = self.client.get(path)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response["Location"], expected)
+        self.assertEqual(response.templates, [])
+
+    def test_root_opens_the_admin_login_when_signed_out(self):
+        self.assertRedirectsTo("/", "/admin/")
+        response = self.client.get("/", follow=True)
+        self.assertEqual(response.redirect_chain[-1][0], "/admin/login/?next=/admin/")
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Custom Mechanical Keyboard")
 
-    def test_products_come_from_database(self):
-        response = self.client.get(reverse("shop:product_list"))
-        product_ids = {product.id for product in response.context["products"]}
-        self.assertEqual(product_ids, set(Product.objects.values_list("id", flat=True)))
+    def test_category_redirects_to_the_storefront_filter(self):
+        self.assertRedirectsTo(
+            self.electronics.get_absolute_url(), "http://storefront.test/?category=electronics"
+        )
 
-    def test_category_filter(self):
-        response = self.client.get(reverse("shop:category", args=[self.electronics.slug]))
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Custom Mechanical Keyboard")
-        self.assertNotContains(response, "Organic Heavyweight Tee")
-
-    def test_search_by_name(self):
-        response = self.client.get(reverse("shop:product_list"), {"q": "keyboard"})
-        self.assertContains(response, "Custom Mechanical Keyboard")
-        self.assertNotContains(response, "Organic Heavyweight Tee")
-
-    def test_search_by_category_name(self):
-        response = self.client.get(reverse("shop:product_list"), {"q": "clothing"})
-        product_ids = {product.id for product in response.context["products"]}
-        self.assertEqual(product_ids, {self.tee.id})
-
-    def test_pagination(self):
-        for i in range(15):
-            Product.objects.create(
-                name=f"Extra Product {i}",
-                category=self.electronics,
-                shop=self.shop,
-                description="x",
-                price=Decimal("10.00"),
-                stock=5,
-                status=Product.STATUS_PUBLISHED,
-            )
-        response = self.client.get(reverse("shop:product_list"))
-        self.assertEqual(len(response.context["page_obj"].object_list), 12)
-        self.assertTrue(response.context["page_obj"].has_next())
-
-
-class ProductDetailViewTests(ShopTestCase):
-    def test_product_detail_loads(self):
-        response = self.client.get(reverse("shop:product_detail", args=[self.keyboard.slug]))
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Custom Mechanical Keyboard")
-        self.assertContains(response, "148.00")
+    def test_product_redirects_to_the_storefront_product_page(self):
+        self.assertRedirectsTo(
+            self.keyboard.get_absolute_url(),
+            f"http://storefront.test/product/{self.keyboard.slug}",
+        )
 
 
 class APITests(ShopTestCase):

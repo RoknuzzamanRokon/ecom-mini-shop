@@ -5,9 +5,9 @@ from . import api_views, views
 app_name = "shop"
 
 urlpatterns = [
-    # Traditional Django template views
-    path("", views.product_list, name="product_list"),
-    path("category/<slug:category_slug>/", views.product_list, name="category"),
+    # No pages here: "/" opens the admin, the others the Next.js storefront.
+    path("", views.backend_home, name="backend_home"),
+    path("category/<slug:category_slug>/", views.category, name="category"),
     path("product/<slug:slug>/", views.product_detail, name="product_detail"),
 
     # REST API endpoints for Next.js frontend

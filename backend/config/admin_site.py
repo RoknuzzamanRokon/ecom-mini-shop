@@ -19,9 +19,8 @@ class MiniShopAdminSite(admin.AdminSite):
 
     def each_context(self, request):
         """
-        Supply what the custom admin chrome needs, so the templates do not
-        depend on shop.context_processors.shop_context leaking storefront
-        values into every admin page.
+        Supply what the custom admin chrome needs: the storefront link and
+        the category rail in nav_sidebar.html.
         """
         from shop.models import Category
 
