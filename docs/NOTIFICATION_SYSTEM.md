@@ -1,6 +1,6 @@
 # MiniShop — Notification System Plan
 
-**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–5
+**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–6
 of 16 are done. From Task 3 on, the work is built on the §3 answers as proposed.
 
 This is the architecture and task list for the notification system. Work through the
@@ -508,7 +508,7 @@ and phone widths.
 | 3 | `notifications` app: models, migration, registry, admin, permission codes | backend | ✅ Done |
 | 4 | Publisher: `publish()`, idempotency, on-commit fast path, settings | backend | ✅ Done |
 | 5 | Router: audiences, handlers, preferences, rendering | backend | ✅ Done |
-| 6 | Worker: claims, leases, retries, dead letters, `run_notification_worker` | backend | ⬜ Not started |
+| 6 | Worker: claims, leases, retries, dead letters, `run_notification_worker` | backend | ✅ Done |
 | 7 | Email channel: adapter, layout templates, settings | backend | ⬜ Not started |
 | 8 | Producers, wave 1: orders and payments | backend | ⬜ Not started |
 | 9 | Producers, wave 2: seller and shop lifecycle, shop submitted | backend | ⬜ Not started |
@@ -915,20 +915,92 @@ the same rules the view had:
 
 **Goal.** A process that drains events and deliveries safely, one or many at a time.
 
-- [ ] A generic claim over `select_for_update(skip_locked=True)`: PENDING, due FAILED,
+- [x] A generic claim over `select_for_update(skip_locked=True)`: PENDING, due FAILED,
       and PROCESSING with an expired lease.
-- [ ] Backoff with full jitter; maximum attempts; DEAD. A transport seam for Stage 2.
-- [ ] `manage.py run_notification_worker [--once] [--only events|deliveries] [--batch N] [--idle-sleep S]`,
+- [x] Backoff with full jitter; maximum attempts; DEAD. A transport seam for Stage 2.
+- [x] `manage.py run_notification_worker [--once] [--only events|deliveries] [--batch N] [--idle-sleep S]`,
       with a graceful exit on SIGINT and SIGTERM.
-- [ ] Tests: the worker list in §13, including the two-thread concurrency test.
+- [x] Tests: the worker list in §13, including the two-thread concurrency test.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done (2026-09-29).
+
+- **Checks run:** `check` is clean, and the 39 tests that need no database pass.
+- **Smoke run against the dev MySQL** (8.0.46): I published a `shop.submitted` event with
+  the fast path off. `NotificationWorker.run_once()` then claimed it with
+  `FOR UPDATE SKIP LOCKED`, renewed its lease and routed it; it ended ROUTED with
+  `attempts=1`. I deleted the row afterwards.
+- **Not run yet:** the database-backed worker tests, including the two-thread concurrency
+  tests. They run in Task 16, as the owner asked.
+
+**What exists now:**
+
+- **`notifications/worker.py`:**
+  - **Claims.** `DatabaseTransport.claim_events()` and `claim_deliveries()` lock up to
+    `BATCH_SIZE` due rows with `select_for_update(skip_locked=True)`, oldest
+    `available_at` first. Due means PENDING or FAILED whose `available_at` has passed, or
+    PROCESSING whose lease has expired. Each claimed row becomes PROCESSING, with
+    `locked_by` set to the worker id, `locked_until` set to now + `LEASE_SECONDS`, and
+    `attempts + 1`.
+  - **Attempts count at claim time,** not at failure. A row that keeps killing its worker
+    still runs out of attempts: a row whose lease expired on its last attempt goes straight
+    to DEAD at the next claim.
+  - **The transport is the Stage 2 seam.** The worker only calls its two claim methods, and
+    the tests swap in a stub.
+- **Leases.** The lease is renewed just before each row is handled, so it only has to
+  outlast one row, not a whole batch of slow SMTP sends.
+  - If the renewal finds that another worker already took the row, the row is skipped.
+  - Every outcome is written only while this worker still holds the lease; otherwise it's
+    logged as a lost lease.
+- **Outcomes.**
+  - **Events:** `route_event()` success means ROUTED. An exception means FAILED, with
+    `available_at` set to now + full-jitter backoff, or DEAD once `attempts` reaches
+    `EVENT_MAX_ATTEMPTS`.
+  - **Deliveries:** the adapter's `send()` runs outside any transaction.
+    - A `SendResult` means SENT, with `sent_at` and `provider_message_id` set.
+    - `TransientSendError`, or any unexpected exception, means a retry with backoff, then
+      DEAD at `DELIVERY_MAX_ATTEMPTS`.
+    - `PermanentSendError` means DEAD at once, or SKIPPED when it's raised with
+      `skip=True`.
+  - `last_error` keeps the last 2 KB of the traceback.
+  - **Backoff:** the delay is `random(0, min(cap, base × 2^(attempts−1)))`, so the first
+    retry waits up to 30 s and later ones up to 1 h.
+- **Adapters.** `notifications/channels/base.py` is the contract the worker relies on:
+  `SendResult`, `TransientSendError`, `PermanentSendError(skip=)`, the `ChannelAdapter`
+  protocol and `register_adapter()` / `get_adapter()`.
+  - Deliveries for a channel with no registered adapter aren't claimed; they wait.
+    Nothing is registered yet, so email deliveries stay PENDING until Task 7.
+- **Rate limit.** Each channel has a token bucket, currently `EMAIL_RATE_PER_SECOND` for
+  email.
+- **The loop.**
+  - After a full batch the worker goes straight on to the next one. After a pass with some
+    work it sleeps 2 s, and after a pass with none it sleeps `--idle-sleep` (default 10 s).
+  - On SIGINT or SIGTERM it finishes the row in hand. The rest of its batch goes back to
+    PENDING and the attempt it used is refunded. Then it exits.
+- **The command.** `manage.py run_notification_worker` takes `--once` (one pass, then
+  exit: for a scheduler), `--only events|deliveries`, `--batch N` and `--idle-sleep S`.
+  Bad values raise a `CommandError`.
+- **Tests (`notifications/tests/test_worker.py`):**
+  - backoff bounds and the token bucket;
+  - claim selection (what's due and what isn't), the lease and the attempt count, the
+    batch size, and an expired last attempt becoming DEAD;
+  - event routing, retry and dead-lettering, a lost lease, stopping mid-batch, and the
+    transport seam;
+  - every delivery outcome, a channel with no adapter, SKIPPED rows never being claimed,
+    and the rate limit;
+  - the loop's stop and the command's `--once`, `--only` and bad arguments;
+  - two `TransactionTestCase` concurrency tests, each thread on its own connection:
+    - rows another connection has locked are skipped, not waited for;
+    - two racing workers never share a row, and between them claim every row.
+- **One MySQL behaviour to know about.** A claim's `ORDER BY … LIMIT … FOR UPDATE` can lock
+  every matching row it scanned, not only the ones it returns. While a claim transaction
+  is open, another worker may find nothing to take. That transaction is short (one
+  select, one update), so this costs a little parallelism, never correctness.
 
 ### Task 7 — Email channel: adapter, layout templates, settings
 
 **Goal.** Deliveries on the EMAIL channel really send.
 
-- [ ] A `ChannelAdapter` protocol, and an `EmailAdapter` using `EmailMultiAlternatives`
+- [ ] A `ChannelAdapter` protocol (in place since Task 6: `channels/base.py`), and an `EmailAdapter` using `EmailMultiAlternatives`
       with `Message-ID` from the delivery UUID and a configured sender.
 - [ ] Error classification: permanent → DEAD or SKIPPED; transient → retry.
 - [ ] Settings: the console email backend in `dev.py`; SMTP host, port, user and password
