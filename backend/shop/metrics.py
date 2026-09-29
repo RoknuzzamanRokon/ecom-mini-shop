@@ -13,7 +13,6 @@ Refund, because joining them into the Payment aggregate would fan out its rows
 """
 from decimal import Decimal
 
-from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db.models import Count, DecimalField, Q, Sum, Value
 from django.db.models.functions import Coalesce
@@ -22,10 +21,7 @@ from django.utils import timezone
 from sellers.models import SellerProfile
 from shops.models import Shop
 
-from .models import Order, Payment, Product, ProductInventory, Refund
-
-# Kept in sync with shop.admin.LOW_STOCK_THRESHOLD; override in settings if needed.
-LOW_STOCK_THRESHOLD = getattr(settings, "LOW_STOCK_THRESHOLD", 10)
+from .models import LOW_STOCK_THRESHOLD, Order, Payment, Product, ProductInventory, Refund
 
 # Statuses that count as realised revenue. "COMPLETED" is not a Payment choice
 # but is matched by the pre-existing console contract, so it is preserved here.

@@ -13,6 +13,10 @@ class TemplateCoverageTests(SimpleTestCase):
     def test_handlers_only_handle_registry_events(self):
         self.assertLessEqual(set(HANDLERS), set(EVENT_TYPES))
 
+    def test_every_registry_event_has_a_handler(self):
+        handled = {event_type for event_type, handlers in HANDLERS.items() if handlers}
+        self.assertEqual(set(EVENT_TYPES) - handled, set())
+
     def test_every_handled_event_has_an_in_app_template(self):
         for event_type, handlers in HANDLERS.items():
             if not handlers:

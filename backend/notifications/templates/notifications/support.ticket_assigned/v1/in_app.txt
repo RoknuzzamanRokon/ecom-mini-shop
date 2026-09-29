@@ -1,0 +1,3 @@
+{% block title %}Ticket {{ ticket_number }} is assigned to you{% endblock %}
+{% block body %}“{{ subject }}” is now yours to answer.{% endblock %}
+{% block action_url %}/admin/support/{{ ticket_number }}{% endblock %}

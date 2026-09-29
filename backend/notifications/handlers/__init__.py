@@ -4,4 +4,4 @@ package, and each module imported here registers its handlers.
 """
 from .base import HANDLERS, Recipient, handlers_for, handles  # noqa: F401
 
-from . import orders, payments, sellers  # noqa: E402,F401
+from . import catalog, orders, payments, sellers, support  # noqa: E402,F401

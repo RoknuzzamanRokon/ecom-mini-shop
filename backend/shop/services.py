@@ -382,6 +382,19 @@ class ProductService:
             new_state={"status": product.status},
             ip_address=ip_address,
         )
+        publish(
+            events.PRODUCT_MODERATED,
+            payload={
+                "product_id": product.pk,
+                "product_name": product.name,
+                "action": action,
+                "from_status": previous_status,
+                "to_status": product.status,
+                "reason": product.rejection_reason if action == "reject" else "",
+            },
+            aggregate=product,
+            actor=actor,
+        )
         return product
 
     @staticmethod

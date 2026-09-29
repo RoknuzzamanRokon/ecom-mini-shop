@@ -1,0 +1,5 @@
+{% block title %}{% if action == "approve" %}{{ product_name }} is approved{% elif action == "reject" %}{{ product_name }} wasn't approved{% elif action == "publish" %}{{ product_name }} is live{% elif action == "unpublish" %}{{ product_name }} was unpublished{% else %}{{ product_name }} was updated{% endif %}{% endblock %}
+{% block body %}{% if action == "approve" %}Staff approved your product {{ product_name }}.{% elif action == "reject" %}Staff didn't approve your product {{ product_name }}.{% if reason %}
+
+Reason: {{ reason }}{% endif %}{% elif action == "publish" %}{{ product_name }} is published: customers can now find it and buy it.{% elif action == "unpublish" %}{{ product_name }} was unpublished, so customers can't see it any more.{% else %}{{ product_name }} is now {{ to_status|lower }}.{% endif %}{% endblock %}
+{% block action_url %}/seller/products{% endblock %}

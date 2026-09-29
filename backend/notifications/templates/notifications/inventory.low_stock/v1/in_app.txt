@@ -1,0 +1,3 @@
+{% block title %}{% if available_stock == 0 %}{{ product_name }} is out of stock{% else %}{{ product_name }} is running low{% endif %}{% endblock %}
+{% block body %}{% if available_stock == 0 %}{{ product_name }} has no stock left to sell.{% else %}Only {{ available_stock }} of {{ product_name }} left to sell.{% endif %} Restock it so customers can keep ordering.{% endblock %}
+{% block action_url %}/seller/products{% endblock %}

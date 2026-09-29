@@ -1,0 +1,5 @@
+{% block title %}{% if transaction_type == "ADMIN_DEBIT" %}{{ amount }} points deducted from your wallet{% else %}{{ amount }} points added to your wallet{% endif %}{% endblock %}
+{% block body %}Your points balance is now {{ balance_after }}.{% if reason %}
+
+Reason: {{ reason }}{% endif %}{% endblock %}
+{% block action_url %}/seller/wallet{% endblock %}

@@ -28,6 +28,8 @@ from django.db.models import F, Q
 from django.utils import timezone
 
 from audit.services import AuditService
+from notifications import events
+from notifications.publisher import publish
 from rbac.models import Role, UserPermission, UserRole
 from rbac.services import has_user_permission
 from sellers.models import SellerProfile
@@ -167,6 +169,23 @@ class SupportTicketService:
             attachment.save()
 
     @staticmethod
+    def _publish_message(event_type, ticket, message, actor):
+        """A reply notification, keyed by the message so it's told once."""
+        publish(
+            event_type,
+            payload={
+                "ticket_id": ticket.pk,
+                "ticket_number": ticket.ticket_number,
+                "message_id": message.pk,
+                "subject": ticket.subject,
+                "channel": ticket.channel,
+            },
+            aggregate=ticket,
+            actor=actor,
+            idempotency_key=f"support_message:{message.pk}",
+        )
+
+    @staticmethod
     def _system_note(ticket, actor, body: str, internal: bool):
         return TicketMessage.objects.create(
             ticket=ticket,
@@ -295,6 +314,18 @@ class SupportTicketService:
                 },
                 ip_address=ip_address,
             )
+            publish(
+                events.SUPPORT_TICKET_CREATED,
+                payload={
+                    "ticket_id": ticket.pk,
+                    "ticket_number": ticket.ticket_number,
+                    "subject": ticket.subject,
+                    "channel": channel,
+                },
+                aggregate=ticket,
+                actor=customer,
+                idempotency_key=f"support_ticket:{ticket.ticket_number}:created",
+            )
         return ticket
 
     @classmethod
@@ -334,6 +365,7 @@ class SupportTicketService:
             ticket.last_activity_at = now
             ticket.customer_last_read_at = now
             ticket.save()
+            cls._publish_message(events.SUPPORT_CUSTOMER_REPLIED, ticket, message, customer)
         return message
 
     @classmethod
@@ -435,6 +467,8 @@ class SupportTicketService:
                         ip_address=ip_address,
                     )
                 ticket.save()
+                # Public replies only: an internal note never reaches the requester.
+                cls._publish_message(events.SUPPORT_REPLY_RECEIVED, ticket, message, staff)
         return message
 
     @classmethod
@@ -549,6 +583,18 @@ class SupportTicketService:
                 metadata={"ticket_number": ticket.ticket_number},
                 ip_address=ip_address,
             )
+            if assignee is not None:
+                publish(
+                    events.SUPPORT_TICKET_ASSIGNED,
+                    payload={
+                        "ticket_id": ticket.pk,
+                        "ticket_number": ticket.ticket_number,
+                        "assignee_id": assignee.pk,
+                        "subject": ticket.subject,
+                    },
+                    aggregate=ticket,
+                    actor=staff,
+                )
         return ticket
 
     @staticmethod

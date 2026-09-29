@@ -1,6 +1,6 @@
 # MiniShop — Notification System Plan
 
-**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–9
+**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–10
 of 16 are done. From Task 3 on, the work is built on the §3 answers as proposed.
 
 This is the architecture and task list for the notification system. Work through the
@@ -512,7 +512,7 @@ and phone widths.
 | 7 | Email channel: adapter, layout templates, settings | backend | ✅ Done |
 | 8 | Producers, wave 1: orders and payments | backend | ✅ Done |
 | 9 | Producers, wave 2: seller and shop lifecycle, shop submitted | backend | ✅ Done |
-| 10 | Producers, wave 3: product moderation, support, reviews, low stock, points | backend | ⬜ Not started |
+| 10 | Producers, wave 3: product moderation, support, reviews, low stock, points | backend | ✅ Done |
 | 11 | Inbox and preferences API | backend | ⬜ Not started |
 | 12 | Frontend foundation: types, client, polling hook, bell component | frontend | ⬜ Not started |
 | 13 | Frontend surfaces: bells in three headers, three inbox pages | frontend | ⬜ Not started |
@@ -736,16 +736,16 @@ the same rules the view had:
 | `order.status_changed` | `order_id`, `order_number`, `from_status`, `to_status`, `changed_by` (CUSTOMER · SELLER · STAFF) |
 | `payment.succeeded`, `payment.failed` | `payment_id`, `payment_number`, `order_number`, `amount` |
 | `refund.processed` | `refund_id`, `refund_number`, `order_number`, `amount` |
-| `support.reply_received`, `support.customer_replied` | `ticket_id`, `ticket_number`, `message_id` |
+| `support.reply_received`, `support.customer_replied` | `ticket_id`, `ticket_number`, `message_id` (optional `subject`, `channel`, from Task 10) |
 | `seller.status_changed` | `seller_id`, `from_status`, `to_status` (optional `reason`, from Task 9) |
 | `shop.status_changed` | `shop_id`, `shop_name`, `from_status`, `to_status` (optional `reason`, from Task 9) |
-| `product.moderated` | `product_id`, `product_name`, `action`, `from_status`, `to_status` |
+| `product.moderated` | `product_id`, `product_name`, `action`, `from_status`, `to_status` (optional `reason`, from Task 10) |
 | `inventory.low_stock` | `product_id`, `product_name`, `available_stock`, `threshold` |
 | `review.created` | `kind` (product · shop), `review_id`, `rating`, `subject_name` |
-| `points.adjusted` | `transaction_id`, `seller_id`, `transaction_type`, `amount`, `balance_after` |
+| `points.adjusted` | `transaction_id`, `seller_id`, `transaction_type`, `amount`, `balance_after` (optional `reason`, from Task 10) |
 | `shop.submitted` | `shop_id`, `shop_name` (optional `seller_name`, from Task 9) |
 | `support.ticket_created` | `ticket_id`, `ticket_number`, `subject`, `channel` |
-| `support.ticket_assigned` | `ticket_id`, `ticket_number`, `assignee_id` |
+| `support.ticket_assigned` | `ticket_id`, `ticket_number`, `assignee_id` (optional `subject`, from Task 10) |
 
 ### Task 4 — Publisher: `publish()`, idempotency, on-commit fast path, settings
 
@@ -1241,15 +1241,98 @@ fires, so the existing test suites don't route anything.
 
 ### Task 10 — Producers, wave 3: product moderation, support, reviews, low stock, points
 
-- [ ] `ProductService` moderation (after Task 2), the support service (ticket created,
+- [x] `ProductService` moderation (after Task 2), the support service (ticket created,
       public staff reply, customer reply, assigned), both review services,
       `InventoryService` (a threshold *crossing* only), and `PointService.adjust_points`.
-- [ ] `LOW_STOCK_THRESHOLD` moves from `shop/admin.py:504` to a shared constant used by
+- [x] `LOW_STOCK_THRESHOLD` moves from `shop/admin.py:504` to a shared constant used by
       the admin and the inventory service.
-- [ ] Handlers and templates; the support recipients per ticket channel.
-- [ ] Tests, including that an internal note never notifies the customer.
+- [x] Handlers and templates; the support recipients per ticket channel.
+- [x] Tests, including that an internal note never notifies the customer.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done (2026-09-29).
+
+- **Checks run:** `check` and `makemigrations --check` are clean. The 43 tests that need
+  no database pass, including a new check that **every one of the 16 registry events now
+  has a handler** and its template. Every new template was rendered for each variant and
+  read.
+- **Smoke run against the dev MySQL:** I published and routed six events with the fast path
+  off: `product.moderated` (reject), `inventory.low_stock`, `points.adjusted`,
+  `support.ticket_created`, `support.reply_received` and `review.created`, all for real rows.
+  - Each reached the expected person.
+  - The `support.staff.manage` holders on dev are `admin` and `masrufa`.
+  - Email deliveries appeared only for the rejection and the support reply.
+  - I deleted every row afterwards.
+- **Not run yet:** the database-backed tests. They run in Task 16, as the owner asked.
+
+**Producers.** Each one publishes after its audit row, inside its existing transaction:
+
+| Service | Event | Key | Notes |
+|---|---|---|---|
+| `ProductService._record_moderation` (approve, reject, publish, unpublish) | `product.moderated` | UUID | `reason` is the rejection reason; empty for the other actions. A refused publish raises first. |
+| `InventoryService.adjust_stock`, `reserve_stock_for_cart` | `inventory.low_stock` | `low_stock:{product_id}:{UTC date}` | Only when available stock goes from above `LOW_STOCK_THRESHOLD` to at or below it. A second crossing the same day is deduplicated by the key. |
+| `ReviewService.create_review`, `ShopReviewService.create_review` | `review.created` | `review:{product\|shop}:{id}` | `subject_name` is the product or shop name. |
+| `PointService.adjust_points` | `points.adjusted` | `points_txn:{id}` | **`adjust_points` now wraps its credit or debit in `transaction.atomic()`,** so the event commits with the ledger row. Only this staff path notifies: `credit()` / `debit()` called by the platform itself (e.g. a product's creation cost) don't. |
+| `SupportTicketService.create_ticket` | `support.ticket_created` | `support_ticket:{ticket_number}:created` | |
+| `SupportTicketService.add_staff_message` | `support.reply_received` | `support_message:{id}` | **Public replies only:** an internal note never publishes. |
+| `SupportTicketService.add_customer_reply` | `support.customer_replied` | `support_message:{id}` | Both customer and seller channels. |
+| `SupportTicketService.assign` | `support.ticket_assigned` | UUID | Not published when unassigning. |
+
+**Low-stock threshold.** `LOW_STOCK_THRESHOLD` now lives in `shop/models.py`, next to
+`ProductInventory`, and still reads `settings.LOW_STOCK_THRESHOLD` (default 10). The
+admin's stock filter and badge, the Console metrics and the inventory service all import
+it. There used to be two copies, in `shop/admin.py` and `shop/metrics.py`.
+
+**Handlers** (`notifications/handlers/catalog.py` and `support.py`):
+
+- **Products, stock and reviews:** the product's (or shop's) owner, as SELLER.
+  - `product.moderated` goes under CATALOG. Only a rejection also emails.
+  - Low stock goes under INVENTORY, in-app only.
+  - Reviews go under REVIEWS, in-app only. The review's comment isn't copied.
+- **Points:** the seller whose wallet changed, as SELLER under WALLET, in-app only.
+- **Support:**
+  - **Ticket created:** holders of `support.staff.manage` (ADMINISTRATOR, SUPPORT_TEAM and
+    SUPER_ADMINISTRATOR on the seeded roles; not OPERATION_MANAGER), in-app only.
+  - **Staff reply:** whoever opened the ticket, as CUSTOMER on the customer channel or
+    SELLER on the seller channel, under SUPPORT, with email. **The reply's text isn't
+    copied** into the notification or the email; the link opens the thread.
+  - **Requester reply:** the assigned agent, if there is one.
+  - **Assigned:** the new assignee, with email, unless they assigned the ticket to
+    themselves.
+  - Support's existing unread markers are unchanged (D10).
+
+**Templates.** Eight more in-app templates.
+
+- **Links:**
+  - seller products → `/seller/products`;
+  - shop reviews → `/seller/shops`;
+  - points → `/seller/wallet`;
+  - a support thread → `/profile/support/<n>`, `/seller/support/<n>` or
+    `/admin/support/<n>`, depending on the audience.
+- **Low stock** says "running low" or "out of stock" at 0.
+- **Reasons** go in their own final paragraph.
+
+**Tests (`notifications/tests/test_catalog_support_points.py`):**
+
+- **Product moderation:** a rejection's payload, reason and email; approve, publish and
+  unpublish in-app only; a refused publish publishing nothing.
+- **Low stock:**
+  - a crossing through `adjust_stock`;
+  - above → above, and low → lower, not counting;
+  - once a day per product;
+  - a crossing caused by an order reserving stock.
+- **Reviews:** a product review and a shop review; a refused self-review publishing
+  nothing.
+- **Points:** a staff credit notifying; a platform credit and a bad action publishing
+  nothing.
+- **Support:**
+  - the ticket-created audience;
+  - **an internal note publishing nothing** while a public reply notifies, with the reply
+    text not copied;
+  - a seller-channel reply linking into the Seller Center;
+  - a customer reply reaching only the assignee;
+  - assignment with email, no event for unassigning, and no one told about a
+    self-assignment.
+- `test_template_coverage.py` now also checks that every registry event has a handler.
 
 ### Task 11 — Inbox and preferences API
 

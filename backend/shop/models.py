@@ -240,6 +240,12 @@ class ProductImage(models.Model):
         return f"{self.product.name} image #{self.order}"
 
 
+# Available units at or below which a product counts as low on stock: the
+# admin's stock-level filter and badge, the console metrics and the seller's
+# low-stock notification all use it. Override with settings.LOW_STOCK_THRESHOLD.
+LOW_STOCK_THRESHOLD = getattr(settings, "LOW_STOCK_THRESHOLD", 10)
+
+
 class ProductInventory(models.Model):
     """
     Dedicated server-authoritative inventory tracking model for Products.

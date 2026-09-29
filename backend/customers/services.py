@@ -6,6 +6,8 @@ from django.db.models import Count, QuerySet
 from django.utils import timezone
 
 from audit.services import AuditService
+from notifications import events
+from notifications.publisher import publish
 from .models import Address, CustomerProfile, Review, ShopReview
 
 logger = logging.getLogger(__name__)
@@ -383,6 +385,18 @@ class ReviewService:
             metadata={"product_id": product_id, "rating": rating},
             ip_address=ip_address,
         )
+        publish(
+            events.REVIEW_CREATED,
+            payload={
+                "kind": "product",
+                "review_id": review.pk,
+                "rating": review.rating,
+                "subject_name": Product.objects.values_list("name", flat=True).get(pk=product_id),
+            },
+            aggregate=review,
+            actor=user,
+            idempotency_key=f"review:product:{review.pk}",
+        )
         return review
 
     @classmethod
@@ -491,6 +505,18 @@ class ShopReviewService:
             actor=user,
             metadata={"shop_id": shop_id, "rating": rating},
             ip_address=ip_address,
+        )
+        publish(
+            events.REVIEW_CREATED,
+            payload={
+                "kind": "shop",
+                "review_id": review.pk,
+                "rating": review.rating,
+                "subject_name": Shop.objects.values_list("name", flat=True).get(pk=shop_id),
+            },
+            aggregate=review,
+            actor=user,
+            idempotency_key=f"review:shop:{review.pk}",
         )
         return review
 

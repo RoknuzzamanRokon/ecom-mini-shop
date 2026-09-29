@@ -1,0 +1,3 @@
+{% block title %}New reply on ticket {{ ticket_number }}{% endblock %}
+{% block body %}The {% if channel == "SELLER" %}seller{% else %}customer{% endif %} replied on “{{ subject }}”.{% endblock %}
+{% block action_url %}/admin/support/{{ ticket_number }}{% endblock %}

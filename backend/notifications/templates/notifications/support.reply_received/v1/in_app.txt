@@ -1,0 +1,3 @@
+{% block title %}Support replied to ticket {{ ticket_number }}{% endblock %}
+{% block body %}There's a new reply on your ticket “{{ subject }}”.{% endblock %}
+{% block action_url %}{% if audience == "SELLER" %}/seller/support/{{ ticket_number }}{% else %}/profile/support/{{ ticket_number }}{% endif %}{% endblock %}

@@ -1,0 +1,3 @@
+{% block title %}New {{ rating }}-star review for {{ subject_name }}{% endblock %}
+{% block body %}A customer left a {{ rating }}-star review on {% if kind == "shop" %}your shop {{ subject_name }}{% else %}{{ subject_name }}{% endif %}.{% endblock %}
+{% block action_url %}{% if kind == "shop" %}/seller/shops{% else %}/seller/products{% endif %}{% endblock %}

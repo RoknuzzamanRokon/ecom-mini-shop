@@ -4,9 +4,12 @@ from typing import Any, List, Optional
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Sum
+from django.utils import timezone
 
 from audit.services import AuditService
-from shop.models import InventoryTransaction, Order, OrderItem, Product, ProductInventory
+from notifications import events
+from notifications.publisher import publish
+from shop.models import LOW_STOCK_THRESHOLD, InventoryTransaction, Order, OrderItem, Product, ProductInventory
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +58,27 @@ class InventoryService:
                         reason="Initial product stock on inventory creation.",
                     )
         return inventory
+
+    @staticmethod
+    def _announce_low_stock(product: Product, before_available: int, after_available: int, actor=None):
+        """
+        Tells the seller when available stock *crosses* LOW_STOCK_THRESHOLD
+        (from above it to at or below it), at most once a day per product.
+        """
+        if not before_available > LOW_STOCK_THRESHOLD >= after_available:
+            return
+        publish(
+            events.INVENTORY_LOW_STOCK,
+            payload={
+                "product_id": product.pk,
+                "product_name": product.name,
+                "available_stock": after_available,
+                "threshold": LOW_STOCK_THRESHOLD,
+            },
+            aggregate=product,
+            actor=actor,
+            idempotency_key=f"low_stock:{product.pk}:{timezone.now():%Y-%m-%d}",
+        )
 
     @classmethod
     def adjust_stock(
@@ -137,6 +161,7 @@ class InventoryService:
                 },
                 ip_address=ip_address,
             )
+            cls._announce_low_stock(product, before_available, new_available, actor)
 
             logger.info(
                 "Inventory adjusted: product=%s (id=%d) delta=%+d avail=%d->%d by=%s",
@@ -210,6 +235,7 @@ class InventoryService:
                 actor=actor,
                 reason=f"Reserved {qty} units for Order {order.order_number}",
             )
+            cls._announce_low_stock(product, before_available, inventory.available_quantity, actor)
 
         AuditService.log(
             action="INVENTORY_RESERVED",

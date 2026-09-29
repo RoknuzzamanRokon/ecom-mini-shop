@@ -1,5 +1,8 @@
 import logging
 from django.db import transaction
+
+from notifications import events
+from notifications.publisher import publish
 from django.db.models import F, Q, Sum
 from django.db.models.functions import Coalesce
 from .models import PointTransaction, ProductCreationCost, SellerWallet
@@ -216,29 +219,41 @@ class PointService:
         """
         normalized_action = str(action).upper().strip()
         if normalized_action == "CREDIT":
-            return cls.credit(
-                seller=seller,
-                amount=amount,
-                transaction_type=PointTransaction.TYPE_ADMIN_CREDIT,
-                reason=reason,
-                actor=actor,
-                reference_type=reference_type,
-                reference_id=reference_id,
-            )
+            move, transaction_type = cls.credit, PointTransaction.TYPE_ADMIN_CREDIT
         elif normalized_action == "DEBIT":
-            return cls.debit(
-                seller=seller,
-                amount=amount,
-                transaction_type=PointTransaction.TYPE_ADMIN_DEBIT,
-                reason=reason,
-                actor=actor,
-                reference_type=reference_type,
-                reference_id=reference_id,
-            )
+            move, transaction_type = cls.debit, PointTransaction.TYPE_ADMIN_DEBIT
         else:
             raise InvalidTransactionError(
                 f"Invalid adjustment action '{action}'. Must be 'CREDIT' or 'DEBIT'."
             )
+
+        with transaction.atomic():
+            txn = move(
+                seller=seller,
+                amount=amount,
+                transaction_type=transaction_type,
+                reason=reason,
+                actor=actor,
+                reference_type=reference_type,
+                reference_id=reference_id,
+            )
+            # Only staff adjustments notify; the credits and debits the
+            # platform makes itself (e.g. a product's creation cost) don't.
+            publish(
+                events.POINTS_ADJUSTED,
+                payload={
+                    "transaction_id": txn.pk,
+                    "seller_id": seller.pk,
+                    "transaction_type": txn.transaction_type,
+                    "amount": txn.amount,
+                    "balance_after": txn.balance_after,
+                    "reason": txn.reason,
+                },
+                aggregate=txn,
+                actor=actor,
+                idempotency_key=f"points_txn:{txn.pk}",
+            )
+        return txn
 
     @classmethod
     def get_transaction_history(cls, seller, transaction_type: str = None):

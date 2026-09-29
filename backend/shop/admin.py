@@ -13,7 +13,7 @@ from django.db.models import Count
 from django.core.exceptions import PermissionDenied, ValidationError
 
 from .models import (
-    Category, Order, OrderItem, Product, ProductImage,
+    LOW_STOCK_THRESHOLD, Category, Order, OrderItem, Product, ProductImage,
     ProductInventory, InventoryTransaction, Payment, Refund
 )
 from shop.services import OrderService
@@ -500,8 +500,6 @@ class OrderItemAdmin(admin.ModelAdmin):
     def has_delete_permission(self, request, obj=None):
         return False
 
-
-LOW_STOCK_THRESHOLD = 10
 
 
 class StockLevelFilter(admin.SimpleListFilter):
