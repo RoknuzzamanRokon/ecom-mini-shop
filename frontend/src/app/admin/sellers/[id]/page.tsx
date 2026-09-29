@@ -44,6 +44,7 @@ import {
   isCreditTransaction,
   useSellerStatusAction,
 } from "../sellerGovernance";
+import { canCreateAdminShops, shopOwnerEligibilityWarning } from "../../shops/shopGovernance";
 
 /** Matches DRF's default PAGE_SIZE (settings.py), which the points history endpoint uses. */
 const POINT_HISTORY_PAGE_SIZE = 12;
@@ -510,6 +511,9 @@ export default function AdminSellerDetailPage() {
   // The admin shop list searches owner business name, so this deep link resolves
   // to exactly this seller's storefronts without inventing a new endpoint.
   const canSeeShops = hasAnyPermission(user, ADMIN_PERMISSIONS.shopsView);
+  const canAddShop = canCreateAdminShops(user);
+  // Why this seller can't own another shop right now, if they can't.
+  const addShopBlocker = shopOwnerEligibilityWarning(seller);
 
   return (
     <div className="space-y-6">
@@ -737,16 +741,51 @@ export default function AdminSellerDetailPage() {
               value={`${seller.shops_count} shop${seller.shops_count === 1 ? "" : "s"}`}
             />
           </dl>
-          {canSeeShops && seller.shops_count > 0 && (
-            <Link
-              href={`/admin/shops?search=${encodeURIComponent(seller.business_name)}`}
-              className="mt-3 inline-flex items-center gap-1.5 text-xs font-bold text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary rounded-sm"
-            >
-              <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
-                storefront
+          {(canAddShop || (canSeeShops && seller.shops_count > 0)) && (
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+              {canAddShop &&
+                (addShopBlocker ? (
+                  <span
+                    aria-disabled="true"
+                    title={addShopBlocker}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-bold opacity-40 cursor-not-allowed"
+                  >
+                    <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+                      add_business
+                    </span>
+                    Add shop
+                  </span>
+                ) : (
+                  <Link
+                    href={`/admin/shops/new?seller_id=${seller.id}`}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-on-primary text-xs font-bold transition-colors shadow-xs focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                  >
+                    <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+                      add_business
+                    </span>
+                    Add shop
+                  </Link>
+                ))}
+              {canSeeShops && seller.shops_count > 0 && (
+                <Link
+                  href={`/admin/shops?search=${encodeURIComponent(seller.business_name)}`}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary rounded-sm"
+                >
+                  <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+                    storefront
+                  </span>
+                  View this seller&apos;s shops
+                </Link>
+              )}
+            </div>
+          )}
+          {canAddShop && addShopBlocker && (
+            <p className="mt-2 text-[11px] text-ink-muted flex items-start gap-1">
+              <span aria-hidden="true" className="material-symbols-outlined text-[14px] text-accent">
+                info
               </span>
-              View this seller&apos;s shops
-            </Link>
+              {addShopBlocker}
+            </p>
           )}
         </div>
 

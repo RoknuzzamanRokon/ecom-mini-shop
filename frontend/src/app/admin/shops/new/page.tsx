@@ -1,14 +1,15 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { Suspense, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { getAuthToken } from "@/lib/auth";
 import {
   AdminApiError,
   AdminSeller,
   createAdminShop,
+  getAdminSellerDetail,
   getAdminSellers,
 } from "@/lib/admin-api";
 import { ADMIN_PERMISSIONS } from "@/lib/admin-navigation";
@@ -23,6 +24,7 @@ import {
   canCreateAdminShops,
   canViewAdminShops,
   rowsToShopPhones,
+  shopOwnerEligibilityWarning as eligibilityWarning,
 } from "../shopGovernance";
 
 const FIELD_LABEL_CLASS =
@@ -31,35 +33,41 @@ const FIELD_LABEL_CLASS =
 const FIELD_CONTROL_CLASS =
   "w-full bg-surface border border-line rounded-lg text-xs text-ink placeholder:text-ink-faint transition-colors focus:outline-none focus:border-primary focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary disabled:opacity-50 disabled:cursor-not-allowed px-2.5 py-2";
 
-/**
- * Ineligibility hint shown next to a candidate seller, mirroring the exact
- * rules in shops.services.ShopService.validate_seller_eligibility_for_creation.
- * Advisory only — the backend re-validates and is authoritative; this just
- * saves the operator a round trip for the common cases.
- */
-function eligibilityWarning(seller: AdminSeller): string | null {
-  if (!seller.is_operational) {
-    return `This seller's account is currently '${seller.status}'. Only an operational (APPROVED or ACTIVE) seller can own a shop.`;
-  }
-  if (seller.seller_type === "PRODUCT_OWNER") {
-    return "Product Owners are not permitted to own shops under system business rules.";
-  }
-  if (seller.seller_type === "LIMITED_SHOP_OWNER" && seller.shops_count >= 1) {
-    return "This Limited Shop Owner already owns a shop and is capped at 1.";
-  }
-  return null;
+export default function AdminShopCreatePage() {
+  return (
+    <Suspense fallback={<ShopCreateFallback />}>
+      <AdminShopCreatePageContent />
+    </Suspense>
+  );
 }
 
-export default function AdminShopCreatePage() {
+function ShopCreateFallback() {
+  return (
+    <div className="flex items-center justify-center py-24">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+    </div>
+  );
+}
+
+function AdminShopCreatePageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { user: actor } = useAuth();
 
   const canView = canViewAdminShops(actor);
   const canCreate = canCreateAdminShops(actor);
   const canListSellers = hasAnyPermission(actor, ADMIN_PERMISSIONS.sellersView);
 
+  // ?seller_id= (the "Add shop" button on a seller's page) preselects the owner.
+  const prefilledSellerId = /^\d+$/.test(searchParams.get("seller_id") ?? "")
+    ? (searchParams.get("seller_id") as string)
+    : null;
+
   const [selectedSeller, setSelectedSeller] = useState<AdminSeller | null>(null);
-  const [manualSellerId, setManualSellerId] = useState("");
+  // Without sellers.view the id can't be looked up, so it goes in the manual field.
+  const [manualSellerId, setManualSellerId] = useState(prefilledSellerId ?? "");
+  const [prefillLoading, setPrefillLoading] = useState(Boolean(prefilledSellerId));
+  const [prefillError, setPrefillError] = useState<string | null>(null);
 
   const [searchInput, setSearchInput] = useState("");
   const [searchResults, setSearchResults] = useState<AdminSeller[]>([]);
@@ -80,6 +88,34 @@ export default function AdminShopCreatePage() {
   const [confirming, setConfirming] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Resolve a pre-filled ?seller_id= into the selected owner, filling the main
+  // phone from their business phone exactly as picking them from search does.
+  // Falls back to the raw id if the lookup fails; the backend still validates it.
+  useEffect(() => {
+    if (!prefilledSellerId || !canListSellers) return;
+    const token = getAuthToken();
+    if (!token) return;
+    let cancelled = false;
+    getAdminSellerDetail(token, prefilledSellerId)
+      .then((row) => {
+        if (cancelled) return;
+        setSelectedSeller(row);
+        setPhoneRows([row.business_phone]);
+        setAutofilledPhone(row.business_phone || null);
+        setPrefillError(null);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setPrefillError(err instanceof AdminApiError ? err.message : "Failed to load the requested seller.");
+      })
+      .finally(() => {
+        if (!cancelled) setPrefillLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [prefilledSellerId, canListSellers]);
 
   // Debounced seller search, only when the operator can list sellers at all.
   useEffect(() => {
@@ -200,13 +236,13 @@ export default function AdminShopCreatePage() {
 
   const backLink = (
     <Link
-      href="/admin/shops"
+      href={prefilledSellerId ? `/admin/sellers/${prefilledSellerId}` : "/admin/shops"}
       className="inline-flex items-center gap-1.5 text-xs font-bold text-ink-muted hover:text-ink transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary rounded-sm"
     >
       <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
         arrow_back
       </span>
-      Back to Shops
+      {prefilledSellerId ? "Back to seller" : "Back to Shops"}
     </Link>
   );
 
@@ -262,7 +298,9 @@ export default function AdminShopCreatePage() {
             Owner (Seller) <span className="text-red-600">*</span>
           </p>
 
-          {selectedSeller ? (
+          {prefillLoading && canListSellers ? (
+            <p className="text-xs text-ink-muted">Loading the selected seller…</p>
+          ) : selectedSeller ? (
             <div className="flex items-center justify-between gap-3 rounded-xl border border-line bg-surface-alt/40 p-3">
               <div className="min-w-0">
                 <p className="text-xs font-bold text-ink truncate">
@@ -293,6 +331,7 @@ export default function AdminShopCreatePage() {
             </div>
           ) : canListSellers ? (
             <div className="relative">
+              {prefillError && <p className="text-xs text-danger mb-2">{prefillError}</p>}
               <div className="relative">
                 <span
                   aria-hidden="true"
@@ -510,7 +549,9 @@ export default function AdminShopCreatePage() {
           </button>
           <button
             type="button"
-            onClick={() => router.push("/admin/shops")}
+            onClick={() =>
+              router.push(prefilledSellerId ? `/admin/sellers/${prefilledSellerId}` : "/admin/shops")
+            }
             disabled={submitting}
             className="inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg border border-line hover:bg-surface-alt text-xs font-bold text-ink transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           >
