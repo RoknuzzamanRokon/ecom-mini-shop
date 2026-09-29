@@ -2161,3 +2161,106 @@ class AdminShopPhoneNumberTests(APITestCase):
         self.assertEqual(res.status_code, status.HTTP_200_OK)
         self.assertEqual(res.data["phone"], "01800000002")
         self.assertEqual(res.data["additional_phones"], [])
+
+
+class AdminShopStatusTransitionRuleTests(APITestCase):
+    """
+    POST /api/admin/shops/<pk>/status/ delegates to ShopService, so the Console
+    accepts exactly the source statuses the service and the Django admin do.
+    """
+
+    ALLOWED = (
+        (Shop.STATUS_DRAFT, "approve", Shop.STATUS_ACTIVE),
+        (Shop.STATUS_PENDING, "approve", Shop.STATUS_ACTIVE),
+        (Shop.STATUS_REJECTED, "approve", Shop.STATUS_ACTIVE),
+        (Shop.STATUS_PENDING, "reject", Shop.STATUS_REJECTED),
+        (Shop.STATUS_ACTIVE, "suspend", Shop.STATUS_SUSPENDED),
+        (Shop.STATUS_APPROVED, "suspend", Shop.STATUS_SUSPENDED),
+        (Shop.STATUS_SUSPENDED, "reactivate", Shop.STATUS_ACTIVE),
+    )
+    REFUSED = (
+        (Shop.STATUS_ACTIVE, "approve"),
+        (Shop.STATUS_SUSPENDED, "approve"),
+        (Shop.STATUS_DRAFT, "reject"),
+        (Shop.STATUS_ACTIVE, "reject"),
+        (Shop.STATUS_SUSPENDED, "reject"),
+        (Shop.STATUS_PENDING, "suspend"),
+        (Shop.STATUS_REJECTED, "suspend"),
+        (Shop.STATUS_SUSPENDED, "suspend"),
+        (Shop.STATUS_PENDING, "reactivate"),
+        (Shop.STATUS_ACTIVE, "reactivate"),
+    )
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_rbac")
+        cls.admin = User.objects.create_user(
+            username="tr_admin", email="tr_admin@minishop.com", password="AdminPassword123!", is_staff=True
+        )
+        assign_user_role(cls.admin, Role.ROLE_ADMINISTRATOR)
+        seller_user = User.objects.create_user(
+            username="tr_seller", email="tr_seller@minishop.com", password="SellerPassword123!"
+        )
+        cls.seller = SellerProfile.objects.create(
+            user=seller_user,
+            seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+            business_name="Transition Seller",
+            status=SellerProfile.STATUS_ACTIVE,
+        )
+
+    def setUp(self):
+        self.client.force_authenticate(user=self.admin)
+
+    def _shop(self, shop_status):
+        return Shop.objects.create(
+            owner=self.seller,
+            name=f"Transition {shop_status} Shop",
+            status=shop_status,
+            rejection_reason="Earlier rejection" if shop_status == Shop.STATUS_REJECTED else "",
+            suspension_reason="Earlier suspension" if shop_status == Shop.STATUS_SUSPENDED else "",
+        )
+
+    def _status(self, shop, action):
+        return self.client.post(
+            f"/api/admin/shops/{shop.id}/status/",
+            data={"action": action, "reason": "Transition rule test"},
+            format="json",
+        )
+
+    def _audit_rows(self, shop):
+        return AuditLog.objects.filter(action__startswith="ADMIN_SHOP_", target_id=str(shop.id))
+
+    def test_allowed_transitions_apply_with_one_audit_row(self):
+        for source, action, target in self.ALLOWED:
+            with self.subTest(source=source, action=action):
+                shop = self._shop(source)
+                res = self._status(shop, action)
+                self.assertEqual(res.status_code, status.HTTP_200_OK, res.data)
+                self.assertEqual(res.data["status"], target)
+                entry = self._audit_rows(shop).get()
+                self.assertEqual(entry.action, f"ADMIN_SHOP_{action.upper()}")
+                self.assertEqual(entry.metadata["previous_state"], {"status": source})
+                self.assertEqual(entry.metadata["new_state"], {"status": target})
+
+    def test_refused_transitions_are_400_and_change_nothing(self):
+        for source, action in self.REFUSED:
+            with self.subTest(source=source, action=action):
+                shop = self._shop(source)
+                res = self._status(shop, action)
+                self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+                # A bare list of messages, which the Console shows as-is.
+                self.assertIsInstance(res.data, list)
+                self.assertIn(f"Cannot {action} shop with status '{source}'", str(res.data[0]))
+                shop.refresh_from_db()
+                self.assertEqual(shop.status, source)
+                self.assertFalse(self._audit_rows(shop).exists())
+
+    def test_approving_a_rejected_shop_clears_the_rejection_reason(self):
+        shop = self._shop(Shop.STATUS_REJECTED)
+        res = self._status(shop, "approve")
+        self.assertEqual(res.status_code, status.HTTP_200_OK, res.data)
+        shop.refresh_from_db()
+        self.assertEqual(shop.status, Shop.STATUS_ACTIVE)
+        self.assertEqual(shop.rejection_reason, "")
+        self.assertEqual(shop.reviewed_by, self.admin)
+        self.assertIsNotNone(shop.approved_at)

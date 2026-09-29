@@ -1,7 +1,7 @@
 # MiniShop — Notification System Plan
 
-**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 📝 Plan. Confirm the
-decisions in §3 before starting Task 1.
+**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Task 1
+of 16 is done. The §3 decisions are still awaiting confirmation; Tasks 3–16 depend on them.
 
 This is the architecture and task list for the notification system. Work through the
 tasks in §14 **one at a time, in order**. Each task is one commit. When a task is done,
@@ -500,7 +500,7 @@ and phone widths.
 
 | Task | Title | Side | Status |
 |---|---|---|---|
-| 1 | Consolidate shop status transitions into `ShopService` | backend (prerequisite) | ⬜ Not started |
+| 1 | Consolidate shop status transitions into `ShopService` | backend (prerequisite) | ✅ Done |
 | 2 | Move product moderation into `ProductService` | backend (prerequisite) | ⬜ Not started |
 | 3 | `notifications` app: models, migration, registry, admin, permission codes | backend | ⬜ Not started |
 | 4 | Publisher: `publish()`, idempotency, on-commit fast path, settings | backend | ⬜ Not started |
@@ -525,22 +525,81 @@ usable end to end in the apps.** Tasks 14–16 complete it.
 
 **Goal.** One code path changes a shop's status, so one place can publish the event (D6).
 
-- [ ] List every difference between `AdminShopStatusAPIView` (`shop/admin_views.py:1080`)
+- [x] List every difference between `AdminShopStatusAPIView` (`shop/admin_views.py:1080`)
       and `ShopService.approve_shop` / `reject_shop` / `suspend_shop` / `reactivate_shop`
       (`shops/services.py:382–436`): allowed source statuses, and fields set
       (`approved_at`, `reviewed_by`, `reviewed_at`, `suspended_at`, `suspension_reason`,
       `rejection_reason`).
-- [ ] Settle each difference with the owner and record the answers under **Status**. For
+- [x] Settle each difference with the owner and record the answers under **Status**. For
       example: can the Console approve a SUSPENDED shop?
-- [ ] The view calls `ShopService`. It keeps its RBAC checks, `select_for_update`,
+- [x] The view calls `ShopService`. It keeps its RBAC checks, `select_for_update`,
       `AuditService` row and response shape; the service's errors map to `400`.
-- [ ] Tests: the existing Console shop-status tests pass unchanged, and there's a test
-      for each rule the answers changed.
+- [x] Tests: the existing Console shop-status tests pass unchanged, and there's a test
+      for each rule the answers changed. *(One existing test had to change; see below.)*
 
 **Done when.** A grep finds no assignment to `Shop.status` for these four actions outside
 `ShopService`, and `manage.py test shops shop.test_admin_governance` passes.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done (2026-09-29). `check`, `makemigrations --check`, `npx tsc --noEmit` and
+`npm run build` are clean. **The backend tests haven't been run yet.** The owner asked for
+the test suite to run once, in Task 16, rather than after each task.
+
+**Differences found.** Before this task the Console accepted every action from every
+status. Its UI (`getStatusRelevantActions` in `frontend/src/app/admin/shops/shopGovernance.tsx`)
+offered only some of them.
+
+| Action | Console API before | `ShopService` before | Console UI offered | Rule now, on every path |
+|---|---|---|---|---|
+| approve | any status | PENDING, DRAFT | DRAFT, PENDING, REJECTED | PENDING, DRAFT, **REJECTED** |
+| reject | any status | PENDING | DRAFT, PENDING | PENDING. The UI no longer offers it on DRAFT. |
+| suspend | any status | ACTIVE, APPROVED | APPROVED, ACTIVE | ACTIVE, APPROVED |
+| reactivate | any status | SUSPENDED | SUSPENDED | SUSPENDED |
+
+Fields set:
+
+- **approve:** the service clears `rejection_reason`; the Console didn't. A Console-approved
+  shop that had been rejected kept its old reason, and the detail page showed it in red on a
+  live shop. The service's rule applies now. `approved_at` and `reviewed_at` now share
+  one timestamp, where the service used to call `now()` twice.
+- **Every other field was the same on both paths.** Reject sets `rejection_reason`,
+  `reviewed_by` and `reviewed_at`. Suspend sets `suspension_reason` and `suspended_at`.
+  Reactivate clears `suspension_reason`. Neither path clears `suspended_at` on
+  reactivation, so it keeps recording the last suspension. That hasn't changed.
+
+**Answers.** The owner asked for Task 1 to go ahead without settling each difference one
+by one, so each got the recommended answer. Every rule lives only in `ShopService`, so
+changing one later is a one-line change there.
+
+1. **Approving a REJECTED shop: allowed on every path.** Staff can reverse a mistaken
+   rejection without the seller resubmitting, and the old reason is cleared. The Console
+   already offered this. The Django-admin action and `/api/shops/staff/…/approve/` gain it
+   too, because they call the same service.
+2. **Rejecting a DRAFT shop: refused.** No one asked for a review, so there is nothing to
+   reject. Approving a DRAFT stays allowed, since staff-created shops start as DRAFT.
+3. **Every other path the Console used to accept is refused with `400`.** That covers
+   suspending a PENDING shop, "reactivating" a PENDING shop straight to ACTIVE with no
+   review, rejecting an ACTIVE shop, approving a SUSPENDED shop, and so on.
+
+**What changed.**
+
+- `ShopService.approve_shop` accepts REJECTED and uses a single timestamp.
+- `AdminShopStatusAPIView` locks the row, calls the service and writes its audit row as
+  before. An `InvalidShopTransitionError` becomes a `400` whose body is a bare list of
+  messages; the Console already displays that shape, as it does for the product-publish
+  precondition. Nothing is saved and no audit row is written.
+- The Console hides Reject on DRAFT shops, and its comment no longer says the backend has
+  no source-status rules.
+- **One existing test changed.** `shop/test_admin_phase1.py`
+  `test_admin_with_manage_permission_can_suspend_shop` suspended a PENDING shop, which
+  rule 3 refuses, so its fixture now moves the shop to ACTIVE first.
+- New tests: `AdminShopStatusTransitionRuleTests` in `shop/test_admin_governance.py`
+  covers every allowed transition (7 cases, one audit row each), every refused one
+  (10 cases: `400`, nothing changed, no audit row), and the cleared rejection reason.
+  `shops/tests.py` covers approving a REJECTED shop at the service level, and the service
+  refusing to approve ACTIVE and SUSPENDED shops.
+- Grep: outside `ShopService`, only `shop/management/commands/seed_showcase.py:312`
+  assigns `Shop.status`. It's a development seed command that builds demo data, not one of
+  the four staff actions.
 
 ### Task 2 — Move product moderation into `ProductService` (prerequisite)
 
@@ -737,9 +796,8 @@ product-moderation tests pass.
 
 ## 15. Risks and open questions
 
-1. **Task 1 changes rules.** The Console can approve a shop from any status today;
-   `ShopService` can't. Consolidating means choosing one rule. The owner decides per
-   difference.
+1. ~~**Task 1 changes rules.**~~ Resolved in Task 1. See its **Status** for the rule each
+   difference got.
 2. **Superusers in staff audiences** (D5): confirm that they're excluded unless granted
    through a role.
 3. **Email needs real SMTP credentials** before anything leaves the machine. Until then

@@ -293,6 +293,9 @@ class AdminPhase1APITests(APITestCase):
 
     def test_admin_with_manage_permission_can_suspend_shop(self):
         """Administrator with 'shops.admin.manage' can suspend a shop."""
+        # ShopService only suspends ACTIVE or APPROVED shops.
+        self.test_shop.status = Shop.STATUS_ACTIVE
+        self.test_shop.save()
         self.client.force_authenticate(user=self.admin_user)
         response = self.client.post(
             self.shop_status_url,

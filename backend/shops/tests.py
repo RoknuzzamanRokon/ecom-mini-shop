@@ -260,6 +260,28 @@ class ShopSystemTests(TestCase):
         with self.assertRaises(InvalidShopTransitionError):
             ShopService.reactivate_shop(shop, self.staff_op_manager)
 
+        # Cannot approve a shop that is already live or suspended
+        ShopService.approve_shop(shop, self.staff_op_manager)
+        with self.assertRaises(InvalidShopTransitionError):
+            ShopService.approve_shop(shop, self.staff_op_manager)
+        ShopService.suspend_shop(shop, self.staff_op_manager, reason="Violations")
+        with self.assertRaises(InvalidShopTransitionError):
+            ShopService.approve_shop(shop, self.staff_op_manager)
+
+    def test_approving_a_rejected_shop_reverses_the_rejection(self):
+        """Staff can approve a REJECTED shop directly; the old reason is cleared."""
+        shop = ShopService.create_shop(self.seller_full, name="Rejected Then Approved", submit_for_review=True)
+        ShopService.reject_shop(shop, self.staff_op_manager, reason="Blurry logo")
+
+        ShopService.approve_shop(shop, self.staff_op_manager)
+
+        shop.refresh_from_db()
+        self.assertEqual(shop.status, Shop.STATUS_ACTIVE)
+        self.assertEqual(shop.rejection_reason, "")
+        self.assertEqual(shop.reviewed_by, self.staff_op_manager)
+        self.assertIsNotNone(shop.approved_at)
+        self.assertEqual(shop.approved_at, shop.reviewed_at)
+
     # 11-15. Public visibility isolation
     def test_public_visibility_isolation(self):
         """Public users can ONLY see APPROVED or ACTIVE shops. All other states return 404."""

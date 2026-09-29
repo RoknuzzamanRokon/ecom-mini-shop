@@ -106,17 +106,16 @@ const ACTION_DESCRIPTORS: Record<AdminShopStatusAction, ShopActionDescriptor> = 
 };
 
 /**
- * UI-only guidance on which actions make sense to OFFER for a shop's current
- * status (e.g. hide "Reactivate" on a shop that isn't suspended). The backend
- * status endpoint has no from-state restriction of its own — any action is
- * accepted from any status — so this is purely to avoid a confusing button,
- * never a security boundary. An unrecognized status falls back to offering
- * every action, since hiding all of them for an unknown state would be an
- * arbitrary UI opinion the backend does not share.
+ * Which actions to OFFER for a shop's current status. This mirrors the source
+ * statuses ShopService accepts (backend/shops/services.py), so no button leads
+ * to a refused transition. The backend enforces them and answers 400
+ * otherwise; this is never a security boundary. An unrecognized status falls
+ * back to offering every action and lets the backend decide.
  */
 function getStatusRelevantActions(status: string): AdminShopStatusAction[] {
   switch (status) {
     case "DRAFT":
+      return ["approve"];
     case "PENDING":
       return ["approve", "reject"];
     case "APPROVED":

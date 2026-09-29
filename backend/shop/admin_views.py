@@ -101,6 +101,7 @@ from shops.fields import Point
 from shops.models import Shop
 from shops.services import (
     IneligibleSellerError,
+    InvalidShopTransitionError,
     ShopLimitExceededError,
     ShopService,
     validate_coordinates,
@@ -1082,6 +1083,8 @@ class AdminShopStatusAPIView(APIView):
     POST /api/admin/shops/<int:pk>/status/
     PATCH /api/admin/shops/<int:pk>/status/
     Transitions shop lifecycle (approve, reject, suspend, reactivate).
+    Delegates to ShopService, which owns the allowed source statuses; a
+    refused transition is a 400.
     """
     permission_classes = [IsAuthenticated, CanChangeAdminShopStatus]
 
@@ -1116,26 +1119,20 @@ class AdminShopStatusAPIView(APIView):
                 raise NotFound("Shop not found.")
 
             old_status = shop.status
-            now = timezone.now()
 
-            if action == "approve":
-                shop.status = Shop.STATUS_ACTIVE
-                shop.approved_at = now
-                shop.reviewed_by = request.user
-                shop.reviewed_at = now
-            elif action == "reject":
-                shop.status = Shop.STATUS_REJECTED
-                shop.rejection_reason = reason
-                shop.reviewed_by = request.user
-                shop.reviewed_at = now
-            elif action == "suspend":
-                shop.status = Shop.STATUS_SUSPENDED
-                shop.suspension_reason = reason
-                shop.suspended_at = now
-            elif action == "reactivate":
-                shop.status = Shop.STATUS_ACTIVE
-                shop.suspension_reason = ""
-            shop.save()
+            try:
+                if action == "approve":
+                    shop = ShopService.approve_shop(shop, request.user)
+                elif action == "reject":
+                    shop = ShopService.reject_shop(shop, request.user, reason)
+                elif action == "suspend":
+                    shop = ShopService.suspend_shop(shop, request.user, reason)
+                elif action == "reactivate":
+                    shop = ShopService.reactivate_shop(shop, request.user)
+            except InvalidShopTransitionError as exc:
+                raise DRFValidationError(str(exc))
+            except DjangoValidationError as exc:
+                raise DRFValidationError(exc.messages)
 
             AuditService.log(
                 action=f"ADMIN_SHOP_{action.upper()}",

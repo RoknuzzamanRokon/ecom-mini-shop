@@ -380,16 +380,22 @@ class ShopService:
     @classmethod
     @transaction.atomic
     def approve_shop(cls, shop: Shop, staff_user) -> Shop:
-        """Approves and activates a pending shop."""
-        if shop.status not in (Shop.STATUS_PENDING, Shop.STATUS_DRAFT):
+        """
+        Approves and activates a pending shop. A DRAFT can be approved without
+        a submission, and a REJECTED shop can be approved to reverse the
+        rejection without the seller resubmitting.
+        """
+        if shop.status not in (Shop.STATUS_PENDING, Shop.STATUS_DRAFT, Shop.STATUS_REJECTED):
             raise InvalidShopTransitionError(
-                f"Cannot approve shop with status '{shop.status}'. Only PENDING or DRAFT shops can be approved."
+                f"Cannot approve shop with status '{shop.status}'. "
+                "Only PENDING, DRAFT or REJECTED shops can be approved."
             )
 
+        now = timezone.now()
         shop.status = Shop.STATUS_ACTIVE
         shop.reviewed_by = staff_user
-        shop.reviewed_at = timezone.now()
-        shop.approved_at = timezone.now()
+        shop.reviewed_at = now
+        shop.approved_at = now
         shop.rejection_reason = ""
         shop.save()
         return shop
