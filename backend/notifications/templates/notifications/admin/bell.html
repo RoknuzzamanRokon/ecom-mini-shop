@@ -1,0 +1,32 @@
+{% if show %}
+<details class="mp-notif mp-hdr-menu" id="mp-notif"
+         data-unread="{{ unread }}"
+         data-app-url="{{ app_url }}"
+         data-list-url="{{ list_url }}"
+         data-count-url="{{ count_url }}"
+         data-read-all-url="{{ read_all_url }}"
+         data-read-url="{{ read_url }}">
+  <summary class="mp-notif-btn" title="Notifications"
+           aria-label="{% if unread %}{{ unread }} unread notification{{ unread|pluralize }}{% else %}Notifications{% endif %}">
+    <span class="material-symbols-outlined" aria-hidden="true">notifications</span>
+    <span class="mp-notif-badge" aria-hidden="true"{% if not unread %} hidden{% endif %}>{{ badge }}</span>
+  </summary>
+
+  <div class="mp-notif-panel">
+    <div class="mp-notif-head">
+      <span class="mp-notif-title">Notifications</span>
+      <button type="button" class="mp-notif-readall" data-notif-readall{% if not unread %} disabled{% endif %}>
+        <span class="material-symbols-outlined" aria-hidden="true">done_all</span>
+        Mark all read
+      </button>
+    </div>
+    <div class="mp-notif-body" data-notif-body aria-live="polite">
+      <p class="mp-notif-state">Loading your notifications…</p>
+    </div>
+    <a class="mp-notif-foot" href="{{ inbox_url }}" target="_blank" rel="noopener noreferrer">
+      View all in the Console
+      <span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>
+    </a>
+  </div>
+</details>
+{% endif %}

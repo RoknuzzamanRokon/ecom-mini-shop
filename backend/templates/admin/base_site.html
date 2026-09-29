@@ -1,5 +1,5 @@
 {% extends "admin/base.html" %}
-{% load i18n static %}
+{% load i18n static notification_admin %}
 
 {% block title %}{% if subtitle %}{{ subtitle }} | {% endif %}{{ title }} | {{ site_title|default:_('MiniShop Admin') }}{% endblock %}
 
@@ -10,22 +10,36 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet">
   <script>
-    /* Account menu (a <details> disclosure): close it on an outside click or
+    /* Header menus (the notification bell and the account menu, each a
+       <details> disclosure): one open at a time; close on an outside click or
        Escape, returning focus to its button after Escape. */
     document.addEventListener("DOMContentLoaded", function () {
-      var menu = document.querySelector(".mp-usermenu");
-      if (!menu) return;
+      var menus = Array.prototype.slice.call(document.querySelectorAll(".mp-hdr-menu"));
+      if (!menus.length) return;
+      menus.forEach(function (menu) {
+        menu.addEventListener("toggle", function () {
+          if (!menu.open) return;
+          menus.forEach(function (other) {
+            if (other !== menu) other.open = false;
+          });
+        });
+      });
       document.addEventListener("click", function (event) {
-        if (menu.open && !menu.contains(event.target)) menu.open = false;
+        menus.forEach(function (menu) {
+          if (menu.open && !menu.contains(event.target)) menu.open = false;
+        });
       });
       document.addEventListener("keydown", function (event) {
-        if (event.key === "Escape" && menu.open) {
+        if (event.key !== "Escape") return;
+        menus.forEach(function (menu) {
+          if (!menu.open) return;
           menu.open = false;
           menu.querySelector("summary").focus();
-        }
+        });
       });
     });
   </script>
+  <script src="{% static 'js/admin_notifications.js' %}" defer></script>
 {% endblock %}
 
 {% block extrastyle %}
@@ -62,9 +76,11 @@
 
     {% include "admin/color_theme_toggle.html" %}
 
+    {% admin_notification_bell %}
+
     <span class="mp-hdr-divider" aria-hidden="true"></span>
 
-    <details class="mp-usermenu">
+    <details class="mp-usermenu mp-hdr-menu">
       <summary title="Account">
         <span class="mp-avatar" aria-hidden="true">{{ display_name|first|upper }}</span>
         <span class="mp-usermenu-id">

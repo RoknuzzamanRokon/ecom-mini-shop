@@ -428,7 +428,8 @@ As built in Task 11:
   **View all**. Keyboard navigable, Escape closes it, and focus returns to the bell.
 - **Where it goes.** The storefront `Header.tsx` (customers) opens
   `/profile/notifications`. `SellerHeader.tsx` opens `/seller/notifications`.
-  `AdminHeader.tsx` opens `/admin/notifications`.
+  `AdminHeader.tsx` opens `/admin/notifications`. A fourth bell, added after the plan, sits
+  in the Django admin header and shows the same STAFF inbox (see "Follow-up" after Task 16).
 - **Inbox page.** All / Unread filter, "Load more" (keyset), and loading, empty and error
   states. Clicking an item marks it read and opens its `action_url`.
 - **Preferences.** A categories × channels table of toggles. Locked toggles are disabled,
@@ -1832,6 +1833,35 @@ afterwards. These checks passed:
   built at the owner's request. It does the same for support ticketing and guest-cart
   merge, which the list still named as never built. The 2N blocker about `LOGGING` now says
   only the `notifications` logger is configured.
+
+---
+
+### Follow-up — a bell in the Django admin header (2026-09-29)
+
+Added after the plan, at the owner's request: staff who work in the Django admin at
+`http://127.0.0.1:8001/admin/` see the same STAFF inbox as the Console's bell.
+
+- **Where:** in the header, between the theme toggle and the account menu.
+  - `notifications/templatetags/notification_admin.py` provides `{% admin_notification_bell %}`, rendered from `notifications/templates/notifications/admin/bell.html`.
+  - `templates/admin/base_site.html` includes it; the styles are in `static/css/japanese_admin.css`.
+- **What it shows:**
+  - a badge with your unread STAFF count, rendered with the page, and "99+" past 99;
+  - on opening, the 10 newest, each with its category icon, title, a one-line body, the relative time and an unread dot;
+  - **Mark all read**, and **View all in the Console**.
+- **How it works** (`static/js/admin_notifications.js`):
+  - It calls the existing `/api/notifications/` endpoints with the admin's **session** login (DRF's `SessionAuthentication` is already on). POSTs send the page's CSRF token, so there's no new endpoint and no new permission rule.
+  - It re-counts every 60 s while the tab is visible, and when the tab comes back.
+  - A notification's link is a Console path, so it opens on `STOREFRONT_URL` in a new tab and is marked read as it opens. One without a link is just marked read.
+  - Server text is only set with `textContent`.
+- **Behaviour:**
+  - Only one header menu is open at a time; an outside click or Escape closes it, and focus returns to its button.
+  - On phones the panel spans the screen just under the bell.
+- **Who sees it:** anyone who can read the STAFF inbox (§8). Every Django-admin user is staff, so that's all of them.
+- **Checks:**
+  - `check` is clean.
+  - `notifications.tests.test_admin` passes 8 of 8, 5 of them new (`AdminHeaderBellTests`): only your own unread STAFF rows count, the empty state, the URLs, the session login on the API, and "99+".
+  - **Browser check: 26 of 26 passed**, in system `google-chrome --headless=new` against the running `runserver 8001` with a throwaway superuser and 12 notifications (all deleted afterwards). It covered the badge and label, 10 items with unread and HIGH marks, Console links, the linkless item, the one-line body, mark read reaching the server, Escape, one menu at a time, outside click, re-counting on visibility, Mark all read, light and dark, and a 390 px phone.
+- **Found, not caused:** Django's `admin/js/nav_sidebar.js` throws on every Django admin page, because the custom `templates/admin/nav_sidebar.html` has no `#nav-filter` input. It's recorded as Known Issue #36 in `docs/MINISHOP_REVIEW_STATE.md`.
 
 ---
 

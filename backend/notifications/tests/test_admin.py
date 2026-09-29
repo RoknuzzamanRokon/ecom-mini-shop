@@ -76,3 +76,70 @@ class NotificationAdminAccessTests(TestCase):
         self.assertEqual(
             self.client.get(reverse("admin:notifications_notification_add")).status_code, 403
         )
+
+
+class AdminHeaderBellTests(TestCase):
+    """The bell in the Django admin header counts your own unread STAFF notifications."""
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.staff = User.objects.create_user(username="bell_staff", password="pw", is_staff=True)
+        cls.other = User.objects.create_user(username="bell_other", password="pw", is_staff=True)
+
+    def notify(self, recipient, audience=Audience.STAFF, read=False):
+        return Notification.objects.create(
+            recipient=recipient,
+            event_type="shop.submitted",
+            category="STAFF_QUEUE",
+            audience=audience,
+            title="A shop is waiting for review",
+            body="Review it.",
+            occurred_at=timezone.now(),
+            read_at=timezone.now() if read else None,
+        )
+
+    def header(self):
+        self.client.force_login(self.staff)
+        return self.client.get(reverse("admin:index")).content.decode()
+
+    def test_the_badge_counts_only_your_unread_staff_notifications(self):
+        self.notify(self.staff)
+        self.notify(self.staff)
+        self.notify(self.staff, read=True)
+        self.notify(self.staff, audience=Audience.CUSTOMER)
+        self.notify(self.other)
+        html = self.header()
+        self.assertIn('id="mp-notif"', html)
+        self.assertIn('data-unread="2"', html)
+        self.assertIn('aria-label="2 unread notifications"', html)
+        self.assertIn('<span class="mp-notif-badge" aria-hidden="true">2</span>', html)
+
+    def test_no_unread_hides_the_badge_and_disables_mark_all_read(self):
+        html = self.header()
+        self.assertIn('aria-label="Notifications"', html)
+        self.assertIn('class="mp-notif-badge" aria-hidden="true" hidden', html)
+        self.assertIn("data-notif-readall disabled", html)
+
+    def test_it_points_at_the_staff_inbox_api_and_the_console(self):
+        html = self.header()
+        self.assertIn('data-list-url="/api/notifications/?audience=STAFF"', html)
+        self.assertIn('data-count-url="/api/notifications/unread-count/?audience=STAFF"', html)
+        self.assertIn('data-read-url="/api/notifications/0/read/"', html)
+        self.assertIn("/admin/notifications\" target=\"_blank\"", html)
+        self.assertIn("js/admin_notifications.js", html)
+
+    def test_the_api_it_uses_accepts_the_admin_session(self):
+        self.notify(self.staff)
+        self.client.force_login(self.staff)
+        response = self.client.get(reverse("notifications:unread-count"), {"audience": "STAFF"})
+        self.assertEqual(response.json(), {"unread": 1})
+
+    def test_ninety_nine_plus(self):
+        Notification.objects.bulk_create([
+            Notification(
+                recipient=self.staff, event_type="shop.submitted", category="STAFF_QUEUE",
+                audience=Audience.STAFF, title=f"Shop {i}", body="", occurred_at=timezone.now(),
+            )
+            for i in range(100)
+        ])
+        self.assertIn('<span class="mp-notif-badge" aria-hidden="true">99+</span>', self.header())

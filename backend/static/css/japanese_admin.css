@@ -448,6 +448,299 @@ body {
   background: var(--jp-shu-vermilion-bg) !important;
 }
 
+/* Notification bell (notifications/templates/notifications/admin/bell.html,
+   static/js/admin_notifications.js). The button matches the theme toggle on
+   the dark header; the panel is a page surface like the account menu's. The
+   Console links inside are <a>s in #header, so their colours are pinned
+   against Django's #header a:link rule. */
+.mp-notif {
+  position: relative;
+}
+
+#user-tools .mp-notif > summary {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.88);
+  list-style: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+#user-tools .mp-notif > summary::-webkit-details-marker {
+  display: none;
+}
+
+#user-tools .mp-notif > summary .material-symbols-outlined {
+  font-size: 20px;
+}
+
+#user-tools .mp-notif > summary:hover,
+#user-tools .mp-notif[open] > summary {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: #FFFFFF;
+}
+
+#user-tools .mp-notif > summary:focus-visible {
+  outline: 2px solid var(--jp-kinari-gold);
+  outline-offset: 2px;
+}
+
+.mp-notif-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  box-sizing: border-box;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--jp-shu-vermilion);
+  box-shadow: 0 0 0 2px var(--jp-kachi-deep);
+  color: #FFFFFF;
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 18px;
+  text-align: center;
+}
+
+.mp-notif-badge[hidden] {
+  display: none;
+}
+
+.mp-notif-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  width: 380px;
+  max-width: calc(100vw - 24px);
+  overflow: hidden;
+  border: 1px solid var(--jp-border-line);
+  border-radius: 12px;
+  background: var(--jp-bg-surface);
+  box-shadow: 0 16px 40px -8px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.12);
+  color: var(--jp-text-ink);
+  text-align: left;
+}
+
+.mp-notif-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--jp-border-line);
+}
+
+.mp-notif-title {
+  color: var(--jp-text-ink);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+#user-tools .mp-notif-readall,
+#user-tools .mp-notif-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--sb-accent);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: normal;
+  text-transform: none;
+  cursor: pointer;
+}
+
+#user-tools .mp-notif-readall .material-symbols-outlined {
+  font-size: 16px;
+}
+
+#user-tools .mp-notif-readall:hover:not(:disabled),
+#user-tools .mp-notif-retry:hover {
+  background: var(--sb-accent-wash);
+}
+
+#user-tools .mp-notif-readall:disabled {
+  color: var(--jp-text-ink-muted);
+  opacity: 0.6;
+  cursor: default;
+}
+
+#user-tools .mp-notif-readall:focus-visible,
+#user-tools .mp-notif-retry:focus-visible {
+  outline: 2px solid var(--sb-accent);
+  outline-offset: 1px;
+}
+
+.mp-notif-list {
+  max-height: min(420px, 60vh);
+  overflow-y: auto;
+}
+
+.mp-notif-state {
+  margin: 0;
+  padding: 28px 16px;
+  color: var(--jp-text-ink-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+#user-tools .mp-notif-item {
+  display: flex !important;
+  align-items: flex-start !important;
+  gap: 10px !important;
+  box-sizing: border-box;
+  width: 100% !important;
+  margin: 0 !important;
+  padding: 10px 14px !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--jp-border-line-subtle) !important;
+  border-radius: 0 !important;
+  background: none !important;
+  color: var(--jp-text-ink) !important;
+  font: inherit !important;
+  letter-spacing: normal !important;
+  text-align: left !important;
+  text-decoration: none !important;
+  text-transform: none !important;
+  cursor: pointer;
+}
+
+#user-tools .mp-notif-item.is-unread {
+  background: var(--sb-accent-wash) !important;
+}
+
+#user-tools .mp-notif-item:hover,
+#user-tools .mp-notif-item:focus-visible {
+  background: var(--jp-bg-surface-sunken) !important;
+  outline: none !important;
+}
+
+#user-tools .mp-notif-item:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--sb-accent);
+}
+
+.mp-notif-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--sb-accent-wash);
+  color: var(--sb-accent);
+}
+
+.mp-notif-icon .material-symbols-outlined {
+  font-size: 17px;
+}
+
+.mp-notif-item.is-high .mp-notif-icon {
+  background: var(--jp-kinari-gold-bg);
+  color: var(--jp-kinari-gold);
+}
+
+.mp-notif-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.mp-notif-item-title {
+  color: var(--jp-text-ink);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.mp-notif-item.is-unread .mp-notif-item-title {
+  font-weight: 700;
+}
+
+.mp-notif-item-body {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  color: var(--jp-text-ink-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.mp-notif-item-time {
+  color: var(--jp-text-ink-muted);
+  font-size: 11px;
+  opacity: 0.85;
+}
+
+.mp-notif-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--jp-kinari-gold);
+}
+
+#user-tools .mp-notif-foot {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  padding: 11px 14px !important;
+  border: 0 !important;
+  border-top: 1px solid var(--jp-border-line) !important;
+  color: var(--sb-accent) !important;
+  font-size: 12.5px !important;
+  font-weight: 700 !important;
+  text-decoration: none !important;
+}
+
+#user-tools .mp-notif-foot .material-symbols-outlined {
+  font-size: 15px;
+}
+
+#user-tools .mp-notif-foot:hover,
+#user-tools .mp-notif-foot:focus-visible {
+  background: var(--jp-bg-surface-sunken);
+  outline: none;
+}
+
+/* Phones: the bell isn't at the right edge, so a right-anchored panel would
+   run off the left of the screen. Pin it to the screen's width instead; the
+   script sets `top` to just under the bell, since the header wraps here. */
+@media (max-width: 600px) {
+  .mp-notif-panel {
+    position: fixed;
+    top: 60px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-width: none;
+  }
+}
+
 /* Narrow windows: drop the text beside the avatar and the Storefront label. */
 @media (max-width: 900px) {
   .mp-usermenu-id,
