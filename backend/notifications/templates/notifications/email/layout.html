@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>{{ title }}</title>
+</head>
+<body style="margin:0;padding:0;background:#EDE7DA;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#EDE7DA;">
+  <tr>
+    <td align="center" style="padding:24px 12px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#FBF9F4;border:1px solid #D3CBB9;border-radius:8px;">
+        <tr>
+          <td style="padding:20px 28px;border-bottom:3px solid #BA8630;">
+            <a href="{{ storefront_link }}" style="font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:bold;color:#21486B;text-decoration:none;">Mini<span style="color:#BA8630;">Shop</span></a>
+          </td>
+        </tr>
+        <tr>
+          <td style="padding:28px 28px 8px;font-family:Arial,Helvetica,sans-serif;">
+            <h1 style="margin:0 0 16px;font-size:20px;line-height:1.35;color:#14212C;">{{ title }}</h1>
+            <div style="font-size:15px;line-height:1.6;color:#33434F;">{{ body|linebreaks }}</div>
+          </td>
+        </tr>
+        {% if action_link %}
+        <tr>
+          <td style="padding:8px 28px 28px;">
+            <a href="{{ action_link }}" style="display:inline-block;padding:11px 20px;background:#21486B;color:#FBF9F4;font-family:Arial,Helvetica,sans-serif;font-size:15px;font-weight:bold;text-decoration:none;border-radius:6px;">Open in MiniShop</a>
+          </td>
+        </tr>
+        {% endif %}
+        <tr>
+          <td style="padding:16px 28px 22px;border-top:1px solid #D3CBB9;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.5;color:#57646D;">
+            <a href="{{ inbox_link }}" style="color:#21486B;">All your notifications</a><br>
+            {% if can_opt_out %}You get these emails for “{{ category_label }}”. You can switch them off in your notification settings.{% else %}This is about “{{ category_label }}”, which is always emailed.{% endif %}
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>

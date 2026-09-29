@@ -18,6 +18,7 @@ from django.utils import timezone
 
 from .conf import notification_setting
 from .events import get_event_type
+from .channels.email import email_destination
 from .handlers import handlers_for
 from .models import Channel, Notification, NotificationDelivery, NotificationEvent
 from .preferences import effective_channels, load_overrides
@@ -187,9 +188,8 @@ def _insert_deliveries(event, notifications):
 def destination_for(channel, user, audience):
     """
     The address snapshot for one external send. Empty means there is nowhere
-    to send it, and the delivery is recorded as SKIPPED. Task 7 adds the
-    seller rule (the business email first).
+    to send it, and the delivery is recorded as SKIPPED.
     """
     if channel == Channel.EMAIL:
-        return (user.email or "").strip()
+        return email_destination(user, audience)
     return ""

@@ -1,0 +1,11 @@
+{% autoescape off %}{{ title }}
+
+{{ body }}
+{% if action_link %}
+Open it in MiniShop: {{ action_link }}
+{% endif %}
+--
+MiniShop · {{ storefront_link }}
+All your notifications: {{ inbox_link }}
+{% if can_opt_out %}You get these emails for "{{ category_label }}". You can switch them off in your notification settings.{% else %}This is about "{{ category_label }}", which is always emailed.{% endif %}
+{% endautoescape %}

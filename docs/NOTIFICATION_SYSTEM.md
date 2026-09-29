@@ -1,6 +1,6 @@
 # MiniShop — Notification System Plan
 
-**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–6
+**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–7
 of 16 are done. From Task 3 on, the work is built on the §3 answers as proposed.
 
 This is the architecture and task list for the notification system. Work through the
@@ -490,7 +490,7 @@ components.
   transaction. A rejected transition publishes nothing.
 - **API.** The IDOR matrix (someone else's ID → 404); audience permissions; the throttle;
   read-all scoped to the audience; locked preferences refuse changes.
-- **Templates.** Every registry event type has a template for each channel it uses.
+- **Templates.** Every event type with a handler has its in-app template, and email's shared layout exists (email wraps the rendered notification; see Task 7).
 
 **Frontend.** `npx tsc --noEmit`; `npm run build`; a browser check with system
 `google-chrome --headless=new` (Playwright's Chromium doesn't hydrate this app). Check the
@@ -509,7 +509,7 @@ and phone widths.
 | 4 | Publisher: `publish()`, idempotency, on-commit fast path, settings | backend | ✅ Done |
 | 5 | Router: audiences, handlers, preferences, rendering | backend | ✅ Done |
 | 6 | Worker: claims, leases, retries, dead letters, `run_notification_worker` | backend | ✅ Done |
-| 7 | Email channel: adapter, layout templates, settings | backend | ⬜ Not started |
+| 7 | Email channel: adapter, layout templates, settings | backend | ✅ Done |
 | 8 | Producers, wave 1: orders and payments | backend | ⬜ Not started |
 | 9 | Producers, wave 2: seller and shop lifecycle, shop submitted | backend | ⬜ Not started |
 | 10 | Producers, wave 3: product moderation, support, reviews, low stock, points | backend | ⬜ Not started |
@@ -1000,17 +1000,83 @@ the same rules the view had:
 
 **Goal.** Deliveries on the EMAIL channel really send.
 
-- [ ] A `ChannelAdapter` protocol (in place since Task 6: `channels/base.py`), and an `EmailAdapter` using `EmailMultiAlternatives`
+- [x] A `ChannelAdapter` protocol (in place since Task 6: `channels/base.py`), and an `EmailAdapter` using `EmailMultiAlternatives`
       with `Message-ID` from the delivery UUID and a configured sender.
-- [ ] Error classification: permanent → DEAD or SKIPPED; transient → retry.
-- [ ] Settings: the console email backend in `dev.py`; SMTP host, port, user and password
+- [x] Error classification: permanent → DEAD or SKIPPED; transient → retry.
+- [x] Settings: the console email backend in `dev.py`; SMTP host, port, user and password
       from environment variables in `base.py`. No secrets in the repository.
-- [ ] A shared email layout (text + HTML, inline CSS, the MiniShop mark, ৳ for money).
-- [ ] Destination rules: `User.email`. For SELLER notifications, `business_email` first,
+- [x] A shared email layout (text + HTML, inline CSS, the MiniShop mark, ৳ for money).
+- [x] Destination rules: `User.email`. For SELLER notifications, `business_email` first,
       falling back to `User.email`. No address → SKIPPED.
-- [ ] Tests: the email list in §13.
+- [x] Tests: the email list in §13.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done (2026-09-29).
+
+- **Checks run:** `check` is clean, and the 42 tests that need no database pass. One email
+  was rendered and sent through the console backend with dev settings; the text and HTML
+  parts, `Message-ID` and escaping were checked by eye.
+- **Not run yet:** the database-backed email tests. They run in Task 16, as the owner
+  asked.
+
+**The design decision: an email is the notification, in a shared layout.**
+
+- The router already renders each recipient's title, body and link for the inbox, and that
+  is the only place per-recipient wording exists. For example, the seller who sees only
+  their own items in `order.placed`: that list lives in the inbox body, not in the event.
+  So an email is that same notification inside one shared layout, rather than a second
+  template per event rendered from the payload.
+- It follows that the inbox and the email always say the same thing, and Tasks 8–10 write
+  one in-app template per event.
+- That changed the §13 "Templates" bullet to match. D7 still holds: templates live in
+  code, and email is plain text plus HTML.
+
+**What exists now:**
+
+- **`notifications/channels/email.py`:**
+  - **`EmailAdapter`**, registered in `NotificationsConfig.ready()`, sends an
+    `EmailMultiAlternatives` through Django's configured backend.
+  - **The message:** the subject is the title; the text body and HTML alternative come
+    from the shared layout; `From:` is `NOTIFICATIONS["FROM_EMAIL"]`.
+  - **Headers:** `Message-ID` is `<delivery-uuid@sender-domain>`, and the same value is
+    stored as `provider_message_id`. `Auto-Submitted: auto-generated` marks the mail as
+    automated (RFC 3834), so autoresponders don't reply.
+- **How failures are classified:**
+  - **SKIPPED:** no address, an address that fails `validate_email`, or a recipient refused
+    with 5xx.
+  - **DEAD:** the message itself refused with 5xx.
+  - **Retried:** a 4xx, a timeout, a refused or dropped connection, and the server
+    rejecting *our* configuration (authentication, the sender address). A bad password
+    shouldn't dead-letter every email, so those retry until an operator fixes it; Task 15
+    adds requeue.
+- **`email_destination(user, audience)`:** a SELLER notification goes to the
+  `SellerProfile.business_email` if it's set, otherwise to `User.email`; an empty address
+  means SKIPPED. The router uses it for the snapshot it records at routing time.
+- **Layouts:** `templates/notifications/email/layout.txt` and `layout.html`.
+  - The HTML version has inline CSS in the storefront's light palette, a "MiniShop"
+    wordmark in text (no remote image to load), an "Open in MiniShop" button, and the body
+    through `linebreaks` with autoescape.
+  - The text version isn't escaped.
+  - The footer links to the audience's inbox page (§9) and says whether the category can
+    be switched off, or is always emailed (the locked ones).
+  - Links are absolute on `STOREFRONT_URL`.
+- **Money:** `{% load notification_format %}{{ amount|taka }}` renders ৳1,500.00, for the
+  templates in Tasks 8–10.
+- **Settings:**
+  - `base.py` reads `EMAIL_BACKEND`, `EMAIL_HOST`, `EMAIL_PORT` (587), `EMAIL_HOST_USER`,
+    `EMAIL_HOST_PASSWORD`, `EMAIL_USE_TLS` (on), `EMAIL_USE_SSL` (off) and
+    `EMAIL_TIMEOUT` (10 s) from the environment or `backend/.env`.
+  - `dev.py` defaults `EMAIL_BACKEND` to the console backend, so emails are printed until
+    real SMTP settings are given (§15 item 3).
+  - `backend/.env` has none of these today, and nothing secret is in the repository.
+- **Tests (`notifications/tests/test_email.py`):**
+  - the subject, text and HTML bodies, `Message-ID` and `Auto-Submitted` headers;
+  - escaping in HTML only;
+  - the footer for locked and unlocked categories, and no button without a link;
+  - sending through the in-memory backend;
+  - every error class;
+  - the destination rules;
+  - publish → route → worker → one email to the seller's business address, marked SENT;
+  - adapter registration, the layouts existing, and the `taka` filter.
 
 ### Task 8 — Producers, wave 1: orders and payments
 

@@ -8,3 +8,7 @@ class NotificationsConfig(AppConfig):
 
     def ready(self):
         from . import handlers  # noqa: F401  (registers every handler)
+        from .channels import register_adapter
+        from .channels.email import EmailAdapter
+
+        register_adapter(EmailAdapter())

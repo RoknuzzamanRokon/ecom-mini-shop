@@ -225,6 +225,20 @@ SIMPLE_JWT = {
 # Point Cost Settings
 PRODUCT_CREATION_POINT_COST = 5
 
+# Email (used by the notification email channel). Everything comes from the
+# environment or backend/.env, so no credentials live in the repository.
+# dev.py prints emails to the console unless EMAIL_BACKEND says otherwise;
+# the test runner always swaps in the in-memory backend.
+EMAIL_BACKEND = os.environ.get("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "localhost")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "true").lower() in ("1", "true", "yes")
+EMAIL_USE_SSL = os.environ.get("EMAIL_USE_SSL", "false").lower() in ("1", "true", "yes")
+# Seconds before a stuck SMTP call gives up (and the delivery is retried).
+EMAIL_TIMEOUT = int(os.environ.get("EMAIL_TIMEOUT", "10"))
+
 # Notifications (docs/NOTIFICATION_SYSTEM.md). Read through
 # notifications.conf.notification_setting(); a key left out here takes the
 # default in notifications/conf.py.
