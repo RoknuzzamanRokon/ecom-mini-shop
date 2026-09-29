@@ -1,7 +1,7 @@
 # MiniShop — Notification System Plan
 
-**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Task 1
-of 16 is done. The §3 decisions are still awaiting confirmation; Tasks 3–16 depend on them.
+**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–2
+of 16 are done. The §3 decisions are still awaiting confirmation; Tasks 3–16 depend on them.
 
 This is the architecture and task list for the notification system. Work through the
 tasks in §14 **one at a time, in order**. Each task is one commit. When a task is done,
@@ -501,7 +501,7 @@ and phone widths.
 | Task | Title | Side | Status |
 |---|---|---|---|
 | 1 | Consolidate shop status transitions into `ShopService` | backend (prerequisite) | ✅ Done |
-| 2 | Move product moderation into `ProductService` | backend (prerequisite) | ⬜ Not started |
+| 2 | Move product moderation into `ProductService` | backend (prerequisite) | ✅ Done |
 | 3 | `notifications` app: models, migration, registry, admin, permission codes | backend | ⬜ Not started |
 | 4 | Publisher: `publish()`, idempotency, on-commit fast path, settings | backend | ⬜ Not started |
 | 5 | Router: audiences, handlers, preferences, rendering | backend | ⬜ Not started |
@@ -605,19 +605,49 @@ changing one later is a one-line change there.
 
 **Goal.** Product approve, reject, publish and unpublish live in the service layer.
 
-- [ ] `ProductService.approve` / `reject` / `publish` / `unpublish(product, actor, reason="", ip_address=None)`
+- [x] `ProductService.approve` / `reject` / `publish` / `unpublish(product, actor, reason="", ip_address=None)`
       with *exactly* today's rules from `AdminProductStatusAPIView`
       (`shop/admin_views.py:1212–1285`), including publish's shop and seller eligibility
       checks.
-- [ ] One `AuditService` row per action, written by the service. The view no longer
+- [x] One `AuditService` row per action, written by the service. The view no longer
       writes its own.
-- [ ] The view keeps its RBAC mapping and delegates.
-- [ ] Tests: every action and every refusal; exactly one audit row per action.
+- [x] The view keeps its RBAC mapping and delegates.
+- [x] Tests: every action and every refusal; exactly one audit row per action.
 
 **Done when.** Moderation status assignments exist only in `ProductService`, and the
 product-moderation tests pass.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done (2026-09-29). `check`, `makemigrations --check` and an import check are
+clean. **The backend tests haven't been run yet;** they run in Task 16, as the owner asked.
+
+**What moved.** The four actions now live in `ProductService` in `shop/services.py`, with
+the same rules the view had:
+
+| Action | Sets | Refused when |
+|---|---|---|
+| approve | `APPROVED`, `reviewed_by`, `reviewed_at`; clears `rejection_reason` | never |
+| reject | `REJECTED`, `rejection_reason` (trimmed), `reviewed_by`, `reviewed_at` | the reason is blank (`Product.clean()`; the serializer checks first) |
+| publish | `PUBLISHED`, `is_active = True` | there's no shop, the shop isn't APPROVED or ACTIVE, or its owner isn't operational |
+| unpublish | `UNPUBLISHED` | never |
+
+- **No source-status rule, as before.** Any action applies from any status.
+- **The publish refusals** raise a new `ProductModerationError`. The view turns it into the
+  same `400` bare message list as before, with the same wording.
+- **The audit row is written by the service,** one per action. It has the same
+  `ADMIN_PRODUCT_<ACTION>` names, the same previous and new state, and the same IP. The view
+  no longer writes one.
+- **One wording fix.** The default audit reason used to read "Product approveed by staff".
+  It's now "Product approved by staff"; the other three actions read the same as before.
+- **The view keeps** its RBAC mapping, `select_for_update` and response shape, and maps a
+  service `ValidationError` to `400`.
+- **Grep:** outside `ProductService`, only the development seed commands `seed_demo_data`
+  and `seed_showcase` assign a moderation status. They build demo data and aren't staff
+  actions.
+- **Tests:** a new file, `shop/test_product_moderation.py`. It covers each action's fields;
+  a blank reject reason; publish refused for each non-live shop status, for no shop, and for
+  a pending or suspended seller; every action from every status; exactly one audit row per
+  action, through both the service and the Console endpoint; and the `400` body. The
+  existing Console product tests in `shop/test_admin_governance.py` haven't changed.
 
 ### Task 3 — `notifications` app: models, migration, registry, admin, permission codes
 

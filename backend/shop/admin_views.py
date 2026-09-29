@@ -11,7 +11,6 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Q, Sum
-from django.utils import timezone
 from rest_framework import status
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError as DRFValidationError
 from rest_framework.pagination import PageNumberPagination
@@ -97,6 +96,7 @@ from shop.admin_serializers import (
     AdminUserUpdateSerializer,
 )
 from shop.models import Category, Order, Payment, Product
+from shop.services import ProductModerationError, ProductService
 from shops.fields import Point
 from shops.models import Shop
 from shops.services import (
@@ -1211,7 +1211,8 @@ class AdminProductStatusAPIView(APIView):
     POST /api/admin/products/<int:pk>/status/
     PATCH /api/admin/products/<int:pk>/status/
     Transitions product lifecycle (approve, reject, publish, unpublish).
-    Enforces business rules (cannot publish unapproved or suspended shop products).
+    Delegates to ProductService, which owns the business rules (cannot publish
+    unapproved or suspended shop products) and writes the audit row.
     """
     permission_classes = [IsAuthenticated, CanChangeAdminProductStatus]
 
@@ -1254,43 +1255,18 @@ class AdminProductStatusAPIView(APIView):
             except Product.DoesNotExist:
                 raise NotFound("Product not found.")
 
-            old_status = product.status
-            now = timezone.now()
-
-            if action == "approve":
-                product.status = Product.STATUS_APPROVED
-                product.reviewed_by = request.user
-                product.reviewed_at = now
-                product.rejection_reason = ""
-            elif action == "reject":
-                product.status = Product.STATUS_REJECTED
-                product.rejection_reason = reason
-                product.reviewed_by = request.user
-                product.reviewed_at = now
-            elif action == "publish":
-                # Validate shop and seller operational status
-                if not product.shop or product.shop.status not in (Shop.STATUS_APPROVED, Shop.STATUS_ACTIVE):
-                    raise DRFValidationError("Cannot publish product belonging to an unapproved or suspended shop.")
-                if not product.shop.owner or not product.shop.owner.is_operational:
-                    raise DRFValidationError("Cannot publish product belonging to an inoperational seller.")
-                product.status = Product.STATUS_PUBLISHED
-                product.is_active = True
-            elif action == "unpublish":
-                product.status = Product.STATUS_UNPUBLISHED
-
-            product.save()
-
-            AuditService.log(
-                action=f"ADMIN_PRODUCT_{action.upper()}",
-                target=product,
-                actor=request.user,
-                shop=product.shop,
-                seller=product.shop.owner if product.shop else None,
-                reason=reason or f"Product {action}ed by staff",
-                previous_state={"status": old_status},
-                new_state={"status": product.status},
-                ip_address=get_client_ip(request),
-            )
+            moderate = {
+                "approve": ProductService.approve,
+                "reject": ProductService.reject,
+                "publish": ProductService.publish,
+                "unpublish": ProductService.unpublish,
+            }[action]
+            try:
+                product = moderate(product, request.user, reason=reason, ip_address=get_client_ip(request))
+            except ProductModerationError as exc:
+                raise DRFValidationError(str(exc))
+            except DjangoValidationError as exc:
+                raise DRFValidationError(exc.messages)
 
         return Response(AdminProductSerializer(product).data, status=status.HTTP_200_OK)
 

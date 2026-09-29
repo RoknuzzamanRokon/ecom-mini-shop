@@ -43,6 +43,20 @@ class ProductOwnershipError(ProductServiceError):
     pass
 
 
+class ProductModerationError(ProductServiceError):
+    """Raised when staff moderation refuses an action, e.g. publishing for a shop that is not live."""
+    pass
+
+
+# Past tense of each moderation action, for the default audit reason.
+MODERATION_ACTION_VERBS = {
+    "approve": "approved",
+    "reject": "rejected",
+    "publish": "published",
+    "unpublish": "unpublished",
+}
+
+
 class ProductService:
     """
     Centralized domain service for Product mutations, lifecycle transitions,
@@ -305,6 +319,68 @@ class ProductService:
             )
             product.delete()
             logger.info("Product deleted: id=%s by seller=%s", product.id, seller.business_name)
+
+    # --- Staff moderation --------------------------------------------------
+    # Each action applies from any status; only publish has preconditions.
+    # The caller authorizes the actor and locks the row. Each action writes
+    # one ADMIN_PRODUCT_<ACTION> audit row in the same transaction.
+
+    @classmethod
+    @transaction.atomic
+    def approve(cls, product: Product, actor, reason: str = "", ip_address: Optional[str] = None) -> Product:
+        previous_status = product.status
+        product.status = Product.STATUS_APPROVED
+        product.reviewed_by = actor
+        product.reviewed_at = timezone.now()
+        product.rejection_reason = ""
+        return cls._record_moderation(product, "approve", previous_status, actor, reason, ip_address)
+
+    @classmethod
+    @transaction.atomic
+    def reject(cls, product: Product, actor, reason: str = "", ip_address: Optional[str] = None) -> Product:
+        """Product.clean() refuses a REJECTED product without a reason."""
+        previous_status = product.status
+        product.status = Product.STATUS_REJECTED
+        product.rejection_reason = (reason or "").strip()
+        product.reviewed_by = actor
+        product.reviewed_at = timezone.now()
+        return cls._record_moderation(product, "reject", previous_status, actor, reason, ip_address)
+
+    @classmethod
+    @transaction.atomic
+    def publish(cls, product: Product, actor, reason: str = "", ip_address: Optional[str] = None) -> Product:
+        shop = product.shop
+        if not shop or shop.status not in (Shop.STATUS_APPROVED, Shop.STATUS_ACTIVE):
+            raise ProductModerationError("Cannot publish product belonging to an unapproved or suspended shop.")
+        if not shop.owner or not shop.owner.is_operational:
+            raise ProductModerationError("Cannot publish product belonging to an inoperational seller.")
+        previous_status = product.status
+        product.status = Product.STATUS_PUBLISHED
+        product.is_active = True
+        return cls._record_moderation(product, "publish", previous_status, actor, reason, ip_address)
+
+    @classmethod
+    @transaction.atomic
+    def unpublish(cls, product: Product, actor, reason: str = "", ip_address: Optional[str] = None) -> Product:
+        previous_status = product.status
+        product.status = Product.STATUS_UNPUBLISHED
+        return cls._record_moderation(product, "unpublish", previous_status, actor, reason, ip_address)
+
+    @classmethod
+    def _record_moderation(cls, product, action, previous_status, actor, reason, ip_address) -> Product:
+        product.save()
+        AuditService.log(
+            action=f"ADMIN_PRODUCT_{action.upper()}",
+            target=product,
+            actor=actor,
+            shop=product.shop,
+            seller=product.shop.owner if product.shop else None,
+            reason=reason or f"Product {MODERATION_ACTION_VERBS[action]} by staff",
+            previous_state={"status": previous_status},
+            new_state={"status": product.status},
+            ip_address=ip_address,
+        )
+        return product
 
     @staticmethod
     def search_q(term: str) -> Q:
