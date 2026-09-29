@@ -268,6 +268,7 @@ RESOURCE_META = {
     "cart": ("Carts", "shopping_cart", 150),
     "reviews": ("Reviews", "reviews", 160),
     "support": ("Support tickets", "support_agent", 170),
+    "notifications": ("Notifications", "notifications", 180),
 }
 
 WILDCARD_CODE = "*"

@@ -1,7 +1,7 @@
 # MiniShop — Notification System Plan
 
-**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–2
-of 16 are done. The §3 decisions are still awaiting confirmation; Tasks 3–16 depend on them.
+**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–3
+of 16 are done. From Task 3 on, the work is built on the §3 answers as proposed.
 
 This is the architecture and task list for the notification system. Work through the
 tasks in §14 **one at a time, in order**. Each task is one commit. When a task is done,
@@ -69,8 +69,8 @@ Read from the source on this date. The source and its tests are authoritative.
 
 ## 3. Decisions
 
-**Status: proposed, awaiting the owner's confirmation.** Each row is the recommended
-answer. Changing one changes the tasks marked beside it.
+**Status: proposed.** The owner started Task 3 without changing any of them, so the
+tasks are built on these answers. Each row is the recommended answer. Changing one changes the tasks marked beside it.
 
 | # | Question | Proposed answer | Why | Affects |
 |---|---|---|---|---|
@@ -134,13 +134,16 @@ losing or duplicating anything.
 
 ### 4.3 Dependency rule (keeps it decoupled and free of import cycles)
 
-- Domain apps import **only** `notifications.publisher` and the event-name constants.
-  `publisher` imports only `notifications.models`. Like `audit`, it's a leaf.
+- Domain apps import **only** `notifications.publisher` and the event-name constants in
+  `notifications.events`. `publisher` imports only `notifications.models` and the two
+  registries (`events.py`, `categories.py`), which import only `models`. Like `audit`,
+  they're leaves.
 - `notifications.handlers` import domain models **inside functions**. The router depends
   on the domain; the domain never depends on the router.
 - Channel adapters know nothing about event types. Handlers know nothing about providers.
-- A test in Task 3 fails if `notifications/publisher.py` or `notifications/models.py`
-  imports another project app.
+- A test (`notifications/tests/test_leaf_imports.py`, from Task 3) fails if
+  `models.py`, `categories.py`, `events.py` or, from Task 4, `publisher.py` imports
+  another project app.
 
 ### 4.4 The life of one event
 
@@ -502,7 +505,7 @@ and phone widths.
 |---|---|---|---|
 | 1 | Consolidate shop status transitions into `ShopService` | backend (prerequisite) | ✅ Done |
 | 2 | Move product moderation into `ProductService` | backend (prerequisite) | ✅ Done |
-| 3 | `notifications` app: models, migration, registry, admin, permission codes | backend | ⬜ Not started |
+| 3 | `notifications` app: models, migration, registry, admin, permission codes | backend | ✅ Done |
 | 4 | Publisher: `publish()`, idempotency, on-commit fast path, settings | backend | ⬜ Not started |
 | 5 | Router: audiences, handlers, preferences, rendering | backend | ⬜ Not started |
 | 6 | Worker: claims, leases, retries, dead letters, `run_notification_worker` | backend | ⬜ Not started |
@@ -653,20 +656,96 @@ the same rules the view had:
 
 **Goal.** The storage and the event contract exist. Nothing publishes yet.
 
-- [ ] Create the app and add it to `INSTALLED_APPS`.
-- [ ] Models exactly as §6: choices, constraints, indexes, `__str__`.
-- [ ] Migration `0001_initial`.
-- [ ] `categories.py` (§5 categories with label, locked and default channels) and
+- [x] Create the app and add it to `INSTALLED_APPS`.
+- [x] Models exactly as §6: choices, constraints, indexes, `__str__`.
+- [x] Migration `0001_initial`.
+- [x] `categories.py` (§5 categories with label, locked and default channels) and
       `events.py` (the §5 catalog: name, version, category, required keys, priority).
-- [ ] A read-only Django admin for the four models, with filters and search.
-- [ ] `seed_rbac.py`: the two §7 codes, their grants, and the CUSTOMER denylist.
-- [ ] Tests: unique constraints; every event's category exists; versions are at least 1;
+- [x] A read-only Django admin for the four models, with filters and search.
+- [x] `seed_rbac.py`: the two §7 codes, their grants, and the CUSTOMER denylist.
+- [x] Tests: unique constraints; every event's category exists; versions are at least 1;
       the leaf-import rule (§4.3); seed grants.
 
 **Done when.** `manage.py test notifications` passes, `check` is clean,
 `makemigrations --check` reports no changes, and the stale test clones are dropped (§11).
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done (2026-09-29).
+
+- **Checks run:** `check` and `makemigrations --check` are clean. The registry and
+  leaf-import tests (17, no database needed) pass.
+- **Not run yet:** the model, seed and admin tests. They need the test database and run in
+  Task 16, as the owner asked.
+- **Dev database:** `0001_initial` is applied and `seed_rbac` re-run on it, which added
+  2 codes and 5 role links.
+- **Stale test clones:** the 16 `test_minishop_N` clones were already stale at 42
+  migrations, so they were dropped.
+
+**What exists now** (`backend/notifications/`):
+
+- **`models.py`: the four §6 tables, each with the §6 constraints and indexes.**
+  - `Audience`, `Channel` and `Priority` are the shared choice lists.
+  - Event types and categories are plain strings checked against the registries, not
+    model choices, so adding one needs no migration.
+  - `Channel` holds `IN_APP` and `EMAIL` only; SMS and push get a value when they get an
+    adapter.
+  - One addition to §6: a check constraint stops a `NotificationDelivery` from ever using
+    `IN_APP`, because the inbox row already is the in-app channel.
+  - Tables use Django's default names (`notifications_notificationevent` and so on), not
+    the shorter names in the §4.1 diagram.
+- **`categories.py`: the 11 categories.**
+  - Each has a label, `default_channels` (the channels it uses, on until switched off) and
+    `locked_channels`.
+  - In-app is locked everywhere; email is locked for ACCOUNT and PAYMENTS (D8).
+  - INVENTORY, REVIEWS and WALLET have no email at all, so they show no email toggle.
+- **`events.py`: the 16 §5 event types, each with a name constant for producers.**
+  - **Where §5 is followed more closely than §4.2 says:** §4.2 gives each event *one*
+    category, but §5 files `order.placed` and `order.status_changed` under ORDERS for the
+    customer and SELLER_ORDERS for sellers. So each entry maps **audience → category**.
+    That map also records who the event can reach.
+  - `channels`: every event uses in-app. Email is listed where §5 has ● or ○; handlers and
+    preferences can narrow it, never widen it.
+  - Priority is HIGH for `payment.failed` and `seller.status_changed`, which need someone
+    to act. Everything else is NORMAL.
+  - Money travels as a decimal string, since payloads are JSON.
+  - The required keys below are the v1 contract for Tasks 8–10. Adding a key needs no new
+    version; removing or renaming one does.
+- **`admin.py`:** a read-only admin for all four models, with filters and search.
+  - Viewing needs the MiniShop code `notifications.admin.view`, not Django's model
+    permissions, because inbox rows are personal data.
+  - Nothing can be added, changed or deleted there. Requeue arrives in Task 15.
+- **`seed_rbac.py`:**
+  - `notifications.admin.view` goes to ADMINISTRATOR and OPERATION_MANAGER.
+  - `notifications.admin.manage` goes to ADMINISTRATOR.
+  - SUPER_ADMINISTRATOR gets both through its all-codes grant.
+  - Both codes are on the CUSTOMER denylist.
+  - `rbac/widgets.py` gives the new resource a "Notifications" group on the permission
+    board.
+- **Tests (`notifications/tests/`):**
+  - models: every unique key, the external-only delivery rule, NULL events after a purge,
+    and cascades;
+  - registry: the catalog is exactly §5, and categories, audiences, versions, keys,
+    channels and locks all line up;
+  - leaf imports, covering `models.py`, `categories.py` and `events.py` (Task 4 adds the
+    publisher);
+  - seed grants;
+  - admin access and read-only behaviour.
+
+| Event | Required payload keys |
+|---|---|
+| `order.placed` | `order_id`, `order_number`, `total_amount` |
+| `order.status_changed` | `order_id`, `order_number`, `from_status`, `to_status`, `changed_by` (CUSTOMER · SELLER · STAFF) |
+| `payment.succeeded`, `payment.failed` | `payment_id`, `payment_number`, `order_number`, `amount` |
+| `refund.processed` | `refund_id`, `refund_number`, `order_number`, `amount` |
+| `support.reply_received`, `support.customer_replied` | `ticket_id`, `ticket_number`, `message_id` |
+| `seller.status_changed` | `seller_id`, `from_status`, `to_status` |
+| `shop.status_changed` | `shop_id`, `shop_name`, `from_status`, `to_status` |
+| `product.moderated` | `product_id`, `product_name`, `action`, `from_status`, `to_status` |
+| `inventory.low_stock` | `product_id`, `product_name`, `available_stock`, `threshold` |
+| `review.created` | `kind` (product · shop), `review_id`, `rating`, `subject_name` |
+| `points.adjusted` | `transaction_id`, `seller_id`, `transaction_type`, `amount`, `balance_after` |
+| `shop.submitted` | `shop_id`, `shop_name` |
+| `support.ticket_created` | `ticket_id`, `ticket_number`, `subject`, `channel` |
+| `support.ticket_assigned` | `ticket_id`, `ticket_number`, `assignee_id` |
 
 ### Task 4 — Publisher: `publish()`, idempotency, on-commit fast path, settings
 

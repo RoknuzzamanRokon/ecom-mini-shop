@@ -84,6 +84,9 @@ PERMISSIONS_DATA = [
     ("support.staff.view", "View Support Tickets (Staff)", "support", "staff_view", "Can view every customer's support tickets, including internal notes (Staff)"),
     ("support.staff.reply", "Reply to Support Tickets (Staff)", "support", "staff_reply", "Can reply to customers and add internal notes, and can be assigned tickets (Staff)"),
     ("support.staff.manage", "Manage Support Tickets (Staff)", "support", "staff_manage", "Can change a ticket's status, priority, category and assignee (Staff)"),
+    # Notifications (operations). Reading your own inbox needs no code.
+    ("notifications.admin.view", "View Notifications (Admin)", "notifications", "admin_view", "Can see notification events, inbox rows and deliveries in the Django admin"),
+    ("notifications.admin.manage", "Manage Notifications (Admin)", "notifications", "admin_manage", "Can requeue dead notifications and run purges from the Django admin"),
     # Admin Governance Permissions
     ("users.admin.view", "View Admin Users", "users", "admin_view", "Can view admin user accounts"),
     ("users.admin.manage", "Manage Admin Users", "users", "admin_manage", "Can manage admin users, roles, and statuses"),
@@ -169,6 +172,7 @@ ROLE_PERMISSIONS_MAPPING = {
         "customers.admin.view",
         "reviews.moderate",
         "support.staff.view", "support.staff.reply", "support.staff.manage",
+        "notifications.admin.view", "notifications.admin.manage",
     ],
     Role.ROLE_OPERATION_MANAGER: [
         "products.view", "products.approve", "products.reject", "products.publish",
@@ -188,6 +192,9 @@ ROLE_PERMISSIONS_MAPPING = {
         # Operations answers delivery questions on tickets, but triage
         # (status, priority, assignment) stays with Support.
         "support.staff.view", "support.staff.reply",
+        # Operations watches the notification backlog; requeue and purge
+        # stay with Administrators.
+        "notifications.admin.view",
     ],
     Role.ROLE_SALES_MANAGER: [
         "sellers.view", "sellers.create", "sellers.update", "sellers.approve",
@@ -264,12 +271,17 @@ ROLE_PERMISSIONS_MAPPING = {
 # endpoints read every customer's tickets, including staff-only internal notes.
 # A customer only ever needs 'support.view' / 'support.create', which the
 # customer endpoints scope to their own tickets.
+#
+# 'notifications.admin.*' likewise shows every user's inbox. A customer reads
+# their own inbox with no permission code at all.
 FORBIDDEN_ROLE_PERMISSIONS = {
     Role.ROLE_CUSTOMER: {
         "payments.view",
         "support.staff.view",
         "support.staff.reply",
         "support.staff.manage",
+        "notifications.admin.view",
+        "notifications.admin.manage",
     },
 }
 
