@@ -105,6 +105,8 @@ class SellerLifecycleTests(LifecycleFixtures, TestCase):
         self.assertEqual(row.title, "Your seller application wasn't approved")
         self.assertTrue(row.body.endswith("Reason: Missing trade licence"))
 
+        # Inbox rows outlive their events (SET_NULL), so clear both.
+        Notification.objects.all().delete()
         NotificationEvent.objects.all().delete()
         seller = SellerProfile.objects.get(pk=seller.pk)
         approve_seller(seller, self.admin)

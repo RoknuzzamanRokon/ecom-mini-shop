@@ -2,7 +2,19 @@
 
 **Last full review:** 2026-09-17
 **Reviewed at commit:** `ce7cf2a` (`fix(inventory): prevent stock desynchronization`) — the last commit before the Task #6/#8 fixes; unchanged through the current HEAD.
-**Last targeted update:** 2026-09-25 — **Customer support ticket system** (feature; plan, decisions D1–D17 and a per-task log in `docs/SUPPORT_SYSTEM.md`).
+**Last targeted update:** 2026-09-29 — **Notification system** (feature; plan, decisions D1–D11, a runbook and a per-task log in `docs/NOTIFICATION_SYSTEM.md`).
+- **Backend:** a new `notifications` app mounted at `/api/notifications/`.
+  - **Publishing:** domain services record business facts with `notifications.publisher.publish()`, which writes to a MySQL outbox inside the service's own transaction. There are 16 event types, covering orders, payments, sellers, shops, product moderation, low stock, reviews, points and support.
+  - **Routing:** a router turns each event into inbox rows and email deliveries, applying preferences and locks.
+  - **The worker:** `run_notification_worker` claims rows with `SELECT … FOR UPDATE SKIP LOCKED` under leases, retries with backoff and dead-letters.
+  - **Around it:** an inbox and preferences API; two RBAC codes (`notifications.admin.view` / `.manage`); a read-only Django admin with Requeue / Retry now; the `notification_health` and `purge_notifications` commands; and the project's first `LOGGING` config, for the `notifications` logger only.
+  - **Two prerequisite refactors:** Console shop status changes go through `ShopService` (with one set of transition rules on every path), and product moderation moved into `ProductService`.
+- **Frontend:** a bell with an unread count in the storefront, Seller Center and Console headers, plus inbox and settings pages at `/profile/notifications`, `/seller/notifications` and `/admin/notifications` (each with `/settings`).
+- One migration (`notifications/0001_initial`), applied to the dev database with `seed_rbac` on 2026-09-29.
+- **Found on the way:** #34 (dark-mode storefront header icons are invisible) and #35 (Material Symbols ignore Tailwind size classes). A phone-width overflow in the storefront header, caused by the new bell, was fixed in `e2827df`.
+- See §2, §4, §11, §12, §15, §16, §17, §18 and [Review History](#21-review-history).
+
+**Preceding targeted update:** 2026-09-25 — **Customer support ticket system** (feature; plan, decisions D1–D17 and a per-task log in `docs/SUPPORT_SYSTEM.md`).
 - **Backend:** a new `support` app mounted at `/api/support/`.
   - Tickets, messages and private attachments (images/PDF, content-checked, stored outside `MEDIA_ROOT` and served only through authenticated endpoints).
   - `SupportTicketService` is the only mutation path: status machine, row locks, audit.
@@ -100,10 +112,11 @@ npm run build
 | `customers` | CustomerProfile, Address, Favorite, **Review** |
 | `cart` | Cart, CartItem (authenticated carts only) |
 | `audit` | AuditLog (append-only) + `AuditService` |
+| `notifications` | NotificationEvent (the outbox), Notification (the inbox), NotificationDelivery (one row per email), NotificationPreference (sparse opt-outs); `publisher.publish()`, the only thing domain apps import; event and category registries; router and handlers; email channel; worker and `run_notification_worker`; `notification_health` / `purge_notifications`; inbox and preferences API. A leaf app like `audit` (`notifications/tests/test_leaf_imports.py`). Added 2026-09-29 — `docs/NOTIFICATION_SYSTEM.md` |
 | `support` | SupportTicket, TicketMessage, TicketAttachment; `SupportTicketService` (every ticket change: status machine, `select_for_update`, audit); private attachment storage (`support/storage.py`, `PRIVATE_MEDIA_ROOT = BASE_DIR/"private_media"`, gitignored); customer and staff APIs; `close_resolved_tickets` command. Added 2026-09-24/25 — `docs/SUPPORT_SYSTEM.md` |
 | `shop` | Product, Category, Order, OrderItem, ProductInventory, InventoryTransaction, Payment, Refund; `ProductService`, `OrderService`, `InventoryService`, `PaymentService`; `api_views.py`, `admin_views.py`; server-rendered catalogue template views (product list/detail only — the legacy cart/checkout/order-success views were removed 2026-09-21) |
 
-URL mounting (`config/urls.py:26-36`): `/admin/` → Django admin · `/api/auth/` → rbac · `/api/sellers/` → sellers · `/api/points/` → points · `/api/shops/` → shops · `/api/cart/` → cart · `/api/support/` → support (mounted before the broader `/api/` include) · `/api/` → customers · `""` → shop (so shop's routes are literally `/api/...`).
+URL mounting (`config/urls.py:26-36`): `/admin/` → Django admin · `/api/auth/` → rbac · `/api/sellers/` → sellers · `/api/points/` → points · `/api/shops/` → shops · `/api/cart/` → cart · `/api/support/` → support and `/api/notifications/` → notifications (both mounted before the broader `/api/` include) · `/api/` → customers · `""` → shop (so shop's routes are literally `/api/...`).
 
 ---
 
@@ -150,9 +163,9 @@ Models: `rbac/models.py` — `Role` (8 codes), `Permission` (`<resource>.<action
 **Protected roles:** `PROTECTED_ROLE_CODES = {SUPER_ADMINISTRATOR, ADMINISTRATOR}` (`shop/admin_serializers.py:21`), enforced at `shop/admin_views.py:183, 315, 452, 515`.
 
 **Roles** (`seed_rbac`): `SUPER_ADMINISTRATOR`, `ADMINISTRATOR`, `OPERATION_MANAGER`, `SALES_MANAGER`, `SALES_TEAM`, `FINANCE`, `SUPPORT_TEAM`, `CUSTOMER`.
-- A fresh database seeds **71 permissions, 8 roles, 220 role-permission links**. These totals were computed from `PERMISSIONS_DATA` / `ROLE_PERMISSIONS_MAPPING` / `FORBIDDEN_ROLE_PERMISSIONS` on 2026-09-25.
+- A fresh database seeds **73 permissions, 8 roles, 225 role-permission links**. These totals were computed from `PERMISSIONS_DATA` / `ROLE_PERMISSIONS_MAPPING` / `FORBIDDEN_ROLE_PERMISSIONS` on 2026-09-29 (71 / 220 on 2026-09-25, before the notification codes).
 - This line used to say 65 / 202, which was already stale: the same computation at `2463421`, before the support feature, gives 66 / 205. The difference is `reviews.moderate`, added in `ac7cdec`.
-- The support feature added the last 5 codes and 15 links.
+- The support feature added 5 codes and 15 links; the notification system added the last 2 codes and 5 links.
 
 **Support codes** (2026-09-24):
 
@@ -165,6 +178,17 @@ Models: `rbac/models.py` — `Role` (8 codes), `Permission` (`<resource>.<action
 | `support.staff.manage` | status, priority, category, assignee | SUPPORT_TEAM, ADMINISTRATOR |
 
 All three `support.staff.*` codes are in `FORBIDDEN_ROLE_PERMISSIONS[CUSTOMER]`, so a stray grant to CUSTOMER is revoked on the next `seed_rbac`.
+
+**Notification codes** (2026-09-29):
+
+| Code | Allows | Seeded to |
+|---|---|---|
+| `notifications.admin.view` | see events, inbox rows, deliveries and preferences in the Django admin | ADMINISTRATOR, OPERATION_MANAGER |
+| `notifications.admin.manage` | the admin's Requeue and Retry now actions | ADMINISTRATOR |
+
+- SUPER_ADMINISTRATOR holds both through its all-codes grant, and both are in `FORBIDDEN_ROLE_PERMISSIONS[CUSTOMER]`.
+- **Your own inbox needs no code,** only a login.
+- **Staff alerts use a reverse lookup:** they go to `rbac.services.users_with_permission(code)`. It mirrors `has_user_permission` with two deliberate differences: `is_superuser` alone doesn't count, and inactive accounts are left out (`docs/NOTIFICATION_SYSTEM.md` D5, Task 5).
 
 Seller-relevant grants: `SALES_TEAM` holds `products.view/create/update`, `orders.seller.*`, `inventory.*` — but **not** `products.delete` (`seed_rbac.py:188-194`). A seller needs `products.delete`, e.g. via `ADMINISTRATOR`, before the delete endpoint will work.
 
@@ -373,7 +397,9 @@ The catch-all `/admin/[...slug]` and its "Awaiting Implementation" placeholder r
 
 `AdminGuard` + `isManagementUser` (`frontend/src/lib/admin-auth.ts:52-76`) admits a user holding **any** of: `is_superuser`, `is_staff`, a management role code, or a permission matching `admin:access` / `*` / `*.admin.manage` / `*.staff.view`. This only controls console *navigation* — every backend endpoint still enforces its own permission code. Nav visibility is driven by `admin-navigation.ts`; the console's API layer is the dedicated `frontend/src/lib/admin-api.ts`.
 
-Django's own admin is heavily customized (`config/admin_site.py` swaps in `MiniShopAdminSite` with platform metrics; `rbac/widgets.py` renders MiniShop permissions as a checkbox board on the User page) and remains the raw data-editing surface for staff.
+- **`notifications`** (built 2026-09-29): `/admin/notifications` is the staff inbox (STAFF audience), and `/admin/notifications/settings` holds its email preferences. Both are on the bell in `AdminHeader`, not in `ADMIN_NAV_ITEMS`. The pipeline's operator tools are in Django's admin, not here (below).
+
+Django's own admin is heavily customized (`config/admin_site.py` swaps in `MiniShopAdminSite` with platform metrics; `rbac/widgets.py` renders MiniShop permissions as a checkbox board on the User page) and remains the raw data-editing surface for staff. **Notification rows** are the exception: they're read-only there, gated by `notifications.admin.view` rather than Django model permissions. The event and delivery lists add **Requeue** and **Retry now**, which need `notifications.admin.manage` and write `NOTIFICATION_REQUEUED` / `NOTIFICATION_RETRY_NOW` audit rows.
 
 ---
 
@@ -385,16 +411,16 @@ Verified against `npm run build` output plus the actual `page.tsx` files.
  — `/shops/nearby?radius=<km>` reads the customer's location from `context/LocationContext.tsx` (memory only; never in the URL, storage or the backend) and is the only page that loads Leaflet.
 
 **Customer:**
-- **Routes:** `/profile` (redirects to `/profile/settings`), `/profile/settings`, `/profile/orders`, `/profile/orders/[orderNumber]`, `/profile/addresses`, `/profile/favorites`, `/profile/reviews`, `/profile/track`, and **`/profile/support`, `/profile/support/new`, `/profile/support/[ticketNumber]`** (support tickets, 2026-09-24).
+- **Routes:** `/profile` (redirects to `/profile/settings`), `/profile/settings`, `/profile/orders`, `/profile/orders/[orderNumber]`, `/profile/addresses`, `/profile/favorites`, `/profile/reviews`, `/profile/track`, **`/profile/support`, `/profile/support/new`, `/profile/support/[ticketNumber]`** (support tickets, 2026-09-24), and **`/profile/notifications`, `/profile/notifications/settings`** (2026-09-29, reached from the header bell and not in the profile nav).
 - **Profile layout:** a guest is redirected to `/login?next=<path+query>`.
 - **Support entry points:** "Get help with this order" on `/profile/orders/[orderNumber]`, "Help & Support" in the header account menu (only for users holding `support.view`), and the footer "Contact Support" link.
 - **Correction (2026-09-25):** the `/account/*` redirect shims this line used to list were deleted in `9c7f621` ("chore: remove dead code") and no longer exist. `/profile/reviews` was missing.
 
-**Seller:** `/seller`, `/seller/shops`, `/seller/products`, `/seller/orders`, `/seller/wallet`, `/seller/profile`
+**Seller:** `/seller`, `/seller/shops`, `/seller/products`, `/seller/orders`, `/seller/wallet`, `/seller/profile`, `/seller/notifications`, `/seller/notifications/settings` (2026-09-29, reached from the `SellerHeader` bell)
  — flat pages only; the seller panel deliberately has **no `new` or `[id]` sub-routes**, create/edit is modal-based within each page. (The admin console uses the opposite convention.)
 
 **Management:**
-- **Routes:** `/admin`, `/admin/login`, `/admin/profile`, `/admin/shops[/new|/[id]]`, `/admin/sellers[/new|/[id]]`, `/admin/users[/new|/[id]]`, `/admin/roles[/new|/[id]]`, `/admin/products[/[id]]`, `/admin/categories[/[id]]`, `/admin/customers[/[id]]`, `/admin/orders[/[id]]`, `/admin/payments[/[id]]`, `/admin/reviews`, `/admin/audit-logs`, **`/admin/support[/[ticketNumber]]`**, `/admin/[...slug]`.
+- **Routes:** `/admin`, `/admin/login`, `/admin/profile`, `/admin/shops[/new|/[id]]`, `/admin/sellers[/new|/[id]]`, `/admin/users[/new|/[id]]`, `/admin/roles[/new|/[id]]`, `/admin/products[/[id]]`, `/admin/categories[/[id]]`, `/admin/customers[/[id]]`, `/admin/orders[/[id]]`, `/admin/payments[/[id]]`, `/admin/reviews`, `/admin/audit-logs`, **`/admin/support[/[ticketNumber]]`**, **`/admin/notifications[/settings]`**, `/admin/[...slug]`.
 - **Correction (2026-09-25):** orders, payments, reviews and audit-logs were built earlier but missing from this list. The list now matches `npm run build`.
 
 Guards: `SellerGuard` (fetches `/api/sellers/dashboard/`, renders "Seller Account Required" on 404), `AdminGuard` (see above), and inline auth checks in `app/profile/layout.tsx`. A `ProtectedRoute` component exists but **is used by zero pages**. `/login` and `/register` honour `?next=` only for a same-site path (`safeNextPath` in `lib/auth.ts`, 2026-09-24 — Known Issue #31).
@@ -670,8 +696,22 @@ than the test being weakened.
 
 **Not re-run:** `customers`, `cart`, `sellers`, `shops`, `points` and `audit`. The feature changed none of their code, so the last whole-suite total (556, Phase 2D) is not re-established here.
 
+**Re-run 2026-09-29 (notification system, close-out):**
+- **The command:** `manage.py test --settings=config.settings.test --parallel --keepdb --noinput`, 16 workers, against the dev MySQL host.
+- **`mysqldump` is on this machine now** (`/usr/bin/mysqldump`), so `--parallel` cloned normally. Only `test_minishop` existed at the start, because the stale clones had been dropped. `--keepdb` applied the one new migration, then made 16 clones at about 80 s each.
+
+| Check | Result |
+|---|---|
+| `manage.py check` / `makemigrations --check --dry-run` | **Pass**, in every notification task |
+| Full suite, first run | `Ran 1077 tests in 1203.360s` · **FAILED (failures=1, errors=1)**. Wall clock 42 m 47 s, including the cloning. Both were bugs in new notification tests, not in the product: an impossible fixture (a padded `business_email` that `SellerProfile.save()`'s `full_clean()` refuses), and a test that read inbox rows left over from its own first phase (they outlive their events by `SET_NULL`). See `docs/NOTIFICATION_SYSTEM.md` Task 16. |
+| `notifications rbac.test_users_with_permission`, after the two test fixes | `Ran 222 tests in 122.710s` · **OK** |
+| Full suite, second run | `Ran 1077 tests in 1010.602s` · **OK**: 0 failures, 0 errors. Wall clock 17 m 18 s, reusing the clones. |
+| `npm run build` | **Pass**: 53 static pages |
+
+- **1,077** is the suite's current total. The last full-suite total was 556 (Phase 2D). Since then the support system, reviews moderation, the location work and this feature have added tests, and Phase 2E deleted some.
+
 **Environment notes for whoever runs these next**
-- **No `mysqldump` (2026-09-24/25):** this machine has no `mysqldump` on PATH, so `--parallel` can't clone test databases. The substitute that worked: several serial `manage.py test <labels>` runs at once, each with its own `TEST_DATABASE_URL`. The suite is round-trip-bound, so they barely slow each other.
+- **No `mysqldump` (2026-09-24/25):** the machine used then had no `mysqldump` on PATH, so `--parallel` couldn't clone test databases. On 2026-09-29, `mysqldump` was available and `--parallel` worked. The substitute that worked: several serial `manage.py test <labels>` runs at once, each with its own `TEST_DATABASE_URL`. The suite is round-trip-bound, so they barely slow each other.
 - **Use the test settings.** `--settings=config.settings.test` is what makes the suite fast; without it you are back to ~92 minutes. Full command:
   `manage.py test --settings=config.settings.test --parallel --keepdb --noinput`.
 - Always pass `--noinput`; a stale `test_minishop` database otherwise blocks on an interactive prompt and an unattended run hangs forever.
@@ -731,6 +771,8 @@ than the test being weakened.
 
 Only the support page was observed in a browser; the others should behave the same, since the classes are the same. | Frontend (cosmetic) | Low | **Open.** Not touched: outside the support feature's scope. The fix is to drop `block` wherever it sits next to `line-clamp-*`, then check the card and table layouts, which may have been sized around the unclamped text. |
 | 33 | **Found 2026-09-24 (support Task 7).** Public status lines in a ticket use the **staff** wording. `SupportTicketService` writes "Status changed to Waiting on customer." into the customer's thread, while the customer's badge reads "Waiting on you" (`CUSTOMER_STATUS_LABELS`). | Support (copy) | Low | **Open.** Cosmetic; the text is stored per message. Changing it means choosing the customer wording for public lines in `SupportTicketService._set_status`; existing messages keep the old text. |
+| 34 | **Found 2026-09-29 (notifications Task 13).** In **dark mode** the storefront header's icons and account name are nearly invisible. `components/layout/Header.tsx` colours its whole bar `text-on-primary` on `bg-nav`. In the default dark palette that's `#0C151C` on `#0F1A24`; in `sumi` dark both are `#171411` (`app/globals.css`). This affects the cart icon, account name and "Shops near you" link that were already there, as well as the new notification bell, which follows its neighbours. Seen in headless-Chrome screenshots. | Frontend (theme) | Medium (a whole header row unreadable in one theme) | **Open.** It needs a nav-bar foreground token (for example `text-nav-text`, which already exists) chosen for the whole header: a design decision, outside the notification plan. |
+| 35 | **Found 2026-09-29 (notifications Task 14).** **Material Symbols icons ignore Tailwind size classes, app-wide.** Measured in headless Chrome, every `material-symbols-outlined` icon's computed `font-size` is 24 px, whatever its `text-[12px]` … `text-[20px]` class says. The Tailwind rules exist in the CSS. The likely cause: the Google Fonts stylesheet linked in `app/layout.tsx` sets `font-size: 24px` outside any CSS layer, which beats Tailwind v4's `@layer utilities`. There are 477 such size classes in 102 `.tsx` files (count on 2026-09-29), so every one of those icons is 24 px. | Frontend (cosmetic) | Low | **Open.** A fix would resize icons on every surface, so it needs a look across all of them. One way is to move the icon font's `font-size` into a layer, or set it with a lower-specificity rule. The notification settings page works around it by using no small glyph. |
 
 ---
 
@@ -745,9 +787,18 @@ Intentionally deferred or simply not built. These are **not** bugs.
 - **No seller-side product submission/publishing** — publication is staff-only.
 - **No seller-facing dedicated inventory page** in the seller panel (the API exists).
 - **Admin console modules not built**: none remain. `/admin/audit-logs` was the last one and was built 2026-09-21 (Phase 2I), after `/admin/orders` and `/admin/payments` on 2026-09-18 — see [Review History](#21-review-history). The audit-log module is read-only and wires 5 of the 13 filter parameters its API helper supports; the rest are deferred, not missing backend-side.
-- **No reports/analytics or notifications** — no backend at all for these. (Support ticketing was listed here until 2026-09-24; it now exists — see §2 and `docs/SUPPORT_SYSTEM.md`.)
+- **No reports/analytics** — no backend at all. (Support ticketing was listed here until 2026-09-24, and notifications until 2026-09-29. Both now exist; see §2, `docs/SUPPORT_SYSTEM.md` and `docs/NOTIFICATION_SYSTEM.md`.)
+- **Notifications are v1** (`docs/NOTIFICATION_SYSTEM.md` §16 lists what's out):
+  - **Channels:** in-app for every event, and email for a defined subset. There's no SMS or push; the channel-adapter interface is ready for them.
+  - **Freshness:** the bell polls every 60 s while the tab is visible. There are no WebSockets or SSE.
+  - **Delivery:** at least once. A worker crash between sending an email and recording it can send it twice (D4).
+  - **Someone has to run the worker.** Without it, in-app notifications still arrive through the fast path, but no email is sent and nothing is retried. Nothing schedules it, or the health and purge commands, yet (runbook: `docs/NOTIFICATION_SYSTEM.md` §17).
+  - **Email:** it needs real SMTP settings; dev prints emails through the console backend.
+  - **A DEAD row can't be dismissed:** `notification_health` stays unhealthy until the row is requeued or purged after 90 days (§15 item 8 there).
+  - **Not included:** English only, templates in code, no digests or quiet hours, no `product.submitted` event (nothing sets SUBMITTED), and no security or password-reset emails (no such flows).
+  - **Editing a status field directly in Django's admin doesn't notify** (D6). Only the domain services publish.
 - **Support ticketing is deliberately small:**
-  - **Notifications:** in-app unread / "needs reply" markers only; no email or push.
+  - **Notifications:** its own in-app unread / "needs reply" markers are unchanged. Since 2026-09-29 the notification system also sends the bell, email for replies, and staff alerts for new, assigned and customer-replied tickets.
   - **Refreshing:** pages refresh every 60 s and on focus; nothing is real-time.
   - **Not included:** seller participation, a guest contact form, SLA timers, canned replies, satisfaction ratings, merging tickets, or staff opening tickets for customers.
   - **Storage:** attachments sit on the one server's disk.
@@ -778,6 +829,12 @@ Future work must not accidentally reverse these.
     - Internal notes never leave the staff API.
     - Attachments stay in private storage and are served only by the authenticated download endpoints.
     - Do not add a generic CRUD endpoint for tickets or messages, and do not move attachments under `MEDIA_ROOT`.
+16. **Notifications are published only by domain services, through `notifications.publisher.publish()`, inside the service's transaction** (`docs/NOTIFICATION_SYSTEM.md` D2, D6, §4.3).
+    - Never publish from a view, a signal or `transaction.on_commit`, and never call an email provider from domain code.
+    - Recipients and addresses come from server-side data and RBAC, never from the client.
+    - `notifications.models` / `events` / `categories` / `conf` / `publisher` stay leaf modules, which `test_leaf_imports.py` enforces. Handlers import domain models inside functions.
+    - A new status change that should notify goes through its service. That's why Console shop status and product moderation were moved into `ShopService` and `ProductService` first.
+    - Notification rows are read-only in Django admin, apart from Requeue / Retry now.
 
 ---
 
@@ -799,15 +856,22 @@ Reconstructed from source, tests and git history. Backend work was tracked as **
 | **Admin-assigned shop ownership + single-shop cap + seller product management** (Phase 1H/1I) | Complete | commit `b623553`; `shop/test_seller_product.py` |
 | **Product reviews & ratings** | Complete | commit `c4fb3b8`; `shop/test_product_reviews.py` |
 | **Legacy checkout IDOR fix** (Known Issues #1) | Complete, then **superseded 2026-09-21** by Phase 2E, which deleted the whole surface (view, template, route and `LegacyOrderAccessTests` alike) | was `shop/views.py`, `shop/permissions.py`, `shop/api_views.py`; `shop/tests.py::LegacyOrderAccessTests` |
+| **Notification system** (2026-09-29) | Complete (Tasks 1–16 in `docs/NOTIFICATION_SYSTEM.md`) | `backend/notifications/` (217 tests in `notifications/tests/`, plus `rbac/test_users_with_permission.py` and `shop/test_product_moderation.py`), `frontend/src/components/notifications/`, `frontend/src/lib/notifications.ts`, the six `…/notifications[/settings]` routes; commits `75535c7` → `1a027eb` plus this close-out |
 | **Customer support ticket system** (2026-09-24/25) | Complete (Tasks 1–12 in `docs/SUPPORT_SYSTEM.md`) | `backend/support/` (134 tests in `support/tests/`), `frontend/src/app/profile/support/`, `frontend/src/app/admin/support/`, `frontend/src/components/support/`; commits `1561d63` → `f4e702c` plus this close-out |
 
 ---
 
 ## 20. Current Project State
 
-> **Maintenance note (2026-09-25):** this section was last kept up to date at Phase 2D. The changes since then (Phases 2E–2L, the reviews moderation work, location & nearby shops, and the support ticket system below) are recorded in the header and in [Review History](#21-review-history), which are authoritative. The older paragraphs below are kept as history.
+> **Maintenance note (2026-09-25, extended 2026-09-29):** this section was last kept up to date at Phase 2D. The changes since then (Phases 2E–2L, the reviews moderation work, location & nearby shops, the support ticket system and the notification system below) are recorded in the header and in [Review History](#21-review-history), which are authoritative. The older paragraphs below are kept as history.
 
-**Latest completed feature:** **Customer support ticket system** (2026-09-24/25).
+**Latest completed feature:** **Notification system** (2026-09-29).
+- Customers, sellers and staff get an in-app inbox with a bell on their own surface. Selected events are also emailed, and people choose per category whether email reaches them; some categories can't be switched off.
+- A MySQL outbox plus a worker: no new infrastructure. The worker has to be run or scheduled (runbook in `docs/NOTIFICATION_SYSTEM.md` §17).
+- New `notifications` app, 2 RBAC codes, 1 migration.
+- See §2, §4, §11, §12, §17, §18 and §21.
+
+**Preceding feature:** **Customer support ticket system** (2026-09-24/25).
 - Logged-in customers open tickets (optionally about one of their orders, with images or PDFs), follow the conversation and close them.
 - Support staff work a queue in `/admin/support`: reply, write internal notes, assign, prioritise and move tickets through Open → In progress → Waiting on customer → Resolved → Closed.
 - New `support` app, 5 RBAC codes, 1 migration; an optional `close_resolved_tickets` command (not scheduled).
@@ -842,6 +906,38 @@ Reconstructed from source, tests and git history. Backend work was tracked as **
 ---
 
 ## 21. Review History
+
+### 2026-09-29 — Notification system (feature)
+
+- **Scope:** the owner asked for a notification system: decoupled, reliable, scalable, observable and secure. `docs/NOTIFICATION_SYSTEM.md` holds the architecture, decisions D1–D11, the event catalog, the API contract, the runbook (§17) and a per-task log with full verification details; this entry only summarises.
+  - **Roadmap exception:** `docs/FUTURE_PLAN.md` listed notifications as out of scope. It now records this, with support ticketing and guest-cart merge, as a feature built at the owner's request.
+  - **Decisions:** the owner started Task 3 without changing any of the proposed D1–D11, so the system is built on them as proposed.
+- **What was built:**
+  - **Publishing:** domain services call `publish()` inside their own transaction, so an event commits or rolls back with the change. Each hop is idempotent by a unique key.
+  - **Routing:** right after commit, a fast path routes the event in the same process. The worker sweeps up anything the fast path missed.
+  - **The worker:** it claims rows with `SKIP LOCKED` under a 60 s lease, retries with full-jitter backoff, and dead-letters after 5 attempts for events or 8 for deliveries.
+  - **Email:** a shared layout carries the same wording as the inbox. Its `Message-ID` is the delivery's UUID.
+  - **Preferences:** email can be switched off per category. In-app, and email for PAYMENTS and ACCOUNT, are locked on.
+  - **Staff audiences** are resolved by `users_with_permission()` when the event is routed. Superusers aren't included by `is_superuser` alone.
+- **Found during the audit and changed first:**
+  - **Task 1:** the Console's shop status view set `Shop.status` itself and accepted every action from every status. It now goes through `ShopService`, with one set of rules on every path: approve from PENDING, DRAFT or REJECTED; reject from PENDING; suspend from ACTIVE or APPROVED; reactivate from SUSPENDED.
+  - **Task 2:** product moderation existed only inside a view. It moved into `ProductService` with the same rules, and the default audit reason "approveed" became "approved".
+  - **Also changed in Task 10:** `PointService.adjust_points` now wraps its ledger write in `transaction.atomic()`, and `LOW_STOCK_THRESHOLD` moved to `shop/models.py`.
+- **Found on the way:**
+  - **Fixed:** the new bell made the signed-in storefront header overflow phone screens (`e2827df`).
+  - **Recorded:** #34 (dark-mode header icons invisible) and #35 (icon size classes ignored).
+- **Commits:** `75535c7` plan · `198862d` Task 1 · `9648290` Task 2 · `2d46e21` app, models, registries, admin, codes · `ce18f82` publisher · `008a7d0` router · `4f8ab1a` worker · `92c112e` email · `263a491` orders and payments · `e224b00` sellers and shops · `7518eb5` catalog, stock, reviews, points and support · `af7fd06` API · `cde20e7` frontend client and bell · `da1de31` bells and inbox pages · `e2827df` header fix · `5385633` preferences UI · `1a027eb` operations and runbook · this close-out.
+- **Verification:**
+  - **Backend:** the full suite, at the end only (the owner asked for no per-task runs). The first run found 2 test bugs among 1,077 tests. After the fixes, the second full run passed: **1,077 tests, 0 failures**. See §15, "Re-run 2026-09-29".
+  - **Frontend:** `npx tsc --noEmit`, `npm run build` and `eslint` on the changed files, in every frontend task.
+  - **Browser checks:** Task 13 passed 24 of 24 and Task 14 passed 41 of 41, in system `google-chrome --headless=new` over CDP against the running dev servers, covering all three surfaces, light and dark, and desktop and phone widths.
+  - **Smoke runs** against the dev MySQL in Tasks 6, 8–11 and 15 (worker, producers, API, admin actions, health and purge).
+- **Dev database:** `migrate` (`notifications.0001_initial`) and `seed_rbac` on 2026-09-29 added 2 codes and 5 role links. Every browser check and smoke run used throwaway accounts and rows, deleted afterwards along with their audit rows.
+- **Not changed:**
+  - Support's own unread markers (D10).
+  - Any existing table: the four new tables are the only schema change.
+  - The rest of `LOGGING`: only the `notifications` logger is configured.
+  - Scheduling: nothing schedules the worker, `notification_health` or `purge_notifications`. The runbook documents how.
 
 ### 2026-09-24/25 — Customer support ticket system (feature)
 

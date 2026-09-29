@@ -1,7 +1,8 @@
 # MiniShop — Notification System Plan
 
-**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–15
-of 16 are done. From Task 3 on, the work is built on the §3 answers as proposed.
+**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** ✅ Done (2026-09-29). All 16
+tasks are complete, and the full backend suite passes (Task 16). The work is built on the §3
+answers as proposed.
 
 This is the architecture and task list for the notification system. Work through the
 tasks in §14 **one at a time, in order**. Each task is one commit. When a task is done,
@@ -533,7 +534,10 @@ and phone widths.
 | 13 | Frontend surfaces: bells in three headers, three inbox pages | frontend | ✅ Done |
 | 14 | Preferences UI | frontend | ✅ Done |
 | 15 | Operations: admin actions, health and purge commands, logging, runbook | backend + docs | ✅ Done |
-| 16 | Regression run and documentation close-out | docs | ⬜ Not started |
+| 16 | Regression run and documentation close-out | docs | ✅ Done |
+
+**Tests deferred to Task 16.** The "Not run yet" lines in Tasks 1–15 below are left as
+they were written. Task 16 ran all those tests, and its **Status** has the results.
 
 **Milestones.** After Task 8, order and payment notifications reach the inbox (visible
 through the Django admin) and email, when the worker runs. **After Task 13 the feature is
@@ -1773,12 +1777,61 @@ afterwards. These checks passed:
 
 ### Task 16 — Regression run and documentation close-out
 
-- [ ] The full backend suite and the frontend build.
-- [ ] `docs/MINISHOP_REVIEW_STATE.md`: architecture, known limitations, review history.
-- [ ] `docs/FUTURE_PLAN.md`: record the exception to "Not in this roadmap".
-- [ ] Set this file's top **Status** line.
+- [x] The full backend suite and the frontend build.
+- [x] `docs/MINISHOP_REVIEW_STATE.md`: architecture, known limitations, review history.
+- [x] `docs/FUTURE_PLAN.md`: record the exception to "Not in this roadmap".
+- [x] Set this file's top **Status** line.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done (2026-09-29).
+
+**Test runs.** All used `manage.py test --settings=config.settings.test --parallel --keepdb
+--noinput` against the dev MySQL host, with 16 workers.
+
+| Run | Result |
+|---|---|
+| Full suite, first run | `Ran 1077 tests in 1203.360s` · **FAILED (failures=1, errors=1)**. Both were in this plan's own tests, and both were bugs in the tests (below). |
+| `notifications rbac.test_users_with_permission`, after the fixes | `Ran 222 tests in 122.710s` · **OK** |
+| Full suite, second run | `Ran 1077 tests in 1010.602s` · **OK**: 0 failures, 0 errors. Wall clock 17 m 18 s, reusing the clones. |
+| `npm run build` | **Pass**: 53 static pages, including the six `…/notifications[/settings]` routes |
+
+- **Preparing the run:** no other test run was going. Only `test_minishop` existed, one
+  migration behind, because Task 3 had dropped the stale clones. `--keepdb` applied the
+  migration, and Django then made 16 fresh clones at about 80 s each. So the first run
+  took 42 m 47 s of wall-clock time, of which 20 m was the tests themselves.
+- **This run covered everything:** every test deferred in Tasks 1–15 (Tasks 1 and 2's
+  shop and product tests, the RBAC agreement matrix, the publisher, router, worker
+  concurrency, email, producers, API and operations tests), plus the rest of the
+  project's suite.
+
+**The two failures, both test bugs:**
+
+- **`test_email.EmailDestinationTests.test_sellers_use_their_business_email_first`
+  (error).** The fixture created a `SellerProfile` with `business_email="
+  shop@example.com "`. But `SellerProfile.save()` runs `full_clean()`, which refuses an
+  address with spaces around it, so the fixture could never be created.
+  - `email_destination()` was right to trim.
+  - The test now saves a valid address, then pads it with a queryset update, which is the
+    only way padding can arrive, and checks that it's still trimmed.
+- **`test_sellers_and_shops.SellerLifecycleTests.test_rejection_and_suspension_carry_the_reason`
+  (failure).** Between its two phases, the test deleted the events, but not the inbox rows.
+  Inbox rows outlive their events by design (`SET_NULL`, D9), so the rejection's
+  notification was still listed with the three new ones. The test now clears both.
+- **Nothing in the product changed.** The fixes are in those two tests only.
+
+**Docs:**
+
+- **`docs/MINISHOP_REVIEW_STATE.md`:**
+  - the header, the `notifications` app in §2, the two codes and new seed totals in §4
+    (73 permissions, 225 links);
+  - the Console, Django-admin and route entries in §11 and §12;
+  - Known Issues #34 (dark-mode header icons) and #35 (icon size classes ignored);
+  - v1 limitations in §17, architecture decision 16 in §18, and entries in §19, §20 and
+    §21;
+  - the §15 test status.
+- **`docs/FUTURE_PLAN.md`:** "Not in this roadmap" now records notifications as a feature
+  built at the owner's request. It does the same for support ticketing and guest-cart
+  merge, which the list still named as never built. The 2N blocker about `LOGGING` now says
+  only the `notifications` logger is configured.
 
 ---
 

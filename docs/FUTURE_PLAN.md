@@ -575,7 +575,7 @@ split is its natural foundation.
 | `ALLOWED_HOSTS` localhost-only | `config/settings.py:42` |
 | CORS origins hardcoded to `localhost:3000` | `config/settings.py:175` |
 | Password minimum of 4 characters, no other validators | `config/settings.py:137-138` |
-| **No `LOGGING` config at all** — while 8 non-test modules call `logging.getLogger` |
+| **No `LOGGING` config beyond the `notifications` logger** (added 2026-09-29) — while 8 other non-test modules call `logging.getLogger` |
  `audit/services.py`, `cart/services.py`, `customers/services.py`, `points/services.py`, 
  `shop/{admin_views,inventory_service,payment_service,services}.py` |
 | No `SECURE_*` / HSTS / secure-cookie settings | absent from `config/settings.py` |
@@ -646,6 +646,17 @@ deliberately excluded — with reasons, so nobody re-discovers them as new.
 review cache): logout / token revocation, password reset, guest-cart merge on login,
 guest order-lookup API, seller product submission, seller-facing inventory page,
 support ticketing, reports and analytics, notifications.
+
+**Exceptions: built anyway, because the owner asked.** Three items on that list now
+exist. Each was the owner's explicit request, not a change to this roadmap's rule:
+
+- **Support ticketing** (2026-09-24/25): plan and task log in `docs/SUPPORT_SYSTEM.md`.
+- **Guest-cart merge on login** (2026-09-25): on login, the localStorage cart is merged
+  into the account cart (`frontend/src/context/CartContext.tsx`).
+- **Notifications** (2026-09-29): an in-app inbox with a bell on all three surfaces,
+  email for selected events, per-category email preferences, and a MySQL outbox with a
+  worker. The plan, decisions D1–D11, the runbook and a per-task log are in
+  `docs/NOTIFICATION_SYSTEM.md`.
 
 Of these, **logout / token revocation** is the one worth promoting first when
 feature work resumes — Phase 2J makes its absence more visible, not less.

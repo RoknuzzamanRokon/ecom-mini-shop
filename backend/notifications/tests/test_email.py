@@ -152,7 +152,11 @@ class EmailDestinationTests(TestCase):
                 self.assertEqual(email_destination(self.user, audience), "owner@example.com")
 
     def test_sellers_use_their_business_email_first(self):
-        self.seller(" shop@example.com ")
+        profile = self.seller("shop@example.com")
+        self.assertEqual(email_destination(self.user, Audience.SELLER), "shop@example.com")
+        # save() validates the address, so padding can only arrive around it
+        # (a queryset update, say); it's still trimmed.
+        SellerProfile.objects.filter(pk=profile.pk).update(business_email=" shop@example.com ")
         self.assertEqual(email_destination(self.user, Audience.SELLER), "shop@example.com")
 
     def test_sellers_fall_back_to_the_account_email(self):
