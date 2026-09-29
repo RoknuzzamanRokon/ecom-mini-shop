@@ -57,7 +57,7 @@ export default function Header({ onSearch, searchQuery = "" }: HeaderProps) {
   return (
     <header className="w-full bg-nav text-on-primary transition-colors duration-200">
       {/* Main Header Bar */}
-      <div className="max-w-[1360px] mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between gap-4">
+      <div className="max-w-[1360px] mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between gap-2 sm:gap-4">
         {/* Logo */}
         <div className="flex items-center gap-3 shrink-0">
           <Link
@@ -101,7 +101,7 @@ export default function Header({ onSearch, searchQuery = "" }: HeaderProps) {
         </form>
 
         {/* Right Utility Actions */}
-        <div className="flex items-center gap-4 text-on-primary shrink-0">
+        <div className="flex items-center gap-1 sm:gap-4 text-on-primary shrink-0">
           {/* The nearby page asks for the location itself, so this is a plain link.
               Glow, beacon ring and hover sweep live in .nearby-cta (globals.css). */}
           <Link
