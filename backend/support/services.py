@@ -1,9 +1,13 @@
 """
 Every change to a support ticket goes through SupportTicketService.
 
-Customer methods take the customer and a ticket number, and look the ticket up
-*scoped to that customer* under a row lock: another customer's ticket simply
-doesn't exist for them (SupportTicket.DoesNotExist, a 404 in the views). Staff
+Requester methods take the requester (customer or seller user), a ticket
+number and the channel, and look the ticket up *scoped to that requester and
+channel* under a row lock: another person's ticket, or the same person's ticket
+on the other channel, simply doesn't exist for them
+(SupportTicket.DoesNotExist, a 404 in the views). A customer needs
+`support.create`; a seller needs a SellerProfile, since seller accounts hold
+no RBAC role. Staff
 methods check the staff member's permission code themselves, so a caller can't
 forget to (unlike OrderService.transition_order_status, which authorizes
 nothing and relies on every caller).
@@ -26,7 +30,9 @@ from django.utils import timezone
 from audit.services import AuditService
 from rbac.models import Role, UserPermission, UserRole
 from rbac.services import has_user_permission
+from sellers.models import SellerProfile
 from shop.models import Order
+from shop.services import OrderService
 
 from .exceptions import SupportTicketError
 from .models import SupportTicket, TicketAttachment, TicketMessage
@@ -49,6 +55,9 @@ AUTO_CLOSE_AFTER_DAYS = 7
 
 STATUS_LABELS = dict(SupportTicket.STATUS_CHOICES)
 CATEGORY_LABELS = dict(SupportTicket.CATEGORY_CHOICES)
+CHANNEL_LABELS = dict(SupportTicket.CHANNEL_CHOICES)
+_CUSTOMER = SupportTicket.CHANNEL_CUSTOMER
+_SELLER = SupportTicket.CHANNEL_SELLER
 PRIORITY_LABELS = dict(SupportTicket.PRIORITY_CHOICES)
 
 _OPEN = SupportTicket.STATUS_OPEN
@@ -85,6 +94,17 @@ class SupportTicketService:
     def _require(user, code: str):
         if not has_user_permission(user, code):
             raise PermissionDenied(f"You do not have permission to do this ('{code}' required).")
+
+    @classmethod
+    def _require_requester(cls, user, channel: str):
+        """A customer needs support.create; a seller needs their own SellerProfile."""
+        if channel not in CHANNEL_LABELS:
+            raise SupportTicketError("Unknown support channel.")
+        if channel == _SELLER:
+            if not SellerProfile.objects.filter(user=user).exists():
+                raise PermissionDenied("Only seller accounts can use seller support.")
+        else:
+            cls._require(user, PERM_CREATE)
 
     @staticmethod
     def _clean_text(value, label: str, min_length: int, max_length: int) -> str:
@@ -196,10 +216,18 @@ class SupportTicketService:
         order_number=None,
         files=(),
         ip_address=None,
+        seller=None,
     ) -> SupportTicket:
-        """Opens a ticket; the description becomes its first message."""
-        cls._require(customer, PERM_CREATE)
-        if category not in CATEGORY_LABELS:
+        """
+        Opens a ticket; the description becomes its first message. With
+        `seller` (the caller's own SellerProfile) it is a SELLER-channel ticket:
+        seller categories, and the order must contain that seller's items.
+        """
+        channel = _SELLER if seller is not None else _CUSTOMER
+        if seller is not None and seller.user_id != customer.pk:
+            raise PermissionDenied("You can only open support tickets for your own seller account.")
+        cls._require_requester(customer, channel)
+        if category not in SupportTicket.CHANNEL_CATEGORIES[channel]:
             raise SupportTicketError("Choose a valid category.")
         subject = cls._clean_text(subject, "Subject", SUBJECT_MIN_LENGTH, SUBJECT_MAX_LENGTH)
         description = cls._clean_text(
@@ -211,7 +239,12 @@ class SupportTicketService:
         order_number = str(order_number or "").strip()
         if order_number:
             # Same message whether the order is someone else's or doesn't exist.
-            order = Order.objects.filter(user=customer, order_number=order_number).first()
+            orders = (
+                OrderService.get_seller_orders_queryset(seller)
+                if seller is not None
+                else Order.objects.filter(user=customer)
+            )
+            order = orders.filter(order_number=order_number).first()
             if order is None:
                 raise SupportTicketError("Order not found.")
 
@@ -220,7 +253,7 @@ class SupportTicketService:
             # requests can't both slip under the cap.
             User.objects.select_for_update().get(pk=customer.pk)
             unresolved = SupportTicket.objects.filter(
-                customer=customer, status__in=SupportTicket.UNRESOLVED_STATUSES
+                customer=customer, channel=channel, status__in=SupportTicket.UNRESOLVED_STATUSES
             ).count()
             if unresolved >= MAX_UNRESOLVED_TICKETS:
                 raise SupportTicketError(
@@ -231,7 +264,9 @@ class SupportTicketService:
             now = timezone.now()
             ticket = SupportTicket.objects.create(
                 ticket_number=cls.generate_ticket_number(),
+                channel=channel,
                 customer=customer,
+                seller=seller,
                 order=order,
                 category=category,
                 subject=subject,
@@ -252,6 +287,8 @@ class SupportTicketService:
                 actor=customer,
                 metadata={
                     "ticket_number": ticket.ticket_number,
+                    "channel": channel,
+                    "seller_id": seller.pk if seller is not None else None,
                     "category": category,
                     "order_number": order.order_number if order else None,
                     "attachment_count": len(checked),
@@ -261,17 +298,19 @@ class SupportTicketService:
         return ticket
 
     @classmethod
-    def add_customer_reply(cls, customer, ticket_number, body, files=(), ip_address=None) -> TicketMessage:
+    def add_customer_reply(
+        cls, customer, ticket_number, body, files=(), ip_address=None, channel=_CUSTOMER
+    ) -> TicketMessage:
         """
-        Adds the customer's reply. A ticket waiting on the customer, or resolved,
-        goes back to OPEN; a closed ticket can't be replied to.
+        Adds the requester's reply. A ticket waiting on them, or resolved, goes
+        back to OPEN; a closed ticket can't be replied to.
         """
-        cls._require(customer, PERM_CREATE)
+        cls._require_requester(customer, channel)
         checked = validate_attachments(files)
         body = cls._clean_body(body, has_files=bool(checked))
 
         with cls._discard_files_on_error() as written, transaction.atomic():
-            ticket = cls._lock(ticket_number, customer=customer)
+            ticket = cls._lock(ticket_number, customer=customer, channel=channel)
             if ticket.is_closed:
                 raise SupportTicketError(
                     "This ticket is closed. Please open a new ticket if you still need help."
@@ -287,8 +326,8 @@ class SupportTicketService:
             if ticket.status in SupportTicket.CUSTOMER_REOPEN_STATUSES:
                 cls._set_status(
                     ticket, _OPEN, customer, now,
-                    note="Reopened by the customer's reply.",
-                    changed_by="customer",
+                    note=f"Reopened by the {ticket.requester_label}'s reply.",
+                    changed_by=ticket.requester_label,
                     ip_address=ip_address,
                 )
             ticket.last_customer_message_at = now
@@ -298,17 +337,19 @@ class SupportTicketService:
         return message
 
     @classmethod
-    def close_by_customer(cls, customer, ticket_number, ip_address=None) -> SupportTicket:
-        """The customer's "my problem is solved": any open status → CLOSED."""
-        cls._require(customer, PERM_CREATE)
+    def close_by_customer(
+        cls, customer, ticket_number, ip_address=None, channel=_CUSTOMER
+    ) -> SupportTicket:
+        """The requester's "my problem is solved": any open status → CLOSED."""
+        cls._require_requester(customer, channel)
         with transaction.atomic():
-            ticket = cls._lock(ticket_number, customer=customer)
+            ticket = cls._lock(ticket_number, customer=customer, channel=channel)
             if ticket.is_closed:
                 raise SupportTicketError("This ticket is already closed.")
             cls._set_status(
                 ticket, _CLOSED, customer, timezone.now(),
-                note="Closed by the customer.",
-                changed_by="customer",
+                note=f"Closed by the {ticket.requester_label}.",
+                changed_by=ticket.requester_label,
                 ip_address=ip_address,
             )
             ticket.save()
@@ -441,6 +482,11 @@ class SupportTicketService:
 
         with transaction.atomic():
             ticket = cls._lock(ticket_number)
+            if category is not None and category not in SupportTicket.CHANNEL_CATEGORIES[ticket.channel]:
+                raise SupportTicketError(
+                    f"{CATEGORY_LABELS[category]} isn't a category for "
+                    f"{CHANNEL_LABELS[ticket.channel].lower()} tickets."
+                )
             changes = {}
             if priority is not None and priority != ticket.priority:
                 changes["priority"] = (ticket.priority, priority, PRIORITY_LABELS)

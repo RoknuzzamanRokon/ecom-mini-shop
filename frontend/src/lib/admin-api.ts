@@ -3,6 +3,7 @@ import {
   SupportAttachment,
   SupportAuthorType,
   SupportCategory,
+  SupportChannel,
   SupportPriority,
   SupportStatus,
 } from "./types";
@@ -2127,6 +2128,16 @@ export interface AdminSupportCustomerDetail extends AdminSupportCustomer {
   customer_profile_id: number | null;
 }
 
+/** Mirrors support/serializers.py _seller_summary; set on SELLER-channel tickets. */
+export interface AdminSupportSeller {
+  /** SellerProfile id, for /admin/sellers/<id>. */
+  id: number;
+  business_name: string;
+  business_phone: string;
+  /** SellerProfile.STATUS_CHOICES code. */
+  status: string;
+}
+
 /** Mirrors StaffMessageSerializer: every message, internal ones included. */
 export interface AdminSupportMessage {
   id: number;
@@ -2145,6 +2156,9 @@ export interface AdminSupportMessage {
 export interface AdminSupportTicket {
   ticket_number: string;
   subject: string;
+  /** CUSTOMER: opened from the storefront profile; SELLER: from the Seller Center. */
+  channel: SupportChannel;
+  channel_label: string;
   category: SupportCategory;
   category_label: string;
   status: SupportStatus;
@@ -2152,7 +2166,10 @@ export interface AdminSupportTicket {
   status_label: string;
   priority: SupportPriority;
   priority_label: string;
+  /** The user who opened the ticket, on either channel. */
   customer: AdminSupportCustomer | null;
+  /** Only on SELLER tickets. */
+  seller: AdminSupportSeller | null;
   assigned_to: AdminSupportPerson | null;
   order_number: string | null;
   /** The customer spoke last and the ticket is still being worked on. */
@@ -2174,6 +2191,8 @@ export interface AdminSupportTicketDetail extends AdminSupportTicket {
   } | null;
   /** Statuses the ticket may move to next (SupportTicket.VALID_TRANSITIONS). */
   allowed_transitions: SupportStatus[];
+  /** Categories this ticket may move to: its channel's (SupportTicket.CHANNEL_CATEGORIES). */
+  allowed_categories: SupportCategory[];
   updated_at: string;
   last_customer_message_at: string | null;
   last_staff_reply_at: string | null;
@@ -2197,12 +2216,13 @@ export interface AdminSupportTicketFilterParams {
   page_size?: number;
   /** A status code, "active" (everything but CLOSED) or "all". */
   status?: SupportStatus | "active" | "all";
+  channel?: SupportChannel;
   priority?: SupportPriority;
   category?: SupportCategory;
   /** "me", "unassigned" or a user id. */
   assigned?: string;
   needs_reply?: boolean;
-  /** Ticket number, subject, customer name / username / email, or order number. */
+  /** Ticket number, subject, customer name / username / email, seller business name, or order number. */
   search?: string;
   ordering?: AdminSupportOrdering;
 }
@@ -2251,6 +2271,7 @@ export async function getAdminSupportTickets(
   if (params.page) query.set("page", String(params.page));
   if (params.page_size) query.set("page_size", String(params.page_size));
   if (params.status) query.set("status", params.status);
+  if (params.channel) query.set("channel", params.channel);
   if (params.priority) query.set("priority", params.priority);
   if (params.category) query.set("category", params.category);
   if (params.assigned) query.set("assigned", params.assigned);

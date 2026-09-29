@@ -78,6 +78,14 @@ class TicketReplySerializer(serializers.Serializer):
 # --------------------------------------------------------------------- output
 
 
+# The requester's download route for each channel; the views pass the channel
+# in the serializer context as "channel".
+REQUESTER_ATTACHMENT_URL_NAMES = {
+    SupportTicket.CHANNEL_CUSTOMER: "support:attachment-download",
+    SupportTicket.CHANNEL_SELLER: "support:seller-attachment-download",
+}
+
+
 class CustomerAttachmentSerializer(serializers.Serializer):
     id = serializers.IntegerField()
     name = serializers.CharField(source="original_name")
@@ -86,7 +94,8 @@ class CustomerAttachmentSerializer(serializers.Serializer):
     url = serializers.SerializerMethodField()
 
     def get_url(self, attachment):
-        return reverse("support:attachment-download", args=[attachment.pk])
+        channel = self.context.get("channel", SupportTicket.CHANNEL_CUSTOMER)
+        return reverse(REQUESTER_ATTACHMENT_URL_NAMES[channel], args=[attachment.pk])
 
 
 class CustomerMessageSerializer(serializers.ModelSerializer):
@@ -187,6 +196,18 @@ def _person(user, name):
     return {"id": user.pk, "name": name} if user is not None else None
 
 
+def _seller_summary(ticket):
+    seller = ticket.seller
+    if seller is None:
+        return None
+    return {
+        "id": seller.pk,
+        "business_name": seller.business_name,
+        "business_phone": seller.business_phone,
+        "status": seller.status,
+    }
+
+
 class StaffMessageInputSerializer(serializers.Serializer):
     body = serializers.CharField(
         required=False,
@@ -261,10 +282,12 @@ class StaffMessageSerializer(serializers.ModelSerializer):
 
 
 class StaffTicketListSerializer(serializers.ModelSerializer):
+    channel_label = serializers.CharField(source="get_channel_display", read_only=True)
     category_label = serializers.CharField(source="get_category_display", read_only=True)
     status_label = serializers.CharField(source="get_status_display", read_only=True)
     priority_label = serializers.CharField(source="get_priority_display", read_only=True)
     customer = serializers.SerializerMethodField()
+    seller = serializers.SerializerMethodField()
     assigned_to = serializers.SerializerMethodField()
     order_number = serializers.SerializerMethodField()
     needs_reply = serializers.BooleanField(read_only=True)
@@ -272,10 +295,14 @@ class StaffTicketListSerializer(serializers.ModelSerializer):
     class Meta:
         model = SupportTicket
         fields = [
-            "ticket_number", "subject", "category", "category_label", "status",
-            "status_label", "priority", "priority_label", "customer", "assigned_to",
-            "order_number", "needs_reply", "created_at", "last_activity_at",
+            "ticket_number", "subject", "channel", "channel_label", "category",
+            "category_label", "status", "status_label", "priority", "priority_label",
+            "customer", "seller", "assigned_to", "order_number", "needs_reply",
+            "created_at", "last_activity_at",
         ]
+
+    def get_seller(self, ticket):
+        return _seller_summary(ticket)
 
     def get_customer(self, ticket):
         user = ticket.customer
@@ -293,11 +320,12 @@ class StaffTicketListSerializer(serializers.ModelSerializer):
 class StaffTicketDetailSerializer(StaffTicketListSerializer):
     order = serializers.SerializerMethodField()
     allowed_transitions = serializers.SerializerMethodField()
+    allowed_categories = serializers.SerializerMethodField()
     messages = serializers.SerializerMethodField()
 
     class Meta(StaffTicketListSerializer.Meta):
         fields = StaffTicketListSerializer.Meta.fields + [
-            "order", "allowed_transitions", "updated_at", "last_customer_message_at",
+            "order", "allowed_transitions", "allowed_categories", "updated_at", "last_customer_message_at",
             "last_staff_reply_at", "first_response_at", "resolved_at", "closed_at",
             "messages",
         ]
@@ -330,6 +358,10 @@ class StaffTicketDetailSerializer(StaffTicketListSerializer):
 
     def get_allowed_transitions(self, ticket):
         return list(SupportTicket.VALID_TRANSITIONS.get(ticket.status, []))
+
+    def get_allowed_categories(self, ticket):
+        """The categories staff may move this ticket to: its own channel's."""
+        return list(SupportTicket.CHANNEL_CATEGORIES[ticket.channel])
 
     def get_messages(self, ticket):
         messages = getattr(ticket, "all_messages", None)

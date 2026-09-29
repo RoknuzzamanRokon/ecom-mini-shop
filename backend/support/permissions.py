@@ -1,6 +1,7 @@
 from rest_framework.permissions import BasePermission
 
 from rbac.services import has_user_permission
+from sellers.models import SellerProfile
 
 
 class _RequiresSupportCode(BasePermission):
@@ -38,3 +39,19 @@ class CanReplySupportTickets(_RequiresSupportCode):
 class CanManageSupportTickets(_RequiresSupportCode):
     code = "support.staff.manage"
     message = "You do not have permission to manage support tickets ('support.staff.manage' required)."
+
+
+class IsSellerAccount(BasePermission):
+    """
+    The Seller Center's support gate: the caller has a SellerProfile, in any
+    status. Seller accounts hold no RBAC role, and a pending, suspended or
+    rejected seller is exactly who may need to ask for help.
+    """
+
+    message = "Only seller accounts can use seller support."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+        return SellerProfile.objects.filter(user=user).exists()

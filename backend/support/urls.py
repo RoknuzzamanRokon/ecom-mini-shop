@@ -7,6 +7,12 @@ from .views import (
     CustomerTicketListCreateView,
     CustomerTicketMessageCreateView,
     CustomerUnreadCountView,
+    SellerAttachmentDownloadView,
+    SellerTicketCloseView,
+    SellerTicketDetailView,
+    SellerTicketListCreateView,
+    SellerTicketMessageCreateView,
+    SellerUnreadCountView,
     StaffAssigneeListView,
     StaffAttachmentDownloadView,
     StaffTicketAssignView,
@@ -31,6 +37,34 @@ urlpatterns = [
     ),
     path("tickets/<str:ticket_number>/close/", CustomerTicketCloseView.as_view(), name="ticket-close"),
     path("attachments/<int:pk>/", CustomerAttachmentDownloadView.as_view(), name="attachment-download"),
+
+    # Seller: the caller's own Seller Center tickets only (SELLER channel).
+    path("seller/tickets/", SellerTicketListCreateView.as_view(), name="seller-ticket-list-create"),
+    path(
+        "seller/tickets/unread-count/",
+        SellerUnreadCountView.as_view(),
+        name="seller-ticket-unread-count",
+    ),
+    path(
+        "seller/tickets/<str:ticket_number>/",
+        SellerTicketDetailView.as_view(),
+        name="seller-ticket-detail",
+    ),
+    path(
+        "seller/tickets/<str:ticket_number>/messages/",
+        SellerTicketMessageCreateView.as_view(),
+        name="seller-ticket-messages",
+    ),
+    path(
+        "seller/tickets/<str:ticket_number>/close/",
+        SellerTicketCloseView.as_view(),
+        name="seller-ticket-close",
+    ),
+    path(
+        "seller/attachments/<int:pk>/",
+        SellerAttachmentDownloadView.as_view(),
+        name="seller-attachment-download",
+    ),
 
     # Staff: every ticket, gated by the support.staff.* codes.
     path("staff/tickets/", StaffTicketListView.as_view(), name="staff-ticket-list"),

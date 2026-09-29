@@ -1,9 +1,14 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { getSupportUnreadCount } from "@/lib/api";
+import { getAuthToken } from "@/lib/auth";
+import { SUPPORT_UNREAD_EVENT } from "@/lib/support";
 import { useSeller } from "./SellerGuard";
+
+const SUPPORT_HREF = "/seller/support";
 
 const NAV_ITEMS = [
   { href: "/seller", label: "Dashboard", icon: "dashboard", exact: true },
@@ -12,6 +17,7 @@ const NAV_ITEMS = [
   { href: "/seller/orders", label: "Orders", icon: "receipt_long" },
   { href: "/seller/wallet", label: "Wallet & Points", icon: "account_balance_wallet" },
   { href: "/seller/profile", label: "Seller Profile", icon: "badge" },
+  { href: SUPPORT_HREF, label: "Support", icon: "support_agent" },
 ];
 
 export default function SellerSidebar({
@@ -23,6 +29,33 @@ export default function SellerSidebar({
 }) {
   const pathname = usePathname();
   const { seller } = useSeller();
+  const [supportUnread, setSupportUnread] = useState(0);
+
+  // A ticket page announces when it has marked replies read; the count below
+  // re-runs, and its cleanup drops any older answer still in flight.
+  const [unreadCheck, setUnreadCheck] = useState(0);
+  useEffect(() => {
+    const recount = () => setUnreadCheck((n) => n + 1);
+    window.addEventListener(SUPPORT_UNREAD_EVENT, recount);
+    return () => window.removeEventListener(SUPPORT_UNREAD_EVENT, recount);
+  }, []);
+
+  // Seller tickets with a support reply not yet opened; refreshed on every navigation too.
+  useEffect(() => {
+    const token = getAuthToken();
+    if (!seller || !token) return;
+    let cancelled = false;
+    getSupportUnreadCount(token, "SELLER")
+      .then((count) => {
+        if (!cancelled) setSupportUnread(count);
+      })
+      .catch(() => {
+        if (!cancelled) setSupportUnread(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [seller, pathname, unreadCheck]);
 
   const isLinkActive = (item: (typeof NAV_ITEMS)[0]) => {
     if (item.exact) return pathname === item.href;
@@ -104,7 +137,17 @@ export default function SellerSidebar({
                   <span className="material-symbols-outlined text-[20px]">
                     {item.icon}
                   </span>
-                  <span>{item.label}</span>
+                  <span className="flex-1">{item.label}</span>
+                  {item.href === SUPPORT_HREF && supportUnread > 0 && (
+                    <span
+                      className={`min-w-5 h-5 px-1.5 rounded-full text-[10px] font-black flex items-center justify-center ${
+                        active ? "bg-on-primary text-primary" : "bg-accent text-on-accent"
+                      }`}
+                    >
+                      {supportUnread > 9 ? "9+" : supportUnread}
+                      <span className="sr-only"> unread support {supportUnread === 1 ? "reply" : "replies"}</span>
+                    </span>
+                  )}
                 </Link>
               );
             })}

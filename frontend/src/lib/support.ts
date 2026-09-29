@@ -6,7 +6,7 @@
  * stays authoritative (it checks each file's real content, which the browser
  * can't); these checks only save a round trip for obvious mistakes.
  */
-import type { AuthUser, SupportCategory, SupportPriority, SupportStatus } from "./types";
+import type { AuthUser, SupportCategory, SupportChannel, SupportPriority, SupportStatus } from "./types";
 
 export const SUPPORT_LIMITS = {
   maxFiles: 5,
@@ -42,9 +42,98 @@ export const SUPPORT_CATEGORIES: {
   { value: "OTHER", label: "Other", icon: "help" },
 ];
 
+/** The Seller Center's categories (SupportTicket.CHANNEL_CATEGORIES["SELLER"]). */
+export const SELLER_SUPPORT_CATEGORIES: typeof SUPPORT_CATEGORIES = [
+  { value: "POINTS", label: "Points & wallet", icon: "toll" },
+  { value: "LISTING", label: "Products & listings", icon: "inventory_2" },
+  { value: "FULFILLMENT", label: "Orders & fulfillment", icon: "local_shipping" },
+  { value: "STOREFRONT", label: "Shop profile & approval", icon: "storefront" },
+  { value: "ACCOUNT", label: "Account & login", icon: "manage_accounts" },
+  { value: "OTHER", label: "Other", icon: "help" },
+];
+
+/** Every category on either channel, customer ones first; for the staff console. */
+export const ALL_SUPPORT_CATEGORIES: typeof SUPPORT_CATEGORIES = [
+  ...SUPPORT_CATEGORIES,
+  ...SELLER_SUPPORT_CATEGORIES.filter(
+    (seller) => !SUPPORT_CATEGORIES.some((customer) => customer.value === seller.value)
+  ),
+];
+
 export const SUPPORT_CATEGORY_LABELS: Record<SupportCategory, string> = Object.fromEntries(
-  SUPPORT_CATEGORIES.map((c) => [c.value, c.label])
+  ALL_SUPPORT_CATEGORIES.map((c) => [c.value, c.label])
 ) as Record<SupportCategory, string>;
+
+export const SUPPORT_CHANNEL_LABELS: Record<SupportChannel, string> = {
+  CUSTOMER: "Customer",
+  SELLER: "Seller",
+};
+
+/** A recent order the requester can link a new ticket to. */
+export interface SupportOrderOption {
+  order_number: string;
+  created_at: string;
+  total_amount: string | number;
+}
+
+/**
+ * Everything that differs between the customer's support pages
+ * (/profile/support) and the seller's (/seller/support). The pages themselves
+ * are shared components in components/support/.
+ */
+export interface SupportPortalConfig {
+  channel: SupportChannel;
+  /** The pages' base route; the API base follows from `channel`. */
+  basePath: string;
+  categories: typeof SUPPORT_CATEGORIES;
+  /** Where a ticket's order number links to. */
+  orderHref: (orderNumber: string) => string;
+  copy: {
+    listIntro: string;
+    emptyOpen: string;
+    newIntro: string;
+    subjectPlaceholder: string;
+    descriptionPlaceholder: string;
+    orderHint: string;
+    notFound: string;
+  };
+}
+
+export const CUSTOMER_SUPPORT_PORTAL: SupportPortalConfig = {
+  channel: "CUSTOMER",
+  basePath: "/profile/support",
+  categories: SUPPORT_CATEGORIES,
+  orderHref: (orderNumber) => `/profile/orders/${encodeURIComponent(orderNumber)}`,
+  copy: {
+    listIntro: "Tell us about a problem and follow our replies here.",
+    emptyOpen: "Having a problem with an order, a payment or your account? Tell us and we'll help.",
+    newIntro: "Tell us everything about the problem. Our support team will reply on the ticket.",
+    subjectPlaceholder: "e.g. My parcel arrived damaged",
+    descriptionPlaceholder:
+      "What happened, when, and what you expected instead. Include anything that helps us look into it.",
+    orderHint: "Your most recent orders are listed.",
+    notFound: "We couldn't find this ticket in your account. Check the link, or pick it from your list.",
+  },
+};
+
+export const SELLER_SUPPORT_PORTAL: SupportPortalConfig = {
+  channel: "SELLER",
+  basePath: "/seller/support",
+  categories: SELLER_SUPPORT_CATEGORIES,
+  orderHref: () => "/seller/orders",
+  copy: {
+    listIntro: "Ask the MiniShop team for points, help with a listing, an order or your shop.",
+    emptyOpen:
+      "Need points added, a listing checked, or help with an order or your shop? Send us a message and we'll reply here.",
+    newIntro:
+      "Tell the MiniShop team what you need. Replies appear on the ticket, and the Support link in the menu shows when there's a new one.",
+    subjectPlaceholder: "e.g. Please add 500 points to my wallet",
+    descriptionPlaceholder:
+      "What you need and why. For points, say how many and attach a payment receipt if you have one.",
+    orderHint: "Your most recent seller orders are listed.",
+    notFound: "We couldn't find this ticket in your Seller Center. Check the link, or pick it from your list.",
+  },
+};
 
 /** How a customer reads each status (support/serializers.py CUSTOMER_STATUS_LABELS). */
 export const CUSTOMER_STATUS_LABELS: Record<SupportStatus, string> = {

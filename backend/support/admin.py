@@ -40,15 +40,15 @@ class SupportTicketAdmin(admin.ModelAdmin):
     """
 
     list_display = (
-        "ticket_number", "subject", "customer", "category", "status",
+        "ticket_number", "subject", "channel", "customer", "category", "status",
         "priority", "assigned_to", "last_activity_at",
     )
-    list_filter = ("status", "priority", "category", "created_at")
+    list_filter = ("channel", "status", "priority", "category", "created_at")
     search_fields = (
         "ticket_number", "subject", "customer__username", "customer__email",
-        "order__order_number",
+        "seller__business_name", "order__order_number",
     )
-    list_select_related = ("customer", "assigned_to")
+    list_select_related = ("customer", "seller", "assigned_to")
     inlines = [TicketMessageInline]
 
     def has_add_permission(self, request):

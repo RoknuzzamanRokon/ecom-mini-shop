@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { getSellerWallet, getSellerPointHistory } from "@/lib/api";
 import { SellerWallet, PointTransaction } from "@/lib/types";
 import { getAuthToken } from "@/lib/auth";
@@ -115,16 +116,27 @@ export default function SellerWalletPage() {
       </div>
 
       {/* Platform Policy Notice */}
-      <div className="p-4 rounded-xl bg-surface-alt/70 border border-line flex items-start gap-3 text-xs">
-        <span className="material-symbols-outlined text-primary text-[22px] shrink-0">
-          info
-        </span>
-        <div className="space-y-1 text-ink-body">
-          <p className="font-bold text-ink">About MiniShop Seller Points</p>
-          <p className="leading-relaxed">
-            Points are required to list new products on the platform. Points are granted or adjusted by platform administrators. If you run out of points, contact the MiniShop support or administrator team to request an allocation top-up.
-          </p>
+      <div className="p-4 rounded-xl bg-surface-alt/70 border border-line flex flex-col sm:flex-row sm:items-center gap-3 text-xs">
+        <div className="flex items-start gap-3 flex-1">
+          <span className="material-symbols-outlined text-primary text-[22px] shrink-0">
+            info
+          </span>
+          <div className="space-y-1 text-ink-body">
+            <p className="font-bold text-ink">About MiniShop Seller Points</p>
+            <p className="leading-relaxed">
+              Points are required to list new products on the platform. Points are granted or adjusted by platform administrators. If you run out of points, ask the MiniShop support team for a top-up.
+            </p>
+          </div>
         </div>
+        <Link
+          href="/seller/support/new?category=POINTS"
+          className="self-start sm:self-center shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary hover:bg-primary-hover text-on-primary font-bold uppercase tracking-wider transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-focus"
+        >
+          <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+            add_card
+          </span>
+          Request points
+        </Link>
       </div>
 
       {/* Transaction History Section */}

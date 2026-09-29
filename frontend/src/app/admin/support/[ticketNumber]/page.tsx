@@ -10,6 +10,7 @@ import {
   AdminSupportAssignee,
   AdminSupportCustomerDetail,
   AdminSupportMessageInput,
+  AdminSupportSeller,
   AdminSupportTicketDetail,
   AdminSupportTicketUpdate,
   assignAdminSupportTicket,
@@ -24,7 +25,7 @@ import { formatDateTime, formatTaka } from "@/lib/admin-format";
 import { ADMIN_PERMISSIONS } from "@/lib/admin-navigation";
 import {
   STAFF_STATUS_LABELS,
-  SUPPORT_CATEGORIES,
+  SUPPORT_CATEGORY_LABELS,
   SUPPORT_LIMITS,
   SUPPORT_PRIORITIES,
   SUPPORT_PRIORITY_LABELS,
@@ -91,6 +92,7 @@ export default function AdminSupportTicketPage() {
   const canReply = canReplySupport(user);
   const canManage = canManageSupport(user);
   const canOpenCustomer = hasAnyPermission(user, ADMIN_PERMISSIONS.customersView);
+  const canOpenSeller = hasAnyPermission(user, ADMIN_PERMISSIONS.sellersView);
   const canOpenOrder = hasAnyPermission(user, ADMIN_PERMISSIONS.ordersView);
   const backHref = useSyncExternalStore(subscribeToNothing, readSupportListUrl, serverListUrl);
 
@@ -346,7 +348,11 @@ export default function AdminSupportTicketPage() {
                 viewerAssignable={canReply}
                 onAssign={assign}
               />
-              <CustomerCard customer={ticket.customer} canOpenProfile={canOpenCustomer} />
+              {ticket.channel === "SELLER" ? (
+                <SellerCard seller={ticket.seller} account={ticket.customer} canOpenSeller={canOpenSeller} />
+              ) : (
+                <CustomerCard customer={ticket.customer} canOpenProfile={canOpenCustomer} />
+              )}
               <OrderCard order={ticket.order} canOpenOrder={canOpenOrder} />
               <TimelineCard ticket={ticket} />
             </div>
@@ -458,9 +464,24 @@ function TicketHeader({ ticket }: { ticket: AdminSupportTicketDetail }) {
       </div>
       <h1 className="mt-2 text-xl font-black text-ink tracking-tight break-words">{ticket.subject}</h1>
       <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-ink-muted">
+        {ticket.channel === "SELLER" && (
+          <>
+            <span className="inline-flex items-center gap-0.5 px-1.5 rounded-sm bg-primary/10 text-primary font-bold uppercase tracking-wider text-[10px]">
+              <span aria-hidden="true" className="material-symbols-outlined text-[13px]">
+                storefront
+              </span>
+              Seller ticket
+            </span>
+            <span aria-hidden="true">·</span>
+          </>
+        )}
         <span>{ticket.category_label}</span>
         <span aria-hidden="true">·</span>
-        <span>{ticket.customer?.name ?? "Deleted user"}</span>
+        <span>
+          {ticket.channel === "SELLER"
+            ? ticket.seller?.business_name ?? ticket.customer?.name ?? "Deleted seller"
+            : ticket.customer?.name ?? "Deleted user"}
+        </span>
         <span aria-hidden="true">·</span>
         <span>
           Opened <time dateTime={ticket.created_at}>{formatDateTime(ticket.created_at)}</time>
@@ -630,14 +651,14 @@ function DetailsCard({
             disabled={pending !== null}
             onChange={(e) => {
               const category = e.target.value as SupportCategory;
-              const label = SUPPORT_CATEGORIES.find((c) => c.value === category)?.label ?? category;
+              const label = SUPPORT_CATEGORY_LABELS[category] ?? category;
               change({ category }, `Category changed to ${label}.`);
             }}
             className={CONTROL_CLASS}
           >
-            {SUPPORT_CATEGORIES.map((category) => (
-              <option key={category.value} value={category.value}>
-                {category.label}
+            {ticket.allowed_categories.map((category) => (
+              <option key={category} value={category}>
+                {SUPPORT_CATEGORY_LABELS[category] ?? category}
               </option>
             ))}
           </select>
@@ -783,6 +804,60 @@ function CustomerCard({
       )}
     </PanelCard>
   );
+}
+
+/** The Seller Center account behind a SELLER ticket, with a way to its seller page (points included). */
+function SellerCard({
+  seller,
+  account,
+  canOpenSeller,
+}: {
+  seller: AdminSupportSeller | null;
+  account: AdminSupportCustomerDetail | null;
+  canOpenSeller: boolean;
+}) {
+  return (
+    <PanelCard title="Seller">
+      {seller ? (
+        <>
+          <dl>
+            <InfoRow label="Business">{seller.business_name}</InfoRow>
+            <InfoRow label="Status">
+              <AdminStatusBadge status={seller.status} label={humanizeStatus(seller.status)} size="sm" />
+            </InfoRow>
+            <InfoRow label="Phone">{seller.business_phone || "—"}</InfoRow>
+            {account && (
+              <>
+                <InfoRow label="Username">
+                  <span className="font-mono text-[11px]">{account.username}</span>
+                </InfoRow>
+                <InfoRow label="Email">{account.email || "—"}</InfoRow>
+              </>
+            )}
+          </dl>
+          {canOpenSeller && (
+            <Link
+              href={`/admin/sellers/${seller.id}`}
+              className="mt-3 inline-flex items-center gap-1 text-xs font-bold text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary rounded-sm"
+            >
+              Open seller (wallet &amp; points)
+              <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+                arrow_forward
+              </span>
+            </Link>
+          )}
+        </>
+      ) : (
+        <p className="text-xs italic text-ink-muted">This seller profile was deleted.</p>
+      )}
+    </PanelCard>
+  );
+}
+
+/** PENDING → "Pending", UNDER_REVIEW → "Under review". */
+function humanizeStatus(status: string): string {
+  const words = status.toLowerCase().split("_");
+  return [words[0].charAt(0).toUpperCase() + words[0].slice(1), ...words.slice(1)].join(" ");
 }
 
 function OrderCard({

@@ -1,4 +1,4 @@
-import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse, Favorite, PasswordChangePayload, SellerProfile, SellerDashboardData, SellerShop, SellerWallet, NearbyShopsResponse, PointTransaction, Review, ReviewCreatePayload, ReviewOrdering, ReviewUpdatePayload, ShopReview, ShopReviewCreatePayload, MyReviews, SupportTicket, SupportTicketCreateInput, SupportTicketListStatus, SupportTicketSummary } from "./types";
+import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse, Favorite, PasswordChangePayload, SellerProfile, SellerDashboardData, SellerShop, SellerWallet, NearbyShopsResponse, PointTransaction, Review, ReviewCreatePayload, ReviewOrdering, ReviewUpdatePayload, ShopReview, ShopReviewCreatePayload, MyReviews, SupportChannel, SupportTicket, SupportTicketCreateInput, SupportTicketListStatus, SupportTicketSummary } from "./types";
 
 import { refreshTokenOnce } from "./auth";
 
@@ -1577,8 +1577,11 @@ export async function getSellerPointHistory(
 }
 
 // ---------------------------------------------------------------------------
-// Support tickets — customer side (/api/support/). The backend scopes every
-// call to the caller's own tickets and never returns internal notes.
+// Support tickets — the requester side. The customer channel lives at
+// /api/support/tickets/, the Seller Center's at /api/support/seller/tickets/;
+// every function takes the channel (customer by default). The backend scopes
+// every call to the caller's own tickets on that channel and never returns
+// internal notes.
 // ---------------------------------------------------------------------------
 
 const SUPPORT_OFFLINE_MESSAGE = "Couldn't reach MiniShop. Check your connection and try again.";
@@ -1606,19 +1609,25 @@ async function supportError(res: Response, fallback: string): Promise<Error> {
   return new Error(fallback);
 }
 
-function ticketPath(ticketNumber: string): string {
-  return `/api/support/tickets/${encodeURIComponent(ticketNumber)}/`;
+const SUPPORT_TICKETS_BASE: Record<SupportChannel, string> = {
+  CUSTOMER: "/api/support/tickets/",
+  SELLER: "/api/support/seller/tickets/",
+};
+
+function ticketPath(ticketNumber: string, channel: SupportChannel): string {
+  return `${SUPPORT_TICKETS_BASE[channel]}${encodeURIComponent(ticketNumber)}/`;
 }
 
-/** GET /api/support/tickets/?status=open|closed|all&page= — 10 per page, newest activity first. */
+/** GET <base>?status=open|closed|all&page= — 10 per page, newest activity first. */
 export async function getMySupportTickets(
   token: string,
-  params: { status?: SupportTicketListStatus; page?: number } = {}
+  params: { status?: SupportTicketListStatus; page?: number } = {},
+  channel: SupportChannel = "CUSTOMER"
 ): Promise<PaginatedResponse<SupportTicketSummary>> {
   const query = new URLSearchParams();
   if (params.status) query.set("status", params.status);
   if (params.page && params.page > 1) query.set("page", String(params.page));
-  const res = await supportRequest(`/api/support/tickets/?${query.toString()}`, token, {
+  const res = await supportRequest(`${SUPPORT_TICKETS_BASE[channel]}?${query.toString()}`, token, {
     cache: "no-store",
   });
   if (!res.ok) throw await supportError(res, "Your tickets couldn't be loaded.");
@@ -1632,9 +1641,10 @@ export async function getMySupportTickets(
  */
 export async function getMySupportTicket(
   ticketNumber: string,
-  token: string
+  token: string,
+  channel: SupportChannel = "CUSTOMER"
 ): Promise<SupportTicket | null> {
-  const res = await supportRequest(ticketPath(ticketNumber), token, { cache: "no-store" });
+  const res = await supportRequest(ticketPath(ticketNumber, channel), token, { cache: "no-store" });
   if (res.status === 404) return null;
   if (!res.ok) throw await supportError(res, "This ticket couldn't be loaded.");
   return await res.json();
@@ -1643,7 +1653,8 @@ export async function getMySupportTicket(
 /** POST /api/support/tickets/ (multipart). Returns the new ticket. */
 export async function createSupportTicket(
   input: SupportTicketCreateInput,
-  token: string
+  token: string,
+  channel: SupportChannel = "CUSTOMER"
 ): Promise<SupportTicket> {
   const form = new FormData();
   form.append("category", input.category);
@@ -1651,7 +1662,7 @@ export async function createSupportTicket(
   form.append("description", input.description);
   if (input.order_number) form.append("order_number", input.order_number);
   for (const file of input.attachments ?? []) form.append("attachments", file);
-  const res = await supportRequest(`/api/support/tickets/`, token, { method: "POST", body: form });
+  const res = await supportRequest(SUPPORT_TICKETS_BASE[channel], token, { method: "POST", body: form });
   if (!res.ok) throw await supportError(res, "Your ticket couldn't be sent. Please try again.");
   return await res.json();
 }
@@ -1661,12 +1672,13 @@ export async function replyToSupportTicket(
   ticketNumber: string,
   body: string,
   files: File[],
-  token: string
+  token: string,
+  channel: SupportChannel = "CUSTOMER"
 ): Promise<SupportTicket> {
   const form = new FormData();
   form.append("body", body);
   for (const file of files) form.append("attachments", file);
-  const res = await supportRequest(`${ticketPath(ticketNumber)}messages/`, token, {
+  const res = await supportRequest(`${ticketPath(ticketNumber, channel)}messages/`, token, {
     method: "POST",
     body: form,
   });
@@ -1677,16 +1689,22 @@ export async function replyToSupportTicket(
 /** POST /api/support/tickets/<ticket_number>/close/. Returns the closed ticket. */
 export async function closeSupportTicket(
   ticketNumber: string,
-  token: string
+  token: string,
+  channel: SupportChannel = "CUSTOMER"
 ): Promise<SupportTicket> {
-  const res = await supportRequest(`${ticketPath(ticketNumber)}close/`, token, { method: "POST" });
+  const res = await supportRequest(`${ticketPath(ticketNumber, channel)}close/`, token, {
+    method: "POST",
+  });
   if (!res.ok) throw await supportError(res, "The ticket couldn't be closed. Please try again.");
   return await res.json();
 }
 
-/** GET /api/support/tickets/unread-count/ — tickets with a staff reply not yet opened. */
-export async function getSupportUnreadCount(token: string): Promise<number> {
-  const res = await supportRequest(`/api/support/tickets/unread-count/`, token, {
+/** GET <base>unread-count/ — tickets with a staff reply not yet opened. */
+export async function getSupportUnreadCount(
+  token: string,
+  channel: SupportChannel = "CUSTOMER"
+): Promise<number> {
+  const res = await supportRequest(`${SUPPORT_TICKETS_BASE[channel]}unread-count/`, token, {
     cache: "no-store",
   });
   if (!res.ok) throw await supportError(res, "Unread tickets couldn't be counted.");

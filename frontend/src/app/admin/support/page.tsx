@@ -28,6 +28,7 @@ import {
 } from "@/components/admin/shared";
 import {
   CATEGORY_OPTIONS,
+  CHANNEL_OPTIONS,
   DEFAULT_ORDERING,
   ORDERING_OPTIONS,
   PRIORITY_OPTIONS,
@@ -37,6 +38,7 @@ import {
   canViewSupport,
   parseAssigned,
   parseCategory,
+  parseChannel,
   parseOrdering,
   parsePriority,
   parseStatusTab,
@@ -89,6 +91,7 @@ function AdminSupportPageContent() {
   const urlStatus = parseStatusTab(searchParams.get("status"));
   const urlPriority = parsePriority(searchParams.get("priority"));
   const urlCategory = parseCategory(searchParams.get("category"));
+  const urlChannel = parseChannel(searchParams.get("channel"));
   const urlAssigned = parseAssigned(searchParams.get("assigned"));
   const urlNeedsReply = searchParams.get("needs_reply") === "true";
   const urlOrdering = parseOrdering(searchParams.get("ordering"));
@@ -137,6 +140,7 @@ function AdminSupportPageContent() {
   const [list, setList] = useState<ListState | null>(null);
   const requestKey = [
     urlStatus,
+    urlChannel,
     urlPriority,
     urlCategory,
     urlAssigned,
@@ -154,6 +158,7 @@ function AdminSupportPageContent() {
     const request = token
       ? getAdminSupportTickets(token, {
           status: urlStatus,
+          channel: urlChannel || undefined,
           priority: urlPriority || undefined,
           category: urlCategory || undefined,
           assigned: urlAssigned || undefined,
@@ -183,6 +188,7 @@ function AdminSupportPageContent() {
     canView,
     requestKey,
     urlStatus,
+    urlChannel,
     urlPriority,
     urlCategory,
     urlAssigned,
@@ -235,12 +241,15 @@ function AdminSupportPageContent() {
   const error = !loading ? list?.error ?? null : null;
   const loadedAt = list?.loadedAt ?? 0;
 
-  const hasFilters = Boolean(urlSearch || urlPriority || urlCategory || urlAssigned || urlNeedsReply);
+  const hasFilters = Boolean(
+    urlSearch || urlChannel || urlPriority || urlCategory || urlAssigned || urlNeedsReply
+  );
   const isDirty = hasFilters || urlOrdering !== DEFAULT_ORDERING;
   const clearFilters = useCallback(() => {
     setSearchInput("");
     updateParams({
       search: null,
+      channel: null,
       priority: null,
       category: null,
       assigned: null,
@@ -278,6 +287,7 @@ function AdminSupportPageContent() {
   // Which queue card matches what the list shows now (sorting aside).
   const currentView: Record<string, string> = {
     status: urlStatus === "active" ? "" : urlStatus,
+    channel: urlChannel,
     priority: urlPriority,
     category: urlCategory,
     assigned: urlAssigned,
@@ -324,7 +334,19 @@ function AdminSupportPageContent() {
             <span className="block text-[11px] text-ink-muted">
               <span className="font-mono">{ticket.ticket_number}</span>
               {" · "}
-              {ticket.customer?.name ?? "Deleted user"}
+              {ticket.channel === "SELLER" ? (
+                <>
+                  <span className="inline-flex items-center gap-0.5 px-1.5 rounded-sm bg-primary/10 text-primary font-bold uppercase tracking-wider text-[9px] align-middle">
+                    <span aria-hidden="true" className="material-symbols-outlined text-[12px]">
+                      storefront
+                    </span>
+                    Seller
+                  </span>{" "}
+                  {ticket.seller?.business_name ?? ticket.customer?.name ?? "Deleted seller"}
+                </>
+              ) : (
+                ticket.customer?.name ?? "Deleted user"
+              )}
             </span>
             {/* Phones: the columns below are hidden, so their essentials go here. */}
             <span className="mt-1.5 flex flex-wrap items-center gap-1.5 sm:hidden">
@@ -403,9 +425,9 @@ function AdminSupportPageContent() {
   const emptyMessage = hasFilters
     ? "No tickets match the current filters."
     : urlStatus === "active"
-      ? "There are no active tickets right now. New customer tickets appear here."
+      ? "There are no active tickets right now. New customer and seller tickets appear here."
       : urlStatus === "all"
-        ? "No customer has opened a ticket yet."
+        ? "No one has opened a ticket yet."
         : `No tickets are ${tabLabel.toLowerCase()} right now.`;
 
   return (
@@ -414,8 +436,8 @@ function AdminSupportPageContent() {
         <div>
           <h1 className="text-xl sm:text-2xl font-black text-ink tracking-tight">Support Tickets</h1>
           <p className="text-xs text-ink-muted">
-            Customer problems waiting on the team. Open a ticket to reply, write internal notes, assign it
-            and move it through to resolved.
+            Customer and seller problems waiting on the team. Open a ticket to reply, write internal notes,
+            assign it and move it through to resolved.
           </p>
         </div>
         <button
@@ -493,10 +515,18 @@ function AdminSupportPageContent() {
       >
         <AdminSearchField
           label="Search"
-          placeholder="Ticket no., subject, customer or order…"
+          placeholder="Ticket no., subject, customer, seller or order…"
           value={searchInput}
           onChange={setSearchInput}
           className="sm:w-80"
+        />
+        <AdminSelectField
+          label="From"
+          value={urlChannel}
+          options={CHANNEL_OPTIONS}
+          placeholder="Everyone"
+          onChange={(value) => updateParams({ channel: value || null, page: null })}
+          className="sm:w-32"
         />
         <AdminSelectField
           label="Priority"

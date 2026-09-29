@@ -1,7 +1,11 @@
 """
-Customer support tickets.
+Support tickets.
 
-A ticket is a conversation between one customer and the support staff. Status,
+A ticket is a conversation between one requester and the support staff. The
+requester is a customer (channel CUSTOMER, opened from the storefront profile)
+or a seller (channel SELLER, opened from the Seller Center). Each side only
+ever sees its own channel: a seller never sees customer tickets, including
+complaints about their shop, and a customer never sees seller tickets. Status,
 assignment and the activity timestamps are changed only by the support service
 (SupportTicketService), under a row lock and with an audit entry. They are
 never changed by saving the model from a view, and never from Django admin,
@@ -53,6 +57,14 @@ class SupportTicket(models.Model):
     # Counted against the per-customer cap on tickets still being worked on.
     UNRESOLVED_STATUSES = (STATUS_OPEN, STATUS_IN_PROGRESS, STATUS_WAITING_ON_CUSTOMER)
 
+    CHANNEL_CUSTOMER = "CUSTOMER"
+    CHANNEL_SELLER = "SELLER"
+
+    CHANNEL_CHOICES = [
+        (CHANNEL_CUSTOMER, "Customer"),
+        (CHANNEL_SELLER, "Seller"),
+    ]
+
     CATEGORY_ORDER = "ORDER"
     CATEGORY_PAYMENT = "PAYMENT"
     CATEGORY_PRODUCT = "PRODUCT"
@@ -60,6 +72,11 @@ class SupportTicket(models.Model):
     CATEGORY_ACCOUNT = "ACCOUNT"
     CATEGORY_SHOP = "SHOP"
     CATEGORY_OTHER = "OTHER"
+    # Seller Center categories.
+    CATEGORY_POINTS = "POINTS"
+    CATEGORY_LISTING = "LISTING"
+    CATEGORY_FULFILLMENT = "FULFILLMENT"
+    CATEGORY_STOREFRONT = "STOREFRONT"
 
     CATEGORY_CHOICES = [
         (CATEGORY_ORDER, "Order & delivery"),
@@ -69,7 +86,23 @@ class SupportTicket(models.Model):
         (CATEGORY_ACCOUNT, "Account & login"),
         (CATEGORY_SHOP, "Shop or seller complaint"),
         (CATEGORY_OTHER, "Other"),
+        (CATEGORY_POINTS, "Points & wallet"),
+        (CATEGORY_LISTING, "Products & listings"),
+        (CATEGORY_FULFILLMENT, "Orders & fulfillment"),
+        (CATEGORY_STOREFRONT, "Shop profile & approval"),
     ]
+
+    # Which categories each channel may use. ACCOUNT and OTHER are shared.
+    CHANNEL_CATEGORIES = {
+        CHANNEL_CUSTOMER: (
+            CATEGORY_ORDER, CATEGORY_PAYMENT, CATEGORY_PRODUCT, CATEGORY_RETURN,
+            CATEGORY_ACCOUNT, CATEGORY_SHOP, CATEGORY_OTHER,
+        ),
+        CHANNEL_SELLER: (
+            CATEGORY_POINTS, CATEGORY_LISTING, CATEGORY_FULFILLMENT, CATEGORY_STOREFRONT,
+            CATEGORY_ACCOUNT, CATEGORY_OTHER,
+        ),
+    }
 
     PRIORITY_LOW = "LOW"
     PRIORITY_NORMAL = "NORMAL"
@@ -88,13 +121,30 @@ class SupportTicket(models.Model):
         unique=True,
         help_text="Server-generated reference the customer quotes (TKT<YYYYMMDD><6-HEX>).",
     )
+    channel = models.CharField(
+        max_length=10,
+        choices=CHANNEL_CHOICES,
+        default=CHANNEL_CUSTOMER,
+        help_text="Who the requester is. Customer and seller endpoints each see only their own channel.",
+    )
     customer = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
         related_name="support_tickets",
-        help_text="The customer who opened the ticket. The ticket is kept if the user is deleted.",
+        help_text=(
+            "The user who opened the ticket (the requester, on either channel). "
+            "The ticket is kept if the user is deleted."
+        ),
+    )
+    seller = models.ForeignKey(
+        "sellers.SellerProfile",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="support_tickets",
+        help_text="On SELLER tickets, the seller profile the ticket is about, for staff context.",
     )
     order = models.ForeignKey(
         "shop.Order",
@@ -102,7 +152,10 @@ class SupportTicket(models.Model):
         null=True,
         blank=True,
         related_name="support_tickets",
-        help_text="Optional order the ticket is about; always one of the customer's own orders.",
+        help_text=(
+            "Optional order the ticket is about: one of the customer's own orders, or on a "
+            "seller ticket, an order containing the seller's items."
+        ),
     )
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
     subject = models.CharField(max_length=150)
@@ -148,6 +201,7 @@ class SupportTicket(models.Model):
         verbose_name_plural = "Support Tickets"
         indexes = [
             models.Index(fields=["customer", "-last_activity_at"], name="support_tkt_cust_act_idx"),
+            models.Index(fields=["channel", "status"], name="support_tkt_channel_idx"),
             models.Index(fields=["status", "-last_activity_at"], name="support_tkt_status_act_idx"),
             models.Index(fields=["assigned_to", "status"], name="support_tkt_assignee_idx"),
         ]
@@ -158,6 +212,15 @@ class SupportTicket(models.Model):
     @property
     def is_closed(self) -> bool:
         return self.status == self.STATUS_CLOSED
+
+    @property
+    def is_seller_ticket(self) -> bool:
+        return self.channel == self.CHANNEL_SELLER
+
+    @property
+    def requester_label(self) -> str:
+        """"customer" or "seller", for thread notes and audit metadata."""
+        return "seller" if self.is_seller_ticket else "customer"
 
     @property
     def has_unread_for_customer(self) -> bool:

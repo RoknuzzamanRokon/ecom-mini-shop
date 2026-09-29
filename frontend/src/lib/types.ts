@@ -850,7 +850,15 @@ export type SupportCategory =
   | "RETURN"
   | "ACCOUNT"
   | "SHOP"
-  | "OTHER";
+  | "OTHER"
+  // Seller Center categories.
+  | "POINTS"
+  | "LISTING"
+  | "FULFILLMENT"
+  | "STOREFRONT";
+
+/** Who opened a ticket: a customer (storefront profile) or a seller (Seller Center). */
+export type SupportChannel = "CUSTOMER" | "SELLER";
 
 export type SupportStatus =
   | "OPEN"

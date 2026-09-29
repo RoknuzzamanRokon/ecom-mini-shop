@@ -27,7 +27,7 @@ Choices the project owner made on 2026-09-24:
 
 | Question | Answer |
 |---|---|
-| Who takes part in a ticket? | **Customer + support staff only.** Sellers never see tickets. |
+| Who takes part in a ticket? | **Customer + support staff only.** Sellers never see tickets. *(Changed 2026-09-29: sellers can now open their own tickets from the Seller Center; see D1 and §16.)* |
 | Attachments? | **Images + PDF, private.** 5 files per message, 5 MB each. |
 | Who can open a ticket? | **Logged-in customers only.** |
 | How do people learn about a reply? | **In-app only** (unread markers and counts). No email. |
@@ -95,7 +95,7 @@ task that depends on them.
 
 | # | Rule | Why |
 |---|---|---|
-| D1 | **Customer + staff only.** Sellers never see tickets; staff contact a seller themselves when needed. | Owner's choice. Keeps visibility rules simple. |
+| D1 | **Customer + staff only.** Sellers never see tickets; staff contact a seller themselves when needed. **Amended 2026-09-29 by the owner:** a seller may open and follow *their own* tickets from the Seller Center (the `SELLER` channel, §16). Sellers still never see customer tickets, including complaints about their own shop. | Owner's choice. Keeps visibility rules simple. |
 | D2 | Opening a ticket needs login + **`support.create`** (seeded to CUSTOMER). Staff can't open a ticket on a customer's behalf in v1. | Owner's choice (logged-in only). Same model as orders and reviews. |
 | D3 | New ticket: **category** (required), **subject** 5–150 chars, **description** 10–5000 chars (it becomes the first message), optional **`order_number`**, optional attachments. The order must belong to the customer, otherwise a generic 400 "Order not found". | Enough to understand the problem. The generic message leaks nothing about other people's orders. |
 | D4 | Categories: `ORDER` (Order & delivery), `PAYMENT` (Payment & refund), `PRODUCT` (Wrong or damaged item), `RETURN` (Return & exchange), `ACCOUNT` (Account & login), `SHOP` (Shop or seller complaint), `OTHER`. | Covers what SUPPORT_TEAM is described as handling. |
@@ -1666,7 +1666,8 @@ the internal note); `npm run build` passes.
 
 ## 15. Not in this plan
 
-- Sellers taking part in tickets
+- ~~Sellers taking part in tickets~~ Seller-opened tickets added 2026-09-29 (§16). Sellers
+  taking part in *customer* tickets is still out.
 - A guest contact form
 - Email or push notifications
 - Websockets / real-time chat
@@ -1698,3 +1699,21 @@ runs once, in Task 12. Every earlier task is committed as soon as its own checks
 
 UI rules (AGENTS.md / GEMINI.md): theme tokens only, no palette colours; `৳` for money;
 sticky Header + Navbar untouched; everything works at phone width.
+
+---
+
+## 16. Seller Center support (added 2026-09-29)
+
+The owner asked for sellers to reach support from `/seller` (points top-ups, listing,
+order and shop problems). It reuses the ticket system rather than adding a second one.
+
+| # | Rule |
+|---|---|
+| S1 | `SupportTicket.channel` is `CUSTOMER` (default, every ticket before this change) or `SELLER`. `customer` stays the user who opened the ticket on either channel; `seller` points at the SellerProfile on seller tickets, for staff context. |
+| S2 | Seller endpoints live at `/api/support/seller/tickets/…` and `/api/support/seller/attachments/<id>/`. They are the customer views with `channel = SELLER`, scoped to `customer=request.user, channel=SELLER`. Customer endpoints are now scoped to `channel=CUSTOMER`, so a user who is both a customer and a seller sees two separate lists. |
+| S3 | Access is `IsSellerAccount` (has a SellerProfile, **any** status), not an RBAC code: admin-created seller accounts hold no role, and a pending, suspended or rejected seller is exactly who needs help. |
+| S4 | Seller categories: `POINTS` (Points & wallet), `LISTING` (Products & listings), `FULFILLMENT` (Orders & fulfillment), `STOREFRONT` (Shop profile & approval), plus the shared `ACCOUNT` and `OTHER`. `SupportTicket.CHANNEL_CATEGORIES` holds both lists; creation and the staff category change both refuse a category from the other channel. |
+| S5 | A seller ticket's optional order must contain the seller's items (`OrderService.get_seller_orders_queryset`); otherwise the same generic "Order not found". |
+| S6 | The 5-unresolved-ticket cap (D13) is counted per channel. |
+| S7 | Staff see both channels in one queue: a `channel` filter ("From"), a Seller marker, seller business name in search, and a Seller card linking to `/admin/sellers/<id>` (where points are credited). |
+| S8 | Frontend: the three customer pages became shared components (`components/support/SupportTicketListPage`, `SupportNewTicketPage`, `SupportTicketPage`) driven by a `SupportPortalConfig`; `/profile/support` and `/seller/support` are thin routes. The seller sidebar shows an unread badge, and the wallet page links to a new `POINTS` ticket. Still no real-time: the same 60 s refresh as D12. |

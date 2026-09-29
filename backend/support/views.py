@@ -1,9 +1,12 @@
 """
 Support ticket API.
 
-Customer endpoints (/api/support/…) only ever see the caller's own tickets and
-never internal notes. Another customer's ticket or attachment is a 404, the
-same as one that doesn't exist. Staff endpoints (/api/support/staff/…) see
+Customer endpoints (/api/support/…) only ever see the caller's own CUSTOMER
+tickets and never internal notes. Another customer's ticket or attachment is a
+404, the same as one that doesn't exist. Seller endpoints
+(/api/support/seller/…) are the same views on the SELLER channel, gated by
+having a SellerProfile instead of an RBAC code: a seller sees only the tickets
+they opened from the Seller Center, never customer tickets. Staff endpoints (/api/support/staff/…) see
 every ticket and every message, and are gated per action by the
 support.staff.* codes.
 
@@ -33,6 +36,7 @@ from .permissions import (
     CanReplySupportTickets,
     CanViewOwnSupportTickets,
     CanViewSupportTickets,
+    IsSellerAccount,
 )
 from .serializers import (
     CustomerTicketDetailSerializer,
@@ -79,8 +83,8 @@ def attachment_response(attachment):
     return response
 
 
-def customer_tickets(user):
-    """The caller's own tickets, with public messages (never internal ones) prefetched."""
+def customer_tickets(user, channel=SupportTicket.CHANNEL_CUSTOMER):
+    """The caller's own tickets on one channel, with public messages (never internal ones) prefetched."""
     public_messages = (
         TicketMessage.objects.filter(is_internal=False)
         .select_related("author")
@@ -88,17 +92,42 @@ def customer_tickets(user):
         .order_by("created_at", "id")
     )
     return (
-        SupportTicket.objects.filter(customer=user)
+        SupportTicket.objects.filter(customer=user, channel=channel)
         .select_related("order")
         .prefetch_related(Prefetch("messages", queryset=public_messages, to_attr="public_messages"))
     )
+
+
+class RequesterChannelMixin:
+    """
+    The requester side of the API, for one channel. The customer views use the
+    CUSTOMER channel; the Seller* subclasses below switch to SELLER and swap
+    the RBAC permission for IsSellerAccount.
+    """
+
+    channel = SupportTicket.CHANNEL_CUSTOMER
+    seller_permission_classes = [IsAuthenticated, IsSellerAccount]
+
+    def is_seller_channel(self):
+        return self.channel == SupportTicket.CHANNEL_SELLER
+
+    def get_permissions(self):
+        if self.is_seller_channel():
+            return [permission() for permission in self.seller_permission_classes]
+        return super().get_permissions()
+
+    def serializer_context(self):
+        return {"request": self.request, "channel": self.channel}
+
+    def own_tickets(self):
+        return customer_tickets(self.request.user, self.channel)
 
 
 class CustomerTicketPagination(PageNumberPagination):
     page_size = 10
 
 
-class CustomerTicketListCreateView(APIView):
+class CustomerTicketListCreateView(RequesterChannelMixin, APIView):
     """
     GET  /api/support/tickets/?status=open|closed|all&page=   (support.view)
     POST /api/support/tickets/  multipart                      (support.create)
@@ -111,6 +140,8 @@ class CustomerTicketListCreateView(APIView):
     }
 
     def get_permissions(self):
+        if self.is_seller_channel():
+            return super().get_permissions()
         if self.request.method == "POST":
             return [IsAuthenticated(), CanCreateSupportTickets()]
         return [IsAuthenticated(), CanViewOwnSupportTickets()]
@@ -123,7 +154,7 @@ class CustomerTicketListCreateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         queryset = (
-            SupportTicket.objects.filter(customer=request.user)
+            SupportTicket.objects.filter(customer=request.user, channel=self.channel)
             .filter(self.STATUS_FILTERS[status_filter])
             .select_related("order")
             .order_by("-last_activity_at", "-id")
@@ -145,21 +176,27 @@ class CustomerTicketListCreateView(APIView):
                 order_number=data.get("order_number"),
                 files=data.get("attachments", []),
                 ip_address=get_client_ip(request),
+                seller=request.user.seller_profile if self.is_seller_channel() else None,
             )
         except SupportTicketError as exc:
             return _bad_request(exc)
-        ticket = customer_tickets(request.user).get(pk=ticket.pk)
-        return Response(CustomerTicketDetailSerializer(ticket).data, status=status.HTTP_201_CREATED)
+        ticket = self.own_tickets().get(pk=ticket.pk)
+        return Response(
+            CustomerTicketDetailSerializer(ticket, context=self.serializer_context()).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
-class CustomerUnreadCountView(APIView):
+class CustomerUnreadCountView(RequesterChannelMixin, APIView):
     """GET /api/support/tickets/unread-count/ → {"unread": n}: tickets with a staff reply the customer hasn't opened."""
 
     permission_classes = [IsAuthenticated, CanViewOwnSupportTickets]
 
     def get(self, request):
         unread = (
-            SupportTicket.objects.filter(customer=request.user, last_staff_reply_at__isnull=False)
+            SupportTicket.objects.filter(
+                customer=request.user, channel=self.channel, last_staff_reply_at__isnull=False
+            )
             .filter(
                 Q(customer_last_read_at__isnull=True)
                 | Q(last_staff_reply_at__gt=F("customer_last_read_at"))
@@ -169,20 +206,20 @@ class CustomerUnreadCountView(APIView):
         return Response({"unread": unread})
 
 
-class CustomerTicketDetailView(APIView):
+class CustomerTicketDetailView(RequesterChannelMixin, APIView):
     """GET /api/support/tickets/<ticket_number>/ — also marks the staff replies as read."""
 
     permission_classes = [IsAuthenticated, CanViewOwnSupportTickets]
 
     def get(self, request, ticket_number):
-        ticket = get_object_or_404(customer_tickets(request.user), ticket_number=ticket_number)
+        ticket = get_object_or_404(self.own_tickets(), ticket_number=ticket_number)
         if ticket.has_unread_for_customer:
             # Only when something is unread, so the page's periodic refetch doesn't write.
             SupportTicketService.mark_read_by_customer(ticket)
-        return Response(CustomerTicketDetailSerializer(ticket).data)
+        return Response(CustomerTicketDetailSerializer(ticket, context=self.serializer_context()).data)
 
 
-class CustomerTicketMessageCreateView(APIView):
+class CustomerTicketMessageCreateView(RequesterChannelMixin, APIView):
     """POST /api/support/tickets/<ticket_number>/messages/  multipart: body, attachments → the ticket."""
 
     permission_classes = [IsAuthenticated, CanCreateSupportTickets]
@@ -198,16 +235,20 @@ class CustomerTicketMessageCreateView(APIView):
                 data.get("body", ""),
                 files=data.get("attachments", []),
                 ip_address=get_client_ip(request),
+                channel=self.channel,
             )
         except SupportTicket.DoesNotExist:
             raise _ticket_not_found()
         except SupportTicketError as exc:
             return _bad_request(exc)
-        ticket = customer_tickets(request.user).get(ticket_number=ticket_number)
-        return Response(CustomerTicketDetailSerializer(ticket).data, status=status.HTTP_201_CREATED)
+        ticket = self.own_tickets().get(ticket_number=ticket_number)
+        return Response(
+            CustomerTicketDetailSerializer(ticket, context=self.serializer_context()).data,
+            status=status.HTTP_201_CREATED,
+        )
 
 
-class CustomerTicketCloseView(APIView):
+class CustomerTicketCloseView(RequesterChannelMixin, APIView):
     """POST /api/support/tickets/<ticket_number>/close/ → the closed ticket."""
 
     permission_classes = [IsAuthenticated, CanCreateSupportTickets]
@@ -215,17 +256,17 @@ class CustomerTicketCloseView(APIView):
     def post(self, request, ticket_number):
         try:
             SupportTicketService.close_by_customer(
-                request.user, ticket_number, ip_address=get_client_ip(request)
+                request.user, ticket_number, ip_address=get_client_ip(request), channel=self.channel
             )
         except SupportTicket.DoesNotExist:
             raise _ticket_not_found()
         except SupportTicketError as exc:
             return _bad_request(exc)
-        ticket = customer_tickets(request.user).get(ticket_number=ticket_number)
-        return Response(CustomerTicketDetailSerializer(ticket).data)
+        ticket = self.own_tickets().get(ticket_number=ticket_number)
+        return Response(CustomerTicketDetailSerializer(ticket, context=self.serializer_context()).data)
 
 
-class CustomerAttachmentDownloadView(APIView):
+class CustomerAttachmentDownloadView(RequesterChannelMixin, APIView):
     """GET /api/support/attachments/<id>/ — the caller's own ticket, public messages only."""
 
     permission_classes = [IsAuthenticated, CanViewOwnSupportTickets]
@@ -235,9 +276,51 @@ class CustomerAttachmentDownloadView(APIView):
             TicketAttachment,
             pk=pk,
             message__ticket__customer=request.user,
+            message__ticket__channel=self.channel,
             message__is_internal=False,
         )
         return attachment_response(attachment)
+
+
+# ---------------------------------------------------------------------- seller
+# The requester views on the SELLER channel (/api/support/seller/…). Everything
+# else, scoping, marking read and the internal-note filter included, is shared.
+
+
+class SellerTicketListCreateView(CustomerTicketListCreateView):
+    """GET/POST /api/support/seller/tickets/ — the seller's own Seller Center tickets."""
+
+    channel = SupportTicket.CHANNEL_SELLER
+
+
+class SellerUnreadCountView(CustomerUnreadCountView):
+    """GET /api/support/seller/tickets/unread-count/ → {"unread": n}."""
+
+    channel = SupportTicket.CHANNEL_SELLER
+
+
+class SellerTicketDetailView(CustomerTicketDetailView):
+    """GET /api/support/seller/tickets/<ticket_number>/ — also marks the staff replies as read."""
+
+    channel = SupportTicket.CHANNEL_SELLER
+
+
+class SellerTicketMessageCreateView(CustomerTicketMessageCreateView):
+    """POST /api/support/seller/tickets/<ticket_number>/messages/  multipart: body, attachments."""
+
+    channel = SupportTicket.CHANNEL_SELLER
+
+
+class SellerTicketCloseView(CustomerTicketCloseView):
+    """POST /api/support/seller/tickets/<ticket_number>/close/."""
+
+    channel = SupportTicket.CHANNEL_SELLER
+
+
+class SellerAttachmentDownloadView(CustomerAttachmentDownloadView):
+    """GET /api/support/seller/attachments/<id>/ — the seller's own ticket, public messages only."""
+
+    channel = SupportTicket.CHANNEL_SELLER
 
 
 # ---------------------------------------------------------------------- staff
@@ -245,7 +328,9 @@ class CustomerAttachmentDownloadView(APIView):
 
 def staff_tickets():
     """Every ticket, with what the staff list and detail serializers read."""
-    return SupportTicket.objects.select_related("customer__customer_profile", "assigned_to", "order")
+    return SupportTicket.objects.select_related(
+        "customer__customer_profile", "seller", "assigned_to", "order"
+    )
 
 
 def staff_ticket_detail(ticket_number):
@@ -276,9 +361,10 @@ class StaffTicketListView(APIView):
     GET /api/support/staff/tickets/   (support.staff.view)
 
     Filters: status (a status code, `active` = everything but CLOSED, or `all`),
-    priority, category, assigned (`me`, `unassigned` or a user id),
-    needs_reply=true, search (ticket number, subject, customer name / username /
-    email, order number). ordering: -last_activity_at (default),
+    channel (CUSTOMER or SELLER), priority, category, assigned (`me`,
+    `unassigned` or a user id), needs_reply=true, search (ticket number,
+    subject, customer name / username / email, seller business name, order
+    number). ordering: -last_activity_at (default),
     last_activity_at, -created_at, created_at, -priority, priority.
     """
 
@@ -313,6 +399,7 @@ class StaffTicketListView(APIView):
             return _bad_request("Unknown status filter.")
 
         for field, choices in (
+            ("channel", SupportTicket.CHANNEL_CHOICES),
             ("priority", SupportTicket.PRIORITY_CHOICES),
             ("category", SupportTicket.CATEGORY_CHOICES),
         ):
@@ -345,6 +432,7 @@ class StaffTicketListView(APIView):
                 | Q(customer__email__icontains=search)
                 | Q(customer__first_name__icontains=search)
                 | Q(customer__last_name__icontains=search)
+                | Q(seller__business_name__icontains=search)
                 | Q(order__order_number__icontains=search)
             )
 

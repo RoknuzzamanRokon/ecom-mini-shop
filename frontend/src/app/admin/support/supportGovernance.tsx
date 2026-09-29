@@ -14,13 +14,20 @@ import type { AdminSupportOrdering, AdminSupportSummary } from "@/lib/admin-api"
 import { hasAnyPermission } from "@/lib/admin-auth";
 import { ADMIN_PERMISSIONS } from "@/lib/admin-navigation";
 import {
+  ALL_SUPPORT_CATEGORIES,
   STAFF_STATUS_LABELS,
-  SUPPORT_CATEGORIES,
+  SUPPORT_CHANNEL_LABELS,
   SUPPORT_PRIORITIES,
   SUPPORT_PRIORITY_LABELS,
   SUPPORT_STATUSES,
 } from "@/lib/support";
-import type { AuthUser, SupportCategory, SupportPriority, SupportStatus } from "@/lib/types";
+import type {
+  AuthUser,
+  SupportCategory,
+  SupportChannel,
+  SupportPriority,
+  SupportStatus,
+} from "@/lib/types";
 
 /** Mirrors CanViewSupportTickets: the queue, a ticket, the summary, attachments. */
 export function canViewSupport(user: AuthUser | null | undefined): boolean {
@@ -51,10 +58,16 @@ export const PRIORITY_OPTIONS: AdminSelectOption[] = [...SUPPORT_PRIORITIES]
   .reverse()
   .map((priority) => ({ value: priority, label: SUPPORT_PRIORITY_LABELS[priority] }));
 
-export const CATEGORY_OPTIONS: AdminSelectOption[] = SUPPORT_CATEGORIES.map((category) => ({
+/** Every category on both channels; a ticket's own choices come from allowed_categories. */
+export const CATEGORY_OPTIONS: AdminSelectOption[] = ALL_SUPPORT_CATEGORIES.map((category) => ({
   value: category.value,
   label: category.label,
 }));
+
+/** "Customers" / "Sellers": who opened the ticket. */
+export const CHANNEL_OPTIONS: AdminSelectOption[] = (
+  Object.keys(SUPPORT_CHANNEL_LABELS) as SupportChannel[]
+).map((channel) => ({ value: channel, label: `${SUPPORT_CHANNEL_LABELS[channel]}s` }));
 
 export const DEFAULT_ORDERING: AdminSupportOrdering = "-last_activity_at";
 
@@ -80,7 +93,11 @@ export function parsePriority(raw: string | null): SupportPriority | "" {
 }
 
 export function parseCategory(raw: string | null): SupportCategory | "" {
-  return SUPPORT_CATEGORIES.some((category) => category.value === raw) ? (raw as SupportCategory) : "";
+  return ALL_SUPPORT_CATEGORIES.some((category) => category.value === raw) ? (raw as SupportCategory) : "";
+}
+
+export function parseChannel(raw: string | null): SupportChannel | "" {
+  return raw === "CUSTOMER" || raw === "SELLER" ? raw : "";
 }
 
 /** "me", "unassigned" or a user id, as the backend accepts. */
