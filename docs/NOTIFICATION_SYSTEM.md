@@ -1,6 +1,6 @@
 # MiniShop — Notification System Plan
 
-**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–8
+**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–9
 of 16 are done. From Task 3 on, the work is built on the §3 answers as proposed.
 
 This is the architecture and task list for the notification system. Work through the
@@ -511,7 +511,7 @@ and phone widths.
 | 6 | Worker: claims, leases, retries, dead letters, `run_notification_worker` | backend | ✅ Done |
 | 7 | Email channel: adapter, layout templates, settings | backend | ✅ Done |
 | 8 | Producers, wave 1: orders and payments | backend | ✅ Done |
-| 9 | Producers, wave 2: seller and shop lifecycle, shop submitted | backend | ⬜ Not started |
+| 9 | Producers, wave 2: seller and shop lifecycle, shop submitted | backend | ✅ Done |
 | 10 | Producers, wave 3: product moderation, support, reviews, low stock, points | backend | ⬜ Not started |
 | 11 | Inbox and preferences API | backend | ⬜ Not started |
 | 12 | Frontend foundation: types, client, polling hook, bell component | frontend | ⬜ Not started |
@@ -737,13 +737,13 @@ the same rules the view had:
 | `payment.succeeded`, `payment.failed` | `payment_id`, `payment_number`, `order_number`, `amount` |
 | `refund.processed` | `refund_id`, `refund_number`, `order_number`, `amount` |
 | `support.reply_received`, `support.customer_replied` | `ticket_id`, `ticket_number`, `message_id` |
-| `seller.status_changed` | `seller_id`, `from_status`, `to_status` |
-| `shop.status_changed` | `shop_id`, `shop_name`, `from_status`, `to_status` |
+| `seller.status_changed` | `seller_id`, `from_status`, `to_status` (optional `reason`, from Task 9) |
+| `shop.status_changed` | `shop_id`, `shop_name`, `from_status`, `to_status` (optional `reason`, from Task 9) |
 | `product.moderated` | `product_id`, `product_name`, `action`, `from_status`, `to_status` |
 | `inventory.low_stock` | `product_id`, `product_name`, `available_stock`, `threshold` |
 | `review.created` | `kind` (product · shop), `review_id`, `rating`, `subject_name` |
 | `points.adjusted` | `transaction_id`, `seller_id`, `transaction_type`, `amount`, `balance_after` |
-| `shop.submitted` | `shop_id`, `shop_name` |
+| `shop.submitted` | `shop_id`, `shop_name` (optional `seller_name`, from Task 9) |
 | `support.ticket_created` | `ticket_id`, `ticket_number`, `subject`, `channel` |
 | `support.ticket_assigned` | `ticket_id`, `ticket_number`, `assignee_id` |
 
@@ -1158,13 +1158,86 @@ fires, so the existing test suites don't route anything.
 
 ### Task 9 — Producers, wave 2: seller and shop lifecycle, shop submitted
 
-- [ ] `publish()` in `sellers/services.py` (four transitions) and `ShopService` (four
+- [x] `publish()` in `sellers/services.py` (four transitions) and `ShopService` (four
       transitions plus `submit_for_review`).
-- [ ] Handlers and templates; the staff audience for `shop.submitted`.
-- [ ] Tests, including that the Django-admin seller and shop actions (which call these
+- [x] Handlers and templates; the staff audience for `shop.submitted`.
+- [x] Tests, including that the Django-admin seller and shop actions (which call these
       services) now notify.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done (2026-09-29).
+
+- **Checks run:** `check` and `makemigrations --check` are clean. The 42 tests that need
+  no database pass, including template coverage for the eight handled events. Every new
+  template was rendered for each status and read.
+- **Smoke run against the dev MySQL:** I published `shop.submitted` and a
+  `shop.status_changed` → REJECTED for shop 2, with the fast path off, and routed them.
+  - `users_with_permission("shops.approve")` found the three dev accounts that hold it
+    (`admin`, `safwan`, `masrufa`); each got a STAFF notification, with no email.
+  - The shop's owner got a SHOPS notification with one email delivery.
+  - I deleted every row afterwards.
+- **Not run yet:** the database-backed tests. They run in Task 16, as the owner asked.
+
+**Producers.** Every one publishes after its change, inside the service's existing
+`@transaction.atomic`, and the idempotency key is a UUID (the transitions are guarded):
+
+| Service | Event | Payload |
+|---|---|---|
+| `sellers.services.approve_seller` / `reject_seller` / `suspend_seller` / `reactivate_seller` | `seller.status_changed` | `seller_id`, `from_status` (captured before the change), `to_status`, and `reason`: the stripped rejection or suspension reason, `""` otherwise. `approve_seller` goes through APPROVED to ACTIVE and publishes **once**, PENDING → ACTIVE. |
+| `ShopService.approve_shop` / `reject_shop` / `suspend_shop` / `reactivate_shop` | `shop.status_changed` | `shop_id`, `shop_name`, `from_status`, `to_status`, `reason` |
+| `ShopService.submit_for_review`, **and** `create_shop(submit_for_review=True)` | `shop.submitted` | `shop_id`, `shop_name`, `seller_name`; the actor is the seller's user |
+
+- **One addition beyond the task list:** `create_shop(submit_for_review=True)` also puts a
+  shop straight into PENDING. Today only tests call it that way, but it is a submission,
+  so it publishes too.
+- **Every entry point notifies.** The seller API (`/api/sellers/...`), the Console
+  (`AdminSellerStatusAPIView`, and `AdminShopStatusAPIView` since Task 1), the staff shop
+  API and the Django-admin actions all call these services.
+- **A refused transition publishes nothing:** it raises before `publish()`.
+
+**Handlers** (`notifications/handlers/sellers.py`):
+
+- **`seller.status_changed`:** the seller's user, as SELLER in ACCOUNT. Email is locked,
+  so it's always sent.
+- **`shop.status_changed`:** the shop owner's user, as SELLER in SHOPS. Email can be
+  switched off.
+- **`shop.submitted`:** everyone `users_with_permission("shops.approve")` returns when the
+  event is routed, as STAFF in STAFF_QUEUE, in-app only.
+  - On the seeded roles that means ADMINISTRATOR, OPERATION_MANAGER and
+    SUPER_ADMINISTRATOR holders.
+  - A superuser without a role is left out (D5).
+
+**Templates:**
+
+- **`seller.status_changed` and `shop.status_changed`** word each outcome differently:
+  approved, active again (from SUSPENDED), not approved and suspended. Staff's reason goes
+  in its own final paragraph ("Reason: …"). A rejected shop's text also says it can be
+  updated and submitted again, which `submit_for_review` allows from REJECTED.
+- **Suspension wording** says the products aren't shown to customers. That's what the
+  public product queryset enforces: it requires the shop to be APPROVED or ACTIVE and its
+  owner to be APPROVED or ACTIVE.
+- **Links:**
+  - a seller's account → `/seller`;
+  - a seller's shop → `/seller/shops`;
+  - a shop waiting for review → `/admin/shops/<id>`, the Console shop page.
+
+**Tests (`notifications/tests/test_sellers_and_shops.py`):**
+
+- **Seller events:**
+  - the payload and the recipient;
+  - email ignoring an ACCOUNT opt-out (locked);
+  - the reason in rejection and suspension text;
+  - the approve → suspend → reactivate wording;
+  - refused transitions publishing nothing;
+  - the Django-admin approve and suspend actions publishing.
+- **Shop events:**
+  - submission reaching exactly the reviewers (not FINANCE, not a bare superuser),
+    in-app only;
+  - `create_shop(submit_for_review=True)` publishing, while a DRAFT or a refused
+    submission doesn't;
+  - approval, then reject → approve → suspend → reactivate wording with reasons;
+  - a SHOPS email opt-out being honoured;
+  - a refused transition publishing nothing;
+  - the Console endpoint and the Django-admin suspend action publishing.
 
 ### Task 10 — Producers, wave 3: product moderation, support, reviews, low stock, points
 

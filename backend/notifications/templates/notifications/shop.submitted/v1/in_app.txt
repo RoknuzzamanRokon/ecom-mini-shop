@@ -1,0 +1,3 @@
+{% block title %}{{ shop_name }} is waiting for review{% endblock %}
+{% block body %}{% if seller_name %}{{ seller_name }}{% else %}A seller{% endif %} submitted the shop {{ shop_name }} for review.{% endblock %}
+{% block action_url %}/admin/shops/{{ shop_id }}{% endblock %}

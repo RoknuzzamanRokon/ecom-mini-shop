@@ -1,5 +1,9 @@
 from django.core.exceptions import ValidationError
 from django.db import transaction
+
+from notifications import events
+from notifications.publisher import publish
+
 from .models import SellerProfile
 
 
@@ -71,27 +75,50 @@ def get_seller_capabilities(seller: SellerProfile) -> dict:
     return capabilities
 
 
+def _publish_status_change(seller: SellerProfile, from_status: str, staff_user, reason: str = ""):
+    """One seller.status_changed event, inside the transition's transaction."""
+    publish(
+        events.SELLER_STATUS_CHANGED,
+        payload={
+            "seller_id": seller.pk,
+            "from_status": from_status,
+            "to_status": seller.status,
+            "reason": (reason or "").strip(),
+        },
+        aggregate=seller,
+        actor=staff_user,
+    )
+
+
 @transaction.atomic
 def approve_seller(seller: SellerProfile, staff_user) -> SellerProfile:
+    from_status = seller.status
     seller.approve(staff_user)
     # Default to ACTIVE upon approval
     seller.activate(staff_user)
+    _publish_status_change(seller, from_status, staff_user)
     return seller
 
 
 @transaction.atomic
 def reject_seller(seller: SellerProfile, staff_user, reason: str) -> SellerProfile:
+    from_status = seller.status
     seller.reject(staff_user, reason)
+    _publish_status_change(seller, from_status, staff_user, reason)
     return seller
 
 
 @transaction.atomic
 def suspend_seller(seller: SellerProfile, staff_user, reason: str) -> SellerProfile:
+    from_status = seller.status
     seller.suspend(staff_user, reason)
+    _publish_status_change(seller, from_status, staff_user, reason)
     return seller
 
 
 @transaction.atomic
 def reactivate_seller(seller: SellerProfile, staff_user) -> SellerProfile:
+    from_status = seller.status
     seller.activate(staff_user)
+    _publish_status_change(seller, from_status, staff_user)
     return seller

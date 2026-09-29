@@ -7,6 +7,8 @@ from django.db.models import Avg, BooleanField, Case, Count, IntegerField, Q, Va
 from django.db.models.expressions import RawSQL
 from django.utils import timezone
 
+from notifications import events
+from notifications.publisher import publish
 from sellers.models import SellerProfile
 from shops.fields import Point
 from .models import Shop
@@ -198,6 +200,8 @@ class ShopService:
             shop.cover_image = cover_image
 
         shop.save()
+        if shop.status == Shop.STATUS_PENDING:
+            cls._publish_submitted(shop, seller)
         return shop
 
     @classmethod
@@ -375,6 +379,7 @@ class ShopService:
 
         shop.status = Shop.STATUS_PENDING
         shop.save()
+        cls._publish_submitted(shop, seller)
         return shop
 
     @classmethod
@@ -391,6 +396,7 @@ class ShopService:
                 "Only PENDING, DRAFT or REJECTED shops can be approved."
             )
 
+        from_status = shop.status
         now = timezone.now()
         shop.status = Shop.STATUS_ACTIVE
         shop.reviewed_by = staff_user
@@ -398,6 +404,7 @@ class ShopService:
         shop.approved_at = now
         shop.rejection_reason = ""
         shop.save()
+        cls._publish_status_change(shop, from_status, staff_user)
         return shop
 
     @classmethod
@@ -412,11 +419,13 @@ class ShopService:
                 f"Cannot reject shop with status '{shop.status}'. Only PENDING shops can be rejected."
             )
 
+        from_status = shop.status
         shop.status = Shop.STATUS_REJECTED
         shop.rejection_reason = reason.strip()
         shop.reviewed_by = staff_user
         shop.reviewed_at = timezone.now()
         shop.save()
+        cls._publish_status_change(shop, from_status, staff_user, shop.rejection_reason)
         return shop
 
     @classmethod
@@ -431,10 +440,12 @@ class ShopService:
                 f"Cannot suspend shop with status '{shop.status}'. Only ACTIVE or APPROVED shops can be suspended."
             )
 
+        from_status = shop.status
         shop.status = Shop.STATUS_SUSPENDED
         shop.suspension_reason = reason.strip()
         shop.suspended_at = timezone.now()
         shop.save()
+        cls._publish_status_change(shop, from_status, staff_user, shop.suspension_reason)
         return shop
 
     @classmethod
@@ -446,7 +457,35 @@ class ShopService:
                 f"Cannot reactivate shop with status '{shop.status}'. Only SUSPENDED shops can be reactivated."
             )
 
+        from_status = shop.status
         shop.status = Shop.STATUS_ACTIVE
         shop.suspension_reason = ""
         shop.save()
+        cls._publish_status_change(shop, from_status, staff_user)
         return shop
+
+    @staticmethod
+    def _publish_status_change(shop: Shop, from_status: str, staff_user, reason: str = ""):
+        """One shop.status_changed event, inside the transition's transaction."""
+        publish(
+            events.SHOP_STATUS_CHANGED,
+            payload={
+                "shop_id": shop.pk,
+                "shop_name": shop.name,
+                "from_status": from_status,
+                "to_status": shop.status,
+                "reason": reason,
+            },
+            aggregate=shop,
+            actor=staff_user,
+        )
+
+    @staticmethod
+    def _publish_submitted(shop: Shop, seller: SellerProfile):
+        """shop.submitted, for the staff who review shops."""
+        publish(
+            events.SHOP_SUBMITTED,
+            payload={"shop_id": shop.pk, "shop_name": shop.name, "seller_name": seller.business_name},
+            aggregate=shop,
+            actor=seller.user,
+        )

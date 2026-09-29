@@ -1,0 +1,7 @@
+{% block title %}{% if to_status == "ACTIVE" and from_status == "SUSPENDED" %}{{ shop_name }} is active again{% elif to_status == "ACTIVE" or to_status == "APPROVED" %}{{ shop_name }} is approved{% elif to_status == "REJECTED" %}{{ shop_name }} wasn't approved{% elif to_status == "SUSPENDED" %}{{ shop_name }} is suspended{% else %}{{ shop_name }} was updated{% endif %}{% endblock %}
+{% block body %}{% if to_status == "ACTIVE" and from_status == "SUSPENDED" %}Your shop has been reactivated and customers can see it again.{% elif to_status == "ACTIVE" or to_status == "APPROVED" %}Your shop is live: customers can now find it and buy from it.{% elif to_status == "REJECTED" %}Your shop wasn't approved. You can update it and submit it again.{% if reason %}
+
+Reason: {{ reason }}{% endif %}{% elif to_status == "SUSPENDED" %}Your shop has been suspended, so it and its products aren't shown to customers until it's reactivated.{% if reason %}
+
+Reason: {{ reason }}{% endif %}{% else %}Your shop is now {{ to_status|lower }}.{% endif %}{% endblock %}
+{% block action_url %}/seller/shops{% endblock %}

@@ -1,0 +1,7 @@
+{% block title %}{% if to_status == "ACTIVE" and from_status == "SUSPENDED" %}Your seller account is active again{% elif to_status == "ACTIVE" or to_status == "APPROVED" %}Your seller account is approved{% elif to_status == "REJECTED" %}Your seller application wasn't approved{% elif to_status == "SUSPENDED" %}Your seller account is suspended{% else %}Your seller account was updated{% endif %}{% endblock %}
+{% block body %}{% if to_status == "ACTIVE" and from_status == "SUSPENDED" %}Your seller account has been reactivated, and your products can be shown to customers again.{% elif to_status == "ACTIVE" or to_status == "APPROVED" %}Welcome to MiniShop. Your seller account is active, so you can start selling.{% elif to_status == "REJECTED" %}Your application to sell on MiniShop wasn't approved.{% if reason %}
+
+Reason: {{ reason }}{% endif %}{% elif to_status == "SUSPENDED" %}Your seller account has been suspended, and your products aren't shown to customers until it's reactivated.{% if reason %}
+
+Reason: {{ reason }}{% endif %}{% else %}Your seller account is now {{ to_status|lower }}.{% endif %}{% endblock %}
+{% block action_url %}/seller{% endblock %}
