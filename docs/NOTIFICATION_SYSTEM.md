@@ -1,6 +1,6 @@
 # MiniShop — Notification System Plan
 
-**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–3
+**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–4
 of 16 are done. From Task 3 on, the work is built on the §3 answers as proposed.
 
 This is the architecture and task list for the notification system. Work through the
@@ -506,7 +506,7 @@ and phone widths.
 | 1 | Consolidate shop status transitions into `ShopService` | backend (prerequisite) | ✅ Done |
 | 2 | Move product moderation into `ProductService` | backend (prerequisite) | ✅ Done |
 | 3 | `notifications` app: models, migration, registry, admin, permission codes | backend | ✅ Done |
-| 4 | Publisher: `publish()`, idempotency, on-commit fast path, settings | backend | ⬜ Not started |
+| 4 | Publisher: `publish()`, idempotency, on-commit fast path, settings | backend | ✅ Done |
 | 5 | Router: audiences, handlers, preferences, rendering | backend | ⬜ Not started |
 | 6 | Worker: claims, leases, retries, dead letters, `run_notification_worker` | backend | ⬜ Not started |
 | 7 | Email channel: adapter, layout templates, settings | backend | ⬜ Not started |
@@ -751,18 +751,73 @@ the same rules the view had:
 
 **Goal.** Domain code has one safe call for recording a fact.
 
-- [ ] `publish(event_type, *, payload, aggregate, actor=None, idempotency_key=None, occurred_at=None)`
+- [x] `publish(event_type, *, payload, aggregate, actor=None, idempotency_key=None, occurred_at=None)`
       → `NotificationEvent`. It validates against the registry and requires an open
       transaction (`connection.in_atomic_block`).
-- [ ] A duplicate `idempotency_key` returns the existing event, using a savepoint so the
+- [x] A duplicate `idempotency_key` returns the existing event, using a savepoint so the
       caller's transaction survives the `IntegrityError`.
-- [ ] Registers a `transaction.on_commit` fast path (a no-op until Task 5) behind
+- [x] Registers a `transaction.on_commit` fast path (a no-op until Task 5) behind
       `NOTIFICATIONS["ROUTE_ON_COMMIT"]`.
-- [ ] A `NOTIFICATIONS` settings block: batch size, lease, backoff base and cap, maximum
+- [x] A `NOTIFICATIONS` settings block: batch size, lease, backoff base and cap, maximum
       attempts, rate limit, sender address, fan-out cap.
-- [ ] Tests: the publisher list in §13.
+- [x] Tests: the publisher list in §13.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done (2026-09-29).
+
+- **Checks run:** `check` is clean. The 25 tests that need no database pass: the
+  publisher's refusals, the registry tests and the leaf-import tests.
+- **Not run yet:** the database-backed publisher tests (commit, rollback, duplicate key,
+  savepoint and fast path). They run in Task 16, as the owner asked.
+
+**What exists now:**
+
+- **`notifications/publisher.py`, `publish()`.** It checks everything before any query:
+  - the event type is in the registry;
+  - the payload is a dict, has every required key, and is plain JSON (no `Decimal`,
+    datetime, set or NaN);
+  - the aggregate is a saved instance with an id of 64 characters or fewer;
+  - the key is 191 characters or fewer;
+  - `occurred_at` is timezone-aware;
+  - a transaction is open.
+
+  Any failure raises `PublishError`, or `InvalidPayloadError` for the payload.
+- **What gets stored.**
+  - The payload is stored as a JSON round-tripped copy, so the caller can't change it
+    afterwards.
+  - An anonymous actor is stored as NULL.
+  - The event type and version come from the registry.
+  - `aggregate_type` is the model's class name.
+- **Duplicate keys.** The insert runs in its own savepoint. If the key already exists,
+  `publish()` returns the first event and the caller's transaction carries on.
+  - If that key belongs to a *different* event type, it raises `PublishError`, because
+    that's a producer bug.
+  - A duplicate doesn't queue a second fast path.
+- **The fast path.** `transaction.on_commit` calls `route_after_commit(event_id)`, which
+  does nothing until Task 5.
+  - An exception in it is logged on `notifications.publisher` and never reaches the
+    caller, whose change is already committed.
+  - It's controlled by `NOTIFICATIONS["ROUTE_ON_COMMIT"]`.
+- **Settings.** `NOTIFICATIONS` in `config/settings/base.py` holds:
+  - `ROUTE_ON_COMMIT` and `FANOUT_CAP` (500);
+  - `BATCH_SIZE` (50) and `LEASE_SECONDS` (60);
+  - `BACKOFF_BASE_SECONDS` (30) and `BACKOFF_CAP_SECONDS` (3600);
+  - `EVENT_MAX_ATTEMPTS` (5) and `DELIVERY_MAX_ATTEMPTS` (8);
+  - `EMAIL_RATE_PER_SECOND` (10);
+  - `FROM_EMAIL`, which comes from the `NOTIFICATIONS_FROM_EMAIL` environment variable.
+
+  Code reads these through `notifications.conf.notification_setting(name)`, which falls
+  back to the defaults in `conf.py`, so a test can override a single key.
+- **Leaf rule.** `conf.py` and `publisher.py` joined the leaf-import test.
+- **Tests:** `notifications/tests/test_publisher.py` covers the §13 publisher list:
+  - every refusal (these need no database);
+  - commit gives one PENDING row with every field set;
+  - rollback leaves no row;
+  - a duplicate key gives one row, and the same transaction can keep writing;
+  - a key reused by another event type is refused;
+  - generated keys are unique;
+  - the payload is a snapshot;
+  - the fast path runs only after the commit, a failure in it is swallowed, and it can be
+    switched off.
 
 ### Task 5 — Router: audiences, handlers, preferences, rendering
 

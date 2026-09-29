@@ -224,3 +224,24 @@ SIMPLE_JWT = {
 
 # Point Cost Settings
 PRODUCT_CREATION_POINT_COST = 5
+
+# Notifications (docs/NOTIFICATION_SYSTEM.md). Read through
+# notifications.conf.notification_setting(); a key left out here takes the
+# default in notifications/conf.py.
+NOTIFICATIONS = {
+    # Route an event in-process right after its transaction commits (§4.4).
+    # The worker sweeps up anything this misses.
+    "ROUTE_ON_COMMIT": True,
+    # Rows a worker claims at once, and how long it holds them.
+    "BATCH_SIZE": 50,
+    "LEASE_SECONDS": 60,
+    # Retry delay: random(0, min(cap, base * 2**attempt)) (§4.5).
+    "BACKOFF_BASE_SECONDS": 30,
+    "BACKOFF_CAP_SECONDS": 3600,
+    "EVENT_MAX_ATTEMPTS": 5,
+    "DELIVERY_MAX_ATTEMPTS": 8,
+    "EMAIL_RATE_PER_SECOND": 10,
+    "FROM_EMAIL": os.environ.get("NOTIFICATIONS_FROM_EMAIL", "MiniShop <no-reply@minishop.local>"),
+    # Most recipients one event may reach (§10).
+    "FANOUT_CAP": 500,
+}

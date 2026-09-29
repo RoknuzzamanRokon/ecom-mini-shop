@@ -1,7 +1,7 @@
 """
 The dependency rule (docs/NOTIFICATION_SYSTEM.md §4.3): domain apps import the
 publisher and the event-name constants, so those modules must not import a
-project app back. The publisher joins LEAF_MODULES when it exists (Task 4).
+project app back.
 """
 import ast
 import sys
@@ -12,7 +12,7 @@ from django.conf import settings
 from django.test import SimpleTestCase
 
 APP_DIR = Path(__file__).resolve().parent.parent
-LEAF_MODULES = ("models.py", "categories.py", "events.py")
+LEAF_MODULES = ("models.py", "categories.py", "events.py", "conf.py", "publisher.py")
 
 
 def imported_top_level_modules(path):
