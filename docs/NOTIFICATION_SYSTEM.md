@@ -1,6 +1,6 @@
 # MiniShop — Notification System Plan
 
-**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–10
+**Created:** 2026-09-29 · **Baseline commit:** `6d08ef0` · **Status:** 🚧 In progress. Tasks 1–11
 of 16 are done. From Task 3 on, the work is built on the §3 answers as proposed.
 
 This is the architecture and task list for the notification system. Work through the
@@ -402,6 +402,22 @@ Constraint: `unique(user, category, channel)`. No row means the category's defau
 `audience=SELLER` needs a seller profile; `audience=STAFF` needs a staff role. Otherwise
 the request gets `403`.
 
+As built in Task 11:
+
+- **Who counts as staff:** a Django staff user or superuser, anyone holding an active role
+  other than CUSTOMER, or anyone with an active direct grant.
+- **Which seller profiles count:** one in any status, since a suspended seller still needs
+  to read why.
+- **`audience` is required** on the inbox, unread-count and read-all endpoints; a missing or
+  unknown value is a `400`.
+- **Preferences:**
+  - `GET /preferences/` takes an optional `?audience=` to show one surface's categories.
+  - A category lists only the channels it uses, so INVENTORY, REVIEWS and WALLET have no
+    `email` key.
+  - `PUT` changes only the toggles it names, and one bad entry refuses the whole body, with
+    `{"detail": "…"}`.
+- **The unread-count limit** is `NOTIFICATIONS["UNREAD_COUNT_RATE"]`, 120 a minute per user.
+
 ---
 
 ## 9. UI and UX
@@ -513,7 +529,7 @@ and phone widths.
 | 8 | Producers, wave 1: orders and payments | backend | ✅ Done |
 | 9 | Producers, wave 2: seller and shop lifecycle, shop submitted | backend | ✅ Done |
 | 10 | Producers, wave 3: product moderation, support, reviews, low stock, points | backend | ✅ Done |
-| 11 | Inbox and preferences API | backend | ⬜ Not started |
+| 11 | Inbox and preferences API | backend | ✅ Done |
 | 12 | Frontend foundation: types, client, polling hook, bell component | frontend | ⬜ Not started |
 | 13 | Frontend surfaces: bells in three headers, three inbox pages | frontend | ⬜ Not started |
 | 14 | Preferences UI | frontend | ⬜ Not started |
@@ -1336,12 +1352,74 @@ it. There used to be two copies, in `shop/admin.py` and `shop/metrics.py`.
 
 ### Task 11 — Inbox and preferences API
 
-- [ ] The §8 endpoints with serializers, keyset pagination, audience permission checks
+- [x] The §8 endpoints with serializers, keyset pagination, audience permission checks
       and the DRF throttle on unread-count.
-- [ ] Preference changes write an `AuditService` row.
-- [ ] Tests: the API list in §13.
+- [x] Preference changes write an `AuditService` row.
+- [x] Tests: the API list in §13.
 
-**Status:** ⬜ Not started
+**Status:** ✅ Done (2026-09-29).
+
+- **Checks run:** `check` and `makemigrations --check` are clean. The URLs resolve under
+  `/api/notifications/`.
+- **Smoke run against the dev MySQL** (read-only), with a dev seller account and the dev
+  `admin`:
+  - the seller could read CUSTOMER and SELLER but got `403` on STAFF;
+  - `admin` could read CUSTOMER and STAFF but got `403` on SELLER;
+  - preferences listed the right categories, with the locks;
+  - signing out gave `401`.
+- **Not run yet:** the database-backed API tests. They run in Task 16, as the owner asked.
+
+**What exists now:**
+
+- **`notifications/views.py`, `urls.py`, `serializers.py`:** the six §8 routes, mounted
+  at `/api/notifications/` in `config/urls.py`.
+  - **Your own rows only.** Every query filters on `recipient=request.user`, so another
+    person's id is a `404` (IDOR).
+  - **Inbox:** 20 a page, ordered `(-occurred_at, -id)`, with keyset pagination. The
+    cursor is base64 of `occurred_at|id`, never an OFFSET; a bad cursor is a `400`.
+  - **`unread=1`** shows only unread rows.
+  - **`read/`** is idempotent: marking an already-read row keeps its first `read_at`.
+  - **`read-all/`** marks read only that audience's rows.
+- **`notifications/permissions.py`:** `can_read_audience()` and `readable_audiences()`,
+  implementing the rules in §8 above.
+- **Throttle:** `UnreadCountThrottle` is a `UserRateThrottle`. Its rate comes from
+  `NOTIFICATIONS["UNREAD_COUNT_RATE"]` (120/min) and is read per request, so tests can
+  override it. Only unread-count is throttled.
+- **Preferences** (`notifications/preferences.py`):
+  - `describe_preferences()` builds the GET rows.
+  - The categories that apply to you come from the event registry's audience → category
+    map, limited to the audiences you can read.
+  - `parse_preference_changes()` validates the whole body first. It refuses a category you
+    don't receive, a channel the category doesn't use, a non-boolean, and switching off a
+    locked channel. Sending `enabled: true` for a locked channel is allowed.
+  - `apply_preference_changes()` stores the result sparsely: back at the default means the
+    row is deleted.
+  - Only a real change writes one `NOTIFICATION_PREFERENCES_UPDATED` audit row, with
+    before and after keyed `CATEGORY.channel`.
+- **Tests (`notifications/tests/test_api.py`):**
+  - **Inbox:** own rows, newest first, and the other surface excluded; the unread filter;
+    26 rows over two keyset pages, including a same-instant tie; bad parameters; `401`
+    when signed out on every route.
+  - **Audience rules:**
+    - CUSTOMER is open to everyone;
+    - SELLER is open to a suspended seller but not to a customer or staff;
+    - STAFF is open to a role holder, Django staff and a direct grant, but not to a
+      customer or seller.
+  - **Read state:**
+    - per-audience counts;
+    - mark read, and idempotent re-marking;
+    - someone else's id giving a `404` for both a customer and a staff member;
+    - read-all scoped to you and the audience;
+    - the throttle giving a `429` on the fourth call at 3/min, while another user and the
+      inbox are unaffected.
+  - **Preferences:**
+    - the categories per person and per `?audience=`;
+    - the row shape and locks;
+    - off and back on, with sparse storage and the audit row;
+    - no audit row for a no-op;
+    - locked channels refused;
+    - six malformed or disallowed bodies changing nothing;
+    - `?audience=` permission-checked.
 
 ### Task 12 — Frontend foundation: types, client, polling hook, bell component
 

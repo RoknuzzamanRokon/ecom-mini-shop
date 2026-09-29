@@ -17,6 +17,7 @@ DEFAULTS = {
     "EMAIL_RATE_PER_SECOND": 10,
     "FROM_EMAIL": "MiniShop <no-reply@minishop.local>",
     "FANOUT_CAP": 500,
+    "UNREAD_COUNT_RATE": "120/min",
 }
 
 

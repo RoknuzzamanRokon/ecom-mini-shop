@@ -258,4 +258,7 @@ NOTIFICATIONS = {
     "FROM_EMAIL": os.environ.get("NOTIFICATIONS_FROM_EMAIL", "MiniShop <no-reply@minishop.local>"),
     # Most recipients one event may reach (§10).
     "FANOUT_CAP": 500,
+    # Per user, for the polled unread-count endpoint (§4.7). Each open tab
+    # polls about once a minute.
+    "UNREAD_COUNT_RATE": "120/min",
 }
