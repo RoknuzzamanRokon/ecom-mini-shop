@@ -16,7 +16,7 @@ from notifications import categories as c
 from notifications import events
 from notifications.models import Audience, Notification, NotificationEvent
 from notifications.routing import route_event
-from points.models import PointTransaction
+from points.models import PointTransaction, StaffWallet
 from points.services import InvalidTransactionError, PointService
 from rbac.models import Role
 from rbac.services import assign_user_role
@@ -166,6 +166,7 @@ class ReviewNotificationTests(WaveThreeFixtures, TestCase):
 
 class PointsNotificationTests(WaveThreeFixtures, TestCase):
     def test_a_staff_adjustment_tells_the_seller(self):
+        StaffWallet.objects.create(user=self.admin, balance=20)
         txn = PointService.adjust_points(self.seller, 20, "credit", "Launch bonus", actor=self.admin)
         event = events_of(events.POINTS_ADJUSTED).get()
         self.assertEqual(event.idempotency_key, f"points_txn:{txn.pk}")

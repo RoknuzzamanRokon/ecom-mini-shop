@@ -294,9 +294,11 @@ Categories come from the existing public `GET /api/categories/` (`shop/api_views
 |---|---|
 | `SellerWallet` (`points/models.py:7-44`) | OneToOne seller, `balance` Integer with `MinValueValidator(0)` **and** DB `CheckConstraint balance >= 0` |
 | `PointTransaction` (`:47-138`) | Append-only ledger: type, positive `amount`, `balance_before`, `balance_after`, mandatory `reason`, `reference_type`/`reference_id`, `actor`. Types: `BONUS`, `ADMIN_CREDIT`, `ADMIN_DEBIT`, `PRODUCT_CREATION`, `REFUND`, `ADJUSTMENT` |
-| `ProductCreationCost` (`:141-172`) | Singleton pinned to `pk=1`, `required_points` **default 5**, falls back to `settings.PRODUCT_CREATION_POINT_COST` (also 5) |
+| `StaffWallet` | OneToOne user, same non-negative guards as `SellerWallet`. The points a staff member can give to sellers |
+| `StaffPointTransaction` | Append-only ledger for staff wallets. Types: `MINT`, `TRANSFER_OUT`, `TRANSFER_IN`, `SELLER_CREDIT`, `SELLER_DEBIT`; seller moves link to their `PointTransaction` (`seller_transaction`) |
+| `ProductCreationCost` | Singleton pinned to `pk=1`, `required_points` **default 5**, falls back to `settings.PRODUCT_CREATION_POINT_COST` (also 5) |
 
-**`1 product = 5 points` — implemented and enforced backend-side.** The cost is read authoritatively via `PointService.get_product_creation_cost()`; `PointService.debit()` (`points/services.py:117-173`) opens `transaction.atomic()`, takes `select_for_update()` on the wallet (`:140`), raises `InsufficientPointsError` if balance < amount (`:145-148`), then writes wallet + ledger row together. The debit happens inside `ProductService.create_product`'s transaction, so product and deduction commit or roll back as one. Concurrency is covered by `ConcurrencySafetyTests` (two simultaneous creations with 5 points → exactly one product, balance ends at 0, never negative).
+**`1 product = 5 points` — implemented and enforced backend-side.** The cost is read authoritatively via `PointService.get_product_creation_cost()`; `PointService.debit()` (`points/services.py:161-216`) opens `transaction.atomic()`, takes `select_for_update()` on the wallet (`:183`), raises `InsufficientPointsError` if balance < amount (`:188-191`), then writes wallet + ledger row together. The debit happens inside `ProductService.create_product`'s transaction, so product and deduction commit or roll back as one. Concurrency is covered by `ConcurrencySafetyTests` (two simultaneous creations with 5 points → exactly one product, balance ends at 0, never negative).
 
 | Method | Endpoint | Authorization |
 |---|---|---|
@@ -305,6 +307,8 @@ Categories come from the existing public `GET /api/categories/` (`shop/api_views
 | POST | `/api/points/sellers/<id>/adjust/` | CREDIT → `points.add`/`points.adjust`; DEBIT → `points.deduct`/`points.adjust`; writes ledger + AuditLog in one transaction |
 
 There is **no** `/api/admin/points/` namespace — point administration lives under `/api/points/sellers/...`.
+
+**Staff give only what their own wallet holds (2026-09-30).** `PointService.adjust_points` moves points between the seller's wallet and the actor's `StaffWallet`: a CREDIT is refused with 400 when the actor's wallet holds too little (superusers included), and a DEBIT returns the points to the actor's wallet. New points are created only by `PointService.mint_points`, which only an active superuser may call. `transfer_to_staff` lets a superuser hand points to a staff member who can credit sellers. Both run through `backend/utils/add_points.py`, which authenticates the superuser (password prompted, never stored) and writes `SUPERUSER_POINTS_MINT` / `SUPERUSER_POINTS_TRANSFER` audit entries. There is no API or console screen for staff wallets. They are visible read-only in the Django admin.
 
 ---
 

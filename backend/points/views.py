@@ -20,7 +20,12 @@ from .serializers import (
     PointTransactionSerializer,
     SellerWalletSerializer,
 )
-from .services import InsufficientPointsError, PointError, PointService
+from .services import (
+    InsufficientPointsError,
+    InsufficientStaffPointsError,
+    PointError,
+    PointService,
+)
 
 
 class SellerWalletView(APIView):
@@ -89,6 +94,10 @@ class StaffPointAdjustmentView(APIView):
     because 'points.add' and 'points.deduct' are one-way authorities and the
     direction is only known once the body is validated. Without the second
     stage an actor holding 'points.add' alone could debit a seller's balance.
+
+    Points move to and from the actor's own StaffWallet (see
+    PointService.adjust_points), so a CREDIT is refused when that wallet does
+    not hold enough — permission alone is not enough to give points.
     """
     permission_classes = [CanAdjustPoints]
 
@@ -111,8 +120,8 @@ class StaffPointAdjustmentView(APIView):
         # ledger without its governance record, or the reverse.
         #
         # PointService.adjust_points opens its own atomic block, which nests as a
-        # savepoint here; its select_for_update lock on the wallet is held until
-        # this outer block commits.
+        # savepoint here; its select_for_update locks on the staff and seller
+        # wallets are held until this outer block commits.
         try:
             with transaction.atomic():
                 txn = PointService.adjust_points(
@@ -138,6 +147,7 @@ class StaffPointAdjustmentView(APIView):
                         "point_transaction_id": txn.id,
                         "reference_type": txn.reference_type,
                         "reference_id": txn.reference_id,
+                        "actor_wallet_balance": txn.staff_counterpart.balance_after,
                     },
                     ip_address=get_client_ip(request),
                 )
@@ -150,14 +160,28 @@ class StaffPointAdjustmentView(APIView):
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        except InsufficientStaffPointsError as e:
+            return Response(
+                {
+                    "error": str(e),
+                    "detail": "Your own wallet does not hold enough points for this credit.",
+                    "available_balance": PointService.get_staff_balance(request.user),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         except PointError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
+        actor_balance = txn.staff_counterpart.balance_after
         return Response(
             {
-                "message": f"Successfully {data['action'].lower()}ed {data['amount']} points for {seller.business_name}.",
+                "message": (
+                    f"Successfully {data['action'].lower()}ed {data['amount']} points for {seller.business_name}. "
+                    f"Your wallet now holds {actor_balance} points."
+                ),
                 "transaction": PointTransactionSerializer(txn).data,
                 "current_balance": txn.balance_after,
+                "actor_balance": actor_balance,
             },
             status=status.HTTP_200_OK,
         )

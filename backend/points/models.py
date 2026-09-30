@@ -138,6 +138,134 @@ class PointTransaction(models.Model):
         super().save(*args, **kwargs)
 
 
+class StaffWallet(models.Model):
+    """
+    The points a staff member holds and can hand to sellers.
+
+    A staff credit is a transfer out of this wallet, never a mint: someone with
+    an empty wallet cannot give anyone points. The points staff hand out are
+    created by PointService.mint_points, which only a superuser may call.
+    """
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="staff_point_wallet",
+    )
+    balance = models.IntegerField(
+        default=0,
+        validators=[MinValueValidator(0)],
+        help_text="Points this staff member can still give to sellers.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Staff Wallet"
+        verbose_name_plural = "Staff Wallets"
+        constraints = [
+            models.CheckConstraint(
+                check=models.Q(balance__gte=0),
+                name="staff_wallet_balance_gte_zero",
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} Staff Wallet ({self.balance} pts)"
+
+    def clean(self):
+        if self.balance < 0:
+            raise ValidationError({"balance": "Point balance cannot be negative."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
+class StaffPointTransaction(models.Model):
+    """
+    Immutable ledger entry for every movement in or out of a StaffWallet.
+
+    Movements to and from a seller are linked to the seller-side
+    PointTransaction, so the two halves of one adjustment can be read together.
+    """
+    TYPE_MINT = "MINT"
+    TYPE_TRANSFER_OUT = "TRANSFER_OUT"
+    TYPE_TRANSFER_IN = "TRANSFER_IN"
+    TYPE_SELLER_CREDIT = "SELLER_CREDIT"
+    TYPE_SELLER_DEBIT = "SELLER_DEBIT"
+
+    TRANSACTION_TYPE_CHOICES = [
+        (TYPE_MINT, "Created by Superuser"),
+        (TYPE_TRANSFER_OUT, "Sent to Staff"),
+        (TYPE_TRANSFER_IN, "Received from Superuser"),
+        (TYPE_SELLER_CREDIT, "Given to Seller"),
+        (TYPE_SELLER_DEBIT, "Taken back from Seller"),
+    ]
+
+    wallet = models.ForeignKey(
+        StaffWallet,
+        on_delete=models.CASCADE,
+        related_name="transactions",
+    )
+    transaction_type = models.CharField(
+        max_length=30,
+        choices=TRANSACTION_TYPE_CHOICES,
+        db_index=True,
+    )
+    amount = models.PositiveIntegerField(
+        validators=[MinValueValidator(1)],
+        help_text="Magnitude of points moved (always positive).",
+    )
+    balance_before = models.IntegerField()
+    balance_after = models.IntegerField(validators=[MinValueValidator(0)])
+    reason = models.TextField()
+    counterparty = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="counterparty_staff_point_transactions",
+        help_text="The other staff wallet's owner, on a staff-to-staff transfer.",
+    )
+    seller_transaction = models.OneToOneField(
+        PointTransaction,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="staff_counterpart",
+        help_text="The seller-side ledger entry, on a seller credit or debit.",
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="initiated_staff_point_transactions",
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Staff Point Transaction"
+        verbose_name_plural = "Staff Point Transactions"
+
+    def __str__(self):
+        direction = "IN" if self.balance_after >= self.balance_before else "OUT"
+        return f"{self.wallet.user.username} | {self.transaction_type} ({direction} {self.amount}) -> {self.balance_after} pts"
+
+    def clean(self):
+        if self.amount <= 0:
+            raise ValidationError({"amount": "Transaction amount must be strictly greater than 0."})
+        if not self.reason or not self.reason.strip():
+            raise ValidationError({"reason": "A non-empty transaction reason is required."})
+        if self.balance_after < 0:
+            raise ValidationError({"balance_after": "Balance after transaction cannot be negative."})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+
 class ProductCreationCost(models.Model):
     """
     Authoritative configuration for points required to create a new product.

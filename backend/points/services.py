@@ -5,7 +5,14 @@ from notifications import events
 from notifications.publisher import publish
 from django.db.models import F, Q, Sum
 from django.db.models.functions import Coalesce
-from .models import PointTransaction, ProductCreationCost, SellerWallet
+from .models import (
+    PointTransaction,
+    ProductCreationCost,
+    SellerWallet,
+    StaffPointTransaction,
+    StaffWallet,
+)
+from .permissions import can_perform_point_action
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +34,11 @@ class InvalidAmountError(PointError):
 
 class InvalidTransactionError(PointError):
     """Raised when required transaction attributes (such as reason) are missing or invalid."""
+    pass
+
+
+class InsufficientStaffPointsError(PointError):
+    """Raised when a staff member tries to give away more points than their own wallet holds."""
     pass
 
 
@@ -216,18 +228,37 @@ class PointService:
     ) -> PointTransaction:
         """
         Dispatches staff/admin adjustments based on action type ('CREDIT' or 'DEBIT').
+
+        An adjustment moves points between the seller's wallet and the actor's
+        own StaffWallet: a CREDIT comes out of the actor's wallet and is refused
+        when it does not hold enough, and a DEBIT goes back into it. Superusers
+        are no exception; they fill their own wallet with mint_points first.
         """
         normalized_action = str(action).upper().strip()
         if normalized_action == "CREDIT":
             move, transaction_type = cls.credit, PointTransaction.TYPE_ADMIN_CREDIT
+            staff_type, from_staff = StaffPointTransaction.TYPE_SELLER_CREDIT, True
         elif normalized_action == "DEBIT":
             move, transaction_type = cls.debit, PointTransaction.TYPE_ADMIN_DEBIT
+            staff_type, from_staff = StaffPointTransaction.TYPE_SELLER_DEBIT, False
         else:
             raise InvalidTransactionError(
                 f"Invalid adjustment action '{action}'. Must be 'CREDIT' or 'DEBIT'."
             )
 
+        if actor is None:
+            raise InvalidTransactionError(
+                "A staff adjustment needs an actor: its points move to or from the actor's own wallet."
+            )
+        cls._validate_movement(amount, reason)
+
         with transaction.atomic():
+            # Staff wallet first, seller wallet second, in both directions, so
+            # two concurrent adjustments always lock in the same order.
+            staff_wallet = cls._lock_staff_wallet(actor)
+            if from_staff:
+                cls._require_staff_balance(staff_wallet, amount)
+
             txn = move(
                 seller=seller,
                 amount=amount,
@@ -236,6 +267,15 @@ class PointService:
                 actor=actor,
                 reference_type=reference_type,
                 reference_id=reference_id,
+            )
+            cls._move_staff_points(
+                staff_wallet,
+                amount,
+                staff_type,
+                reason,
+                actor=actor,
+                outgoing=from_staff,
+                seller_transaction=txn,
             )
             # Only staff adjustments notify; the credits and debits the
             # platform makes itself (e.g. a product's creation cost) don't.
@@ -262,3 +302,136 @@ class PointService:
         if transaction_type:
             qs = qs.filter(transaction_type=transaction_type.upper().strip())
         return qs
+
+    # ------------------------------------------------------------------
+    # Staff wallets
+    # ------------------------------------------------------------------
+    # Staff never create points: a staff credit is a transfer out of their own
+    # wallet. The points they hand out are created by mint_points, which only a
+    # superuser may call, and transfer_to_staff passes some of them on so other
+    # staff can credit sellers too.
+
+    @classmethod
+    def get_or_create_staff_wallet(cls, user) -> StaffWallet:
+        """Retrieves or initializes a staff member's wallet with zero initial balance."""
+        wallet, _ = StaffWallet.objects.get_or_create(user=user, defaults={"balance": 0})
+        return wallet
+
+    @classmethod
+    def get_staff_balance(cls, user) -> int:
+        """Returns the points a staff member can still give away."""
+        return cls.get_or_create_staff_wallet(user).balance
+
+    @classmethod
+    def mint_points(cls, superuser, amount: int, reason: str) -> StaffPointTransaction:
+        """Creates `amount` new points in a superuser's own staff wallet."""
+        if not (superuser and superuser.is_active and superuser.is_superuser):
+            raise PointError("Only an active superuser can create new points.")
+        cls._validate_movement(amount, reason)
+
+        with transaction.atomic():
+            wallet = cls._lock_staff_wallet(superuser)
+            txn = cls._move_staff_points(
+                wallet, amount, StaffPointTransaction.TYPE_MINT, reason,
+                actor=superuser, outgoing=False,
+            )
+        logger.info(
+            f"[POINTS] Minted {amount} pts into {superuser.username}'s staff wallet. "
+            f"Balance: {txn.balance_before} -> {txn.balance_after}."
+        )
+        return txn
+
+    @classmethod
+    def transfer_to_staff(cls, sender, recipient, amount: int, reason: str):
+        """
+        Moves `amount` points from a superuser's staff wallet to another staff
+        member's. Returns the (outgoing, incoming) ledger entries.
+
+        The recipient must be able to credit sellers; points in any other
+        wallet could never be spent.
+        """
+        if not (sender and sender.is_active and sender.is_superuser):
+            raise PointError("Only an active superuser can hand points to staff.")
+        if recipient.pk == sender.pk:
+            raise PointError("Points cannot be transferred to your own wallet.")
+        if not recipient.is_active or not can_perform_point_action(recipient, "CREDIT"):
+            raise PointError(
+                f"{recipient.username} cannot credit sellers, so points in their wallet could never be used."
+            )
+        cls._validate_movement(amount, reason)
+
+        with transaction.atomic():
+            # Lock both wallets in user-id order so two opposite transfers
+            # cannot deadlock each other.
+            wallets = {
+                user.pk: cls._lock_staff_wallet(user)
+                for user in sorted((sender, recipient), key=lambda u: u.pk)
+            }
+            outgoing = cls._move_staff_points(
+                wallets[sender.pk], amount, StaffPointTransaction.TYPE_TRANSFER_OUT, reason,
+                actor=sender, outgoing=True, counterparty=recipient,
+            )
+            incoming = cls._move_staff_points(
+                wallets[recipient.pk], amount, StaffPointTransaction.TYPE_TRANSFER_IN, reason,
+                actor=sender, outgoing=False, counterparty=sender,
+            )
+        logger.info(
+            f"[POINTS] Transferred {amount} pts from {sender.username} to {recipient.username}. "
+            f"Balances: {outgoing.balance_after} / {incoming.balance_after}."
+        )
+        return outgoing, incoming
+
+    @classmethod
+    def _validate_movement(cls, amount, reason) -> None:
+        if not isinstance(amount, int) or amount <= 0:
+            raise InvalidAmountError(f"Point amount must be a positive integer, got: {amount}")
+        if not reason or not str(reason).strip():
+            raise InvalidTransactionError("A non-empty reason is mandatory for all point operations.")
+
+    @classmethod
+    def _lock_staff_wallet(cls, user) -> StaffWallet:
+        """Must be called inside transaction.atomic(); the lock lasts until it commits."""
+        wallet, _ = StaffWallet.objects.select_for_update().get_or_create(
+            user=user,
+            defaults={"balance": 0},
+        )
+        return wallet
+
+    @classmethod
+    def _require_staff_balance(cls, wallet: StaffWallet, amount: int) -> None:
+        if wallet.balance < amount:
+            raise InsufficientStaffPointsError(
+                f"Not enough points in your wallet. Required: {amount}, available: {wallet.balance}."
+            )
+
+    @classmethod
+    def _move_staff_points(
+        cls,
+        wallet: StaffWallet,
+        amount: int,
+        transaction_type: str,
+        reason: str,
+        actor,
+        outgoing: bool,
+        counterparty=None,
+        seller_transaction=None,
+    ) -> StaffPointTransaction:
+        """Applies one movement to a wallet the caller has locked, and records it."""
+        if outgoing:
+            cls._require_staff_balance(wallet, amount)
+
+        balance_before = wallet.balance
+        wallet.balance = balance_before - amount if outgoing else balance_before + amount
+        wallet.save(update_fields=["balance", "updated_at"])
+
+        return StaffPointTransaction.objects.create(
+            wallet=wallet,
+            transaction_type=transaction_type,
+            amount=amount,
+            balance_before=balance_before,
+            balance_after=wallet.balance,
+            reason=str(reason).strip(),
+            counterparty=counterparty,
+            seller_transaction=seller_transaction,
+            actor=actor,
+        )

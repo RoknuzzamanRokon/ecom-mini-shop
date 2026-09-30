@@ -1607,6 +1607,8 @@ export interface AdminPointAdjustmentResult {
   message: string;
   transaction: AdminPointTransaction;
   current_balance: number;
+  /** The acting staff member's own wallet after the move (StaffWallet). */
+  actor_balance: number;
 }
 
 /**
@@ -1621,7 +1623,11 @@ export interface AdminPointAdjustmentResult {
  * that per-direction map for the UI gate — this function performs no
  * client-side authorization decision of its own.
  *
- * On insufficient balance the backend returns 400 with a distinct shape (see
+ * Points move to and from the actor's own staff wallet: a CREDIT is refused
+ * when that wallet holds too little, and a DEBIT returns the points to it.
+ *
+ * On insufficient balance (the seller's on a DEBIT, the actor's own on a
+ * CREDIT) the backend returns 400 with a distinct shape (see
  * getInsufficientPointsInfo) rather than the generic validation-error format.
  */
 export async function adjustAdminSellerPoints(

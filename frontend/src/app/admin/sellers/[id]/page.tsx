@@ -1035,10 +1035,16 @@ export default function AdminSellerDetailPage() {
                     </>
                   )}
                 </span>
+                {pendingAdjustment.action === "CREDIT" && (
+                  <span className="block mt-2">
+                    These points come out of your own wallet. The backend refuses the request
+                    if your wallet does not hold enough.
+                  </span>
+                )}
                 {pendingAdjustment.action === "DEBIT" && (
                   <span className="block mt-2 font-semibold text-red-600">
-                    This DEDUCTS points from the seller&apos;s wallet. The backend refuses the
-                    request if the available balance is insufficient.
+                    This DEDUCTS points from the seller&apos;s wallet and returns them to yours.
+                    The backend refuses the request if the available balance is insufficient.
                   </span>
                 )}
               </>

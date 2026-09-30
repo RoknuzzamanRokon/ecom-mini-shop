@@ -9,11 +9,19 @@ from django.test import TestCase, TransactionTestCase
 from rest_framework import status
 from rest_framework.test import APIClient
 
-from points.models import PointTransaction, ProductCreationCost, SellerWallet
+from points.models import (
+    PointTransaction,
+    ProductCreationCost,
+    SellerWallet,
+    StaffPointTransaction,
+    StaffWallet,
+)
 from points.services import (
     InsufficientPointsError,
+    InsufficientStaffPointsError,
     InvalidAmountError,
     InvalidTransactionError,
+    PointError,
     PointService,
 )
 from rbac.models import Role
@@ -21,6 +29,13 @@ from rbac.services import assign_user_role
 from sellers.models import SellerProfile
 
 User = get_user_model()
+
+
+def fund_staff_wallet(user, amount):
+    """Fixture: points a staff member can hand out, since a staff credit comes out of their wallet."""
+    wallet = PointService.get_or_create_staff_wallet(user)
+    wallet.balance += amount
+    wallet.save()
 
 
 class PointSystemUnitAndAPITests(TestCase):
@@ -306,6 +321,7 @@ class PointSystemUnitAndAPITests(TestCase):
         self.assertEqual(support_resp.status_code, status.HTTP_403_FORBIDDEN)
 
         # 3. Authorized staff (Administrator) -> 200 OK
+        fund_staff_wallet(self.staff_admin, 100)
         self.client.force_authenticate(user=self.staff_admin)
         admin_resp = self.client.post(
             f"/api/points/sellers/{self.seller_a.pk}/adjust/",
@@ -718,8 +734,11 @@ class PointActionAuthorizationTests(TestCase):
         self.client = APIClient()
         self.url = f"/api/points/sellers/{self.seller.pk}/adjust/"
         # A starting balance so DEBIT attempts fail on AUTHORIZATION, never on
-        # an empty wallet — otherwise a 400 could be mistaken for a 403.
+        # an empty wallet — otherwise a 400 could be mistaken for a 403. The
+        # same goes for CREDIT, which comes out of the actor's own wallet.
         PointService.credit(self.seller, 500, PointTransaction.TYPE_BONUS, "Test float")
+        for actor in (self.adder, self.deducter, self.adjuster, self.wildcard):
+            fund_staff_wallet(actor, 500)
 
     def _adjust(self, actor, action, amount=10):
         self.client.force_authenticate(user=actor)
@@ -906,3 +925,238 @@ class SellerWalletAdminIntegrityTests(TestCase):
         wallet.refresh_from_db()
         self.assertEqual(wallet.balance, 40)
         self.assertEqual(PointTransaction.objects.filter(seller=self.seller).count(), 1)
+
+
+class StaffWalletTests(TestCase):
+    """
+    A staff member gives a seller points out of their own StaffWallet and a
+    debit returns them there; a superuser's mint_points (driven by
+    utils/add_points.py) is where the points staff hand out come from.
+    """
+
+    PASSWORD = "RootPassword123!"
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_rbac")
+        seller_user = User.objects.create_user(
+            username="sw_seller", email="sw_seller@minishop.com", password="SellerPassword123!"
+        )
+        cls.seller = SellerProfile.objects.create(
+            user=seller_user,
+            seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+            business_name="Staff Wallet Shop",
+            status=SellerProfile.STATUS_ACTIVE,
+        )
+        cls.root = User.objects.create_superuser(
+            username="sw_root", email="sw_root@minishop.com", password=cls.PASSWORD
+        )
+        cls.finance = User.objects.create_user(
+            username="sw_finance", email="sw_finance@minishop.com", password="FinancePassword123!", is_staff=True
+        )
+        assign_user_role(cls.finance, Role.ROLE_FINANCE)
+        cls.admin = User.objects.create_user(
+            username="sw_admin", email="sw_admin@minishop.com", password=cls.PASSWORD, is_staff=True
+        )
+        assign_user_role(cls.admin, Role.ROLE_ADMINISTRATOR)
+        cls.support = User.objects.create_user(
+            username="sw_support", email="sw_support@minishop.com", password="SupportPassword123!", is_staff=True
+        )
+        assign_user_role(cls.support, Role.ROLE_SUPPORT_TEAM)
+
+    def setUp(self):
+        self.client = APIClient()
+        self.url = f"/api/points/sellers/{self.seller.pk}/adjust/"
+
+    def _adjust(self, actor, action, amount):
+        self.client.force_authenticate(user=actor)
+        return self.client.post(
+            self.url, {"action": action, "amount": amount, "reason": "Staff wallet test"}, format="json"
+        )
+
+    # -- the rule: nobody gives what they do not have -------------------------
+
+    def test_credit_from_an_empty_wallet_is_refused_and_changes_nothing(self):
+        from audit.models import AuditLog
+        from notifications.models import NotificationEvent
+
+        res = self._adjust(self.finance, "CREDIT", 10)
+
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("your wallet", res.data["error"])
+        self.assertEqual(res.data["available_balance"], 0)
+        self.assertEqual(PointService.get_balance(self.seller), 0)
+        self.assertFalse(PointTransaction.objects.filter(seller=self.seller).exists())
+        self.assertFalse(StaffPointTransaction.objects.exists())
+        self.assertFalse(AuditLog.objects.filter(action="ADMIN_POINTS_CREDIT").exists())
+        self.assertFalse(NotificationEvent.objects.filter(event_type="points.adjusted").exists())
+
+    def test_a_superuser_is_bound_by_the_same_rule(self):
+        res = self._adjust(self.root, "CREDIT", 10)
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(PointService.get_balance(self.seller), 0)
+
+    def test_credit_cannot_exceed_the_wallet(self):
+        fund_staff_wallet(self.finance, 30)
+        res = self._adjust(self.finance, "CREDIT", 31)
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(res.data["available_balance"], 30)
+        self.assertEqual(PointService.get_staff_balance(self.finance), 30)
+        self.assertEqual(PointService.get_balance(self.seller), 0)
+
+    def test_credit_moves_points_from_the_actor_to_the_seller(self):
+        fund_staff_wallet(self.finance, 100)
+        res = self._adjust(self.finance, "CREDIT", 30)
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data["current_balance"], 30)
+        self.assertEqual(res.data["actor_balance"], 70)
+        self.assertIn("Your wallet now holds 70 points", res.data["message"])
+        self.assertEqual(PointService.get_balance(self.seller), 30)
+        self.assertEqual(PointService.get_staff_balance(self.finance), 70)
+
+        staff_txn = StaffPointTransaction.objects.get()
+        self.assertEqual(staff_txn.transaction_type, StaffPointTransaction.TYPE_SELLER_CREDIT)
+        self.assertEqual((staff_txn.balance_before, staff_txn.balance_after), (100, 70))
+        self.assertEqual(staff_txn.seller_transaction_id, res.data["transaction"]["id"])
+        self.assertEqual(staff_txn.actor, self.finance)
+
+    def test_debit_returns_the_points_to_the_actors_wallet(self):
+        PointService.credit(self.seller, 50, PointTransaction.TYPE_BONUS, "Float")
+        res = self._adjust(self.finance, "DEBIT", 20)
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(PointService.get_balance(self.seller), 30)
+        self.assertEqual(PointService.get_staff_balance(self.finance), 20)
+        staff_txn = StaffPointTransaction.objects.get()
+        self.assertEqual(staff_txn.transaction_type, StaffPointTransaction.TYPE_SELLER_DEBIT)
+        self.assertEqual(staff_txn.seller_transaction_id, res.data["transaction"]["id"])
+
+    def test_a_refused_debit_leaves_the_actors_wallet_alone(self):
+        res = self._adjust(self.finance, "DEBIT", 5)
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("available_balance", res.data)
+        self.assertEqual(PointService.get_staff_balance(self.finance), 0)
+        self.assertFalse(StaffPointTransaction.objects.exists())
+
+    def test_an_adjustment_needs_an_actor(self):
+        with self.assertRaises(InvalidTransactionError):
+            PointService.adjust_points(self.seller, 5, "DEBIT", "No actor")
+
+    # -- mint_points ----------------------------------------------------------
+
+    def test_a_superuser_mints_into_their_own_wallet(self):
+        txn = PointService.mint_points(self.root, 1000, "Opening float")
+        self.assertEqual(txn.transaction_type, StaffPointTransaction.TYPE_MINT)
+        self.assertEqual((txn.balance_before, txn.balance_after), (0, 1000))
+        self.assertEqual(PointService.get_staff_balance(self.root), 1000)
+
+    def test_only_a_superuser_can_mint(self):
+        # ADMINISTRATOR holds every points permission, but is not a superuser.
+        with self.assertRaises(PointError):
+            PointService.mint_points(self.admin, 1000, "Not allowed")
+        self.assertEqual(PointService.get_staff_balance(self.admin), 0)
+
+    def test_mint_validates_amount_and_reason(self):
+        for amount in (0, -5, "100"):
+            with self.assertRaises(InvalidAmountError, msg=repr(amount)):
+                PointService.mint_points(self.root, amount, "Bad amount")
+        with self.assertRaises(InvalidTransactionError):
+            PointService.mint_points(self.root, 10, "  ")
+        self.assertFalse(StaffPointTransaction.objects.exists())
+
+    # -- transfer_to_staff ----------------------------------------------------
+
+    def test_a_superuser_hands_points_to_staff_who_can_then_credit(self):
+        PointService.mint_points(self.root, 100, "Float")
+        outgoing, incoming = PointService.transfer_to_staff(self.root, self.finance, 40, "Monthly budget")
+
+        self.assertEqual((outgoing.transaction_type, outgoing.balance_after), (StaffPointTransaction.TYPE_TRANSFER_OUT, 60))
+        self.assertEqual((incoming.transaction_type, incoming.balance_after), (StaffPointTransaction.TYPE_TRANSFER_IN, 40))
+        self.assertEqual(outgoing.counterparty, self.finance)
+        self.assertEqual(incoming.counterparty, self.root)
+
+        res = self._adjust(self.finance, "CREDIT", 40)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(PointService.get_balance(self.seller), 40)
+        self.assertEqual(PointService.get_staff_balance(self.finance), 0)
+
+    def test_transfer_refusals(self):
+        PointService.mint_points(self.root, 100, "Float")
+        fund_staff_wallet(self.admin, 50)
+        refused = [
+            (InsufficientStaffPointsError, lambda: PointService.transfer_to_staff(self.root, self.finance, 101, "Too many")),
+            (PointError, lambda: PointService.transfer_to_staff(self.root, self.root, 10, "To self")),
+            # SUPPORT_TEAM cannot credit sellers, so the points would be stranded.
+            (PointError, lambda: PointService.transfer_to_staff(self.root, self.support, 10, "Unusable")),
+            # Only a superuser hands points on, even when the sender has some.
+            (PointError, lambda: PointService.transfer_to_staff(self.admin, self.finance, 10, "Not a superuser")),
+        ]
+        for error, attempt in refused:
+            with self.assertRaises(error):
+                attempt()
+        self.assertEqual(PointService.get_staff_balance(self.root), 100)
+        self.assertEqual(PointService.get_staff_balance(self.finance), 0)
+        self.assertEqual(PointService.get_staff_balance(self.admin), 50)
+
+    # -- utils/add_points.py --------------------------------------------------
+
+    def test_parse_points(self):
+        from utils.add_points import parse_points
+
+        for given, expected in (("1000", 1000), (1000, 1000), (" 25 ", 25), ("১০০", 100)):
+            self.assertEqual(parse_points(given), expected, msg=repr(given))
+        for bad in ("0", "-5", "10.5", "abc", "", "1e3"):
+            with self.assertRaises(ValueError, msg=repr(bad)):
+                parse_points(bad)
+
+    def test_add_points_mints_for_the_superuser_and_audits_it(self):
+        from audit.models import AuditLog
+        from utils.add_points import add_points
+
+        self.assertEqual(add_points("1000", username="sw_root", password=self.PASSWORD), 1000)
+        self.assertEqual(add_points("250", username="sw_root", password=self.PASSWORD), 1250)
+
+        entry = AuditLog.objects.filter(action="SUPERUSER_POINTS_MINT").order_by("-id").first()
+        self.assertEqual(entry.actor, self.root)
+        self.assertEqual(entry.metadata["amount"], 250)
+        self.assertEqual(entry.metadata["new_state"]["balance"], 1250)
+
+    def test_add_points_refuses_bad_credentials_and_non_superusers(self):
+        from utils.add_points import add_points
+
+        with self.assertRaises(PermissionError):
+            add_points("1000", username="sw_root", password="wrong")
+        with self.assertRaises(PermissionError):
+            add_points("1000", username="sw_admin", password=self.PASSWORD)
+        self.assertFalse(StaffPointTransaction.objects.exists())
+
+    def test_give_points_to_staff(self):
+        from audit.models import AuditLog
+        from utils.add_points import add_points, give_points_to_staff
+
+        add_points("100", username="sw_root", password=self.PASSWORD)
+        balances = give_points_to_staff("30", "sw_finance", username="sw_root", password=self.PASSWORD)
+
+        self.assertEqual(balances, (70, 30))
+        self.assertTrue(AuditLog.objects.filter(action="SUPERUSER_POINTS_TRANSFER", actor=self.root).exists())
+        with self.assertRaises(LookupError):
+            give_points_to_staff("5", "nobody", username="sw_root", password=self.PASSWORD)
+
+    def test_the_command_line_entry_point(self):
+        from contextlib import redirect_stderr, redirect_stdout
+        from io import StringIO
+        from utils.add_points import main
+
+        out = StringIO()
+        with redirect_stdout(out):
+            code = main(["300", "--username", "sw_root", "--password", self.PASSWORD])
+        self.assertEqual(code, 0)
+        self.assertIn("sw_root's wallet: 300 points", out.getvalue())
+
+        err = StringIO()
+        with redirect_stderr(err):
+            code = main(["300", "--to", "sw_support", "--username", "sw_root", "--password", self.PASSWORD])
+        self.assertEqual(code, 1)
+        self.assertIn("cannot credit sellers", err.getvalue())
+        self.assertEqual(PointService.get_staff_balance(self.root), 300)
