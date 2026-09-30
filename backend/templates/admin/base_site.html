@@ -82,7 +82,7 @@
 
     <details class="mp-usermenu mp-hdr-menu">
       <summary title="Account">
-        <span class="mp-avatar" aria-hidden="true">{{ display_name|first|upper }}</span>
+        <span class="mp-avatar" aria-hidden="true">{% if admin_avatar_url %}<img src="{{ admin_avatar_url }}" alt="">{% else %}{{ display_name|first|upper }}{% endif %}</span>
         <span class="mp-usermenu-id">
           <span class="mp-usermenu-name">{{ display_name }}</span>
           <span class="mp-usermenu-role">{% if user.is_superuser %}Superuser{% else %}Staff{% endif %}</span>
@@ -93,12 +93,18 @@
 
       <div class="mp-usermenu-panel">
         <div class="mp-usermenu-head">
-          <span class="mp-avatar mp-avatar-lg" aria-hidden="true">{{ display_name|first|upper }}</span>
+          <span class="mp-avatar mp-avatar-lg" aria-hidden="true">{% if admin_avatar_url %}<img src="{{ admin_avatar_url }}" alt="">{% else %}{{ display_name|first|upper }}{% endif %}</span>
           <span class="mp-usermenu-head-text">
             <span class="mp-usermenu-head-name">{{ display_name }}</span>
             {% if user.email %}<span class="mp-usermenu-head-email">{{ user.email }}</span>{% endif %}
           </span>
         </div>
+
+        {% url 'admin:profile' as profile_url %}
+        <a class="mp-usermenu-item" href="{{ profile_url }}"{% if request.path == profile_url %} aria-current="page"{% endif %}>
+          <span class="material-symbols-outlined" aria-hidden="true">account_circle</span>
+          {% translate 'My profile' %}
+        </a>
 
         {% if user.is_active and user.is_staff %}
           {% url 'django-admindocs-docroot' as docsroot %}

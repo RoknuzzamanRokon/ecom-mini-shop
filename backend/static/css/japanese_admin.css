@@ -316,6 +316,14 @@ body {
   font-size: 15px;
 }
 
+/* A photo uploaded on /admin/profile/ replaces the initial. */
+.mp-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
 .mp-usermenu-id {
   display: flex;
   flex-direction: column;
@@ -430,6 +438,14 @@ body {
 #user-tools .mp-usermenu-item:focus-visible {
   background: var(--jp-bg-surface-sunken) !important;
   outline: none !important;
+}
+
+#user-tools .mp-usermenu-item[aria-current="page"] {
+  font-weight: 700 !important;
+}
+
+#user-tools .mp-usermenu-item[aria-current="page"] .material-symbols-outlined {
+  color: var(--jp-kinari-gold);
 }
 
 #user-tools .mp-usermenu-logout {

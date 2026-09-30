@@ -5,7 +5,8 @@ from .models import AuditLog
 class AuditLogAdmin(admin.ModelAdmin):
     list_display = ('action', 'actor', 'target_type', 'target_repr', 'shop', 'seller', 'ip_address', 'created_at')
     search_fields = ('actor__username', 'action', 'target_repr', 'ip_address')
-    list_filter = ('action', 'target_type', 'created_at')
+    # `actor` backs /admin/profile/'s "My audit trail" link (?actor__id__exact=<pk>).
+    list_filter = ('action', 'target_type', ('actor', admin.RelatedOnlyFieldListFilter), 'created_at')
     readonly_fields = (
         'actor', 'action', 'target_type', 'target_id', 'target_repr',
         'shop', 'seller', 'metadata', 'ip_address', 'created_at'

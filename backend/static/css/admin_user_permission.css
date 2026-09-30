@@ -113,7 +113,9 @@ body.mp-userform { accent-color: var(--mp-grant); }
   min-width: 0;
 }
 
-.mp-avatar {
+/* Scoped to the hero: the header's account menu uses .mp-avatar too, and an
+   unscoped rule here blew its 30px initial up to 56px on this page. */
+.mp-hero .mp-avatar {
   flex: 0 0 auto;
   width: 56px;
   height: 56px;

@@ -43,7 +43,11 @@ class SupportTicketAdmin(admin.ModelAdmin):
         "ticket_number", "subject", "channel", "customer", "category", "status",
         "priority", "assigned_to", "last_activity_at",
     )
-    list_filter = ("channel", "status", "priority", "category", "created_at")
+    # `assigned_to` backs /admin/profile/'s "My support tickets" link.
+    list_filter = (
+        "channel", "status", "priority", "category",
+        ("assigned_to", admin.RelatedOnlyFieldListFilter), "created_at",
+    )
     search_fields = (
         "ticket_number", "subject", "customer__username", "customer__email",
         "seller__business_name", "order__order_number",
