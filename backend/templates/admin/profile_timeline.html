@@ -1,0 +1,35 @@
+{% load i18n %}
+{% comment %}
+  One run of day groups for the /admin/profile/ activity feed. Included twice by
+  profile.html: the visible items, then the rest inside "Show N more".
+  `groups` comes from config/admin_profile.py:_group_by_day().
+{% endcomment %}
+<ol class="pf-timeline">
+  {% for group in groups %}
+    <li class="pf-tl-day">
+      <h3 class="pf-tl-date">{% if group.label %}{{ group.label }}{% else %}{{ group.date|date:'l, j F' }}{% endif %}</h3>
+      <ol class="pf-tl-items">
+        {% for item in group.items %}
+          <li class="pf-tl-item tone-{{ item.tone }}">
+            <time class="pf-tl-time" datetime="{{ item.when|date:'c' }}" title="{{ item.when|date:'j M Y, H:i T' }}">{{ item.when|date:'H:i' }}</time>
+            <span class="pf-tl-icon material-symbols-outlined" aria-hidden="true">{{ item.icon }}</span>
+            <div class="pf-tl-body">
+              <p class="pf-tl-title">
+                <b>{{ item.title }}</b>
+                {% if item.count > 1 %}<span class="pf-badge tone-muted">{{ item.count }}&times;</span>{% endif %}
+                {% if item.url %}<a href="{{ item.url }}">{{ item.target }}</a>{% else %}<span class="pf-tl-target">{{ item.target }}</span>{% endif %}
+                {% if group.show_source %}<span class="pf-tl-src">{{ item.source }}</span>{% endif %}
+              </p>
+              {% if item.states %}
+                <p class="pf-tl-states">
+                  {% for state in item.states %}<span class="pf-badge tone-indigo">{{ state }}</span>{% if not forloop.last %}<span class="pf-tl-arrow" aria-hidden="true">&rarr;</span><span class="visually-hidden">{% translate 'then' %}</span>{% endif %}{% endfor %}
+                </p>
+              {% endif %}
+              {% if item.detail %}<p class="pf-tl-detail">{{ item.detail }}</p>{% endif %}
+            </div>
+          </li>
+        {% endfor %}
+      </ol>
+    </li>
+  {% endfor %}
+</ol>

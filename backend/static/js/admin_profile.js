@@ -171,33 +171,50 @@
 
   /* ---------------------------------------------------------- scroll spy */
   function initScrollSpy(root) {
+    var nav = root.querySelector("[data-pf-subnav]");
     var links = Array.prototype.slice.call(root.querySelectorAll("[data-pf-spy]"));
     var sections = links.map(function (link) {
       return document.getElementById(link.getAttribute("href").slice(1));
     });
-    if (!links.length || sections.indexOf(null) !== -1) return;
-    // Just below the sticky header + sub-nav (matches scroll-margin-top).
-    var THRESHOLD = 140;
+    if (!nav || !links.length || sections.indexOf(null) !== -1) return;
     var queued = false;
+    var currentIndex = -1;
+    var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    function threshold() {
+      // Just below the sticky header + this nav; the offset grows when the
+      // admin header wraps to two rows on narrow screens.
+      var stick = parseFloat(getComputedStyle(root).getPropertyValue("--pf-stick")) || 64;
+      return stick + nav.offsetHeight + 16;
+    }
 
     function mark() {
       queued = false;
+      var limit = threshold();
       var atBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
       var current = 0;
       var currentTop = -Infinity;
       sections.forEach(function (section, index) {
         var top = section.getBoundingClientRect().top;
-        // The section that most recently passed under the bar. Security sits
-        // beside Personal on wide screens, so a tie keeps the earlier link.
-        if ((top <= THRESHOLD || atBottom) && top > currentTop + 1) {
+        // The section that most recently passed under the bar.
+        if ((top <= limit || atBottom) && top > currentTop + 1) {
           current = index;
           currentTop = top;
         }
       });
       links.forEach(function (link, index) {
-        if (index === current) link.setAttribute("aria-current", "true");
+        if (index === current) link.setAttribute("aria-current", "location");
         else link.removeAttribute("aria-current");
       });
+      if (current !== currentIndex) {
+        currentIndex = current;
+        // Keep the active link visible when the nav scrolls sideways (phones),
+        // without scrolling the page itself.
+        var link = links[current];
+        if (nav.scrollWidth > nav.clientWidth) {
+          nav.scrollTo({ left: Math.max(0, link.offsetLeft - 12), behavior: reduceMotion ? "auto" : "smooth" });
+        }
+      }
     }
 
     function queue() {

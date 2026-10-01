@@ -3,9 +3,19 @@
 
 {% comment %}
   /admin/profile/ -- the signed-in staff member's own profile.
-  Context is built in config/admin_profile.py. The page is readable without
-  JavaScript: admin_profile.js only adds the permission tabs and filter, copy
-  buttons, the photo preview and the section highlight in the sub-nav.
+  Context is built in config/admin_profile.py.
+
+  Layout: a hero (identity, points wallet, at-a-glance stats), a sticky
+  section nav, then bands. A "split" band pairs a main card with a
+  rail-width card or stack and stretches both to one height; Access,
+  Recent activity and Your work are full-width bands. DOM order is reading
+  order at every width; container queries (on .pf and on each .pf-card) do
+  the responsive work, because the admin's nav sidebar makes viewport
+  widths meaningless here.
+
+  The page is complete without JavaScript: admin_profile.js only adds the
+  permission tabs and filter, copy buttons, the photo preview and the
+  current-section highlight.
 {% endcomment %}
 
 {% block extrastyle %}{{ block.super }}
@@ -30,40 +40,48 @@
 {% block content_subtitle %}{% endblock %}
 
 {% block content %}
-<div id="content-main" class="pf" data-pf>
+<div id="content-main" class="pf{% if editing %} is-editing{% endif %}" data-pf>
   <p class="visually-hidden" aria-live="polite" data-pf-live></p>
 
   <!-- ==================== HERO ==================== -->
   <header class="pf-hero is-{{ access.key }}">
-    <div class="pf-hero-main">
+    <div class="pf-hero-id">
       <div class="pf-avatar pf-avatar-xl is-{{ access.key }}">
         {% if identity.avatar_url %}
-          <img src="{{ identity.avatar_url }}" alt="{% blocktranslate with name=identity.name %}Photo of {{ name }}{% endblocktranslate %}" width="96" height="96">
+          <img src="{{ identity.avatar_url }}" alt="" width="96" height="96">
         {% else %}
           <span aria-hidden="true">{{ identity.initials }}</span>
         {% endif %}
-        {% if user.is_active %}<span class="pf-presence" title="{% translate 'Active account' %}"></span>{% endif %}
+        {% if user.is_active %}<span class="pf-presence" aria-hidden="true"></span>{% endif %}
       </div>
 
       <div class="pf-hero-text">
-        <p class="pf-eyebrow">
-          <span class="material-symbols-outlined" aria-hidden="true">account_circle</span>
-          {% translate 'My profile' %}
-        </p>
-        <h1 class="pf-name">{{ identity.name }}</h1>
+        <ul class="pf-chips" aria-label="{% translate 'Access level and roles' %}">
+          <li class="pf-chip pf-chip-access is-{{ access.key }}">
+            <span class="material-symbols-outlined" aria-hidden="true">{{ access.icon }}</span>
+            {{ access.label }}
+          </li>
+          {% for role in roles %}
+            {% if role.active %}
+              <li class="pf-chip pf-chip-role" title="{{ role.description|default:role.code }}">
+                <span class="material-symbols-outlined" aria-hidden="true">workspace_premium</span>
+                {{ role.name }}
+              </li>
+            {% endif %}
+          {% endfor %}
+        </ul>
+
+        <h1 class="pf-name"><span class="visually-hidden">{% translate 'My profile' %}: </span>{{ identity.name }}</h1>
 
         <ul class="pf-hero-meta">
           <li>
             <span class="material-symbols-outlined" aria-hidden="true">alternate_email</span>
             <span>{{ user.get_username }}</span>
-            <button type="button" class="pf-copy" data-pf-copy="{{ user.get_username }}" aria-label="{% translate 'Copy username' %}">
-              <span class="material-symbols-outlined" aria-hidden="true">content_copy</span>
-            </button>
           </li>
           {% if user.email %}
             <li>
               <span class="material-symbols-outlined" aria-hidden="true">mail</span>
-              <span>{{ user.email }}</span>
+              <span class="pf-break">{{ user.email }}</span>
               <button type="button" class="pf-copy" data-pf-copy="{{ user.email }}" aria-label="{% translate 'Copy email address' %}">
                 <span class="material-symbols-outlined" aria-hidden="true">content_copy</span>
               </button>
@@ -77,78 +95,78 @@
           {% endif %}
         </ul>
 
-        <ul class="pf-chips" aria-label="{% translate 'Access level and roles' %}">
-          <li class="pf-chip pf-chip-access is-{{ access.key }}">
-            <span class="material-symbols-outlined" aria-hidden="true">{{ access.icon }}</span>
-            {{ access.label }}
-          </li>
-          {% for role in roles %}
-            {% if role.active %}
-              <li class="pf-chip" title="{{ role.description|default:role.code }}">
-                <span class="material-symbols-outlined" aria-hidden="true">workspace_premium</span>
-                {{ role.name }}
-              </li>
-            {% endif %}
-          {% endfor %}
-        </ul>
+        {% if not editing %}
+          <div class="pf-hero-actions">
+            <a class="pf-btn is-primary" href="?edit=1#personal">
+              <span class="material-symbols-outlined" aria-hidden="true">edit</span>
+              {% translate 'Edit profile' %}
+            </a>
+            <a class="pf-btn is-glass" href="{{ console_profile_url }}" target="_blank" rel="noopener noreferrer">
+              <span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>
+              {% translate 'Console profile' %}
+              <span class="visually-hidden">{% translate '(opens in a new tab)' %}</span>
+            </a>
+          </div>
+        {% endif %}
+      </div>
+    </div>
 
-        <p class="pf-hero-dates">
-          <span>
-            <span class="material-symbols-outlined" aria-hidden="true">event</span>
-            {% translate 'Member since' %}
-            <time datetime="{{ security.joined|date:'c' }}" title="{{ security.joined|date:'j M Y, H:i T' }}">{{ security.joined|date:'j M Y' }}</time>
-          </span>
-          {% if security.last_login %}
-            <span>
-              <span class="material-symbols-outlined" aria-hidden="true">login</span>
-              {% translate 'Last sign-in' %}
-              <time datetime="{{ security.last_login|date:'c' }}" title="{{ security.last_login|date:'j M Y, H:i T' }}">{{ security.last_login_ago }}</time>
-            </span>
+    <!-- The signed-in user's available points: the page's headline number. -->
+    <section class="pf-wallet{% if not points.balance %} is-empty{% endif %}" aria-labelledby="pf-wallet-label">
+      <div class="pf-wallet-top">
+        <h2 class="pf-wallet-label" id="pf-wallet-label">
+          <span class="material-symbols-outlined" aria-hidden="true">toll</span>
+          {% translate 'Available points' %}
+        </h2>
+        {% if points.ledger_url %}
+          <a class="pf-wallet-link" href="{{ points.ledger_url }}">
+            {% translate 'Ledger' %}
+            <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span>
+          </a>
+        {% endif %}
+      </div>
+      <p class="pf-wallet-value">
+        <b>{{ points.balance_display }}</b>
+        <span>{% translate 'pts' %}</span>
+      </p>
+      <p class="pf-wallet-hint">
+        {% if points.balance %}
+          {% translate 'Ready to give to sellers.' %}
+        {% elif points.can_mint %}
+          {% translate 'No points yet. Superusers create them with utils/add_points.py.' %}
+        {% else %}
+          {% translate 'No points yet. A superuser can send you some.' %}
+        {% endif %}
+      </p>
+    </section>
+
+    <ul class="pf-hero-stats" aria-label="{% translate 'At a glance' %}">
+      {% for kpi in kpis %}
+        <li>
+          {% if kpi.url %}
+            <a class="pf-stat tone-{{ kpi.tone }}" href="{{ kpi.url }}"{% if kpi.external %} target="_blank" rel="noopener noreferrer"{% endif %}>
+          {% else %}
+            <div class="pf-stat tone-{{ kpi.tone }}">
           {% endif %}
-        </p>
-      </div>
-    </div>
-
-    <div class="pf-hero-actions">
-      {% if not editing %}
-        <a class="pf-btn is-primary" href="?edit=1#personal">
-          <span class="material-symbols-outlined" aria-hidden="true">edit</span>
-          {% translate 'Edit profile' %}
-        </a>
-      {% endif %}
-      {% if security.has_password %}
-        <a class="pf-btn" href="{% url 'admin:password_change' %}">
-          <span class="material-symbols-outlined" aria-hidden="true">key</span>
-          {% translate 'Change password' %}
-        </a>
-      {% endif %}
-    </div>
-
-    {% if completeness.missing %}
-      <div class="pf-complete">
-        <div class="pf-complete-head">
-          <span class="pf-complete-label">
-            {% blocktranslate with done=completeness.done total=completeness.total %}Profile {{ done }} of {{ total }} complete{% endblocktranslate %}
-          </span>
-          <span class="pf-complete-pct">{{ completeness.percent }}%</span>
-        </div>
-        <div class="pf-meter pf-meter-lg" role="progressbar" aria-label="{% translate 'Profile completeness' %}"
-             aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ completeness.percent }}">
-          <span style="--pf-pct: {{ completeness.percent }}%"></span>
-        </div>
-        <p class="pf-complete-hint">
-          {% translate 'Add your' %}
-          {% for item in completeness.missing %}<a href="?edit=1#{{ item.anchor }}">{{ item.label }}</a>{% if not forloop.last %}{% if forloop.revcounter == 2 %} {% translate 'and' %} {% else %}, {% endif %}{% endif %}{% endfor %}
-          {% translate 'so teammates recognise you in queues and notifications.' %}
-        </p>
-      </div>
-    {% endif %}
+              <span class="pf-stat-icon material-symbols-outlined" aria-hidden="true">{{ kpi.icon }}</span>
+              <span class="pf-stat-text">
+                <span class="pf-stat-value">{{ kpi.value }}</span>
+                <span class="pf-stat-label">{{ kpi.label }}</span>
+              </span>
+              {% if kpi.external %}<span class="visually-hidden">{% translate '(opens in a new tab)' %}</span>{% endif %}
+          {% if kpi.url %}</a>{% else %}</div>{% endif %}
+        </li>
+      {% endfor %}
+    </ul>
   </header>
 
   <!-- ==================== SECTION NAV ==================== -->
-  <nav class="pf-subnav" aria-label="{% translate 'Profile sections' %}">
+  <nav class="pf-subnav" aria-label="{% translate 'Profile sections' %}" data-pf-subnav>
     <a href="#personal" data-pf-spy>
       <span class="material-symbols-outlined" aria-hidden="true">person</span>{% translate 'Personal' %}
+    </a>
+    <a href="#points" data-pf-spy>
+      <span class="material-symbols-outlined" aria-hidden="true">toll</span>{% translate 'Points' %}
     </a>
     <a href="#access" data-pf-spy>
       <span class="material-symbols-outlined" aria-hidden="true">verified_user</span>{% translate 'Access' %}
@@ -159,39 +177,26 @@
     <a href="#work" data-pf-spy>
       <span class="material-symbols-outlined" aria-hidden="true">work</span>{% translate 'Work' %}
     </a>
-    <a href="#security" data-pf-spy>
-      <span class="material-symbols-outlined" aria-hidden="true">shield_lock</span>{% translate 'Security' %}
-    </a>
   </nav>
 
-  <!-- ==================== AT A GLANCE ==================== -->
-  <section class="pf-kpis" aria-label="{% translate 'At a glance' %}">
-    {% for kpi in kpis %}
-      {% if kpi.url %}
-        <a class="pf-kpi tone-{{ kpi.tone }}" href="{{ kpi.url }}"{% if kpi.external %} target="_blank" rel="noopener noreferrer"{% endif %}>
-      {% else %}
-        <div class="pf-kpi tone-{{ kpi.tone }}">
-      {% endif %}
-          <span class="pf-kpi-icon material-symbols-outlined" aria-hidden="true">{{ kpi.icon }}</span>
-          <span class="pf-kpi-text">
-            <span class="pf-kpi-value">{{ kpi.value }}</span>
-            <span class="pf-kpi-label">{{ kpi.label }}</span>
-          </span>
-          {% if kpi.url %}<span class="pf-kpi-go material-symbols-outlined" aria-hidden="true">{% if kpi.external %}open_in_new{% else %}arrow_forward{% endif %}</span>{% endif %}
-      {% if kpi.url %}</a>{% else %}</div>{% endif %}
-    {% endfor %}
-  </section>
-
-  <div class="pf-grid">
-    <div class="pf-col pf-main">
-
-      <!-- ==================== PERSONAL ==================== -->
-      <section id="personal" class="pf-card pf-order-1" aria-labelledby="pf-personal-title">
-        <div class="pf-card-head">
-          <h2 id="pf-personal-title" class="pf-card-title">
-            <span class="pf-card-icon tone-blue material-symbols-outlined" aria-hidden="true">person</span>
-            {% translate 'Personal information' %}
-          </h2>
+  <!-- ==================== BAND 1: PERSONAL | SECURITY ==================== -->
+  <div class="pf-band pf-split">
+    <section id="personal" class="pf-card" aria-labelledby="pf-personal-title">
+      <div class="pf-card-head">
+        <h2 id="pf-personal-title" class="pf-card-title">
+          <span class="pf-tile tone-blue material-symbols-outlined" aria-hidden="true">person</span>
+          {% translate 'Personal information' %}
+        </h2>
+        <div class="pf-card-tools">
+          {% if completeness.missing %}
+            <span class="pf-progress">
+              <span class="pf-meter" role="progressbar" aria-label="{% translate 'Profile completeness' %}"
+                    aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ completeness.percent }}">
+                <span style="--pf-pct: {{ completeness.percent }}%"></span>
+              </span>
+              {% blocktranslate with done=completeness.done total=completeness.total %}{{ done }} of {{ total }}{% endblocktranslate %}
+            </span>
+          {% endif %}
           {% if not editing %}
             <a class="pf-btn is-small" href="?edit=1#personal">
               <span class="material-symbols-outlined" aria-hidden="true">edit</span>
@@ -199,110 +204,116 @@
             </a>
           {% endif %}
         </div>
+      </div>
 
-        {% if editing %}
-          <form method="post" enctype="multipart/form-data" class="pf-form" action="{% url 'admin:profile' %}" novalidate>
-            {% csrf_token %}
-            {% if form.errors %}
-              <p class="pf-banner tone-rose" role="alert">
-                <span class="material-symbols-outlined" aria-hidden="true">error</span>
-                {% blocktranslate count counter=form.errors|length %}Please fix the field below.{% plural %}Please fix the {{ counter }} fields below.{% endblocktranslate %}
-              </p>
-              {% for error in form.non_field_errors %}<p class="pf-error">{{ error }}</p>{% endfor %}
-            {% endif %}
-
-            <div class="pf-form-photo">
-              <div class="pf-avatar pf-avatar-lg is-{{ access.key }}" data-pf-preview>
-                {% if identity.avatar_url %}
-                  <img src="{{ identity.avatar_url }}" alt="" width="72" height="72">
-                {% else %}
-                  <span aria-hidden="true">{{ identity.initials }}</span>
-                {% endif %}
-              </div>
-              <div class="pf-form-row{% if form.avatar.errors %} has-error{% endif %}">
-                <label class="pf-label" for="{{ form.avatar.id_for_label }}">{{ form.avatar.label }}</label>
-                {{ form.avatar }}
-                <p class="pf-help" id="id_avatar_help">{{ form.avatar.help_text }}</p>
-                {% for error in form.avatar.errors %}<p class="pf-error">{{ error }}</p>{% endfor %}
-                {% if identity.avatar_url %}
-                  <label class="pf-check" for="{{ form.remove_avatar.id_for_label }}">
-                    {{ form.remove_avatar }} {{ form.remove_avatar.label }}
-                  </label>
-                {% endif %}
-              </div>
-            </div>
-
-            <div class="pf-form-grid">
-              {% for field in form.detail_fields %}
-                <div class="pf-form-row{% if field.errors %} has-error{% endif %}">
-                  <label class="pf-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
-                  {{ field }}
-                  {% if field.help_text %}<p class="pf-help" id="id_{{ field.name }}_help">{{ field.help_text }}</p>{% endif %}
-                  {% for error in field.errors %}<p class="pf-error">{{ error }}</p>{% endfor %}
-                </div>
-              {% endfor %}
-            </div>
-
-            <p class="pf-note">
-              <span class="material-symbols-outlined" aria-hidden="true">lock</span>
-              {% translate 'Username and email are managed on your user record by an administrator.' %}
+      {% if editing %}
+        <form method="post" enctype="multipart/form-data" class="pf-form" action="{% url 'admin:profile' %}" novalidate>
+          {% csrf_token %}
+          {% if form.errors %}
+            <p class="pf-banner tone-rose" role="alert">
+              <span class="material-symbols-outlined" aria-hidden="true">error</span>
+              <span>{% blocktranslate count counter=form.errors|length %}Please fix the field below.{% plural %}Please fix the {{ counter }} fields below.{% endblocktranslate %}</span>
             </p>
+            {% for error in form.non_field_errors %}<p class="pf-error">{{ error }}</p>{% endfor %}
+          {% endif %}
 
-            <div class="pf-form-actions">
-              <a class="pf-btn" href="{% url 'admin:profile' %}#personal">{% translate 'Cancel' %}</a>
-              <button type="submit" class="pf-btn is-primary">
-                <span class="material-symbols-outlined" aria-hidden="true">check</span>
-                {% translate 'Save changes' %}
-              </button>
+          <div class="pf-form-photo">
+            <div class="pf-avatar pf-avatar-lg is-{{ access.key }}" data-pf-preview>
+              {% if identity.avatar_url %}
+                <img src="{{ identity.avatar_url }}" alt="" width="72" height="72">
+              {% else %}
+                <span aria-hidden="true">{{ identity.initials }}</span>
+              {% endif %}
             </div>
-          </form>
-        {% else %}
-          <dl class="pf-fields">
-            <div class="pf-field">
-              <dt>{% translate 'Full name' %}</dt>
-              <dd>{% firstof user.get_full_name %}{% if not user.get_full_name %}<a class="pf-unset" href="?edit=1#id_first_name">{% translate 'Not set' %} <span>{% translate 'Add' %}</span></a>{% endif %}</dd>
+            <div class="pf-form-row{% if form.avatar.errors %} has-error{% endif %}">
+              <label class="pf-label" for="{{ form.avatar.id_for_label }}">{{ form.avatar.label }}</label>
+              {{ form.avatar }}
+              <p class="pf-help" id="id_avatar_help">{{ form.avatar.help_text }}</p>
+              {% for error in form.avatar.errors %}<p class="pf-error">{{ error }}</p>{% endfor %}
+              {% if identity.avatar_url %}
+                <label class="pf-check" for="{{ form.remove_avatar.id_for_label }}">
+                  {{ form.remove_avatar }} {{ form.remove_avatar.label }}
+                </label>
+              {% endif %}
             </div>
-            <div class="pf-field">
-              <dt>{% translate 'Display name' %}</dt>
-              <dd>{% if identity.display_name %}{{ identity.display_name }}{% else %}<a class="pf-unset" href="?edit=1#id_display_name">{% translate 'Not set' %} <span>{% translate 'Add' %}</span></a>{% endif %}</dd>
-            </div>
-            <div class="pf-field">
+          </div>
+
+          <div class="pf-form-grid">
+            {% for field in form.detail_fields %}
+              <div class="pf-form-row{% if field.errors %} has-error{% endif %}">
+                <label class="pf-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% if field.help_text %}<p class="pf-help" id="id_{{ field.name }}_help">{{ field.help_text }}</p>{% endif %}
+                {% for error in field.errors %}<p class="pf-error">{{ error }}</p>{% endfor %}
+              </div>
+            {% endfor %}
+          </div>
+
+          <p class="pf-note">
+            <span class="material-symbols-outlined" aria-hidden="true">lock</span>
+            <span>{% translate 'Username and email are managed on your user record by an administrator.' %}</span>
+          </p>
+
+          <div class="pf-form-actions">
+            <a class="pf-btn" href="{% url 'admin:profile' %}#personal">{% translate 'Cancel' %}</a>
+            <button type="submit" class="pf-btn is-primary">
+              <span class="material-symbols-outlined" aria-hidden="true">check</span>
+              {% translate 'Save changes' %}
+            </button>
+          </div>
+        </form>
+      {% else %}
+        {% if completeness.missing %}
+          <p class="pf-nudge">
+            <span class="pf-nudge-text">{% translate 'Complete your profile:' %}</span>
+            {% for item in completeness.missing %}
+              <a class="pf-add" href="?edit=1#{{ item.anchor }}">
+                <span class="material-symbols-outlined" aria-hidden="true">add</span>{{ item.label|capfirst }}
+              </a>
+            {% endfor %}
+          </p>
+        {% endif %}
+
+        <dl class="pf-fields">
+          <div class="pf-field">
+            <dt>{% translate 'Full name' %}</dt>
+            <dd>{% if user.get_full_name %}{{ user.get_full_name }}{% else %}<span class="pf-unset">{% translate 'Not set' %}</span><a class="pf-add" href="?edit=1#id_first_name"><span class="material-symbols-outlined" aria-hidden="true">add</span>{% translate 'Add' %}</a>{% endif %}</dd>
+          </div>
+          <div class="pf-field">
+            <dt>{% translate 'Display name' %}</dt>
+            <dd>{% if identity.display_name %}{{ identity.display_name }}{% else %}<span class="pf-unset">{% translate 'Not set' %}</span><a class="pf-add" href="?edit=1#id_display_name"><span class="material-symbols-outlined" aria-hidden="true">add</span>{% translate 'Add' %}</a>{% endif %}</dd>
+          </div>
+          <div class="pf-field">
+            <dt>{% translate 'Phone' %}</dt>
+            <dd>{% if identity.phone %}{{ identity.phone }}{% else %}<span class="pf-unset">{% translate 'Not set' %}</span><a class="pf-add" href="?edit=1#id_phone"><span class="material-symbols-outlined" aria-hidden="true">add</span>{% translate 'Add' %}</a>{% endif %}</dd>
+          </div>
+          <div class="pf-field">
+            <dt>{% translate 'Date of birth' %}</dt>
+            <dd>{% if identity.date_of_birth %}{{ identity.date_of_birth|date:'j F Y' }}{% else %}<span class="pf-unset">{% translate 'Not set' %}</span><a class="pf-add" href="?edit=1#id_date_of_birth"><span class="material-symbols-outlined" aria-hidden="true">add</span>{% translate 'Add' %}</a>{% endif %}</dd>
+          </div>
+          <div class="pf-field">
+            <dt>{% translate 'Gender' %}</dt>
+            <dd>{% if identity.gender %}{{ identity.gender }}{% else %}<span class="pf-unset">{% translate 'Not set' %}</span><a class="pf-add" href="?edit=1#id_gender"><span class="material-symbols-outlined" aria-hidden="true">add</span>{% translate 'Add' %}</a>{% endif %}</dd>
+          </div>
+        </dl>
+
+        <div class="pf-account">
+          <p class="pf-account-head">
+            <span class="material-symbols-outlined" aria-hidden="true">lock</span>
+            <span>{% translate 'Account · managed by administrators' %}</span>
+            {% if user_record_url %}<a href="{{ user_record_url }}">{% translate 'Open user record' %}</a>{% endif %}
+          </p>
+          <dl class="pf-account-fields">
+            <div>
               <dt>{% translate 'Username' %}</dt>
               <dd>
                 <code>{{ user.get_username }}</code>
                 <button type="button" class="pf-copy" data-pf-copy="{{ user.get_username }}" aria-label="{% translate 'Copy username' %}">
                   <span class="material-symbols-outlined" aria-hidden="true">content_copy</span>
                 </button>
-                <span class="pf-lock material-symbols-outlined" title="{% translate 'Managed by an administrator' %}" aria-hidden="true">lock</span>
               </dd>
             </div>
-            <div class="pf-field">
-              <dt>{% translate 'Email' %}</dt>
-              <dd>
-                {% if user.email %}
-                  <span class="pf-break">{{ user.email }}</span>
-                  <button type="button" class="pf-copy" data-pf-copy="{{ user.email }}" aria-label="{% translate 'Copy email address' %}">
-                    <span class="material-symbols-outlined" aria-hidden="true">content_copy</span>
-                  </button>
-                {% else %}
-                  <span class="pf-muted">{% translate 'Not set' %}</span>
-                {% endif %}
-                <span class="pf-lock material-symbols-outlined" title="{% translate 'Managed by an administrator' %}" aria-hidden="true">lock</span>
-              </dd>
-            </div>
-            <div class="pf-field">
-              <dt>{% translate 'Phone' %}</dt>
-              <dd>{% if identity.phone %}{{ identity.phone }}{% else %}<a class="pf-unset" href="?edit=1#id_phone">{% translate 'Not set' %} <span>{% translate 'Add' %}</span></a>{% endif %}</dd>
-            </div>
-            <div class="pf-field">
-              <dt>{% translate 'Date of birth' %}</dt>
-              <dd>{% if identity.date_of_birth %}{{ identity.date_of_birth|date:'j F Y' }}{% else %}<a class="pf-unset" href="?edit=1#id_date_of_birth">{% translate 'Not set' %} <span>{% translate 'Add' %}</span></a>{% endif %}</dd>
-            </div>
-            <div class="pf-field">
-              <dt>{% translate 'Gender' %}</dt>
-              <dd>{% if identity.gender %}{{ identity.gender }}{% else %}<span class="pf-muted">{% translate 'Not set' %}</span>{% endif %}</dd>
-            </div>
-            <div class="pf-field">
+            <div>
               <dt>{% translate 'User ID' %}</dt>
               <dd>
                 <code>#{{ user.pk }}</code>
@@ -311,59 +322,271 @@
                 </button>
               </dd>
             </div>
+            <div class="pf-account-wide">
+              <dt>{% translate 'Email' %}</dt>
+              <dd>
+                {% if user.email %}
+                  <span class="pf-break">{{ user.email }}</span>
+                  <button type="button" class="pf-copy" data-pf-copy="{{ user.email }}" aria-label="{% translate 'Copy email address' %}">
+                    <span class="material-symbols-outlined" aria-hidden="true">content_copy</span>
+                  </button>
+                {% else %}
+                  <span class="pf-unset">{% translate 'Not set' %}</span>
+                {% endif %}
+              </dd>
+            </div>
           </dl>
-          {% if user_record_url %}
-            <p class="pf-note">
-              <span class="material-symbols-outlined" aria-hidden="true">lock</span>
-              {% translate 'Username and email are managed on the user record.' %}
-              <a href="{{ user_record_url }}">{% translate 'Open my user record' %}</a>
-            </p>
-          {% endif %}
+        </div>
+      {% endif %}
+    </section>
+
+    <section id="security" class="pf-card pf-card-flex" aria-labelledby="pf-security-title">
+      <div class="pf-card-head">
+        <h2 id="pf-security-title" class="pf-card-title">
+          <span class="pf-tile tone-rose material-symbols-outlined" aria-hidden="true">shield_lock</span>
+          {% translate 'Sign-in & security' %}
+        </h2>
+      </div>
+      <dl class="pf-kv">
+        <div>
+          <dt>{% translate 'Password' %}</dt>
+          <dd>
+            {% if security.has_password %}
+              <span class="pf-badge tone-green"><span class="material-symbols-outlined" aria-hidden="true">check</span>{% translate 'Set' %}</span>
+            {% else %}
+              <span class="pf-badge tone-amber">{% translate 'Not set' %}</span>
+            {% endif %}
+          </dd>
+        </div>
+        <div>
+          <dt>{% translate 'Last sign-in' %}</dt>
+          <dd>
+            {% if security.last_login %}
+              <time datetime="{{ security.last_login|date:'c' }}">{{ security.last_login_ago }}</time>
+              <small>{{ security.last_login|date:'j M Y, H:i T' }}</small>
+            {% else %}<span class="pf-unset">{% translate 'Never' %}</span>{% endif %}
+          </dd>
+        </div>
+        <div>
+          <dt>{% translate 'Last recorded IP' %}</dt>
+          <dd>
+            {% if security.last_ip %}
+              <code>{{ security.last_ip }}</code>
+              <small>{% blocktranslate with day=security.last_ip_at|date:'j M Y' %}on {{ day }}{% endblocktranslate %}</small>
+            {% else %}<span class="pf-unset">{% translate 'None recorded' %}</span>{% endif %}
+          </dd>
+        </div>
+        <div>
+          <dt>{% translate 'Member since' %}</dt>
+          <dd>
+            <time datetime="{{ security.joined|date:'c' }}">{{ security.joined|date:'j M Y' }}</time>
+            <small>{{ security.joined_ago }}</small>
+          </dd>
+        </div>
+      </dl>
+      <div class="pf-card-foot">
+        {% if security.has_password %}
+          <a class="pf-btn is-block" href="{% url 'admin:password_change' %}">
+            <span class="material-symbols-outlined" aria-hidden="true">key</span>
+            {% translate 'Change password' %}
+          </a>
+        {% endif %}
+        <form method="post" action="{% url 'admin:logout' %}">
+          {% csrf_token %}
+          <button type="submit" class="pf-btn is-block is-danger">
+            <span class="material-symbols-outlined" aria-hidden="true">logout</span>
+            {% translate 'Sign out' %}
+          </button>
+        </form>
+      </div>
+    </section>
+  </div>
+
+  <!-- ==================== BAND 2: POINTS | NOTIFICATIONS + LINKED ==================== -->
+  <div class="pf-band pf-split">
+    <section id="points" class="pf-card pf-card-flex" aria-labelledby="pf-points-title">
+      <div class="pf-card-head">
+        <h2 id="pf-points-title" class="pf-card-title">
+          <span class="pf-tile tone-gold material-symbols-outlined" aria-hidden="true">toll</span>
+          {% translate 'Points wallet' %}
+        </h2>
+        {% if points.ledger_url %}
+          <a class="pf-btn is-small" href="{{ points.ledger_url }}">
+            {% translate 'Full ledger' %}
+            <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span>
+          </a>
+        {% endif %}
+      </div>
+
+      <dl class="pf-figures">
+        <div>
+          <dt>{% translate 'Available' %}</dt>
+          <dd>{{ points.balance_display }}<small>{% translate 'pts' %}</small></dd>
+        </div>
+        <div>
+          <dt>{% translate 'Received' %}</dt>
+          <dd>{{ points.received_display }}<small>{% translate 'pts' %}</small></dd>
+        </div>
+        <div>
+          <dt>{% translate 'Given to sellers' %}</dt>
+          <dd>{{ points.given_display }}<small>{% translate 'pts' %}</small></dd>
+        </div>
+        {% if points.seller_balance is not None %}
+          <div>
+            <dt>{% translate 'Your seller wallet' %}</dt>
+            <dd>{{ points.seller_balance_display }}<small>{% translate 'pts' %}</small></dd>
+          </div>
+        {% endif %}
+      </dl>
+
+      {% if points.recent %}
+        <h3 class="pf-sub">{% translate 'Recent movements' %}</h3>
+        <ol class="pf-ledger">
+          {% for row in points.recent %}
+            <li class="pf-ledger-row tone-{{ row.tone }}">
+              <span class="pf-tile is-sm material-symbols-outlined" aria-hidden="true">{{ row.icon }}</span>
+              <div class="pf-ledger-body">
+                <p class="pf-ledger-title">{{ row.label }}{% if row.counterparty %} <span>· {{ row.counterparty }}</span>{% endif %}</p>
+                <p class="pf-ledger-reason">{{ row.reason }}</p>
+              </div>
+              <div class="pf-ledger-amount">
+                <b class="{% if row.incoming %}is-in{% else %}is-out{% endif %}">{{ row.amount_display }}</b>
+                <small>
+                  <time datetime="{{ row.when|date:'c' }}" title="{{ row.when|date:'j M Y, H:i T' }}">{{ row.when|date:'j M' }}</time>
+                  · {% blocktranslate with balance=row.balance_after_display %}balance {{ balance }}{% endblocktranslate %}
+                </small>
+              </div>
+            </li>
+          {% endfor %}
+        </ol>
+      {% else %}
+        <div class="pf-points-empty">
+          <span class="material-symbols-outlined" aria-hidden="true">savings</span>
+          <b>{% translate 'No point movements yet.' %}</b>
+          <span>{% if points.can_mint %}{% translate 'Create points with utils/add_points.py, then send them to staff or give them to sellers.' %}{% else %}{% translate 'Points a superuser sends you, and points you give to sellers, will be listed here.' %}{% endif %}</span>
+        </div>
+      {% endif %}
+
+      <ol class="pf-flow" aria-label="{% translate 'How points move' %}">
+        <li><span class="material-symbols-outlined" aria-hidden="true">auto_awesome</span>{% translate 'A superuser creates points' %}</li>
+        <li><span class="material-symbols-outlined" aria-hidden="true">toll</span>{% translate 'Staff hold them in a wallet' %}</li>
+        <li><span class="material-symbols-outlined" aria-hidden="true">storefront</span>{% translate 'Staff give them to sellers' %}</li>
+      </ol>
+    </section>
+
+    <div class="pf-stack">
+      <section class="pf-card pf-card-compact" aria-labelledby="pf-notif-title">
+        <div class="pf-notif">
+          <span class="pf-tile tone-indigo material-symbols-outlined" aria-hidden="true">notifications</span>
+          <div class="pf-notif-text">
+            <h2 id="pf-notif-title" class="pf-card-title is-sm">{% translate 'Notifications' %}</h2>
+            {% if notifications.show %}
+              <p>{% blocktranslate count counter=notifications.unread %}<b>{{ counter }}</b> unread in your staff inbox{% plural %}<b>{{ counter }}</b> unread in your staff inbox{% endblocktranslate %}</p>
+            {% else %}
+              <p>{% translate "Your account doesn't receive the staff inbox." %}</p>
+            {% endif %}
+          </div>
+        </div>
+        {% if notifications.show %}
+          <div class="pf-notif-actions">
+            <a class="pf-btn is-small" href="{{ notifications.inbox_url }}" target="_blank" rel="noopener noreferrer">
+              <span class="material-symbols-outlined" aria-hidden="true">inbox</span>
+              {% translate 'Inbox' %}
+              <span class="visually-hidden">{% translate '(opens in a new tab)' %}</span>
+            </a>
+            <a class="pf-btn is-small" href="{{ notifications.settings_url }}" target="_blank" rel="noopener noreferrer">
+              <span class="material-symbols-outlined" aria-hidden="true">tune</span>
+              {% translate 'Settings' %}
+              <span class="visually-hidden">{% translate '(opens in a new tab)' %}</span>
+            </a>
+          </div>
         {% endif %}
       </section>
 
-      <!-- ==================== ACCESS ==================== -->
-      <section id="access" class="pf-card pf-order-3" aria-labelledby="pf-access-title">
-        <div class="pf-card-head">
-          <h2 id="pf-access-title" class="pf-card-title">
-            <span class="pf-card-icon tone-green material-symbols-outlined" aria-hidden="true">verified_user</span>
-            {% translate 'Access & permissions' %}
-          </h2>
-          <span class="pf-card-note">{% translate 'Read-only · managed by administrators' %}</span>
-        </div>
-
-        <ul class="pf-flags">
-          <li class="pf-flag{% if user.is_active %} is-on{% endif %}">
-            <span class="material-symbols-outlined" aria-hidden="true">{% if user.is_active %}check_circle{% else %}cancel{% endif %}</span>
-            <span><b>{% translate 'Active' %}</b><small>{% translate 'This account can sign in.' %}</small></span>
-            <span class="visually-hidden">{% if user.is_active %}{% translate 'yes' %}{% else %}{% translate 'no' %}{% endif %}</span>
+      <section class="pf-card pf-card-compact" aria-labelledby="pf-linked-title">
+        <h2 id="pf-linked-title" class="pf-card-title is-sm">
+          <span class="pf-tile tone-blue material-symbols-outlined" aria-hidden="true">link</span>
+          {% translate 'Linked accounts' %}
+        </h2>
+        <ul class="pf-linked">
+          <li>
+            <span class="pf-linked-icon material-symbols-outlined" aria-hidden="true">shopping_bag</span>
+            <div class="pf-linked-text">
+              <p class="pf-linked-name">{% translate 'Customer profile' %}</p>
+              <p class="pf-linked-meta">
+                {% if linked.customer.exists %}
+                  {% blocktranslate count counter=linked.customer.orders %}{{ counter }} order{% plural %}{{ counter }} orders{% endblocktranslate %}
+                  · {% blocktranslate count counter=linked.customer.addresses %}{{ counter }} address{% plural %}{{ counter }} addresses{% endblocktranslate %}
+                {% else %}
+                  {% translate 'Created the first time you save your details.' %}
+                {% endif %}
+              </p>
+            </div>
+            {% if linked.customer.url %}
+              <a class="pf-linked-go" href="{{ linked.customer.url }}" aria-label="{% translate 'Open customer profile' %}">
+                <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+              </a>
+            {% endif %}
           </li>
-          <li class="pf-flag{% if user.is_staff %} is-on{% endif %}">
-            <span class="material-symbols-outlined" aria-hidden="true">{% if user.is_staff %}check_circle{% else %}cancel{% endif %}</span>
-            <span><b>{% translate 'Staff' %}</b><small>{% translate 'Can open this admin.' %}</small></span>
-            <span class="visually-hidden">{% if user.is_staff %}{% translate 'yes' %}{% else %}{% translate 'no' %}{% endif %}</span>
-          </li>
-          <li class="pf-flag{% if user.is_superuser %} is-on is-gold{% endif %}">
-            <span class="material-symbols-outlined" aria-hidden="true">{% if user.is_superuser %}shield_person{% else %}cancel{% endif %}</span>
-            <span><b>{% translate 'Superuser' %}</b><small>{% translate 'Passes every permission check.' %}</small></span>
-            <span class="visually-hidden">{% if user.is_superuser %}{% translate 'yes' %}{% else %}{% translate 'no' %}{% endif %}</span>
+          <li>
+            <span class="pf-linked-icon material-symbols-outlined" aria-hidden="true">storefront</span>
+            <div class="pf-linked-text">
+              <p class="pf-linked-name">{% translate 'Seller account' %}</p>
+              <p class="pf-linked-meta">
+                {% if linked.seller.exists %}{{ linked.seller.name }} · {{ linked.seller.status }}{% else %}{% translate 'Not a seller.' %}{% endif %}
+              </p>
+            </div>
+            {% if linked.seller.url %}
+              <a class="pf-linked-go" href="{{ linked.seller.url }}" aria-label="{% translate 'Open seller account' %}">
+                <span class="material-symbols-outlined" aria-hidden="true">chevron_right</span>
+              </a>
+            {% endif %}
           </li>
         </ul>
+      </section>
+    </div>
+  </div>
 
-        <h3 class="pf-sub">{% translate 'Roles' %}</h3>
+  <!-- ==================== BAND 3: ACCESS (full width) ==================== -->
+  <section id="access" class="pf-band pf-card" aria-labelledby="pf-access-title">
+    <div class="pf-card-head">
+      <h2 id="pf-access-title" class="pf-card-title">
+        <span class="pf-tile tone-green material-symbols-outlined" aria-hidden="true">verified_user</span>
+        {% translate 'Access & permissions' %}
+      </h2>
+      <ul class="pf-flags" aria-label="{% translate 'Account flags' %}">
+        <li class="pf-flag{% if user.is_active %} is-on{% endif %}" title="{% translate 'This account can sign in.' %}">
+          <span class="material-symbols-outlined" aria-hidden="true">{% if user.is_active %}check_circle{% else %}cancel{% endif %}</span>
+          {% translate 'Active' %}<span class="visually-hidden">: {% if user.is_active %}{% translate 'yes' %}{% else %}{% translate 'no' %}{% endif %}</span>
+        </li>
+        <li class="pf-flag{% if user.is_staff %} is-on{% endif %}" title="{% translate 'Can open this admin.' %}">
+          <span class="material-symbols-outlined" aria-hidden="true">{% if user.is_staff %}check_circle{% else %}cancel{% endif %}</span>
+          {% translate 'Staff' %}<span class="visually-hidden">: {% if user.is_staff %}{% translate 'yes' %}{% else %}{% translate 'no' %}{% endif %}</span>
+        </li>
+        <li class="pf-flag{% if user.is_superuser %} is-on is-gold{% endif %}" title="{% translate 'Passes every permission check.' %}">
+          <span class="material-symbols-outlined" aria-hidden="true">{% if user.is_superuser %}shield_person{% else %}cancel{% endif %}</span>
+          {% translate 'Superuser' %}<span class="visually-hidden">: {% if user.is_superuser %}{% translate 'yes' %}{% else %}{% translate 'no' %}{% endif %}</span>
+        </li>
+      </ul>
+    </div>
+    <p class="pf-card-note">{% translate 'Read-only here. Roles and grants are managed by administrators.' %}</p>
+
+    <div class="pf-access-summary">
+      <div class="pf-access-col">
+        <h3 class="pf-sub pf-sub-first">{% translate 'Roles' %} <span class="pf-count">{{ roles|length }}</span></h3>
         {% if roles %}
-          <ul class="pf-roles">
+          <ul class="pf-list">
             {% for role in roles %}
               <li class="pf-role{% if not role.active %} is-off{% endif %}">
-                <span class="pf-role-icon material-symbols-outlined" aria-hidden="true">workspace_premium</span>
+                <span class="pf-tile tone-gold is-sm material-symbols-outlined" aria-hidden="true">workspace_premium</span>
                 <div class="pf-role-body">
                   <p class="pf-role-name">
                     {{ role.name }}
+                    <code>{{ role.code }}</code>
                     {% if not role.active %}<span class="pf-badge tone-muted">{% translate 'Inactive' %}</span>{% endif %}
                   </p>
-                  <code class="pf-role-code">{{ role.code }}</code>
                   {% if role.description %}<p class="pf-role-desc">{{ role.description }}</p>{% endif %}
-                  <p class="pf-role-meta">
+                  <p class="pf-meta">
                     {% if role.assigned_by %}{% blocktranslate with who=role.assigned_by %}Assigned by {{ who }}{% endblocktranslate %} · {% endif %}
                     <time datetime="{{ role.assigned_at|date:'c' }}">{{ role.assigned_at|date:'j M Y' }}</time>
                   </p>
@@ -377,20 +600,19 @@
             {% if user.is_superuser %}{% translate 'As a superuser you pass every role check anyway.' %}{% endif %}
           </p>
         {% endif %}
+      </div>
 
-        {% if direct_grants %}
-          <h3 class="pf-sub">{% translate 'Direct grants' %}</h3>
-          <ul class="pf-grants">
-            {% for grant in direct_grants %}
-              <li class="pf-grant{% if not grant.active %} is-off{% endif %}">
-                <span class="material-symbols-outlined" aria-hidden="true">key</span>
-                <div>
-                  <p class="pf-grant-name">
-                    {{ grant.name }} <code>{{ grant.code }}</code>
-                    {% if not grant.active %}<span class="pf-badge tone-muted">{% translate 'Revoked' %}</span>{% endif %}
-                  </p>
+      <div class="pf-access-col">
+        <h3 class="pf-sub pf-sub-first">{% translate 'Direct grants' %} <span class="pf-count">{{ grants.active|length }}</span></h3>
+        {% if grants.active %}
+          <ul class="pf-list">
+            {% for grant in grants.active %}
+              <li class="pf-grant">
+                <span class="pf-tile tone-gold is-sm material-symbols-outlined" aria-hidden="true">key</span>
+                <div class="pf-role-body">
+                  <p class="pf-role-name">{{ grant.name }} <code>{{ grant.code }}</code></p>
                   {% if grant.note %}<p class="pf-grant-note">&ldquo;{{ grant.note }}&rdquo;</p>{% endif %}
-                  <p class="pf-role-meta">
+                  <p class="pf-meta">
                     {% if grant.granted_by %}{% blocktranslate with who=grant.granted_by %}Granted by {{ who }}{% endblocktranslate %} · {% endif %}
                     <time datetime="{{ grant.granted_at|date:'c' }}">{{ grant.granted_at|date:'j M Y' }}</time>
                   </p>
@@ -398,199 +620,247 @@
               </li>
             {% endfor %}
           </ul>
+        {% else %}
+          <p class="pf-empty-line">{% translate 'None. Everything you can do comes from your roles.' %}</p>
         {% endif %}
 
-        <h3 class="pf-sub">{% translate 'What you can do' %}</h3>
-        {% if rbac.full_access %}
-          <p class="pf-banner tone-gold">
-            <span class="material-symbols-outlined" aria-hidden="true">shield_person</span>
-            <span>
-              <b>{% translate 'Full platform access.' %}</b>
-              {% blocktranslate %}You hold the <code>*</code> wildcard, so every check passes. The lists below are collapsed; open any area to see its permissions.{% endblocktranslate %}
-            </span>
-          </p>
+        {% if grants.revoked %}
+          <details class="pf-revoked">
+            <summary>
+              <span class="material-symbols-outlined" aria-hidden="true">history</span>
+              {% blocktranslate count counter=grants.revoked|length %}{{ counter }} revoked grant{% plural %}{{ counter }} revoked grants{% endblocktranslate %}
+              <span class="pf-chevron" aria-hidden="true"></span>
+            </summary>
+            <ul class="pf-revoked-list">
+              {% for grant in grants.revoked %}
+                <li>
+                  <span class="pf-revoked-name">{{ grant.name }}</span>
+                  <code>{{ grant.code }}</code>
+                  <span class="pf-meta">
+                    {% if grant.granted_by %}{{ grant.granted_by }} · {% endif %}<time datetime="{{ grant.granted_at|date:'c' }}">{{ grant.granted_at|date:'j M Y' }}</time>
+                  </span>
+                </li>
+              {% endfor %}
+            </ul>
+          </details>
         {% endif %}
+      </div>
+    </div>
 
-        <div class="pf-perm-tools">
-          <div class="pf-tabs" role="tablist" aria-label="{% translate 'Permission systems' %}" data-pf-tabs hidden>
-            <button type="button" class="pf-tab" role="tab" id="pf-tab-rbac" aria-controls="pf-panel-rbac" aria-selected="true" data-pf-tab="rbac">
-              <span class="material-symbols-outlined" aria-hidden="true">hub</span>
-              {% translate 'Console & API' %}
-              <span class="pf-count">{{ rbac.granted }}/{{ rbac.total }}</span>
-            </button>
-            <button type="button" class="pf-tab" role="tab" id="pf-tab-panel" aria-controls="pf-panel-panel" aria-selected="false" tabindex="-1" data-pf-tab="panel">
-              <span class="material-symbols-outlined" aria-hidden="true">dashboard</span>
-              {% translate 'Admin panel' %}
-              <span class="pf-count">{{ panel.reachable }}/{{ panel.total }}</span>
-            </button>
-          </div>
-          <label class="pf-search" data-pf-search hidden>
-            <span class="material-symbols-outlined" aria-hidden="true">search</span>
-            <span class="visually-hidden">{% translate 'Filter permissions' %}</span>
-            <input type="search" placeholder="{% translate 'Filter permissions…' %}" autocomplete="off" data-pf-filter>
-          </label>
-        </div>
+    <h3 class="pf-sub">{% translate 'What you can do' %}</h3>
+    {% if rbac.full_access %}
+      <p class="pf-banner tone-gold">
+        <span class="material-symbols-outlined" aria-hidden="true">shield_person</span>
+        <span>
+          <b>{% translate 'Full platform access.' %}</b>
+          {% blocktranslate with total=rbac.total areas=rbac.sections|length reachable=panel.reachable models=panel.total %}You hold the <code>*</code> wildcard, so every check passes: all {{ total }} permissions across {{ areas }} areas, and {{ reachable }} of {{ models }} admin data models.{% endblocktranslate %}
+        </span>
+      </p>
+      <details class="pf-browse">
+        <summary>
+          <span class="material-symbols-outlined" aria-hidden="true">travel_explore</span>
+          {% translate 'Browse every permission' %}
+          <span class="pf-chevron" aria-hidden="true"></span>
+        </summary>
+    {% endif %}
 
-        <div class="pf-panel" id="pf-panel-rbac" role="tabpanel" aria-labelledby="pf-tab-rbac" data-pf-panel="rbac">
-          <h4 class="pf-panel-title">{% translate 'Console & API' %} <span class="pf-count">{{ rbac.granted }}/{{ rbac.total }}</span></h4>
-          <p class="pf-panel-hint">{% translate 'What the Management Console and the MiniShop API let you do. Checked on every request.' %}</p>
-          <div class="pf-perm-grid">
-            {% for section in rbac.sections %}
-              <details class="pf-perm-card{% if not section.granted %} is-empty{% endif %}" data-pf-group{% if section.granted and not rbac.full_access %} open{% endif %}>
-                <summary>
-                  <span class="pf-perm-icon material-symbols-outlined" aria-hidden="true">{{ section.icon }}</span>
-                  <span class="pf-perm-label">{{ section.label }}</span>
-                  <span class="pf-count">{{ section.granted }}/{{ section.total }}</span>
-                  <span class="pf-meter" aria-hidden="true"><span style="--pf-pct: {{ section.percent }}%"></span></span>
-                </summary>
-                {% if section.permissions %}
-                  <ul class="pf-perm-list">
-                    {% for permission in section.permissions %}
-                      <li data-pf-item="{{ permission.name|lower }} {{ permission.code|lower }} {{ section.label|lower }}">
-                        <span class="material-symbols-outlined" aria-hidden="true">check</span>
-                        <span class="pf-perm-text">
-                          <span>{{ permission.name }}</span>
-                          <code>{{ permission.code }}</code>
-                        </span>
-                        <span class="pf-perm-src" title="{% translate 'Where this comes from' %}">{{ permission.source }}</span>
-                      </li>
-                    {% endfor %}
-                  </ul>
-                {% else %}
-                  <p class="pf-empty-line">{% translate 'No access in this area.' %}</p>
-                {% endif %}
-              </details>
-            {% endfor %}
-          </div>
-        </div>
+    <div class="pf-perm-tools">
+      <div class="pf-tabs" role="tablist" aria-label="{% translate 'Permission systems' %}" data-pf-tabs hidden>
+        <button type="button" class="pf-tab" role="tab" id="pf-tab-rbac" aria-controls="pf-panel-rbac" aria-selected="true" data-pf-tab="rbac">
+          <span class="material-symbols-outlined" aria-hidden="true">hub</span>
+          {% translate 'Console & API' %}
+          <span class="pf-count">{{ rbac.granted }}/{{ rbac.total }}</span>
+        </button>
+        <button type="button" class="pf-tab" role="tab" id="pf-tab-panel" aria-controls="pf-panel-panel" aria-selected="false" tabindex="-1" data-pf-tab="panel">
+          <span class="material-symbols-outlined" aria-hidden="true">dashboard</span>
+          {% translate 'Admin panel' %}
+          <span class="pf-count">{{ panel.reachable }}/{{ panel.total }}</span>
+        </button>
+      </div>
+      <label class="pf-search" data-pf-search hidden>
+        <span class="material-symbols-outlined" aria-hidden="true">search</span>
+        <span class="visually-hidden">{% translate 'Filter permissions' %}</span>
+        <input type="search" placeholder="{% translate 'Filter permissions…' %}" autocomplete="off" data-pf-filter>
+      </label>
+    </div>
 
-        <div class="pf-panel" id="pf-panel-panel" role="tabpanel" aria-labelledby="pf-tab-panel" data-pf-panel="panel">
-          <h4 class="pf-panel-title">{% translate 'Admin panel' %} <span class="pf-count">{{ panel.reachable }}/{{ panel.total }}</span></h4>
-          <p class="pf-panel-hint">
-            {% blocktranslate with reachable=panel.reachable total=panel.total %}What you can open and change here in the Django admin: {{ reachable }} of {{ total }} data models.{% endblocktranslate %}
-          </p>
-          <div class="pf-perm-grid">
-            {% for section in panel.sections %}
-              <details class="pf-perm-card" data-pf-group{% if not user.is_superuser %} open{% endif %}>
-                <summary>
-                  <span class="pf-perm-icon material-symbols-outlined" aria-hidden="true">{{ section.icon }}</span>
-                  <span class="pf-perm-label">{{ section.label }}</span>
-                  <span class="pf-count">{{ section.models|length }}</span>
-                </summary>
-                <ul class="pf-model-list">
-                  {% for model in section.models %}
-                    <li data-pf-item="{{ model.name|lower }} {{ section.label|lower }}">
-                      {% if model.url %}<a href="{{ model.url }}">{{ model.name }}</a>{% else %}<span>{{ model.name }}</span>{% endif %}
-                      <span class="pf-actions">
-                        {% for action in model.actions %}
-                          <span class="pf-action{% if action.allowed %} is-on{% endif %}" title="{{ action.label }}{% if not action.allowed %} — {% translate 'not allowed' %}{% endif %}">
-                            <span class="material-symbols-outlined" aria-hidden="true">{{ action.icon }}</span>
-                            <span class="visually-hidden">{{ action.label }}: {% if action.allowed %}{% translate 'allowed' %}{% else %}{% translate 'not allowed' %}{% endif %}</span>
-                          </span>
-                        {% endfor %}
+    <div class="pf-panel" id="pf-panel-rbac" role="tabpanel" aria-labelledby="pf-tab-rbac" data-pf-panel="rbac">
+      <h4 class="pf-panel-title">{% translate 'Console & API' %} <span class="pf-count">{{ rbac.granted }}/{{ rbac.total }}</span></h4>
+      <p class="pf-panel-hint">{% translate 'What the Management Console and the MiniShop API let you do. Open an area to see each permission.' %}</p>
+      <div class="pf-perm-grid">
+        {% for section in rbac.sections %}
+          <details class="pf-perm-card{% if not section.granted %} is-empty{% elif section.granted == section.total %} is-complete{% endif %}" data-pf-group>
+            <summary>
+              <span class="pf-perm-icon material-symbols-outlined" aria-hidden="true">{{ section.icon }}</span>
+              <span class="pf-perm-label">
+                {{ section.label }}
+                {% if section.via and not rbac.full_access %}<small>{% blocktranslate with via=section.via %}via {{ via }}{% endblocktranslate %}</small>{% endif %}
+              </span>
+              <span class="pf-count">{{ section.granted }}/{{ section.total }}</span>
+              <span class="pf-chevron" aria-hidden="true"></span>
+              {% if not rbac.full_access %}
+                <span class="pf-meter" aria-hidden="true"><span style="--pf-pct: {{ section.percent }}%"></span></span>
+              {% endif %}
+            </summary>
+            <ul class="pf-perm-list">
+              {% for permission in section.permissions %}
+                <li data-pf-item="{{ permission.name|lower }} {{ permission.code|lower }} {{ section.label|lower }}">
+                  <span class="pf-perm-mark material-symbols-outlined" aria-hidden="true">check</span>
+                  <span class="pf-perm-text">{{ permission.name }} <code>{{ permission.code }}</code></span>
+                  {% if permission.show_source %}<span class="pf-badge tone-gold">{{ permission.source }}</span>{% endif %}
+                </li>
+              {% endfor %}
+              {% for permission in section.missing %}
+                <li class="is-missing" data-pf-item="{{ permission.name|lower }} {{ permission.code|lower }} {{ section.label|lower }}">
+                  <span class="pf-perm-mark material-symbols-outlined" aria-hidden="true">block</span>
+                  <span class="pf-perm-text">{{ permission.name }} <code>{{ permission.code }}</code></span>
+                  <span class="visually-hidden">{% translate 'not granted' %}</span>
+                </li>
+              {% endfor %}
+            </ul>
+          </details>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="pf-panel" id="pf-panel-panel" role="tabpanel" aria-labelledby="pf-tab-panel" data-pf-panel="panel">
+      <h4 class="pf-panel-title">{% translate 'Admin panel' %} <span class="pf-count">{{ panel.reachable }}/{{ panel.total }}</span></h4>
+      <p class="pf-panel-hint">
+        {% blocktranslate with reachable=panel.reachable total=panel.total %}What you can open and change here in the Django admin: {{ reachable }} of {{ total }} data models.{% endblocktranslate %}
+      </p>
+      <div class="pf-perm-grid">
+        {% for section in panel.sections %}
+          <details class="pf-perm-card" data-pf-group>
+            <summary>
+              <span class="pf-perm-icon material-symbols-outlined" aria-hidden="true">{{ section.icon }}</span>
+              <span class="pf-perm-label">{{ section.label }}</span>
+              <span class="pf-count">{{ section.models|length }}</span>
+              <span class="pf-chevron" aria-hidden="true"></span>
+            </summary>
+            <ul class="pf-model-list">
+              {% for model in section.models %}
+                <li data-pf-item="{{ model.name|lower }} {{ section.label|lower }}">
+                  {% if model.url %}<a href="{{ model.url }}">{{ model.name }}</a>{% else %}<span>{{ model.name }}</span>{% endif %}
+                  <span class="pf-actions">
+                    {% for action in model.actions %}
+                      <span class="pf-action{% if action.allowed %} is-on{% endif %}" title="{{ action.label }}{% if not action.allowed %} — {% translate 'not allowed' %}{% endif %}">
+                        <span class="material-symbols-outlined" aria-hidden="true">{{ action.icon }}</span>
+                        <span class="visually-hidden">{{ action.label }}: {% if action.allowed %}{% translate 'allowed' %}{% else %}{% translate 'not allowed' %}{% endif %}</span>
                       </span>
-                    </li>
-                  {% endfor %}
-                </ul>
-              </details>
-            {% empty %}
-              <p class="pf-empty-line">{% translate 'No data models are open to you in this admin.' %}</p>
-            {% endfor %}
+                    {% endfor %}
+                  </span>
+                </li>
+              {% endfor %}
+            </ul>
+          </details>
+        {% empty %}
+          <p class="pf-empty-line">{% translate 'No data models are open to you in this admin.' %}</p>
+        {% endfor %}
+      </div>
+      <p class="pf-legend" aria-hidden="true">
+        <span class="pf-action is-on"><span class="material-symbols-outlined">visibility</span></span>{% translate 'View' %}
+        <span class="pf-action is-on"><span class="material-symbols-outlined">add_circle</span></span>{% translate 'Add' %}
+        <span class="pf-action is-on"><span class="material-symbols-outlined">edit</span></span>{% translate 'Edit' %}
+        <span class="pf-action is-on"><span class="material-symbols-outlined">delete</span></span>{% translate 'Delete' %}
+        <span class="pf-action"><span class="material-symbols-outlined">visibility</span></span>{% translate 'Not allowed' %}
+      </p>
+    </div>
+
+    <p class="pf-empty-line pf-nomatch" data-pf-nomatch hidden>{% translate 'No permissions match that filter.' %}</p>
+    {% if rbac.full_access %}</details>{% endif %}
+  </section>
+
+  <!-- ==================== BAND 4: RECENT ACTIVITY (full width) ==================== -->
+  <section id="activity" class="pf-band pf-card" aria-labelledby="pf-activity-title">
+    <div class="pf-card-head">
+      <h2 id="pf-activity-title" class="pf-card-title">
+        <span class="pf-tile tone-gold material-symbols-outlined" aria-hidden="true">timeline</span>
+        {% translate 'Recent activity' %}
+        <span class="pf-card-title-note">{% translate 'Audit log and admin history' %}</span>
+      </h2>
+      {% if audit_trail_url %}
+        <a class="pf-btn is-small" href="{{ audit_trail_url }}">
+          {% translate 'Full audit trail' %}
+          <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span>
+        </a>
+      {% endif %}
+    </div>
+
+    <div class="pf-activity">
+      <div class="pf-activity-map">
+        <dl class="pf-figures is-four">
+          <div>
+            <dt>{% blocktranslate with weeks=activity.weeks_count %}Last {{ weeks }} weeks{% endblocktranslate %}</dt>
+            <dd>{{ activity.total }}<small>{% blocktranslate count counter=activity.total %}action{% plural %}actions{% endblocktranslate %}</small></dd>
           </div>
-          <p class="pf-legend" aria-hidden="true">
-            <span class="pf-action is-on"><span class="material-symbols-outlined">visibility</span></span>{% translate 'View' %}
-            <span class="pf-action is-on"><span class="material-symbols-outlined">add_circle</span></span>{% translate 'Add' %}
-            <span class="pf-action is-on"><span class="material-symbols-outlined">edit</span></span>{% translate 'Edit' %}
-            <span class="pf-action is-on"><span class="material-symbols-outlined">delete</span></span>{% translate 'Delete' %}
-          </p>
-        </div>
-
-        <p class="pf-empty-line pf-nomatch" data-pf-nomatch hidden>{% translate 'No permissions match that filter.' %}</p>
-      </section>
-
-      <!-- ==================== ACTIVITY ==================== -->
-      <section id="activity" class="pf-card pf-order-4" aria-labelledby="pf-activity-title">
-        <div class="pf-card-head">
-          <h2 id="pf-activity-title" class="pf-card-title">
-            <span class="pf-card-icon tone-gold material-symbols-outlined" aria-hidden="true">timeline</span>
-            {% translate 'Recent activity' %}
-          </h2>
-          <span class="pf-card-note">{% translate 'Audit log and admin history' %}</span>
-        </div>
+          <div>
+            <dt>{% translate 'Last 30 days' %}</dt>
+            <dd>{{ activity.last_30_days }}<small>{% blocktranslate count counter=activity.last_30_days %}action{% plural %}actions{% endblocktranslate %}</small></dd>
+          </div>
+          <div>
+            <dt>{% translate 'Active days' %}</dt>
+            <dd>{{ activity.active_days }}<small>{% blocktranslate with days=activity.days_count %}of {{ days }}{% endblocktranslate %}</small></dd>
+          </div>
+          <div>
+            <dt>{% translate 'Busiest day' %}</dt>
+            <dd>{% if activity.busiest %}{{ activity.busiest.date|date:'j M' }}<small>{{ activity.busiest.count }}</small>{% else %}&mdash;{% endif %}</dd>
+          </div>
+        </dl>
 
         <div class="pf-heat">
-          <div class="pf-heat-map">
-            <div class="pf-heat-scroll">
-              <div class="pf-heat-grid" role="img"
-                   aria-label="{% blocktranslate with total=activity.total weeks=activity.weeks_count %}Activity heatmap: {{ total }} actions over the last {{ weeks }} weeks{% endblocktranslate %}">
-                <span class="pf-heat-corner"></span>
-                {% for week in activity.weeks %}<span class="pf-heat-month">{{ week.month }}</span>{% endfor %}
-                {# Explicit rows; the corner and month labels auto-fill row 1. #}
-                <span class="pf-heat-day" style="grid-row: 2">{% translate 'Mon' %}</span>
-                <span class="pf-heat-day" style="grid-row: 4">{% translate 'Wed' %}</span>
-                <span class="pf-heat-day" style="grid-row: 6">{% translate 'Fri' %}</span>
-                {% for week in activity.weeks %}
-                  {% for day in week.days %}
-                    <span class="pf-heat-cell lv-{{ day.level }}{% if day.future %} is-future{% endif %}"
-                          style="grid-column: {{ forloop.parentloop.counter|add:1 }}; grid-row: {{ forloop.counter|add:1 }}"
-                          {% if not day.future %}title="{% blocktranslate count counter=day.count with date=day.date|date:'D j M' %}{{ counter }} action on {{ date }}{% plural %}{{ counter }} actions on {{ date }}{% endblocktranslate %}"{% endif %}></span>
-                  {% endfor %}
-                {% endfor %}
-              </div>
-            </div>
-            <p class="pf-heat-legend" aria-hidden="true">
-              {% translate 'Less' %}
-              <span class="pf-heat-cell lv-0"></span><span class="pf-heat-cell lv-1"></span><span class="pf-heat-cell lv-2"></span><span class="pf-heat-cell lv-3"></span><span class="pf-heat-cell lv-4"></span>
-              {% translate 'More' %}
-            </p>
+          <div class="pf-heat-grid" role="img"
+               aria-label="{% blocktranslate with total=activity.total weeks=activity.weeks_count days=activity.active_days %}Activity heatmap: {{ total }} actions on {{ days }} days over the last {{ weeks }} weeks{% endblocktranslate %}">
+            <span class="pf-heat-corner"></span>
+            {% for week in activity.weeks %}<span class="pf-heat-month">{{ week.month }}</span>{% endfor %}
+            {# Explicit rows; the corner and month labels auto-fill row 1. #}
+            <span class="pf-heat-day" style="grid-row: 2">{% translate 'Mon' %}</span>
+            <span class="pf-heat-day" style="grid-row: 4">{% translate 'Wed' %}</span>
+            <span class="pf-heat-day" style="grid-row: 6">{% translate 'Fri' %}</span>
+            {% for week in activity.weeks %}
+              {% for day in week.days %}
+                <span class="pf-heat-cell lv-{{ day.level }}{% if day.future %} is-future{% endif %}"
+                      style="grid-column: {{ forloop.parentloop.counter|add:1 }}; grid-row: {{ forloop.counter|add:1 }}"
+                      {% if not day.future %}title="{% blocktranslate count counter=day.count with date=day.date|date:'D j M' %}{{ counter }} action on {{ date }}{% plural %}{{ counter }} actions on {{ date }}{% endblocktranslate %}"{% endif %}></span>
+              {% endfor %}
+            {% endfor %}
           </div>
-
-          <dl class="pf-heat-stats">
-            <div>
-              <dt>{% blocktranslate with weeks=activity.weeks_count %}Last {{ weeks }} weeks{% endblocktranslate %}</dt>
-              <dd>{{ activity.total }}<small>{% blocktranslate count counter=activity.total %}action{% plural %}actions{% endblocktranslate %}</small></dd>
-            </div>
-            <div>
-              <dt>{% translate 'Last 30 days' %}</dt>
-              <dd>{{ activity.last_30_days }}<small>{% blocktranslate count counter=activity.last_30_days %}action{% plural %}actions{% endblocktranslate %}</small></dd>
-            </div>
-            <div>
-              <dt>{% translate 'Active days' %}</dt>
-              <dd>{{ activity.active_days }}<small>{% blocktranslate with weeks=activity.weeks_count %}of {{ weeks }} weeks{% endblocktranslate %}</small></dd>
-            </div>
-            <div>
-              <dt>{% translate 'Busiest day' %}</dt>
-              <dd>{% if activity.busiest %}{{ activity.busiest.date|date:'j M' }}<small>{% blocktranslate count counter=activity.busiest.count %}{{ counter }} action{% plural %}{{ counter }} actions{% endblocktranslate %}</small>{% else %}&mdash;{% endif %}</dd>
-            </div>
-          </dl>
+          <p class="pf-heat-legend">
+            {% translate 'Less' %}
+            <span class="pf-heat-cell lv-0" aria-hidden="true"></span><span class="pf-heat-cell lv-1" aria-hidden="true"></span><span class="pf-heat-cell lv-2" aria-hidden="true"></span><span class="pf-heat-cell lv-3" aria-hidden="true"></span><span class="pf-heat-cell lv-4" aria-hidden="true"></span>
+            {% translate 'More' %}
+          </p>
         </div>
 
+        {% if activity.active_days_list %}
+          <details class="pf-heat-list">
+            <summary>
+              {% translate 'Show active days as a list' %}
+              <span class="pf-chevron" aria-hidden="true"></span>
+            </summary>
+            <ul>
+              {% for day in activity.active_days_list %}
+                <li>
+                  <time datetime="{{ day.date|date:'Y-m-d' }}">{{ day.date|date:'D j M' }}</time>
+                  <span>{% blocktranslate count counter=day.count %}{{ counter }} action{% plural %}{{ counter }} actions{% endblocktranslate %}</span>
+                </li>
+              {% endfor %}
+            </ul>
+          </details>
+        {% endif %}
+      </div>
+
+      <div class="pf-activity-feed">
         {% if activity.timeline %}
-          <ol class="pf-timeline">
-            {% for group in activity.timeline %}
-              <li class="pf-tl-day">
-                <h3 class="pf-tl-date">{% if group.label %}{{ group.label }}{% else %}{{ group.date|date:'l, j F' }}{% endif %}</h3>
-                <ol class="pf-tl-items">
-                  {% for item in group.items %}
-                    <li class="pf-tl-item tone-{{ item.tone }}">
-                      <span class="pf-tl-icon material-symbols-outlined" aria-hidden="true">{{ item.icon }}</span>
-                      <div class="pf-tl-body">
-                        <p class="pf-tl-title">
-                          <b>{{ item.title }}</b>
-                          {% if item.url %}<a href="{{ item.url }}">{{ item.target }}</a>{% else %}<span>{{ item.target }}</span>{% endif %}
-                        </p>
-                        {% if item.detail %}<p class="pf-tl-detail">{{ item.detail }}</p>{% endif %}
-                      </div>
-                      <span class="pf-tl-meta">
-                        <time datetime="{{ item.when|date:'c' }}" title="{{ item.when|date:'j M Y, H:i T' }}">{{ item.when|date:'H:i' }}</time>
-                        <span class="pf-tl-src">{{ item.source }}</span>
-                      </span>
-                    </li>
-                  {% endfor %}
-                </ol>
-              </li>
-            {% endfor %}
-          </ol>
+          {% include "admin/profile_timeline.html" with groups=activity.timeline %}
+          {% if activity.timeline_more %}
+            <details class="pf-more-items">
+              <summary>
+                {% blocktranslate count counter=activity.timeline_more_count %}Show {{ counter }} more{% plural %}Show {{ counter }} more{% endblocktranslate %}
+                <span class="pf-chevron" aria-hidden="true"></span>
+              </summary>
+              {% include "admin/profile_timeline.html" with groups=activity.timeline_more %}
+            </details>
+          {% endif %}
         {% else %}
           <div class="pf-empty">
             <span class="material-symbols-outlined" aria-hidden="true">history_toggle_off</span>
@@ -598,242 +868,82 @@
             <p>{% translate 'Changes you make in the admin and the Console will show up here.' %}</p>
           </div>
         {% endif %}
+      </div>
+    </div>
+  </section>
 
-        {% if audit_trail_url %}
-          <a class="pf-more" href="{{ audit_trail_url }}">
-            {% translate 'View my full audit trail' %}
-            <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span>
-          </a>
-        {% endif %}
-      </section>
+  <!-- ==================== BAND 5: YOUR WORK (full width) ==================== -->
+  <section id="work" class="pf-band pf-card" aria-labelledby="pf-work-title">
+    <div class="pf-card-head">
+      <h2 id="pf-work-title" class="pf-card-title">
+        <span class="pf-tile tone-indigo material-symbols-outlined" aria-hidden="true">work</span>
+        {% translate 'Your work' %}
+      </h2>
+      {% if work.tickets_url %}
+        <a class="pf-btn is-small" href="{{ work.tickets_url }}">
+          {% translate 'All my tickets' %}
+          <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span>
+        </a>
+      {% endif %}
+    </div>
 
-      <!-- ==================== WORK ==================== -->
-      <section id="work" class="pf-card pf-order-5" aria-labelledby="pf-work-title">
-        <div class="pf-card-head">
-          <h2 id="pf-work-title" class="pf-card-title">
-            <span class="pf-card-icon tone-indigo material-symbols-outlined" aria-hidden="true">work</span>
-            {% translate 'Your work' %}
-          </h2>
-          {% if work.tickets_url %}
-            <a class="pf-btn is-small" href="{{ work.tickets_url }}">
-              {% translate 'All my tickets' %}
-              <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span>
-            </a>
-          {% endif %}
-        </div>
-
-        <h3 class="pf-sub pf-sub-first">{% translate 'Support tickets assigned to you' %}</h3>
-        <ul class="pf-statuses">
-          {% for status in work.statuses %}
-            <li class="pf-status tone-{{ status.tone }}{% if not status.count %} is-zero{% endif %}">
-              <b>{{ status.count }}</b> {{ status.label }}
-            </li>
-          {% endfor %}
-        </ul>
-
-        {% if work.open_tickets %}
-          <ul class="pf-tickets">
-            {% for ticket in work.open_tickets %}
-              <li>
-                {% if ticket.url %}<a class="pf-ticket" href="{{ ticket.url }}">{% else %}<div class="pf-ticket">{% endif %}
-                  <code class="pf-ticket-no">{{ ticket.number }}</code>
-                  <span class="pf-ticket-subject">{{ ticket.subject }}</span>
-                  <span class="pf-ticket-tags">
-                    <span class="pf-badge tone-{{ ticket.priority_tone }}">{{ ticket.priority }}</span>
-                    <span class="pf-badge tone-{{ ticket.status_tone }}">{{ ticket.status }}</span>
-                  </span>
-                  <time datetime="{{ ticket.last_activity_at|date:'c' }}" title="{{ ticket.last_activity_at|date:'j M Y, H:i T' }}">{{ ticket.last_activity_at|date:'j M' }}</time>
-                {% if ticket.url %}</a>{% else %}</div>{% endif %}
-              </li>
+    <div class="pf-work">
+      <div class="pf-work-tickets">
+        <h3 class="pf-sub pf-sub-first">{% translate 'Support tickets assigned to you' %} <span class="pf-count">{{ work.ticket_total }}</span></h3>
+        {% if work.ticket_total %}
+          <div class="pf-seg" role="img" aria-label="{% for status in work.statuses %}{% if status.count %}{{ status.count }} {{ status.label }}. {% endif %}{% endfor %}">
+            {% for status in work.statuses %}{% if status.count %}<span class="pf-seg-part tone-{{ status.tone }}" style="flex-grow: {{ status.count }}"></span>{% endif %}{% endfor %}
+          </div>
+          <ul class="pf-seg-legend">
+            {% for status in work.statuses %}
+              {% if status.count %}
+                <li class="tone-{{ status.tone }}"><span class="pf-swatch" aria-hidden="true"></span><b>{{ status.count }}</b> {{ status.label }}</li>
+              {% endif %}
             {% endfor %}
           </ul>
+          {% if work.open_tickets %}
+            <ul class="pf-tickets">
+              {% for ticket in work.open_tickets %}
+                <li>
+                  {% if ticket.url %}<a class="pf-ticket" href="{{ ticket.url }}">{% else %}<div class="pf-ticket">{% endif %}
+                    <code class="pf-ticket-no">{{ ticket.number }}</code>
+                    <span class="pf-ticket-subject">{{ ticket.subject }}</span>
+                    <span class="pf-ticket-tags">
+                      <span class="pf-badge tone-{{ ticket.priority_tone }}">{{ ticket.priority }}</span>
+                      <span class="pf-badge tone-{{ ticket.status_tone }}">{{ ticket.status }}</span>
+                    </span>
+                    <time datetime="{{ ticket.last_activity_at|date:'c' }}" title="{{ ticket.last_activity_at|date:'j M Y, H:i T' }}">{{ ticket.last_activity_at|date:'j M' }}</time>
+                  {% if ticket.url %}</a>{% else %}</div>{% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="pf-all-clear">
+              <span class="material-symbols-outlined" aria-hidden="true">task_alt</span>
+              {% translate 'Nothing is waiting on you.' %}
+            </p>
+          {% endif %}
         {% else %}
-          <p class="pf-empty-line pf-all-clear">
+          <p class="pf-all-clear">
             <span class="material-symbols-outlined" aria-hidden="true">task_alt</span>
-            {% translate 'Nothing is waiting on you.' %}
+            {% translate 'No tickets are assigned to you, so nothing is waiting on you.' %}
           </p>
         {% endif %}
+      </div>
 
-        <h3 class="pf-sub">{% translate 'Your contributions' %} <span class="pf-sub-note">{% translate 'all time' %}</span></h3>
+      <div class="pf-work-contrib">
+        <h3 class="pf-sub pf-sub-first">{% translate 'Your contributions' %} <span class="pf-sub-note">{% translate 'all time' %}</span></h3>
         <ul class="pf-contrib">
           {% for item in work.contributions %}
-            <li class="{% if not item.count %}is-zero{% endif %}">
-              <span class="material-symbols-outlined" aria-hidden="true">{{ item.icon }}</span>
+            <li{% if not item.count %} class="is-zero"{% endif %}>
+              <span class="pf-tile is-sm material-symbols-outlined" aria-hidden="true">{{ item.icon }}</span>
               <b>{{ item.count }}</b>
               <span>{{ item.label }}</span>
             </li>
           {% endfor %}
         </ul>
-      </section>
+      </div>
     </div>
-
-    <div class="pf-col pf-rail">
-
-      <!-- ==================== SECURITY ==================== -->
-      <section id="security" class="pf-card pf-order-2" aria-labelledby="pf-security-title">
-        <div class="pf-card-head">
-          <h2 id="pf-security-title" class="pf-card-title">
-            <span class="pf-card-icon tone-rose material-symbols-outlined" aria-hidden="true">shield_lock</span>
-            {% translate 'Sign-in & security' %}
-          </h2>
-        </div>
-        <dl class="pf-kv">
-          <div>
-            <dt>{% translate 'Last sign-in' %}</dt>
-            <dd>
-              {% if security.last_login %}
-                <time datetime="{{ security.last_login|date:'c' }}" title="{{ security.last_login|date:'j M Y, H:i T' }}">{{ security.last_login_ago }}</time>
-                <small>{{ security.last_login|date:'j M Y, H:i T' }}</small>
-              {% else %}<span class="pf-muted">{% translate 'Never' %}</span>{% endif %}
-            </dd>
-          </div>
-          <div>
-            <dt>{% translate 'Last recorded IP' %}</dt>
-            <dd>
-              {% if security.last_ip %}
-                <code>{{ security.last_ip }}</code>
-                <small>{% blocktranslate with day=security.last_ip_at|date:'j M Y' %}From your audited action on {{ day }}{% endblocktranslate %}</small>
-              {% else %}<span class="pf-muted">{% translate 'None recorded' %}</span>{% endif %}
-            </dd>
-          </div>
-          <div>
-            <dt>{% translate 'Password' %}</dt>
-            <dd>
-              {% if security.has_password %}
-                <span class="pf-badge tone-green">{% translate 'Set' %}</span>
-              {% else %}
-                <span class="pf-badge tone-amber">{% translate 'Not set' %}</span>
-              {% endif %}
-            </dd>
-          </div>
-          <div>
-            <dt>{% translate 'Member since' %}</dt>
-            <dd>
-              <time datetime="{{ security.joined|date:'c' }}">{{ security.joined|date:'j M Y' }}</time>
-              <small>{{ security.joined_ago }}</small>
-            </dd>
-          </div>
-        </dl>
-        <div class="pf-rail-actions">
-          {% if security.has_password %}
-            <a class="pf-btn is-block" href="{% url 'admin:password_change' %}">
-              <span class="material-symbols-outlined" aria-hidden="true">key</span>
-              {% translate 'Change password' %}
-            </a>
-          {% endif %}
-          <form method="post" action="{% url 'admin:logout' %}">
-            {% csrf_token %}
-            <button type="submit" class="pf-btn is-block is-danger">
-              <span class="material-symbols-outlined" aria-hidden="true">logout</span>
-              {% translate 'Sign out' %}
-            </button>
-          </form>
-        </div>
-      </section>
-
-      <!-- ==================== NOTIFICATIONS ==================== -->
-      <section class="pf-card pf-order-6" aria-labelledby="pf-notif-title">
-        <div class="pf-card-head">
-          <h2 id="pf-notif-title" class="pf-card-title">
-            <span class="pf-card-icon tone-indigo material-symbols-outlined" aria-hidden="true">notifications</span>
-            {% translate 'Notifications' %}
-          </h2>
-        </div>
-        {% if notifications.show %}
-          <p class="pf-bignum">
-            <b>{{ notifications.unread }}</b>
-            <span>{% blocktranslate count counter=notifications.unread %}unread in your staff inbox{% plural %}unread in your staff inbox{% endblocktranslate %}</span>
-          </p>
-          <div class="pf-rail-actions">
-            <a class="pf-btn is-block" href="{{ notifications.inbox_url }}" target="_blank" rel="noopener noreferrer">
-              <span class="material-symbols-outlined" aria-hidden="true">inbox</span>
-              {% translate 'Open inbox' %}
-              <span class="material-symbols-outlined pf-ext" aria-hidden="true">open_in_new</span>
-            </a>
-            <a class="pf-btn is-block is-quiet" href="{{ notifications.settings_url }}" target="_blank" rel="noopener noreferrer">
-              <span class="material-symbols-outlined" aria-hidden="true">tune</span>
-              {% translate 'Notification settings' %}
-              <span class="material-symbols-outlined pf-ext" aria-hidden="true">open_in_new</span>
-            </a>
-          </div>
-        {% else %}
-          <p class="pf-empty-line">{% translate "Your account doesn't receive the staff inbox." %}</p>
-        {% endif %}
-      </section>
-
-      <!-- ==================== LINKED ACCOUNTS ==================== -->
-      <section class="pf-card pf-order-7" aria-labelledby="pf-linked-title">
-        <div class="pf-card-head">
-          <h2 id="pf-linked-title" class="pf-card-title">
-            <span class="pf-card-icon tone-blue material-symbols-outlined" aria-hidden="true">link</span>
-            {% translate 'Linked accounts' %}
-          </h2>
-        </div>
-        <ul class="pf-linked">
-          <li>
-            <span class="pf-linked-icon material-symbols-outlined" aria-hidden="true">shopping_bag</span>
-            <div>
-              <p class="pf-linked-name">{% translate 'Customer profile' %}</p>
-              {% if linked.customer.exists %}
-                <p class="pf-linked-meta">
-                  {% blocktranslate count counter=linked.customer.orders %}{{ counter }} order{% plural %}{{ counter }} orders{% endblocktranslate %}
-                  · {% blocktranslate count counter=linked.customer.addresses %}{{ counter }} address{% plural %}{{ counter }} addresses{% endblocktranslate %}
-                </p>
-              {% else %}
-                <p class="pf-linked-meta">{% translate 'Created the first time you save your details.' %}</p>
-              {% endif %}
-            </div>
-            {% if linked.customer.url %}
-              <a class="pf-linked-go" href="{{ linked.customer.url }}" aria-label="{% translate 'Open customer profile' %}">
-                <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span>
-              </a>
-            {% endif %}
-          </li>
-          <li>
-            <span class="pf-linked-icon material-symbols-outlined" aria-hidden="true">storefront</span>
-            <div>
-              <p class="pf-linked-name">{% translate 'Seller account' %}</p>
-              {% if linked.seller.exists %}
-                <p class="pf-linked-meta">{{ linked.seller.name }} · {{ linked.seller.status }}</p>
-              {% else %}
-                <p class="pf-linked-meta">{% translate 'Not a seller.' %}</p>
-              {% endif %}
-            </div>
-            {% if linked.seller.url %}
-              <a class="pf-linked-go" href="{{ linked.seller.url }}" aria-label="{% translate 'Open seller account' %}">
-                <span class="material-symbols-outlined" aria-hidden="true">arrow_forward</span>
-              </a>
-            {% endif %}
-          </li>
-        </ul>
-      </section>
-
-      <!-- ==================== SHORTCUTS ==================== -->
-      <section class="pf-card pf-order-8" aria-labelledby="pf-shortcuts-title">
-        <div class="pf-card-head">
-          <h2 id="pf-shortcuts-title" class="pf-card-title">
-            <span class="pf-card-icon tone-gold material-symbols-outlined" aria-hidden="true">bolt</span>
-            {% translate 'Shortcuts' %}
-          </h2>
-        </div>
-        <ul class="pf-shortcuts">
-          {% if audit_trail_url %}
-            <li><a href="{{ audit_trail_url }}"><span class="material-symbols-outlined" aria-hidden="true">history</span>{% translate 'My audit trail' %}</a></li>
-          {% endif %}
-          {% if work.tickets_url %}
-            <li><a href="{{ work.tickets_url }}"><span class="material-symbols-outlined" aria-hidden="true">support_agent</span>{% translate 'My support tickets' %}</a></li>
-          {% endif %}
-          {% if user_record_url %}
-            <li><a href="{{ user_record_url }}"><span class="material-symbols-outlined" aria-hidden="true">manage_accounts</span>{% translate 'My user record' %}</a></li>
-          {% endif %}
-          <li>
-            <a href="{{ console_profile_url }}" target="_blank" rel="noopener noreferrer">
-              <span class="material-symbols-outlined" aria-hidden="true">open_in_new</span>{% translate 'Profile in the Console' %}
-            </a>
-          </li>
-        </ul>
-      </section>
-    </div>
-  </div>
+  </section>
 </div>
 {% endblock %}

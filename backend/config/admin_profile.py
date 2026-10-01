@@ -24,7 +24,7 @@ from django.contrib.admin.models import ADDITION, CHANGE, DELETION, LogEntry
 from django.contrib.admin.utils import quote
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import Count, IntegerField, OuterRef, Subquery
+from django.db.models import Count, IntegerField, OuterRef, Q, Subquery, Sum
 from django.db.models.functions import Coalesce
 from django.shortcuts import redirect
 from django.template.response import TemplateResponse
@@ -38,6 +38,7 @@ from customers.models import Address, CustomerProfile
 from customers.services import CustomerService
 from notifications.models import Audience, Notification
 from notifications.permissions import can_read_audience
+from points.models import SellerWallet, StaffPointTransaction, StaffWallet
 from rbac.models import UserPermission, UserRole
 from rbac.services import get_user_permissions
 from rbac.widgets import ACTIONS, DEFAULT_WEIGHT, SECTION_META, WILDCARD_CODE, build_minishop_permission_board
@@ -49,10 +50,13 @@ User = get_user_model()
 
 #: The activity heatmap covers this many whole weeks, ending with the current one.
 ACTIVITY_WEEKS = 12
-#: Newest entries shown in the activity timeline.
+#: Newest entries read for the activity timeline, and how many show before "Show more".
 TIMELINE_LIMIT = 20
+TIMELINE_VISIBLE = 8
 #: Open tickets listed under "Your work".
 OPEN_TICKET_LIMIT = 5
+#: Newest wallet movements listed beside the points balance.
+POINTS_RECENT_LIMIT = 5
 
 AVATAR_MAX_BYTES = 2 * 1024 * 1024
 AVATAR_FORMATS = {"JPEG", "PNG", "WEBP"}
@@ -248,10 +252,12 @@ def build_profile_context(site, request, site_context, profile):
     viewable = _viewable_models(available_apps)
     storefront = site_context["storefront_url"].rstrip("/")
 
+    seller = SellerProfile.objects.filter(user=user).first()
     rbac = _rbac_access(user)
     activity = _activity(user, viewable, now)
     work = _work(user, viewable)
     notifications = _notifications(user, storefront)
+    points = _points(user, viewable, seller)
 
     audit_url = _changelist_url(viewable, AuditLog, f"actor__id__exact={user.pk}")
     user_record_url = _change_url(viewable, User, user.pk)
@@ -262,14 +268,15 @@ def build_profile_context(site, request, site_context, profile):
         "completeness": _completeness(user, profile),
         "profile": profile,
         "roles": _roles(user),
-        "direct_grants": _direct_grants(user),
+        "grants": _direct_grants(user),
         "rbac": rbac,
         "panel": _panel_access(site, available_apps),
         "activity": activity,
         "work": work,
         "security": _security(user, now),
         "notifications": notifications,
-        "linked": _linked(user, profile, viewable, work["counts"]),
+        "linked": _linked(profile, seller, viewable, work["counts"]),
+        "points": points,
         "kpis": _kpis(work, activity, notifications, rbac, audit_url),
         "audit_trail_url": audit_url,
         "user_record_url": user_record_url,
@@ -384,14 +391,15 @@ def _roles(user):
 
 
 def _direct_grants(user):
-    rows = []
+    """Active grants are current access; revoked ones are history and render collapsed."""
+    rows = {"active": [], "revoked": []}
     grants = (
         UserPermission.objects.filter(user=user)
         .select_related("permission", "granted_by")
         .order_by("-is_active", "permission__code")
     )
     for grant in grants:
-        rows.append(
+        rows["active" if grant.is_active else "revoked"].append(
             {
                 "name": grant.permission.name,
                 "code": grant.permission.code,
@@ -424,9 +432,10 @@ def _rbac_access(user):
 
     sections = []
     for section in board["sections"]:
-        held = []
+        held, missing = [], []
         for permission in section["permissions"]:
             if permission["code"] not in effective:
+                missing.append({"name": permission["name"], "code": permission["code"]})
                 continue
             if permission["direct"]:
                 source = _("Direct grant")
@@ -435,12 +444,20 @@ def _rbac_access(user):
             else:
                 source = _("Full access")
             held.append({"name": permission["name"], "code": permission["code"], "source": source})
+        # Name the usual source once on the card ("via Operation Manager") and
+        # badge only the rows that differ, instead of repeating it on every row.
+        sources = Counter(str(row["source"]) for row in held)
+        via = sources.most_common(1)[0][0] if sources else ""
+        for row in held:
+            row["show_source"] = str(row["source"]) != via
         sections.append(
             {
                 "key": section["key"],
                 "label": section["label"],
                 "icon": section["icon"],
                 "permissions": held,
+                "missing": missing,
+                "via": via,
                 "granted": len(held),
                 "total": section["total"],
                 "percent": round(len(held) * 100 / section["total"]) if section["total"] else 0,
@@ -562,6 +579,7 @@ def _activity(user, viewable, now):
 
     busiest = max(per_day.items(), key=lambda item: (item[1], item[0]), default=None)
     total = len(stamps)
+    timeline, timeline_more, more_count = _timeline(user, viewable, now, today)
     return {
         "weeks": weeks,
         "weeks_count": ACTIVITY_WEEKS,
@@ -569,7 +587,14 @@ def _activity(user, viewable, now):
         "active_days": len(per_day),
         "busiest": {"date": busiest[0], "count": busiest[1]} if busiest else None,
         "last_30_days": sum(1 for stamp in stamps if stamp >= month_ago),
-        "timeline": _timeline(user, viewable, now, today),
+        "days_count": ACTIVITY_WEEKS * 7,
+        # The heatmap's per-day counts as text, for keyboard and screen-reader users.
+        "active_days_list": [
+            {"date": day, "count": count} for day, count in sorted(per_day.items(), reverse=True)
+        ],
+        "timeline": timeline,
+        "timeline_more": timeline_more,
+        "timeline_more_count": more_count,
     }
 
 
@@ -625,8 +650,42 @@ def _timeline(user, viewable, now, today):
         )
 
     items.sort(key=lambda item: item["when"], reverse=True)
-    groups = []
+    merged = []
     for item in items[:TIMELINE_LIMIT]:
+        target, state = _split_state(item["target"])
+        item.update(target=target, states=[state] if state else [], count=1)
+        previous = merged[-1] if merged else None
+        if (
+            previous is not None
+            and (previous["title"], previous["target"], previous["source"]) == (item["title"], target, item["source"])
+            and timezone.localdate(previous["when"]) == timezone.localdate(item["when"])
+        ):
+            # Same change to the same record, back to back: one row, "3×", with
+            # the states read oldest to newest.
+            previous["count"] += 1
+            if state:
+                previous["states"].insert(0, state)
+            continue
+        merged.append(item)
+
+    visible, rest = merged[:TIMELINE_VISIBLE], merged[TIMELINE_VISIBLE:]
+    return _group_by_day(visible, today), _group_by_day(rest, today), len(rest)
+
+
+#: "TKT20260924D21BA0 (WAITING_ON_CUSTOMER)" -> target + state.
+_TARGET_STATE = re.compile(r"^(?P<target>.*\S)\s+\((?P<state>[A-Z][A-Z_]+)\)$")
+
+
+def _split_state(target):
+    match = _TARGET_STATE.match(target or "")
+    if not match:
+        return target, ""
+    return match["target"], match["state"].replace("_", " ").capitalize()
+
+
+def _group_by_day(items, today):
+    groups = []
+    for item in items:
         day = timezone.localdate(item["when"])
         if not groups or groups[-1]["date"] != day:
             if day == today:
@@ -637,6 +696,9 @@ def _timeline(user, viewable, now, today):
                 label = ""
             groups.append({"date": day, "label": label, "items": []})
         groups[-1]["items"].append(item)
+    for group in groups:
+        # The source tag is noise when every row in the day shares it.
+        group["show_source"] = len({str(item["source"]) for item in group["items"]}) > 1
     return groups
 
 
@@ -691,8 +753,15 @@ def _work(user, viewable):
 
     tickets = SupportTicket.objects.filter(assigned_to=user)
     by_status = dict(tickets.order_by().values_list("status").annotate(n=Count("pk")))
+    ticket_total = sum(by_status.values())
     statuses = [
-        {"key": key, "label": label, "count": by_status.get(key, 0), "tone": _TICKET_STATUS_TONES[key]}
+        {
+            "key": key,
+            "label": label,
+            "count": by_status.get(key, 0),
+            "tone": _TICKET_STATUS_TONES[key],
+            "percent": round(by_status.get(key, 0) * 100 / ticket_total, 1) if ticket_total else 0,
+        }
         for key, label in SupportTicket.STATUS_CHOICES
     ]
     unresolved = sum(by_status.get(key, 0) for key in SupportTicket.UNRESOLVED_STATUSES)
@@ -725,6 +794,8 @@ def _work(user, viewable):
     return {
         "counts": counts,
         "statuses": statuses,
+        "ticket_total": ticket_total,
+        "contributions_total": sum(item["count"] for item in contributions),
         "unresolved": unresolved,
         "open_tickets": open_tickets,
         "tickets_url": _changelist_url(viewable, SupportTicket, f"assigned_to__id__exact={user.pk}"),
@@ -765,8 +836,7 @@ def _notifications(user, storefront):
     }
 
 
-def _linked(user, profile, viewable, counts):
-    seller = SellerProfile.objects.filter(user=user).first()
+def _linked(profile, seller, viewable, counts):
     return {
         "customer": {
             "exists": profile is not None,
@@ -783,11 +853,91 @@ def _linked(user, profile, viewable, counts):
     }
 
 
-def _kpis(work, activity, notifications, rbac, audit_url):
-    access_value = _("Full") if rbac["full_access"] else rbac["granted"]
-    access_label = _("platform access") if rbac["full_access"] else _("of %(total)s permissions") % {
-        "total": rbac["total"]
+# --- Points -----------------------------------------------------------------
+
+#: Movements that bring points into a staff wallet.
+_POINT_INFLOWS = (
+    StaffPointTransaction.TYPE_MINT,
+    StaffPointTransaction.TYPE_TRANSFER_IN,
+    StaffPointTransaction.TYPE_SELLER_DEBIT,
+)
+_POINT_STYLES = {
+    StaffPointTransaction.TYPE_MINT: ("auto_awesome", "gold"),
+    StaffPointTransaction.TYPE_TRANSFER_IN: ("call_received", "green"),
+    StaffPointTransaction.TYPE_TRANSFER_OUT: ("call_made", "indigo"),
+    StaffPointTransaction.TYPE_SELLER_CREDIT: ("storefront", "blue"),
+    StaffPointTransaction.TYPE_SELLER_DEBIT: ("undo", "amber"),
+}
+
+
+def _points(user, viewable, seller):
+    """
+    The signed-in user's available points: their StaffWallet balance, i.e. what
+    they can still give to sellers. Read with filter() rather than
+    PointService.get_staff_balance(), which would create a wallet on a GET; an
+    account without one simply has 0.
+    """
+    wallet = StaffWallet.objects.filter(user=user).first()
+    balance = wallet.balance if wallet else 0
+    data = {
+        "balance": balance,
+        "balance_display": f"{balance:,}",
+        "has_wallet": wallet is not None,
+        "can_mint": user.is_superuser,
+        "given_to_sellers": 0,
+        "received": 0,
+        "given_display": "0",
+        "received_display": "0",
+        "recent": [],
+        "wallet_url": "",
+        "ledger_url": "",
+        "seller_balance": None,
     }
+    if wallet is not None:
+        totals = wallet.transactions.aggregate(
+            given=Sum("amount", filter=Q(transaction_type=StaffPointTransaction.TYPE_SELLER_CREDIT)),
+            received=Sum("amount", filter=Q(transaction_type__in=_POINT_INFLOWS)),
+        )
+        data["given_to_sellers"] = totals["given"] or 0
+        data["received"] = totals["received"] or 0
+        data["given_display"] = f"{data['given_to_sellers']:,}"
+        data["received_display"] = f"{data['received']:,}"
+        entries = wallet.transactions.select_related("counterparty").order_by("-created_at", "-pk")
+        for entry in entries[:POINTS_RECENT_LIMIT]:
+            icon, tone = _POINT_STYLES.get(entry.transaction_type, ("toll", "muted"))
+            data["recent"].append(
+                {
+                    "label": entry.get_transaction_type_display(),
+                    "amount": entry.amount,
+                    "incoming": entry.balance_after >= entry.balance_before,
+                    "amount_display": (
+                        f"+{entry.amount:,}" if entry.balance_after >= entry.balance_before else f"\u2212{entry.amount:,}"
+                    ),
+                    "balance_after": entry.balance_after,
+                    "balance_after_display": f"{entry.balance_after:,}",
+                    "reason": entry.reason,
+                    "counterparty": _person(entry.counterparty),
+                    "when": entry.created_at,
+                    "icon": icon,
+                    "tone": tone,
+                }
+            )
+        data["wallet_url"] = _change_url(viewable, StaffWallet, wallet.pk)
+        # A lookup on the model's own FK, so the admin allows it without a list_filter.
+        data["ledger_url"] = _changelist_url(viewable, StaffPointTransaction, f"wallet__id__exact={wallet.pk}")
+    if seller is not None:
+        data["seller_balance"] = (
+            SellerWallet.objects.filter(seller=seller).values_list("balance", flat=True).first() or 0
+        )
+        data["seller_balance_display"] = f"{data['seller_balance']:,}"
+    return data
+
+
+def _kpis(work, activity, notifications, rbac, audit_url):
+    access_value = _("All") if rbac["full_access"] else rbac["granted"]
+    access_label = _("%(total)s permissions") % {"total": rbac["total"]} if rbac["full_access"] else _(
+        "of %(total)s permissions"
+    ) % {"total": rbac["total"]}
     return [
         {
             "value": work["unresolved"],

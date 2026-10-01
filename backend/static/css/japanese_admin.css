@@ -1603,6 +1603,14 @@ body.theme-dark {
   gap: 1px;
 }
 
+/* Django's base.css sets `ul > li { list-style-type: square }` on the li
+   itself, so list-style on the ul alone still left a bullet beside every
+   sidebar row. (0,1,1) beats that (0,0,2) rule. */
+.sidebar-menu > li,
+.sidebar-cat-list > li {
+  list-style: none;
+}
+
 .sidebar-link {
   position: relative;
   display: flex !important;
