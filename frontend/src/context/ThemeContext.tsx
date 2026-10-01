@@ -76,6 +76,12 @@ export const THEMES: ThemeOption[] = [
     subtitle: "Emerald kiwi and lime flesh with a hot-pink guava pop",
     swatches: ["#007535", "#FF3F8E", "#9EDB45", "#CC0F62"],
   },
+  {
+    id: "kolapata",
+    name: "Kolapata Leaf",
+    subtitle: "Fresh banana-leaf green on charcoal with a honey-amber glow",
+    swatches: ["#60A917", "#F59E0B", "#1F2937", "#DC2626"],
+  },
 ];
 
 interface ThemeContextType {

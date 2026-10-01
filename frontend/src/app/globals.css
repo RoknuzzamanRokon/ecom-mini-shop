@@ -863,6 +863,80 @@
   --c-focus-ring: #FF7AB3;
 }
 
+/* 12. Kolapata Leaf (kolapata) */
+:root[data-theme="kolapata"] {
+  --c-page-bg: #F7F9F5;
+  --c-surface: #FFFFFF;
+  --c-surface-alt: #EAF6DF;
+  --c-surface-sunken: #E3ECDA;
+  --c-border: #E5E7EB;
+  --c-border-subtle: #F0F2F4;
+  --c-text-strong: #1F2937;
+  --c-text-body: #374151;
+  --c-text-muted: #6B7280;
+  --c-text-faint: #858C97;
+  --c-primary: #60A917;
+  --c-primary-hover: #4E8F12;
+  --c-primary-deep: #2F5A0A;
+  --c-on-primary: #FFFFFF;
+  --c-accent: #F59E0B;
+  --c-accent-hover: #FBBF24;
+  --c-on-accent: #1F2937;
+  --c-nav-bg: #1F2937;
+  --c-nav-strip-bg: #111827;
+  --c-nav-active-bg: #60A917;
+  --c-nav-active-text: #FFFFFF;
+  --c-nav-text: #D1D5DB;
+  --c-price: #1F2937;
+  --c-sale-price: #DC2626;
+  --c-old-price: #858C97;
+  --c-star: #F59E0B;
+  --c-success: #16A34A;
+  --c-danger: #DC2626;
+  --c-badge-new: #4E8F12;
+  --c-badge-hot: #DC2626;
+  --c-badge-top: #1F2937;
+  --c-badge-default: #EAF6DF;
+  --c-on-badge-default: #374151;
+  --c-focus-ring: #4E8F12;
+}
+:root[data-theme="kolapata"].dark {
+  --c-page-bg: #0A0E14;
+  --c-surface: #111827;
+  --c-surface-alt: #1F2937;
+  --c-surface-sunken: #0D131E;
+  --c-border: #374151;
+  --c-border-subtle: #263040;
+  --c-text-strong: #F3F4F6;
+  --c-text-body: #D1D5DB;
+  --c-text-muted: #9CA3AF;
+  --c-text-faint: #6B7280;
+  --c-primary: #60A917;
+  --c-primary-hover: #4E8F12;
+  --c-primary-deep: #1A3305;
+  --c-on-primary: #FFFFFF;
+  --c-accent: #F59E0B;
+  --c-accent-hover: #FBBF24;
+  --c-on-accent: #111827;
+  --c-nav-bg: #1A2330;
+  --c-nav-strip-bg: #0F1620;
+  --c-nav-active-bg: #60A917;
+  --c-nav-active-text: #FFFFFF;
+  --c-nav-text: #C3C9D2;
+  --c-price: #F3F4F6;
+  --c-sale-price: #F87171;
+  --c-old-price: #7C8491;
+  --c-star: #FBBF24;
+  --c-success: #22C55E;
+  --c-danger: #F87171;
+  --c-badge-new: #4E8F12;
+  --c-badge-hot: #DC2626;
+  --c-badge-top: #4B5563;
+  --c-badge-default: #1F2937;
+  --c-on-badge-default: #D1D5DB;
+  --c-focus-ring: #60A917;
+}
+
 /* Base resets & typography */
 html, body {
   margin: 0;
