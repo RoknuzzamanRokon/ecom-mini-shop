@@ -24,7 +24,7 @@ from django.contrib.admin.models import ADDITION, CHANGE, DELETION, LogEntry
 from django.contrib.admin.utils import quote
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import Count, IntegerField, OuterRef, Q, Subquery, Sum
+from django.db.models import Count, IntegerField, OuterRef, Subquery
 from django.db.models.functions import Coalesce
 from django.shortcuts import redirect
 from django.template.response import TemplateResponse
@@ -39,6 +39,7 @@ from customers.services import CustomerService
 from notifications.models import Audience, Notification
 from notifications.permissions import can_read_audience
 from points.models import SellerWallet, StaffPointTransaction, StaffWallet
+from points.services import PointService
 from rbac.models import UserPermission, UserRole
 from rbac.services import get_user_permissions
 from rbac.widgets import ACTIONS, DEFAULT_WEIGHT, SECTION_META, WILDCARD_CODE, build_minishop_permission_board
@@ -855,12 +856,7 @@ def _linked(profile, seller, viewable, counts):
 
 # --- Points -----------------------------------------------------------------
 
-#: Movements that bring points into a staff wallet.
-_POINT_INFLOWS = (
-    StaffPointTransaction.TYPE_MINT,
-    StaffPointTransaction.TYPE_TRANSFER_IN,
-    StaffPointTransaction.TYPE_SELLER_DEBIT,
-)
+#: Icon and tone for each kind of staff wallet movement.
 _POINT_STYLES = {
     StaffPointTransaction.TYPE_MINT: ("auto_awesome", "gold"),
     StaffPointTransaction.TYPE_TRANSFER_IN: ("call_received", "green"),
@@ -894,12 +890,10 @@ def _points(user, viewable, seller):
         "seller_balance": None,
     }
     if wallet is not None:
-        totals = wallet.transactions.aggregate(
-            given=Sum("amount", filter=Q(transaction_type=StaffPointTransaction.TYPE_SELLER_CREDIT)),
-            received=Sum("amount", filter=Q(transaction_type__in=_POINT_INFLOWS)),
-        )
-        data["given_to_sellers"] = totals["given"] or 0
-        data["received"] = totals["received"] or 0
+        # The same totals /api/points/staff/me/ returns to the Console profile.
+        totals = PointService.get_staff_ledger_totals(wallet)
+        data["given_to_sellers"] = totals["given_to_sellers"]
+        data["received"] = totals["received"]
         data["given_display"] = f"{data['given_to_sellers']:,}"
         data["received_display"] = f"{data['received']:,}"
         entries = wallet.transactions.select_related("counterparty").order_by("-created_at", "-pk")

@@ -1590,6 +1590,57 @@ export async function getAdminSellerPointHistory(
   );
 }
 
+/** Exact StaffPointTransaction.TRANSACTION_TYPE_CHOICES values. */
+export type StaffPointTransactionType =
+  | "MINT"
+  | "TRANSFER_OUT"
+  | "TRANSFER_IN"
+  | "SELLER_CREDIT"
+  | "SELLER_DEBIT";
+
+/** Mirrors StaffPointTransactionSerializer field-for-field. */
+export interface StaffPointMovement {
+  id: number;
+  transaction_type: StaffPointTransactionType | string;
+  transaction_type_display: string;
+  /** From balance_after vs balance_before; `amount` is always positive. */
+  direction: "IN" | "OUT";
+  amount: number;
+  balance_before: number;
+  balance_after: number;
+  reason: string;
+  /** The other staff member on a transfer; null otherwise. */
+  counterparty_username: string | null;
+  /** The seller on a seller credit or debit; null otherwise. */
+  seller_business_name: string | null;
+  created_at: string;
+}
+
+/** Mirrors the StaffOwnWalletView payload exactly. */
+export interface StaffWalletSummary {
+  /** False when the account has never held points; every number is then 0. */
+  has_wallet: boolean;
+  /** Points the caller can still give to sellers. */
+  balance: number;
+  received: number;
+  given_to_sellers: number;
+  sent_to_staff: number;
+  transaction_count: number;
+  /** Superusers create points (utils/add_points.py); nobody else can. */
+  can_mint: boolean;
+  /** The newest movements, newest first (at most 5). */
+  recent: StaffPointMovement[];
+}
+
+/**
+ * GET /api/points/staff/me/
+ * The caller's own staff wallet. Any signed-in user may read it, because it
+ * only describes their own wallet, and it never creates one.
+ */
+export async function getMyStaffWallet(token: string): Promise<StaffWalletSummary> {
+  return adminRequest<StaffWalletSummary>("/api/points/staff/me/", token);
+}
+
 /** Exactly the `action` choices accepted by PointAdjustmentRequestSerializer. */
 export type AdminPointAdjustmentAction = "CREDIT" | "DEBIT";
 

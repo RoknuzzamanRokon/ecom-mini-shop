@@ -7,6 +7,8 @@
  */
 
 import type { AuthUser } from "@/lib/types";
+import type { StaffPointMovement } from "@/lib/admin-api";
+import type { PointMovementRow } from "@/components/points/PointMovementList";
 
 /**
  * The wildcard token the backend actually emits.
@@ -111,3 +113,38 @@ export function formatRoleLabel(role: string): string {
     .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(" ");
 }
+
+/** Icons per StaffPointTransaction type, matching the Django admin profile. */
+const STAFF_MOVEMENT_ICONS: Record<string, string> = {
+  MINT: "auto_awesome",
+  TRANSFER_IN: "call_received",
+  TRANSFER_OUT: "call_made",
+  SELLER_CREDIT: "storefront",
+  SELLER_DEBIT: "undo",
+};
+
+/** Maps one staff wallet movement onto the shared PointMovementList row. */
+export function toStaffMovementRow(movement: StaffPointMovement): PointMovementRow {
+  return {
+    id: movement.id,
+    icon: STAFF_MOVEMENT_ICONS[movement.transaction_type] ?? "toll",
+    title: movement.transaction_type_display,
+    context:
+      movement.seller_business_name ??
+      (movement.counterparty_username ? `@${movement.counterparty_username}` : null),
+    reason: movement.reason,
+    amount: movement.amount,
+    incoming: movement.direction === "IN",
+    balanceAfter: movement.balance_after,
+    when: movement.created_at,
+  };
+}
+
+/**
+ * The Django admin's own profile page, which holds the full staff ledger. It
+ * signs in separately (Django session, not this console's JWT), so only link
+ * it for is_staff accounts, the only ones Django admin lets in.
+ */
+export const DJANGO_ADMIN_PROFILE_URL = `${
+  process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001"
+}/admin/profile/`;

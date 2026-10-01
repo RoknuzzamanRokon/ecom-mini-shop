@@ -323,6 +323,27 @@ class PointService:
         return cls.get_or_create_staff_wallet(user).balance
 
     @classmethod
+    def get_staff_ledger_totals(cls, wallet) -> dict:
+        """
+        Lifetime movement through one StaffWallet, in a single aggregate query.
+
+        `received` is every inflow (mint, transfer in, points taken back from a
+        seller), split by balance direction as get_ledger_totals does, so a new
+        inflow type is counted without this method changing. The two outflows
+        are reported apart because they mean different things to the holder:
+        points given to sellers versus points passed on to other staff.
+        """
+        return StaffPointTransaction.objects.filter(wallet=wallet).aggregate(
+            received=Coalesce(Sum("amount", filter=Q(balance_after__gte=F("balance_before"))), 0),
+            given_to_sellers=Coalesce(
+                Sum("amount", filter=Q(transaction_type=StaffPointTransaction.TYPE_SELLER_CREDIT)), 0
+            ),
+            sent_to_staff=Coalesce(
+                Sum("amount", filter=Q(transaction_type=StaffPointTransaction.TYPE_TRANSFER_OUT)), 0
+            ),
+        )
+
+    @classmethod
     def mint_points(cls, superuser, amount: int, reason: str) -> StaffPointTransaction:
         """Creates `amount` new points in a superuser's own staff wallet."""
         if not (superuser and superuser.is_active and superuser.is_superuser):

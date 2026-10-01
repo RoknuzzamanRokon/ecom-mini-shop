@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import PointTransaction, SellerWallet
+from .models import PointTransaction, SellerWallet, StaffPointTransaction
 from .services import PointService
 
 
@@ -79,6 +79,39 @@ class PointTransactionSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = fields
+
+
+class StaffPointTransactionSerializer(serializers.ModelSerializer):
+    """One movement in the caller's own StaffWallet, for the Console profile."""
+
+    transaction_type_display = serializers.CharField(source="get_transaction_type_display", read_only=True)
+    # `amount` is always positive; the direction is read from the balances, as
+    # get_ledger_totals and StaffPointTransaction.__str__ already do.
+    direction = serializers.SerializerMethodField()
+    counterparty_username = serializers.CharField(source="counterparty.username", read_only=True, default=None)
+    seller_business_name = serializers.CharField(
+        source="seller_transaction.seller.business_name", read_only=True, default=None
+    )
+
+    class Meta:
+        model = StaffPointTransaction
+        fields = [
+            "id",
+            "transaction_type",
+            "transaction_type_display",
+            "direction",
+            "amount",
+            "balance_before",
+            "balance_after",
+            "reason",
+            "counterparty_username",
+            "seller_business_name",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+    def get_direction(self, obj) -> str:
+        return "IN" if obj.balance_after >= obj.balance_before else "OUT"
 
 
 class PointAdjustmentRequestSerializer(serializers.Serializer):

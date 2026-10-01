@@ -1160,3 +1160,143 @@ class StaffWalletTests(TestCase):
         self.assertEqual(code, 1)
         self.assertIn("cannot credit sellers", err.getvalue())
         self.assertEqual(PointService.get_staff_balance(self.root), 300)
+
+
+class StaffOwnWalletApiTests(TestCase):
+    """
+    GET /api/points/staff/me/ shows the caller their own staff wallet (the
+    points tile on the Console profile) and never creates one.
+    """
+
+    URL = "/api/points/staff/me/"
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_rbac")
+        seller_user = User.objects.create_user(
+            username="me_seller", email="me_seller@minishop.com", password="SellerPassword123!"
+        )
+        cls.seller = SellerProfile.objects.create(
+            user=seller_user,
+            seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+            business_name="My Wallet Traders",
+            status=SellerProfile.STATUS_ACTIVE,
+        )
+        cls.root = User.objects.create_superuser(
+            username="me_root", email="me_root@minishop.com", password="RootPassword123!"
+        )
+        cls.finance = User.objects.create_user(
+            username="me_finance", email="me_finance@minishop.com", password="FinancePassword123!", is_staff=True
+        )
+        assign_user_role(cls.finance, Role.ROLE_FINANCE)
+
+    def setUp(self):
+        self.client = APIClient()
+
+    def _get(self, user):
+        self.client.force_authenticate(user=user)
+        res = self.client.get(self.URL)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        return res.data
+
+    def test_anonymous_is_unauthorized(self):
+        self.assertEqual(self.client.get(self.URL).status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_no_wallet_reads_zero_and_creates_none(self):
+        data = self._get(self.finance)
+        self.assertEqual(
+            data,
+            {
+                "has_wallet": False,
+                "balance": 0,
+                "received": 0,
+                "given_to_sellers": 0,
+                "sent_to_staff": 0,
+                "transaction_count": 0,
+                "can_mint": False,
+                "recent": [],
+            },
+        )
+        self.assertFalse(StaffWallet.objects.filter(user=self.finance).exists())
+        self.assertTrue(self._get(self.root)["can_mint"])
+
+    def test_balance_totals_and_newest_movements_first(self):
+        PointService.mint_points(self.root, 1000, "Opening float")
+        PointService.transfer_to_staff(self.root, self.finance, 300, "Monthly budget")
+        PointService.adjust_points(self.seller, 120, "CREDIT", "Launch bonus", actor=self.root)
+        PointService.adjust_points(self.seller, 20, "DEBIT", "Over-credited", actor=self.root)
+
+        data = self._get(self.root)
+        self.assertTrue(data["has_wallet"])
+        self.assertEqual(data["balance"], 600)
+        # Inflows are the mint and the debit taken back from the seller.
+        self.assertEqual(data["received"], 1020)
+        self.assertEqual(data["given_to_sellers"], 120)
+        self.assertEqual(data["sent_to_staff"], 300)
+        self.assertEqual(data["transaction_count"], 4)
+
+        recent = data["recent"]
+        self.assertEqual(
+            [(row["transaction_type"], row["direction"], row["amount"]) for row in recent],
+            [
+                (StaffPointTransaction.TYPE_SELLER_DEBIT, "IN", 20),
+                (StaffPointTransaction.TYPE_SELLER_CREDIT, "OUT", 120),
+                (StaffPointTransaction.TYPE_TRANSFER_OUT, "OUT", 300),
+                (StaffPointTransaction.TYPE_MINT, "IN", 1000),
+            ],
+        )
+        self.assertEqual(recent[0]["transaction_type_display"], "Taken back from Seller")
+        self.assertEqual(recent[1]["seller_business_name"], "My Wallet Traders")
+        self.assertEqual(recent[2]["counterparty_username"], "me_finance")
+        self.assertIsNone(recent[3]["counterparty_username"])
+        self.assertIsNone(recent[3]["seller_business_name"])
+
+    def test_only_the_callers_own_wallet_is_shown(self):
+        PointService.mint_points(self.root, 1000, "Opening float")
+        PointService.transfer_to_staff(self.root, self.finance, 300, "Monthly budget")
+
+        data = self._get(self.finance)
+        self.assertEqual(data["balance"], 300)
+        self.assertEqual(data["received"], 300)
+        self.assertEqual(data["transaction_count"], 1)
+        self.assertEqual(data["recent"][0]["transaction_type"], StaffPointTransaction.TYPE_TRANSFER_IN)
+        self.assertEqual(data["recent"][0]["counterparty_username"], "me_root")
+
+    def test_recent_is_capped_and_shapes_match_the_frontend_type(self):
+        for n in range(7):
+            PointService.mint_points(self.root, 10 + n, f"Top-up {n}")
+
+        data = self._get(self.root)
+        self.assertEqual(data["transaction_count"], 7)
+        self.assertEqual(len(data["recent"]), 5)
+        self.assertEqual(data["recent"][0]["amount"], 16)
+        # Keep in step with StaffWalletSummary / StaffPointMovement in admin-api.ts.
+        self.assertEqual(
+            set(data.keys()),
+            {
+                "has_wallet",
+                "balance",
+                "received",
+                "given_to_sellers",
+                "sent_to_staff",
+                "transaction_count",
+                "can_mint",
+                "recent",
+            },
+        )
+        self.assertEqual(
+            set(data["recent"][0].keys()),
+            {
+                "id",
+                "transaction_type",
+                "transaction_type_display",
+                "direction",
+                "amount",
+                "balance_before",
+                "balance_after",
+                "reason",
+                "counterparty_username",
+                "seller_business_name",
+                "created_at",
+            },
+        )

@@ -8,7 +8,7 @@ from rest_framework.views import APIView
 from audit.services import AuditService
 from audit.utils import get_client_ip
 from sellers.models import SellerProfile
-from .models import PointTransaction, SellerWallet
+from .models import PointTransaction, SellerWallet, StaffWallet
 from .permissions import (
     CanAdjustPoints,
     CanViewPoints,
@@ -19,6 +19,7 @@ from .serializers import (
     PointAdjustmentRequestSerializer,
     PointTransactionSerializer,
     SellerWalletSerializer,
+    StaffPointTransactionSerializer,
 )
 from .services import (
     InsufficientPointsError,
@@ -52,6 +53,43 @@ class SellerTransactionHistoryView(generics.ListAPIView):
         seller = self.request.user.seller_profile
         txn_type = self.request.query_params.get("type")
         return PointService.get_transaction_history(seller, transaction_type=txn_type)
+
+
+class StaffOwnWalletView(APIView):
+    """
+    The caller's own StaffWallet: what they can still give to sellers, the
+    lifetime totals behind it and the newest movements. It backs the points
+    tile on the Console profile.
+
+    Any signed-in user may ask, because it only ever describes their own
+    wallet. An account without one reads as 0 and is not given a wallet: this
+    is a GET, so it uses filter() rather than get_or_create_staff_wallet().
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    RECENT_LIMIT = 5
+
+    def get(self, request):
+        user = request.user
+        wallet = StaffWallet.objects.filter(user=user).first()
+        data = {
+            "has_wallet": wallet is not None,
+            "balance": wallet.balance if wallet else 0,
+            "received": 0,
+            "given_to_sellers": 0,
+            "sent_to_staff": 0,
+            "transaction_count": 0,
+            "can_mint": bool(user.is_superuser),
+            "recent": [],
+        }
+        if wallet is not None:
+            data.update(PointService.get_staff_ledger_totals(wallet))
+            entries = wallet.transactions.select_related(
+                "counterparty", "seller_transaction__seller"
+            ).order_by("-created_at", "-pk")
+            data["transaction_count"] = entries.count()
+            data["recent"] = StaffPointTransactionSerializer(entries[: self.RECENT_LIMIT], many=True).data
+        return Response(data, status=status.HTTP_200_OK)
 
 
 # ---------------------------------------------------------------------------
