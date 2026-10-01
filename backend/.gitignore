@@ -16,3 +16,4 @@ staticfiles/
 
 # Private uploads (support ticket attachments) — never commit
 private_media/
+utils/add_points.py  
