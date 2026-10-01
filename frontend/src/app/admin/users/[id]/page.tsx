@@ -29,6 +29,7 @@ import {
   targetIsSuperAdministrator,
   userDisplayName,
 } from "../userGovernance";
+import UserPointsPanel from "../UserPointsPanel";
 import { canCreateAdminSellers } from "../../sellers/sellerGovernance";
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
@@ -450,6 +451,15 @@ export default function AdminUserDetailPage() {
           )}
         </div>
       </div>
+
+      {/* Points: what the account holds, and giving or taking them back. Keyed
+          on roles and activation so a change that decides who may receive
+          staff points reloads it. */}
+      <UserPointsPanel
+        key={`${target.id}:${target.is_active}:${target.roles.join(",")}`}
+        target={target}
+        actor={actor}
+      />
 
       {/* Role assignment */}
       <div className="bg-surface rounded-2xl border border-line shadow-xs p-6">

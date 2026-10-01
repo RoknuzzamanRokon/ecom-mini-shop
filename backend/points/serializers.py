@@ -144,3 +144,25 @@ class PointAdjustmentRequestSerializer(serializers.Serializer):
         default="",
         max_length=100,
     )
+
+
+class StaffPointTransferRequestSerializer(serializers.Serializer):
+    """A superuser giving a staff member points (CREDIT) or taking them back (DEBIT)."""
+
+    ACTION_CHOICES = ["CREDIT", "DEBIT"]
+
+    action = serializers.ChoiceField(
+        choices=ACTION_CHOICES,
+        required=True,
+        help_text="'CREDIT' to give the staff member points, 'DEBIT' to take them back.",
+    )
+    amount = serializers.IntegerField(
+        min_value=1,
+        required=True,
+        help_text="Positive integer amount of points to move.",
+    )
+    reason = serializers.CharField(
+        min_length=3,
+        required=True,
+        help_text="Mandatory business reason for this transfer.",
+    )

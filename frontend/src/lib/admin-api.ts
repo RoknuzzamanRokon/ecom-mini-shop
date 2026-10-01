@@ -1513,6 +1513,11 @@ export interface AdminSellerWallet {
   seller_id: number;
   business_name: string;
   balance: number;
+  /** Lifetime credits and debits, aggregated from the ledger on read (never stored). */
+  total_earned: number;
+  total_spent: number;
+  /** The configured ProductCreationCost: points one new product listing costs. */
+  product_creation_cost: number;
   created_at: string;
   updated_at: string;
 }
@@ -1596,7 +1601,9 @@ export type StaffPointTransactionType =
   | "TRANSFER_OUT"
   | "TRANSFER_IN"
   | "SELLER_CREDIT"
-  | "SELLER_DEBIT";
+  | "SELLER_DEBIT"
+  | "RECLAIM_OUT"
+  | "RECLAIM_IN";
 
 /** Mirrors StaffPointTransactionSerializer field-for-field. */
 export interface StaffPointMovement {
@@ -1625,6 +1632,8 @@ export interface StaffWalletSummary {
   received: number;
   given_to_sellers: number;
   sent_to_staff: number;
+  /** Points a superuser took back out of this wallet. */
+  taken_back: number;
   transaction_count: number;
   /** Superusers create points (utils/add_points.py); nobody else can. */
   can_mint: boolean;
@@ -1723,6 +1732,71 @@ export function getInsufficientPointsInfo(err: unknown): AdminInsufficientPoints
     detail: typeof data.detail === "string" ? data.detail : "",
     available_balance: data.available_balance,
   };
+}
+
+/** Mirrors the StaffUserWalletView payload: StaffWalletSummary plus whose wallet it is. */
+export interface AdminStaffWallet extends StaffWalletSummary {
+  user_id: number;
+  username: string;
+  /**
+   * Whether a superuser may send this account points: transfer_to_staff
+   * refuses anyone inactive or unable to credit sellers.
+   */
+  can_receive_transfers: boolean;
+}
+
+/**
+ * GET /api/points/staff/<user_id>/
+ * Any account's staff wallet, keyed by the auth User id (not a SellerProfile
+ * id). Requires 'points.view' AND 'users.admin.view' (CanViewStaffWallets),
+ * because it answers for every user id. Never creates a wallet.
+ */
+export async function getAdminStaffWallet(
+  token: string,
+  userId: number | string
+): Promise<AdminStaffWallet> {
+  return adminRequest<AdminStaffWallet>(`/api/points/staff/${userId}/`, token);
+}
+
+/** Exactly the `action` choices accepted by StaffPointTransferRequestSerializer. */
+export type AdminStaffTransferAction = "CREDIT" | "DEBIT";
+
+export interface AdminStaffTransferPayload {
+  /** CREDIT gives the staff member points from your wallet; DEBIT takes them back into it. */
+  action: AdminStaffTransferAction;
+  /** Positive integer; the backend rejects amount <= 0 with a 400 field error. */
+  amount: number;
+  /** Minimum 3 characters — recorded in the ledger and the audit log. */
+  reason: string;
+}
+
+export interface AdminStaffTransferResult {
+  message: string;
+  /** The staff member's side of the move. */
+  transaction: StaffPointMovement;
+  staff_balance: number;
+  /** The acting superuser's own wallet after the move. */
+  actor_balance: number;
+}
+
+/**
+ * POST /api/points/staff/<user_id>/transfer/
+ *
+ * Active superusers only (IsPointSuperuser) — holding every points permission
+ * is not enough, as PointService.transfer_to_staff and reclaim_from_staff
+ * insist. A CREDIT the superuser's wallet cannot cover, or a DEBIT the staff
+ * member's wallet cannot cover, returns the same 400 shape as the seller
+ * adjustment, so getInsufficientPointsInfo reads it.
+ */
+export async function transferAdminStaffPoints(
+  token: string,
+  userId: number | string,
+  payload: AdminStaffTransferPayload
+): Promise<AdminStaffTransferResult> {
+  return adminRequest<AdminStaffTransferResult>(`/api/points/staff/${userId}/transfer/`, token, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 // ==============================================================================

@@ -1,3 +1,4 @@
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status
@@ -12,6 +13,8 @@ from .models import PointTransaction, SellerWallet, StaffWallet
 from .permissions import (
     CanAdjustPoints,
     CanViewPoints,
+    CanViewStaffWallets,
+    IsPointSuperuser,
     IsSellerWalletOwner,
     can_perform_point_action,
 )
@@ -20,6 +23,7 @@ from .serializers import (
     PointTransactionSerializer,
     SellerWalletSerializer,
     StaffPointTransactionSerializer,
+    StaffPointTransferRequestSerializer,
 )
 from .services import (
     InsufficientPointsError,
@@ -27,6 +31,8 @@ from .services import (
     PointError,
     PointService,
 )
+
+User = get_user_model()
 
 
 class SellerWalletView(APIView):
@@ -55,6 +61,40 @@ class SellerTransactionHistoryView(generics.ListAPIView):
         return PointService.get_transaction_history(seller, transaction_type=txn_type)
 
 
+STAFF_WALLET_RECENT_LIMIT = 5
+
+
+def staff_wallet_summary(user) -> dict:
+    """
+    One account's StaffWallet: its balance, the lifetime totals behind it and
+    the newest movements. An account without a wallet reads as 0 and is not
+    given one, because every caller is a GET: filter(), never
+    get_or_create_staff_wallet().
+    """
+    wallet = StaffWallet.objects.filter(user=user).first()
+    data = {
+        "has_wallet": wallet is not None,
+        "balance": wallet.balance if wallet else 0,
+        "received": 0,
+        "given_to_sellers": 0,
+        "sent_to_staff": 0,
+        "taken_back": 0,
+        "transaction_count": 0,
+        "can_mint": bool(user.is_superuser),
+        "recent": [],
+    }
+    if wallet is not None:
+        data.update(PointService.get_staff_ledger_totals(wallet))
+        entries = wallet.transactions.select_related(
+            "counterparty", "seller_transaction__seller"
+        ).order_by("-created_at", "-pk")
+        data["transaction_count"] = entries.count()
+        data["recent"] = StaffPointTransactionSerializer(
+            entries[:STAFF_WALLET_RECENT_LIMIT], many=True
+        ).data
+    return data
+
+
 class StaffOwnWalletView(APIView):
     """
     The caller's own StaffWallet: what they can still give to sellers, the
@@ -62,34 +102,12 @@ class StaffOwnWalletView(APIView):
     tile on the Console profile.
 
     Any signed-in user may ask, because it only ever describes their own
-    wallet. An account without one reads as 0 and is not given a wallet: this
-    is a GET, so it uses filter() rather than get_or_create_staff_wallet().
+    wallet. An account without one reads as 0 and is not given a wallet.
     """
     permission_classes = [permissions.IsAuthenticated]
 
-    RECENT_LIMIT = 5
-
     def get(self, request):
-        user = request.user
-        wallet = StaffWallet.objects.filter(user=user).first()
-        data = {
-            "has_wallet": wallet is not None,
-            "balance": wallet.balance if wallet else 0,
-            "received": 0,
-            "given_to_sellers": 0,
-            "sent_to_staff": 0,
-            "transaction_count": 0,
-            "can_mint": bool(user.is_superuser),
-            "recent": [],
-        }
-        if wallet is not None:
-            data.update(PointService.get_staff_ledger_totals(wallet))
-            entries = wallet.transactions.select_related(
-                "counterparty", "seller_transaction__seller"
-            ).order_by("-created_at", "-pk")
-            data["transaction_count"] = entries.count()
-            data["recent"] = StaffPointTransactionSerializer(entries[: self.RECENT_LIMIT], many=True).data
-        return Response(data, status=status.HTTP_200_OK)
+        return Response(staff_wallet_summary(request.user), status=status.HTTP_200_OK)
 
 
 # ---------------------------------------------------------------------------
@@ -220,6 +238,126 @@ class StaffPointAdjustmentView(APIView):
                 "transaction": PointTransactionSerializer(txn).data,
                 "current_balance": txn.balance_after,
                 "actor_balance": actor_balance,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+class StaffUserWalletView(APIView):
+    """
+    GET /api/points/staff/<user_id>/
+
+    Any account's StaffWallet, in the same shape as /api/points/staff/me/, for
+    the Console's user page. Requires 'points.view' and 'users.admin.view'
+    (CanViewStaffWallets): it answers for every user id, so it must not reach
+    further than the user directory itself.
+
+    `can_receive_transfers` says whether a superuser may send this account
+    points: transfer_to_staff refuses anyone inactive or unable to credit
+    sellers, because points in their wallet could never be spent.
+    """
+    permission_classes = [CanViewStaffWallets]
+
+    def get(self, request, user_id):
+        target = get_object_or_404(User, pk=user_id)
+        data = staff_wallet_summary(target)
+        data.update(
+            {
+                "user_id": target.pk,
+                "username": target.username,
+                "can_receive_transfers": bool(
+                    target.is_active and can_perform_point_action(target, "CREDIT")
+                ),
+            }
+        )
+        return Response(data, status=status.HTTP_200_OK)
+
+
+class StaffPointTransferView(APIView):
+    """
+    POST /api/points/staff/<user_id>/transfer/
+
+    A superuser gives a staff member points out of their own wallet (CREDIT,
+    PointService.transfer_to_staff) or takes points back into it (DEBIT,
+    PointService.reclaim_from_staff). Only an active superuser may do either;
+    holding every points permission is not enough, as the service already
+    insists for transfers made with utils/add_points.py.
+
+    The ledger entries and the SUPERUSER_POINTS_* audit entry are written in
+    one atomic block, as StaffPointAdjustmentView does for seller adjustments.
+    """
+    permission_classes = [IsPointSuperuser]
+
+    def post(self, request, user_id):
+        target = get_object_or_404(User, pk=user_id)
+        serializer = StaffPointTransferRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        actor = request.user
+        giving = data["action"] == "CREDIT"
+
+        try:
+            with transaction.atomic():
+                if giving:
+                    outgoing, incoming = PointService.transfer_to_staff(
+                        actor, target, data["amount"], data["reason"]
+                    )
+                    actor_txn, target_txn = outgoing, incoming
+                else:
+                    outgoing, incoming = PointService.reclaim_from_staff(
+                        actor, target, data["amount"], data["reason"]
+                    )
+                    actor_txn, target_txn = incoming, outgoing
+                AuditService.log(
+                    action="SUPERUSER_POINTS_TRANSFER" if giving else "SUPERUSER_POINTS_RECLAIM",
+                    target=target_txn,
+                    actor=actor,
+                    reason=data["reason"],
+                    previous_state={"balance": target_txn.balance_before},
+                    new_state={"balance": target_txn.balance_after},
+                    metadata={
+                        "amount": data["amount"],
+                        "staff_member": target.username,
+                        "actor_balance_after": actor_txn.balance_after,
+                        "staff_balance_after": target_txn.balance_after,
+                        "staff_point_transaction_ids": [outgoing.pk, incoming.pk],
+                    },
+                    ip_address=get_client_ip(request),
+                )
+        except InsufficientStaffPointsError as e:
+            # The same 400 shape as StaffPointAdjustmentView, so the Console
+            # reads it with getInsufficientPointsInfo.
+            return Response(
+                {
+                    "error": str(e),
+                    "detail": (
+                        "Your own wallet does not hold enough points for this transfer."
+                        if giving
+                        else "This staff member's wallet does not hold that many points."
+                    ),
+                    # Read without get_or_create: a refused take-back must
+                    # not leave the staff member an empty wallet behind.
+                    "available_balance": StaffWallet.objects.filter(user=actor if giving else target)
+                    .values_list("balance", flat=True)
+                    .first()
+                    or 0,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except PointError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        points = f"{data['amount']} point{'' if data['amount'] == 1 else 's'}"
+        if giving:
+            message = f"Gave {points} to {target.username}."
+        else:
+            message = f"Took back {points} from {target.username}."
+        return Response(
+            {
+                "message": f"{message} Your wallet now holds {actor_txn.balance_after:,} points.",
+                "transaction": StaffPointTransactionSerializer(target_txn).data,
+                "staff_balance": target_txn.balance_after,
+                "actor_balance": actor_txn.balance_after,
             },
             status=status.HTTP_200_OK,
         )

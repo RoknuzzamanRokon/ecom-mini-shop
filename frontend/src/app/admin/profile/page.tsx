@@ -286,7 +286,7 @@ export default function AdminProfilePage() {
           )}
         </div>
 
-        <dl className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-5">
+        <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-5">
           <WalletFigure label="Received" value={wallet?.received} loading={walletLoading && !wallet} />
           <WalletFigure
             label="Given to sellers"
@@ -296,6 +296,11 @@ export default function AdminProfilePage() {
           <WalletFigure
             label="Sent to staff"
             value={wallet?.sent_to_staff}
+            loading={walletLoading && !wallet}
+          />
+          <WalletFigure
+            label="Taken back by a superuser"
+            value={wallet?.taken_back}
             loading={walletLoading && !wallet}
           />
         </dl>

@@ -93,6 +93,41 @@ class CanAdjustPoints(BasePermission):
         return any(has_user_permission(user, code) for code in POINT_ADJUSTMENT_PERMISSIONS)
 
 
+class CanViewStaffWallets(BasePermission):
+    """
+    Entry to any account's StaffWallet: 'points.view' AND 'users.admin.view'.
+
+    The endpoint answers for every user id, so 'points.view' alone would turn
+    it into an account directory (which ids exist, their usernames, who is a
+    superuser) for roles the user list is kept from, such as FINANCE. Its only
+    caller is the Console's user page, which needs 'users.admin.view' anyway.
+    """
+    message = "You do not have permission to view this account's points."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+
+        if _has_point_wildcard(user):
+            return True
+
+        return has_user_permission(user, "points.view") and has_user_permission(user, "users.admin.view")
+
+
+class IsPointSuperuser(BasePermission):
+    """
+    Moving points between staff wallets is a superuser's job alone, the same
+    rule PointService.transfer_to_staff and reclaim_from_staff enforce. The
+    SUPER_ADMINISTRATOR role does not qualify: it is not a Django superuser.
+    """
+    message = "Only a superuser can move points between staff wallets."
+
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(user and user.is_authenticated and user.is_active and user.is_superuser)
+
+
 class IsSellerWalletOwner(BasePermission):
     """
     Ensures an authenticated user has a registered SellerProfile.

@@ -328,10 +328,11 @@ class PointService:
         Lifetime movement through one StaffWallet, in a single aggregate query.
 
         `received` is every inflow (mint, transfer in, points taken back from a
-        seller), split by balance direction as get_ledger_totals does, so a new
-        inflow type is counted without this method changing. The two outflows
-        are reported apart because they mean different things to the holder:
-        points given to sellers versus points passed on to other staff.
+        seller or from staff), split by balance direction as get_ledger_totals
+        does, so a new inflow type is counted without this method changing. The
+        three outflows are reported apart because they mean different things to
+        the holder: points given to sellers, points passed on to other staff,
+        and points a superuser took back out of this wallet.
         """
         return StaffPointTransaction.objects.filter(wallet=wallet).aggregate(
             received=Coalesce(Sum("amount", filter=Q(balance_after__gte=F("balance_before"))), 0),
@@ -340,6 +341,9 @@ class PointService:
             ),
             sent_to_staff=Coalesce(
                 Sum("amount", filter=Q(transaction_type=StaffPointTransaction.TYPE_TRANSFER_OUT)), 0
+            ),
+            taken_back=Coalesce(
+                Sum("amount", filter=Q(transaction_type=StaffPointTransaction.TYPE_RECLAIM_OUT)), 0
             ),
         )
 
@@ -399,6 +403,50 @@ class PointService:
         logger.info(
             f"[POINTS] Transferred {amount} pts from {sender.username} to {recipient.username}. "
             f"Balances: {outgoing.balance_after} / {incoming.balance_after}."
+        )
+        return outgoing, incoming
+
+    @classmethod
+    def reclaim_from_staff(cls, superuser, staff_member, amount: int, reason: str):
+        """
+        Moves `amount` points from a staff member's wallet back into a
+        superuser's own: the reverse of transfer_to_staff. Returns the
+        (outgoing, incoming) ledger entries.
+
+        Unlike a transfer, the staff member need not be able to credit sellers,
+        or even be active: taking points back from someone who has lost that
+        ability is the main reason to do it.
+        """
+        if not (superuser and superuser.is_active and superuser.is_superuser):
+            raise PointError("Only an active superuser can take points back from staff.")
+        if staff_member.pk == superuser.pk:
+            raise PointError("Points cannot be taken back from your own wallet.")
+        cls._validate_movement(amount, reason)
+
+        with transaction.atomic():
+            # The same user-id lock order as transfer_to_staff, so a transfer
+            # and a take-back between the same two wallets cannot deadlock.
+            wallets = {
+                user.pk: cls._lock_staff_wallet(user)
+                for user in sorted((superuser, staff_member), key=lambda u: u.pk)
+            }
+            source = wallets[staff_member.pk]
+            if source.balance < amount:
+                raise InsufficientStaffPointsError(
+                    f"Not enough points in {staff_member.username}'s wallet. "
+                    f"Required: {amount}, available: {source.balance}."
+                )
+            outgoing = cls._move_staff_points(
+                source, amount, StaffPointTransaction.TYPE_RECLAIM_OUT, reason,
+                actor=superuser, outgoing=True, counterparty=superuser,
+            )
+            incoming = cls._move_staff_points(
+                wallets[superuser.pk], amount, StaffPointTransaction.TYPE_RECLAIM_IN, reason,
+                actor=superuser, outgoing=False, counterparty=staff_member,
+            )
+        logger.info(
+            f"[POINTS] {superuser.username} took back {amount} pts from {staff_member.username}. "
+            f"Balances: {incoming.balance_after} / {outgoing.balance_after}."
         )
         return outgoing, incoming
 

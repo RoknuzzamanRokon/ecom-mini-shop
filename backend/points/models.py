@@ -193,6 +193,8 @@ class StaffPointTransaction(models.Model):
     TYPE_TRANSFER_IN = "TRANSFER_IN"
     TYPE_SELLER_CREDIT = "SELLER_CREDIT"
     TYPE_SELLER_DEBIT = "SELLER_DEBIT"
+    TYPE_RECLAIM_OUT = "RECLAIM_OUT"
+    TYPE_RECLAIM_IN = "RECLAIM_IN"
 
     TRANSACTION_TYPE_CHOICES = [
         (TYPE_MINT, "Created by Superuser"),
@@ -200,6 +202,8 @@ class StaffPointTransaction(models.Model):
         (TYPE_TRANSFER_IN, "Received from Superuser"),
         (TYPE_SELLER_CREDIT, "Given to Seller"),
         (TYPE_SELLER_DEBIT, "Taken back from Seller"),
+        (TYPE_RECLAIM_OUT, "Taken back by Superuser"),
+        (TYPE_RECLAIM_IN, "Taken back from Staff"),
     ]
 
     wallet = models.ForeignKey(
@@ -225,7 +229,7 @@ class StaffPointTransaction(models.Model):
         null=True,
         blank=True,
         related_name="counterparty_staff_point_transactions",
-        help_text="The other staff wallet's owner, on a staff-to-staff transfer.",
+        help_text="The other staff wallet's owner, on a staff-to-staff transfer or take-back.",
     )
     seller_transaction = models.OneToOneField(
         PointTransaction,

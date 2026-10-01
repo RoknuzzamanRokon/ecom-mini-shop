@@ -121,6 +121,8 @@ const STAFF_MOVEMENT_ICONS: Record<string, string> = {
   TRANSFER_OUT: "call_made",
   SELLER_CREDIT: "storefront",
   SELLER_DEBIT: "undo",
+  RECLAIM_OUT: "undo",
+  RECLAIM_IN: "call_received",
 };
 
 /** Maps one staff wallet movement onto the shared PointMovementList row. */

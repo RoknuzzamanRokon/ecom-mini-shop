@@ -1099,6 +1099,67 @@ class StaffWalletTests(TestCase):
         self.assertEqual(PointService.get_staff_balance(self.finance), 0)
         self.assertEqual(PointService.get_staff_balance(self.admin), 50)
 
+    # -- reclaim_from_staff ---------------------------------------------------
+
+    def test_a_superuser_takes_points_back_from_staff(self):
+        PointService.mint_points(self.root, 100, "Float")
+        PointService.transfer_to_staff(self.root, self.finance, 40, "Monthly budget")
+        outgoing, incoming = PointService.reclaim_from_staff(self.root, self.finance, 15, "Budget cut")
+
+        self.assertEqual((outgoing.transaction_type, outgoing.balance_after), (StaffPointTransaction.TYPE_RECLAIM_OUT, 25))
+        self.assertEqual((incoming.transaction_type, incoming.balance_after), (StaffPointTransaction.TYPE_RECLAIM_IN, 75))
+        self.assertEqual(outgoing.wallet.user, self.finance)
+        self.assertEqual(outgoing.counterparty, self.root)
+        self.assertEqual(incoming.counterparty, self.finance)
+        self.assertEqual((outgoing.actor, incoming.actor), (self.root, self.root))
+        self.assertEqual(PointService.get_staff_balance(self.finance), 25)
+        self.assertEqual(PointService.get_staff_balance(self.root), 75)
+
+        totals = PointService.get_staff_ledger_totals(outgoing.wallet)
+        self.assertEqual((totals["received"], totals["taken_back"]), (40, 15))
+        self.assertEqual(PointService.get_staff_ledger_totals(incoming.wallet)["received"], 115)
+
+    def test_points_come_back_from_staff_who_can_no_longer_use_them(self):
+        # SUPPORT_TEAM cannot credit sellers, and an inactive account cannot
+        # do anything: getting their points back is the point of a take-back.
+        fund_staff_wallet(self.support, 30)
+        fund_staff_wallet(self.finance, 20)
+        self.finance.is_active = False
+        self.finance.save(update_fields=["is_active"])
+
+        PointService.reclaim_from_staff(self.root, self.support, 30, "Wrong wallet")
+        PointService.reclaim_from_staff(self.root, self.finance, 20, "Left the company")
+        self.assertEqual(PointService.get_staff_balance(self.support), 0)
+        self.assertEqual(PointService.get_staff_balance(self.finance), 0)
+        self.assertEqual(PointService.get_staff_balance(self.root), 50)
+
+    def test_take_back_refusals(self):
+        PointService.mint_points(self.root, 100, "Float")
+        fund_staff_wallet(self.finance, 10)
+        refused = [
+            (InsufficientStaffPointsError, lambda: PointService.reclaim_from_staff(self.root, self.finance, 11, "Too many")),
+            (PointError, lambda: PointService.reclaim_from_staff(self.root, self.root, 10, "From self")),
+            # ADMINISTRATOR holds every points permission, but is not a superuser.
+            (PointError, lambda: PointService.reclaim_from_staff(self.admin, self.finance, 5, "Not a superuser")),
+            (InvalidAmountError, lambda: PointService.reclaim_from_staff(self.root, self.finance, 0, "Zero")),
+            (InvalidTransactionError, lambda: PointService.reclaim_from_staff(self.root, self.finance, 5, "  ")),
+        ]
+        for error, attempt in refused:
+            with self.assertRaises(error):
+                attempt()
+        self.assertEqual(PointService.get_staff_balance(self.root), 100)
+        self.assertEqual(PointService.get_staff_balance(self.finance), 10)
+        self.assertFalse(
+            StaffPointTransaction.objects.filter(
+                transaction_type__in=[StaffPointTransaction.TYPE_RECLAIM_OUT, StaffPointTransaction.TYPE_RECLAIM_IN]
+            ).exists()
+        )
+
+    def test_a_refused_take_back_leaves_no_wallet_behind(self):
+        with self.assertRaises(InsufficientStaffPointsError):
+            PointService.reclaim_from_staff(self.root, self.support, 1, "Nothing there")
+        self.assertFalse(StaffWallet.objects.filter(user=self.support).exists())
+
     # -- utils/add_points.py --------------------------------------------------
 
     def test_parse_points(self):
@@ -1212,6 +1273,7 @@ class StaffOwnWalletApiTests(TestCase):
                 "received": 0,
                 "given_to_sellers": 0,
                 "sent_to_staff": 0,
+                "taken_back": 0,
                 "transaction_count": 0,
                 "can_mint": False,
                 "recent": [],
@@ -1279,6 +1341,7 @@ class StaffOwnWalletApiTests(TestCase):
                 "received",
                 "given_to_sellers",
                 "sent_to_staff",
+                "taken_back",
                 "transaction_count",
                 "can_mint",
                 "recent",
@@ -1300,3 +1363,258 @@ class StaffOwnWalletApiTests(TestCase):
                 "created_at",
             },
         )
+
+
+class StaffUserWalletApiTests(TestCase):
+    """
+    GET /api/points/staff/<user_id>/ shows any account's staff wallet to a
+    holder of 'points.view' and 'users.admin.view', for the Console's user
+    page, and never creates one.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_rbac")
+        cls.root = User.objects.create_superuser(
+            username="uw_root", email="uw_root@minishop.com", password="RootPassword123!"
+        )
+        cls.finance = User.objects.create_user(
+            username="uw_finance", email="uw_finance@minishop.com", password="FinancePassword123!", is_staff=True
+        )
+        assign_user_role(cls.finance, Role.ROLE_FINANCE)
+        cls.admin = User.objects.create_user(
+            username="uw_admin", email="uw_admin@minishop.com", password="AdminPassword123!", is_staff=True
+        )
+        assign_user_role(cls.admin, Role.ROLE_ADMINISTRATOR)
+        cls.support = User.objects.create_user(
+            username="uw_support", email="uw_support@minishop.com", password="SupportPassword123!", is_staff=True
+        )
+        assign_user_role(cls.support, Role.ROLE_SUPPORT_TEAM)
+
+    def setUp(self):
+        self.client = APIClient()
+
+    def _url(self, user):
+        return f"/api/points/staff/{user.pk}/"
+
+    def _get(self, actor, target):
+        self.client.force_authenticate(user=actor)
+        return self.client.get(self._url(target))
+
+    def test_needs_points_view_and_the_user_directory(self):
+        self.assertEqual(self.client.get(self._url(self.finance)).status_code, status.HTTP_401_UNAUTHORIZED)
+        # SUPPORT_TEAM holds no points permission at all.
+        self.assertEqual(self._get(self.support, self.finance).status_code, status.HTTP_403_FORBIDDEN)
+        # FINANCE holds 'points.view' but not 'users.admin.view', so it cannot
+        # use this endpoint to walk the user ids and list who is a superuser.
+        self.assertEqual(self._get(self.finance, self.root).status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self._get(self.finance, self.finance).status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self._get(self.admin, self.finance).status_code, status.HTTP_200_OK)
+        self.assertEqual(self._get(self.root, self.finance).status_code, status.HTTP_200_OK)
+
+    def test_unknown_user_is_404(self):
+        self.client.force_authenticate(user=self.admin)
+        self.assertEqual(self.client.get("/api/points/staff/987654/").status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_another_accounts_wallet_and_totals(self):
+        PointService.mint_points(self.root, 500, "Float")
+        PointService.transfer_to_staff(self.root, self.finance, 200, "Monthly budget")
+        PointService.reclaim_from_staff(self.root, self.finance, 50, "Budget cut")
+
+        res = self._get(self.admin, self.finance)
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        data = res.data
+        self.assertEqual((data["user_id"], data["username"]), (self.finance.pk, "uw_finance"))
+        self.assertTrue(data["has_wallet"])
+        self.assertEqual(data["balance"], 150)
+        self.assertEqual(data["received"], 200)
+        self.assertEqual(data["taken_back"], 50)
+        self.assertEqual(data["transaction_count"], 2)
+        self.assertTrue(data["can_receive_transfers"])
+        self.assertFalse(data["can_mint"])
+        self.assertEqual(
+            [(row["transaction_type"], row["direction"]) for row in data["recent"]],
+            [(StaffPointTransaction.TYPE_RECLAIM_OUT, "OUT"), (StaffPointTransaction.TYPE_TRANSFER_IN, "IN")],
+        )
+        self.assertEqual(data["recent"][0]["transaction_type_display"], "Taken back by Superuser")
+        self.assertEqual(data["recent"][0]["counterparty_username"], "uw_root")
+        # Keep in step with AdminStaffWallet in admin-api.ts.
+        self.assertEqual(
+            set(data.keys()),
+            {
+                "has_wallet",
+                "balance",
+                "received",
+                "given_to_sellers",
+                "sent_to_staff",
+                "taken_back",
+                "transaction_count",
+                "can_mint",
+                "recent",
+                "user_id",
+                "username",
+                "can_receive_transfers",
+            },
+        )
+
+    def test_no_wallet_reads_zero_and_creates_none(self):
+        data = self._get(self.admin, self.support).data
+        self.assertFalse(data["has_wallet"])
+        self.assertEqual(data["balance"], 0)
+        self.assertEqual(data["recent"], [])
+        # SUPPORT_TEAM cannot credit sellers, so a superuser may not send them points.
+        self.assertFalse(data["can_receive_transfers"])
+        self.assertFalse(StaffWallet.objects.filter(user=self.support).exists())
+
+    def test_an_inactive_account_cannot_receive_transfers(self):
+        self.finance.is_active = False
+        self.finance.save(update_fields=["is_active"])
+        self.assertFalse(self._get(self.admin, self.finance).data["can_receive_transfers"])
+
+
+class StaffPointTransferApiTests(TestCase):
+    """
+    POST /api/points/staff/<user_id>/transfer/: a superuser gives a staff member
+    points from their own wallet (CREDIT) or takes them back into it (DEBIT).
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_rbac")
+        cls.root = User.objects.create_superuser(
+            username="tr_root", email="tr_root@minishop.com", password="RootPassword123!"
+        )
+        cls.finance = User.objects.create_user(
+            username="tr_finance", email="tr_finance@minishop.com", password="FinancePassword123!", is_staff=True
+        )
+        assign_user_role(cls.finance, Role.ROLE_FINANCE)
+        cls.admin = User.objects.create_user(
+            username="tr_admin", email="tr_admin@minishop.com", password="AdminPassword123!", is_staff=True
+        )
+        assign_user_role(cls.admin, Role.ROLE_ADMINISTRATOR)
+        cls.support = User.objects.create_user(
+            username="tr_support", email="tr_support@minishop.com", password="SupportPassword123!", is_staff=True
+        )
+        assign_user_role(cls.support, Role.ROLE_SUPPORT_TEAM)
+
+    def setUp(self):
+        self.client = APIClient()
+
+    def _post(self, actor, target, action, amount, reason="Transfer test"):
+        if actor is not None:
+            self.client.force_authenticate(user=actor)
+        return self.client.post(
+            f"/api/points/staff/{target.pk}/transfer/",
+            {"action": action, "amount": amount, "reason": reason},
+            format="json",
+        )
+
+    def test_only_a_superuser_may_transfer(self):
+        fund_staff_wallet(self.admin, 100)
+        self.assertEqual(self._post(None, self.finance, "CREDIT", 10).status_code, status.HTTP_401_UNAUTHORIZED)
+        # ADMINISTRATOR holds every points permission, but is not a superuser.
+        for action in ("CREDIT", "DEBIT"):
+            res = self._post(self.admin, self.finance, action, 10)
+            self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN, msg=action)
+        self.assertEqual(PointService.get_staff_balance(self.admin), 100)
+        self.assertFalse(StaffPointTransaction.objects.exclude(wallet__user=self.admin).exists())
+
+    def test_give_moves_points_and_is_audited(self):
+        from audit.models import AuditLog
+
+        PointService.mint_points(self.root, 300, "Float")
+        res = self._post(self.root, self.finance, "CREDIT", 120, reason="Monthly budget")
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data["staff_balance"], 120)
+        self.assertEqual(res.data["actor_balance"], 180)
+        self.assertEqual(
+            res.data["message"], "Gave 120 points to tr_finance. Your wallet now holds 180 points."
+        )
+        self.assertEqual(res.data["transaction"]["transaction_type"], StaffPointTransaction.TYPE_TRANSFER_IN)
+        self.assertEqual(PointService.get_staff_balance(self.finance), 120)
+        self.assertEqual(PointService.get_staff_balance(self.root), 180)
+
+        log = AuditLog.objects.get(action="SUPERUSER_POINTS_TRANSFER")
+        self.assertEqual(log.actor, self.root)
+        self.assertEqual(log.reason, "Monthly budget")
+        self.assertEqual(log.metadata["staff_member"], "tr_finance")
+        self.assertEqual(log.metadata["actor_balance_after"], 180)
+        self.assertEqual(log.metadata["staff_balance_after"], 120)
+
+    def test_take_back_moves_points_and_is_audited(self):
+        from audit.models import AuditLog
+
+        PointService.mint_points(self.root, 300, "Float")
+        PointService.transfer_to_staff(self.root, self.finance, 100, "Monthly budget")
+        res = self._post(self.root, self.finance, "DEBIT", 60, reason="Budget cut")
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data["staff_balance"], 40)
+        self.assertEqual(res.data["actor_balance"], 260)
+        self.assertEqual(
+            res.data["message"], "Took back 60 points from tr_finance. Your wallet now holds 260 points."
+        )
+        self.assertEqual(res.data["transaction"]["transaction_type"], StaffPointTransaction.TYPE_RECLAIM_OUT)
+
+        log = AuditLog.objects.get(action="SUPERUSER_POINTS_RECLAIM")
+        self.assertEqual(log.actor, self.root)
+        self.assertEqual(log.metadata["previous_state"], {"balance": 100})
+        self.assertEqual(log.metadata["new_state"], {"balance": 40})
+
+        PointService.mint_points(self.root, 1000, "Top-up")
+        res = self._post(self.root, self.finance, "DEBIT", 1)
+        self.assertEqual(
+            res.data["message"], "Took back 1 point from tr_finance. Your wallet now holds 1,261 points."
+        )
+
+    def test_give_cannot_exceed_the_superusers_wallet(self):
+        from audit.models import AuditLog
+
+        PointService.mint_points(self.root, 50, "Float")
+        res = self._post(self.root, self.finance, "CREDIT", 51)
+
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(res.data["available_balance"], 50)
+        self.assertIn("your wallet", res.data["error"])
+        self.assertEqual(PointService.get_staff_balance(self.root), 50)
+        self.assertFalse(StaffWallet.objects.filter(user=self.finance, balance__gt=0).exists())
+        self.assertFalse(AuditLog.objects.filter(action="SUPERUSER_POINTS_TRANSFER").exists())
+
+    def test_take_back_cannot_exceed_the_staff_wallet(self):
+        fund_staff_wallet(self.finance, 30)
+        res = self._post(self.root, self.finance, "DEBIT", 31)
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(res.data["available_balance"], 30)
+        self.assertIn("tr_finance's wallet", res.data["error"])
+        self.assertEqual(PointService.get_staff_balance(self.finance), 30)
+
+        # Someone who never held points: refused, and still no wallet.
+        res = self._post(self.root, self.support, "DEBIT", 1)
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(res.data["available_balance"], 0)
+        self.assertFalse(StaffWallet.objects.filter(user=self.support).exists())
+
+    def test_other_refusals(self):
+        PointService.mint_points(self.root, 100, "Float")
+        # SUPPORT_TEAM cannot credit sellers, and nobody sends points to themselves.
+        for target in (self.support, self.root):
+            res = self._post(self.root, target, "CREDIT", 10)
+            self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST, msg=target.username)
+            self.assertIn("error", res.data)
+        self.assertEqual(self._post(self.root, self.root, "DEBIT", 10).status_code, status.HTTP_400_BAD_REQUEST)
+
+        for payload in (
+            {"action": "CREDIT", "amount": 0, "reason": "Zero"},
+            {"action": "CREDIT", "amount": 10, "reason": ""},
+            {"action": "MINT", "amount": 10, "reason": "Not an action"},
+        ):
+            res = self.client.post(f"/api/points/staff/{self.finance.pk}/transfer/", payload, format="json")
+            self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST, msg=payload)
+
+        self.client.force_authenticate(user=self.root)
+        res = self.client.post(
+            "/api/points/staff/987654/transfer/", {"action": "CREDIT", "amount": 1, "reason": "Nobody"}, format="json"
+        )
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(PointService.get_staff_balance(self.root), 100)

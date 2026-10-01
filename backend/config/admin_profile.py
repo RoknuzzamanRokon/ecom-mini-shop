@@ -513,6 +513,7 @@ _PAST_TENSE = {
     "REACTIVATE": "reactivated",
     "MINT": "minted",
     "TRANSFER": "transferred",
+    "RECLAIM": "reclaimed",
     "CREDIT": "credited",
 }
 #: First match wins, so the more severe outcomes are listed first.
@@ -523,7 +524,7 @@ _ACTION_STYLES = (
     ({"APPROVE", "APPROVED", "REACTIVATE", "SUCCESS", "UNHIDDEN"}, "check_circle", "green"),
     ({"CREATED", "CREATE", "MINT", "CREDIT"}, "add_circle", "green"),
     ({"ASSIGNED"}, "person_add", "blue"),
-    ({"PROCESSED", "TRANSFER", "RESERVED", "RELEASED", "DELIVERED", "ADJUSTED", "REQUEUED"}, "sync_alt", "indigo"),
+    ({"PROCESSED", "TRANSFER", "RECLAIM", "RESERVED", "RELEASED", "DELIVERED", "ADJUSTED", "REQUEUED"}, "sync_alt", "indigo"),
     ({"UPDATED", "UPDATE", "CHANGED", "SET", "PROMOTED"}, "edit", "blue"),
 )
 _LOG_ENTRY_STYLES = {
@@ -863,6 +864,8 @@ _POINT_STYLES = {
     StaffPointTransaction.TYPE_TRANSFER_OUT: ("call_made", "indigo"),
     StaffPointTransaction.TYPE_SELLER_CREDIT: ("storefront", "blue"),
     StaffPointTransaction.TYPE_SELLER_DEBIT: ("undo", "amber"),
+    StaffPointTransaction.TYPE_RECLAIM_OUT: ("undo", "amber"),
+    StaffPointTransaction.TYPE_RECLAIM_IN: ("call_received", "green"),
 }
 
 
