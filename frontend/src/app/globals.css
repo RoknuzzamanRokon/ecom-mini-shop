@@ -27,6 +27,8 @@
   --color-nav-active: var(--c-nav-active-bg);
   --color-nav-active-text: var(--c-nav-active-text);
   --color-nav-text: var(--c-nav-text);
+  /* Header text; a palette whose nav bar is not primary-coloured sets --c-on-nav */
+  --color-on-nav: var(--c-on-nav, var(--c-on-primary));
 
   --color-price: var(--c-price);
   --color-sale: var(--c-sale-price);
@@ -878,7 +880,7 @@
   --c-primary: #60A917;
   --c-primary-hover: #4E8F12;
   --c-primary-deep: #2F5A0A;
-  --c-on-primary: #FFFFFF;
+  --c-on-primary: #1F2937;
   --c-accent: #F59E0B;
   --c-accent-hover: #FBBF24;
   --c-on-accent: #1F2937;
@@ -887,6 +889,7 @@
   --c-nav-active-bg: #60A917;
   --c-nav-active-text: #FFFFFF;
   --c-nav-text: #D1D5DB;
+  --c-on-nav: #FFFFFF;
   --c-price: #1F2937;
   --c-sale-price: #DC2626;
   --c-old-price: #858C97;
@@ -914,7 +917,7 @@
   --c-primary: #60A917;
   --c-primary-hover: #4E8F12;
   --c-primary-deep: #1A3305;
-  --c-on-primary: #FFFFFF;
+  --c-on-primary: #1F2937;
   --c-accent: #F59E0B;
   --c-accent-hover: #FBBF24;
   --c-on-accent: #111827;
@@ -923,6 +926,7 @@
   --c-nav-active-bg: #60A917;
   --c-nav-active-text: #FFFFFF;
   --c-nav-text: #C3C9D2;
+  --c-on-nav: #FFFFFF;
   --c-price: #F3F4F6;
   --c-sale-price: #F87171;
   --c-old-price: #7C8491;

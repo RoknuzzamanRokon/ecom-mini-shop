@@ -181,7 +181,7 @@ export default function NotificationBell({
         className={clsx(
           "relative flex items-center rounded-full p-1.5 transition-colors cursor-pointer",
           "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-focus",
-          tone === "nav" ? "text-on-primary hover:bg-white/10" : "text-ink hover:bg-surface-alt"
+          tone === "nav" ? "text-on-nav hover:bg-white/10" : "text-ink hover:bg-surface-alt"
         )}
       >
         <span aria-hidden="true" className={clsx("material-symbols-outlined text-[24px]", open && "fill-active")}>
