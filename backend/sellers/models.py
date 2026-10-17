@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 from django.db import models
 from django.utils import timezone
 
@@ -8,12 +9,12 @@ class SellerProfile(models.Model):
     # Seller Types
     TYPE_FULL_SHOP_OWNER = "FULL_SHOP_OWNER"
     TYPE_LIMITED_SHOP_OWNER = "LIMITED_SHOP_OWNER"
-    TYPE_PRODUCT_OWNER = "PRODUCT_OWNER"
 
+    # A Full Shop Owner may own any number of shops and products. A Limited Shop
+    # Owner is capped at one shop and LimitedShopOwnerProductLimit products.
     SELLER_TYPE_CHOICES = [
         (TYPE_FULL_SHOP_OWNER, "Full Shop Owner"),
         (TYPE_LIMITED_SHOP_OWNER, "Limited Shop Owner"),
-        (TYPE_PRODUCT_OWNER, "Product Owner"),
     ]
 
     # Seller Status Lifecycle
@@ -149,3 +150,34 @@ class SellerProfile(models.Model):
         self.reviewed_by = staff_user
         self.reviewed_at = timezone.now()
         self.save(update_fields=["status", "rejection_reason", "reviewed_by", "reviewed_at", "updated_at"])
+
+
+class LimitedShopOwnerProductLimit(models.Model):
+    """
+    Maximum number of products a Limited Shop Owner may hold across their shop.
+    Singleton (pk=1), administrator-adjustable like points.ProductCreationCost.
+    """
+    max_products = models.PositiveIntegerField(
+        default=10,
+        validators=[MinValueValidator(0)],
+        help_text="Number of products a Limited Shop Owner may hold. Deleting a product frees a slot.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Limited Shop Owner Product Limit"
+        verbose_name_plural = "Limited Shop Owner Product Limit"
+
+    def __str__(self):
+        return f"Limited Shop Owner Product Limit: {self.max_products} products"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_limit(cls) -> int:
+        config = cls.objects.filter(pk=1).first()
+        if config:
+            return config.max_products
+        return getattr(settings, "LIMITED_SHOP_OWNER_PRODUCT_LIMIT", 10)

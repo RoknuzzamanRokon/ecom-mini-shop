@@ -568,8 +568,8 @@ class AdminShopCreateSerializer(serializers.Serializer):
     an administrator creates/approves a Seller, then creates a Shop and
     assigns that Seller as its owner in the same step.
 
-    Seller eligibility (operational status, the PRODUCT_OWNER restriction,
-    and the LIMITED_SHOP_OWNER single-shop cap) is NOT re-implemented here —
+    Seller eligibility (operational status and the LIMITED_SHOP_OWNER
+    single-shop cap) is NOT re-implemented here —
     it belongs to shops.services.ShopService.create_shop /
     validate_seller_eligibility_for_creation, which this endpoint calls, so
     the same rule applies whether a shop is self-created by a seller or

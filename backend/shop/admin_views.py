@@ -929,9 +929,9 @@ class AdminShopListAPIView(APIView):
         Creates a Shop and assigns an existing SellerProfile as its owner —
         the "Admin creates Shop -> assigns Shop Owner" half of the Admin-created
         Shop Owner model. Delegates entirely to ShopService.create_shop so the
-        same eligibility rules (operational seller, no PRODUCT_OWNER, single
-        shop cap for every Shop Owner type) apply as for the (now seller-disabled)
-        self-service path.
+        same eligibility rules (operational seller, single-shop cap for a
+        Limited Shop Owner) apply as for the (now seller-disabled) self-service
+        path.
         """
         serializer = AdminShopCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

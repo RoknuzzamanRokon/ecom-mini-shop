@@ -6,7 +6,7 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.db import connection
-from django.test import TestCase, TransactionTestCase
+from django.test import Client, TestCase, TransactionTestCase
 from django.urls import NoReverseMatch, reverse
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -14,7 +14,7 @@ from rest_framework.test import APIClient
 from audit.models import AuditLog
 from rbac.models import Role
 from rbac.services import assign_user_role
-from sellers.models import SellerProfile
+from sellers.models import LimitedShopOwnerProductLimit, SellerProfile
 from shops.models import Shop
 from sellers.services import approve_seller, get_seller_capabilities
 
@@ -229,7 +229,7 @@ class SellerSystemTests(TestCase):
         """Suspension blocks operational actions and records reason and timestamp."""
         seller = SellerProfile.objects.create(
             user=self.user_a,
-            seller_type=SellerProfile.TYPE_PRODUCT_OWNER,
+            seller_type=SellerProfile.TYPE_LIMITED_SHOP_OWNER,
             business_name="Gadget Lab",
             status=SellerProfile.STATUS_ACTIVE,
         )
@@ -290,6 +290,8 @@ class SellerSystemTests(TestCase):
         self.assertFalse(caps_full["can_create_shop"])
         self.assertTrue(caps_full["can_manage_products"])
         self.assertTrue(caps_full["has_full_catalog"])
+        self.assertIsNone(caps_full["product_limit"])
+        self.assertEqual(caps_full["products_count"], 0)
 
         # Test LIMITED_SHOP_OWNER
         seller_limited = SellerProfile.objects.create(
@@ -302,19 +304,12 @@ class SellerSystemTests(TestCase):
         self.assertFalse(caps_limited["can_create_shop"])
         self.assertTrue(caps_limited["can_manage_products"])
         self.assertFalse(caps_limited["has_full_catalog"])
+        # No LimitedShopOwnerProductLimit row yet, so the default applies.
+        self.assertEqual(caps_limited["product_limit"], 10)
+        self.assertEqual(caps_limited["products_count"], 0)
 
-        # Test PRODUCT_OWNER
-        user_c = User.objects.create_user(username="prod_owner", password="TestPassword123!")
-        seller_prod = SellerProfile.objects.create(
-            user=user_c,
-            seller_type=SellerProfile.TYPE_PRODUCT_OWNER,
-            business_name="Artisan Crafts",
-            status=SellerProfile.STATUS_ACTIVE,
-        )
-        caps_prod = get_seller_capabilities(seller_prod)
-        self.assertFalse(caps_prod["can_create_shop"])
-        self.assertTrue(caps_prod["can_manage_products"])
-        self.assertTrue(caps_prod["has_full_catalog"])
+        LimitedShopOwnerProductLimit.objects.create(max_products=3)
+        self.assertEqual(get_seller_capabilities(seller_limited)["product_limit"], 3)
 
         # Verify dashboard endpoint response
         self.client.force_authenticate(user=self.user_a)
@@ -581,7 +576,6 @@ class SellerShopCapabilityTests(TestCase):
         expectations = {
             SellerProfile.TYPE_FULL_SHOP_OWNER: (True, True),
             SellerProfile.TYPE_LIMITED_SHOP_OWNER: (True, False),
-            SellerProfile.TYPE_PRODUCT_OWNER: (True, True),
         }
         for seller_type, (manage_products, full_catalog) in expectations.items():
             with self.subTest(seller_type=seller_type):
@@ -738,3 +732,62 @@ class SellerLifecycleConcurrencyTests(TransactionTestCase):
         # ...and the end of the chain must be what is actually in the database.
         seller.refresh_from_db()
         self.assertEqual(seller.status, expected_previous)
+
+
+class SellerTypeAdminFormTests(TestCase):
+    """
+    A Full Shop Owner may own several shops, a Limited one only one. The Django
+    admin is the one place seller_type can change, so switching a multi-shop
+    owner to Limited must be refused there.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.superuser = User.objects.create_superuser(
+            username="type_admin", email="type_admin@example.com", password="TestPassword123!"
+        )
+        owner = User.objects.create_user(
+            username="multi_shop_owner", email="multi_shop_owner@example.com", password="TestPassword123!"
+        )
+        cls.seller = SellerProfile.objects.create(
+            user=owner,
+            seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+            business_name="Multi Shop Co",
+            status=SellerProfile.STATUS_ACTIVE,
+        )
+        Shop.objects.create(owner=cls.seller, name="Multi Shop One")
+
+    def _post_seller_type(self, seller_type):
+        client = Client()
+        client.force_login(self.superuser)
+        return client.post(
+            reverse("admin:sellers_sellerprofile_change", args=[self.seller.pk]),
+            {
+                "user": str(self.seller.user_id),
+                "seller_type": seller_type,
+                "business_name": self.seller.business_name,
+                "business_email": "",
+                "business_phone": "",
+                "tax_id": "",
+                "description": "",
+                "rejection_reason": "",
+                "suspension_reason": "",
+                "_save": "Save",
+            },
+        )
+
+    def test_single_shop_owner_can_become_limited(self):
+        response = self._post_seller_type(SellerProfile.TYPE_LIMITED_SHOP_OWNER)
+        self.assertEqual(response.status_code, 302)
+        self.seller.refresh_from_db()
+        self.assertEqual(self.seller.seller_type, SellerProfile.TYPE_LIMITED_SHOP_OWNER)
+
+    def test_multi_shop_owner_cannot_become_limited(self):
+        Shop.objects.create(owner=self.seller, name="Multi Shop Two")
+
+        response = self._post_seller_type(SellerProfile.TYPE_LIMITED_SHOP_OWNER)
+        # 200 is the form redisplayed with its error; a 302 would mean it saved.
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "may own only one")
+        self.seller.refresh_from_db()
+        self.assertEqual(self.seller.seller_type, SellerProfile.TYPE_FULL_SHOP_OWNER)

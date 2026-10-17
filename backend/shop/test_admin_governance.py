@@ -1189,7 +1189,7 @@ class AdminSellerCreationTests(APITestCase):
         payload = {
             "user_id": self.target_user.id,
             "business_name": "Admin Created Shop",
-            "seller_type": SellerProfile.TYPE_PRODUCT_OWNER,
+            "seller_type": SellerProfile.TYPE_LIMITED_SHOP_OWNER,
             "business_email": "created@minishop.com",
             "business_phone": "01799999999",
             "reason": "Phase 1G-B seller creation test",
@@ -1223,7 +1223,7 @@ class AdminSellerCreationTests(APITestCase):
 
         self.assertEqual(seller.status, SellerProfile.STATUS_PENDING)
         self.assertFalse(seller.is_operational)
-        self.assertEqual(seller.seller_type, SellerProfile.TYPE_PRODUCT_OWNER)
+        self.assertEqual(seller.seller_type, SellerProfile.TYPE_LIMITED_SHOP_OWNER)
         self.assertEqual(seller.business_name, "Admin Created Shop")
         self.assertEqual(res.data["id"], seller.id)
 
@@ -1462,7 +1462,7 @@ class AdminSellerGranularPermissionTests(APITestCase):
             {
                 "description": "Updated description",
                 "status": SellerProfile.STATUS_ACTIVE,
-                "seller_type": SellerProfile.TYPE_PRODUCT_OWNER,
+                "seller_type": SellerProfile.TYPE_LIMITED_SHOP_OWNER,
                 "reason": "Tamper attempt",
             },
         )
@@ -1702,16 +1702,16 @@ class AdminShopCreationTests(APITestCase):
             status=SellerProfile.STATUS_ACTIVE,
         )
 
-        cls.product_owner_user = User.objects.create_user(
-            username="shc_product_owner",
-            email="shc_product_owner@minishop.com",
-            password="ProductPassword123!",
+        cls.pending_user = User.objects.create_user(
+            username="shc_pending",
+            email="shc_pending@minishop.com",
+            password="PendingPassword123!",
         )
-        cls.product_owner_seller = SellerProfile.objects.create(
-            user=cls.product_owner_user,
-            seller_type=SellerProfile.TYPE_PRODUCT_OWNER,
-            business_name="Product Owner Co",
-            status=SellerProfile.STATUS_ACTIVE,
+        cls.pending_seller = SellerProfile.objects.create(
+            user=cls.pending_user,
+            seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+            business_name="Pending Owner Co",
+            status=SellerProfile.STATUS_PENDING,
         )
 
         cls.limited_user = User.objects.create_user(
@@ -1779,17 +1779,17 @@ class AdminShopCreationTests(APITestCase):
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("seller_id", res.data)
 
-    def test_product_owner_seller_rejected(self):
-        """ShopService's PRODUCT_OWNER restriction applies to admin-assigned shops too."""
+    def test_non_operational_seller_rejected(self):
+        """ShopService's operational-status rule applies to admin-assigned shops too."""
         self.client.force_authenticate(user=self.admin)
         res = self.client.post(
             "/api/admin/shops/",
-            data=self._payload(seller_id=self.product_owner_seller.id, name="Product Owner Shop"),
+            data=self._payload(seller_id=self.pending_seller.id, name="Pending Owner Shop"),
             format="json",
         )
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("seller_id", res.data)
-        self.assertFalse(Shop.objects.filter(name="Product Owner Shop").exists())
+        self.assertFalse(Shop.objects.filter(name="Pending Owner Shop").exists())
 
     def test_limited_shop_owner_cap_applies_to_admin_creation(self):
         """A LIMITED_SHOP_OWNER already at their 1-shop cap cannot be assigned a second shop."""
@@ -1803,8 +1803,8 @@ class AdminShopCreationTests(APITestCase):
         self.assertIn("seller_id", res.data)
         self.assertFalse(Shop.objects.filter(name="Second Limited Shop").exists())
 
-    def test_full_shop_owner_single_shop_cap_applies_to_admin_creation(self):
-        """Confirmed business rule: a FULL_SHOP_OWNER already owning one Shop cannot be assigned a second."""
+    def test_full_shop_owner_can_be_assigned_several_shops(self):
+        """A FULL_SHOP_OWNER already owning one Shop can be assigned another."""
         self.client.force_authenticate(user=self.admin)
         first_res = self.client.post("/api/admin/shops/", data=self._payload(), format="json")
         self.assertEqual(first_res.status_code, status.HTTP_201_CREATED)
@@ -1814,10 +1814,8 @@ class AdminShopCreationTests(APITestCase):
             data=self._payload(name="Second Admin Assigned Shop"),
             format="json",
         )
-        self.assertEqual(second_res.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("seller_id", second_res.data)
-        self.assertFalse(Shop.objects.filter(name="Second Admin Assigned Shop").exists())
-        self.assertEqual(Shop.objects.filter(owner=self.eligible_seller).count(), 1)
+        self.assertEqual(second_res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Shop.objects.filter(owner=self.eligible_seller).count(), 2)
 
     def test_blank_name_rejected(self):
         self.client.force_authenticate(user=self.admin)
@@ -1971,7 +1969,6 @@ class AdminShopGranularPermissionTests(APITestCase):
         return {"seller_id": self.seller.id, "name": "Created By Probe", "reason": "Granular create"}
 
     def test_create_permission_allows_shop_creation(self):
-        self.shop.delete()  # Shop Owners are capped at one shop.
         self.client.force_authenticate(user=self.creator)
         res = self.client.post("/api/admin/shops/", data=self._create_payload(), format="json")
         self.assertEqual(res.status_code, status.HTTP_201_CREATED, res.data)

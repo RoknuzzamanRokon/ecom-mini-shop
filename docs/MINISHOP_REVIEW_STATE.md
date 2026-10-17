@@ -200,7 +200,7 @@ Seller-relevant grants: `SALES_TEAM` holds `products.view/create/update`, `order
 
 **SellerProfile** (`sellers/models.py:7-157`), one-to-one with User (`related_name="seller_profile"`).
 
-- Types (`:9-17`): `FULL_SHOP_OWNER` (default), `LIMITED_SHOP_OWNER`, `PRODUCT_OWNER`
+- Types: `FULL_SHOP_OWNER` (default; any number of shops and products) and `LIMITED_SHOP_OWNER` (max 1 shop, max `LimitedShopOwnerProductLimit.max_products` products, default 10, editable in Django admin). `PRODUCT_OWNER` was removed 2026-10-17 (migration `sellers.0002` converts any such rows to `LIMITED_SHOP_OWNER`).
 - Statuses (`:20-34`): `PENDING` (default), `UNDER_REVIEW`, `APPROVED`, `ACTIVE`, `SUSPENDED`, `REJECTED`
 - `is_operational` (`:84-87`) ⇔ status in (`APPROVED`, `ACTIVE`) — this is the gate every seller-facing permission class checks
 - Lifecycle services (`sellers/services.py:67-90`), each `@transaction.atomic`: `approve_seller` (approve **then** activate → lands on `ACTIVE`), `reject_seller`, `suspend_seller`, `reactivate_seller`. Reasons are mandatory for reject/suspend (model `clean()`).
@@ -239,7 +239,7 @@ Admin creates Shop → assigns SellerProfile as owner → Seller manages that on
 
 - **Sellers cannot create shops.** `POST /api/shops/mine/create/` still routes, but `SellerShopCreateView` (`shops/views.py:130-146`) unconditionally raises `PermissionDenied` — deliberately kept so direct API calls get an explicit 403 rather than a confusing 404. The seller UI has no create control at all.
 - **Admins create shops** via `POST /api/admin/shops/` (`shop/admin_views.py:809-864`), which delegates to `ShopService.create_shop` (`:830`) inside `transaction.atomic()` with `select_for_update()` on the seller.
-- **The single-shop cap is enforced** in `ShopService.validate_seller_eligibility_for_creation` (`shops/services.py:96-115`): non-operational sellers rejected (`:98`), `PRODUCT_OWNER` rejected (`:103`), and `if seller.shops.count() >= 1: raise ShopLimitExceededError` (`:112-115`). Surfaced as a 400 on `seller_id`.
+- **The shop cap applies to Limited Shop Owners only** (since 2026-10-17), in `ShopService.validate_seller_eligibility_for_creation`: non-operational sellers rejected, and a `LIMITED_SHOP_OWNER` with `seller.shops.count() >= 1` raises `ShopLimitExceededError`. Surfaced as a 400 on `seller_id`. A `FULL_SHOP_OWNER` can be assigned any number of shops.
 
 | Method | Endpoint | Authorization |
 |---|---|---|
@@ -276,7 +276,7 @@ Admin creates Shop → assigns SellerProfile as owner → Seller manages that on
 | POST | `/api/products/mine/` | + `CanCreateProduct` (`products.create`) |
 | GET/PATCH/DELETE | `/api/products/mine/<pk>/` | + `IsProductOwner` object check; PATCH needs `products.update`, DELETE needs `products.delete` |
 
-Shop resolution on create (`shop/api_views.py:526-558`): if the client omits `shop_id` the backend resolves the seller's own shop; 0 shops → 400 with a "contact an administrator" message; **more than 1 shop → 409 Conflict, never a silent pick**. If `shop_id` *is* supplied, `SellerProductCreateSerializer.validate_shop_id` (`shop/serializers.py:242-261`) independently confirms the shop belongs to the caller, so a forged id cannot reach another seller's shop.
+Shop resolution on create (`shop/api_views.py:526-558`): if the client omits `shop_id` the backend resolves the seller's own shop; 0 shops → 400 with a "contact an administrator" message; **more than 1 shop → 400 asking the seller to choose, never a silent pick** (409 until 2026-10-17, when Full Shop Owners became allowed several shops). If `shop_id` *is* supplied, `SellerProductCreateSerializer.validate_shop_id` (`shop/serializers.py:242-261`) independently confirms the shop belongs to the caller, so a forged id cannot reach another seller's shop.
 
 ### Product lifecycle (important)
 
@@ -437,11 +437,11 @@ Guards: `SellerGuard` (fetches `/api/sellers/dashboard/`, renders "Seller Accoun
 
 | Rule | Where enforced |
 |---|---|
-| Seller types are `FULL_SHOP_OWNER`, `LIMITED_SHOP_OWNER`, `PRODUCT_OWNER` | `sellers/models.py:9-17` |
+| Seller types are `FULL_SHOP_OWNER`, `LIMITED_SHOP_OWNER` (`PRODUCT_OWNER` removed 2026-10-17) | `sellers/models.py` |
 | A seller cannot create a Shop | `shops/views.py:130-146` (hard 403); no UI control exists |
 | Admin creates the Shop and assigns the owning seller | `shop/admin_views.py:809-864` → `ShopService.create_shop` |
 | Authorized management creates/configures the Seller; a user cannot self-register one | `POST /api/admin/sellers/` (`shop/admin_views.py` → `AdminSellerCreateSerializer` → `create_seller_profile`); the self-service route was removed 2026-09-21 (Phase 2L) and `/api/sellers/register/` returns 404 |
-| Max **1 shop** per shop-owner; `PRODUCT_OWNER` gets **0** | `shops/services.py:96-115` |
+| `LIMITED_SHOP_OWNER`: max **1 shop** and max `LimitedShopOwnerProductLimit` products (default 10); `FULL_SHOP_OWNER`: no cap on either | `ShopService.validate_seller_eligibility_for_creation`, `ProductService.create_product` (`ProductLimitExceededError` → 400) |
 | Product ownership is `Product → shop → shop.owner`; no seller column | `shop/models.py:71-200` |
 | A seller may only read/modify products of their own shop | `IsProductOwner` + `ProductService` ownership checks + `shop__owner=seller` queryset |
 | A seller cannot move a product to another seller's shop | `ProductService.update_product:212-218`, `SellerProductUpdateSerializer.validate_shop_id` |
@@ -477,7 +477,7 @@ Guards: `SellerGuard` (fetches `/api/sellers/dashboard/`, renders "Seller Accoun
 - JWT bearer auth (SimpleJWT) with rotation; all privileged endpoints declare explicit DRF permission classes.
 - Every permission class resolves through `has_user_permission()` → MiniShop RBAC. Superuser / `SUPER_ADMINISTRATOR` short-circuit is consistent and deliberate.
 - Ownership is checked **server-side on every seller/customer resource**, independent of the request payload: shop ownership on product create/update, `IsProductOwner` object checks, `shop__owner=seller` list scoping, order ownership with safe 404s, address and review owner checks.
-- Cross-shop payload tampering is blocked: a supplied `shop_id` is validated against the caller's own shops before use; a multi-shop data inconsistency returns 409 rather than silently choosing.
+- Cross-shop payload tampering is blocked: a supplied `shop_id` is validated against the caller's own shops before use; a multi-shop seller who omits `shop_id` gets a 400 rather than a silent choice.
 - **`OrderService` authorization contract, audited end-to-end 2026-09-17.** Two of its mutators authorize themselves — `cancel_customer_order()` (`shop/services.py:690-698`, owner or staff override) and `transition_seller_order_status()` (`:804-828`, seller must own an item, plus the multi-seller guard). `transition_order_status()` (`:595`) authorizes **nothing** and is the one every caller must guard. Its callers are `StaffOrderStatusAPIView` (`CanUpdateStaffOrders`) and `OrderAdmin._transition_orders` — the latter was unguarded until #15. Reads follow the same shape: `get_seller_order()` raises `NotFound` off-scope, and every view resolving an order from a client-supplied `id`/`order_number` re-checks ownership with a safe 404 before the service is reached.
 - Point integrity: `transaction.atomic()` + `select_for_update()` + model validator + **DB CheckConstraint `balance >= 0`**, with an append-only ledger recording before/after balances and the actor.
 - Order/inventory/payment mutations are atomic with row locks; inventory release and sale-finalization are idempotent.
@@ -820,8 +820,8 @@ Future work must not accidentally reverse these.
 2. **MiniShop RBAC is the API authorization system.** Never use Django `auth.Permission` / `user_permissions` to authorize an API. Never build a second permission system.
 3. **Seller is not an RBAC role** — it is a SellerProfile. Product permissions come from a separately granted RBAC role.
 4. **Sellers never create shops.** Shops are created and assigned by administrators. `POST /api/shops/mine/create/` is intentionally kept routed so direct calls get an explicit 403 instead of a 404.
-5. **Single shop per shop-owner** (`FULL`/`LIMITED` → max 1, `PRODUCT_OWNER` → 0), enforced in `ShopService`. Do not introduce multi-shop UI or "shop switcher" behavior.
-6. **Never silently pick a shop.** If a seller somehow owns more than one shop, product creation returns 409 rather than guessing — guessing would be an ownership bypass.
+5. **Shop caps by seller type** (changed 2026-10-17): `FULL_SHOP_OWNER` → any number of shops, `LIMITED_SHOP_OWNER` → max 1, enforced in `ShopService`. The Django admin refuses to switch a multi-shop seller to Limited. The seller product form shows a shop picker when the seller owns more than one shop.
+6. **Never silently pick a shop.** If a seller owns more than one shop, product creation without `shop_id` returns 400 asking them to choose, rather than guessing — guessing would be an ownership bypass.
 7. **Product ownership is derived through the shop.** Do not add a `seller` FK to Product.
 8. **Product creation costs points, deducted atomically with creation** through the existing `PointService` + ledger. Never add a second wallet, a second ledger, or client-side deduction.
 9. **Domain services are mandatory paths.** `ProductService`, `OrderService`, `InventoryService`, `PaymentService`, `PointService`, `AuditService` own their mutations; generic CRUD must not bypass them. Admin product *create/update* deliberately does not exist for this reason.

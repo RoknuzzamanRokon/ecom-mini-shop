@@ -4,7 +4,7 @@ from django.db import transaction
 from django.db.models import Count
 
 from audit.admin_mixins import CONFIRM_FLAG, ReasonRequiredActionMixin, StatusBadgeMixin
-from .models import SellerProfile
+from .models import LimitedShopOwnerProductLimit, SellerProfile
 from .services import approve_seller, suspend_seller, reject_seller, reactivate_seller
 
 
@@ -27,6 +27,19 @@ class SellerProfileAdminForm(forms.ModelForm):
         for name in ("description", "rejection_reason", "suspension_reason"):
             if name in self.fields:
                 self.fields[name].widget.attrs["rows"] = 4
+
+    def clean_seller_type(self):
+        # A Full Shop Owner may own several shops; a Limited one only one.
+        seller_type = self.cleaned_data.get("seller_type")
+        if (
+            seller_type == SellerProfile.TYPE_LIMITED_SHOP_OWNER
+            and self.instance.pk
+            and self.instance.shops.count() > 1
+        ):
+            raise forms.ValidationError(
+                "This seller owns more than one shop. A Limited Shop Owner may own only one."
+            )
+        return seller_type
 
 
 @admin.register(SellerProfile)
@@ -186,3 +199,16 @@ class SellerProfileAdmin(ReasonRequiredActionMixin, StatusBadgeMixin, admin.Mode
             )
     reactivate_sellers.short_description = "Reactivate selected sellers"
     reactivate_sellers.allowed_permissions = ('change',)
+
+
+@admin.register(LimitedShopOwnerProductLimit)
+class LimitedShopOwnerProductLimitAdmin(admin.ModelAdmin):
+    list_display = ('max_products', 'updated_at')
+    readonly_fields = ('updated_at',)
+
+    def has_add_permission(self, request):
+        # Singleton (pk=1) enforced in LimitedShopOwnerProductLimit.save().
+        return not LimitedShopOwnerProductLimit.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False

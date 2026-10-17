@@ -11,6 +11,7 @@ import {
   updateSellerProduct,
   deleteSellerProduct,
   getSellerWallet,
+  getSellerDashboard,
   InsufficientPointsError,
   formatImageUrl,
 } from "@/lib/api";
@@ -46,6 +47,9 @@ export default function SellerProductsPage() {
   // admin-configurable and the backend charges from it, so the UI reads it from the
   // wallet payload instead of keeping its own copy to fall out of date.
   const [creationCost, setCreationCost] = useState<number | null>(null);
+  // A Limited Shop Owner may hold only productLimit products; null means unlimited.
+  const [productLimit, setProductLimit] = useState<number | null>(null);
+  const [productsCount, setProductsCount] = useState<number>(0);
 
   // Modals
   const [isAddOpen, setIsAddOpen] = useState(false);
@@ -61,9 +65,11 @@ export default function SellerProductsPage() {
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  // A Shop Owner has exactly one assigned Shop (Admin-created Shop Owner model).
-  // The Seller Panel never lets a seller pick among arbitrary Shops.
-  const myShop = shops.length > 0 ? shops[0] : null;
+  // Shops are admin-assigned. A Full Shop Owner may own several and picks one
+  // when adding a product; the choice is limited to the seller's own Shops.
+  const hasShop = shops.length > 0;
+  const [createShopId, setCreateShopId] = useState<string>("");
+  const atProductLimit = productLimit !== null && productsCount >= productLimit;
 
   // Form State
   const [formData, setFormData] = useState({
@@ -117,6 +123,23 @@ export default function SellerProductsPage() {
         setCreationCost(res.product_creation_cost);
       })
       .catch(() => {});
+    getSellerDashboard(token)
+      .then((res) => {
+        setProductLimit(res.capabilities.product_limit);
+        setProductsCount(res.capabilities.products_count);
+      })
+      .catch(() => {});
+  }, []);
+
+  const refreshProductQuota = useCallback(() => {
+    const token = getAuthToken();
+    if (!token) return;
+    getSellerDashboard(token)
+      .then((res) => {
+        setProductLimit(res.capabilities.product_limit);
+        setProductsCount(res.capabilities.products_count);
+      })
+      .catch(() => {});
   }, []);
 
   const refreshWalletBalance = useCallback(() => {
@@ -141,6 +164,7 @@ export default function SellerProductsPage() {
       description: "",
       is_active: true,
     });
+    setCreateShopId(shops.length > 0 ? shops[0].id.toString() : "");
     setImageFile(null);
     setImagePreview(null);
     setActionError(null);
@@ -191,7 +215,7 @@ export default function SellerProductsPage() {
     const token = getAuthToken();
     if (!token) return;
 
-    if (!myShop) {
+    if (!hasShop) {
       setActionError(
         "You have not been assigned a Shop yet. Contact an authorized administrator to have a Shop assigned to your account."
       );
@@ -209,6 +233,7 @@ export default function SellerProductsPage() {
       await createSellerProduct(token, {
         name: formData.name,
         category_id: parseInt(formData.category_id),
+        shop_id: createShopId ? parseInt(createShopId) : undefined,
         price: parseFloat(formData.price),
         old_price: formData.old_price ? parseFloat(formData.old_price) : null,
         stock: parseInt(formData.stock) || 0,
@@ -221,6 +246,7 @@ export default function SellerProductsPage() {
       closeProductModal();
       await fetchProductsList();
       refreshWalletBalance();
+      refreshProductQuota();
     } catch (err: any) {
       if (err instanceof InsufficientPointsError) {
         setActionError(
@@ -279,6 +305,7 @@ export default function SellerProductsPage() {
       setActionSuccess(`Product "${deletingProduct.name}" deleted.`);
       setDeletingProduct(null);
       await fetchProductsList();
+      refreshProductQuota();
     } catch (err: any) {
       setActionError(err.message || "Failed to delete product.");
     } finally {
@@ -302,7 +329,7 @@ export default function SellerProductsPage() {
           <button
             type="button"
             onClick={handleOpenAdd}
-            disabled={!myShop}
+            disabled={!hasShop || atProductLimit}
             className="px-4 py-2.5 rounded-lg bg-primary hover:bg-primary-hover disabled:opacity-50 text-on-primary font-bold text-xs uppercase tracking-wider transition-colors shadow-sm flex items-center gap-2 cursor-pointer disabled:cursor-not-allowed"
           >
             <span className="material-symbols-outlined text-[18px]">add_box</span>
@@ -311,7 +338,25 @@ export default function SellerProductsPage() {
         </div>
       </div>
 
-      {!myShop && (
+      {productLimit !== null && (
+        <div
+          className={`p-3.5 rounded-xl border text-xs flex items-center gap-2 ${
+            atProductLimit
+              ? "bg-accent/10 border-accent/20 text-accent"
+              : "bg-primary/10 border-primary/20 text-primary"
+          }`}
+        >
+          <span className="material-symbols-outlined text-[18px] shrink-0">
+            {atProductLimit ? "warning" : "inventory_2"}
+          </span>
+          <span>
+            Limited Shop Owner: {productsCount} of {productLimit} products used.
+            {atProductLimit && " Delete a product to free a slot before adding a new one."}
+          </span>
+        </div>
+      )}
+
+      {!hasShop && (
         <div className="p-3.5 rounded-xl bg-accent/10 border border-accent/20 text-accent text-xs flex items-center gap-2">
           <span className="material-symbols-outlined text-[18px] shrink-0">warning</span>
           <span>
@@ -628,14 +673,32 @@ export default function SellerProductsPage() {
                     <label className="block text-xs font-semibold text-ink mb-1.5">
                       Shop
                     </label>
-                    <div className="w-full px-3.5 py-2 rounded-lg border border-line bg-surface-alt text-ink-muted text-xs flex items-center gap-1.5">
-                      <span className="material-symbols-outlined text-[16px] shrink-0">
-                        storefront
-                      </span>
-                      <span className="truncate font-semibold text-ink">
-                        {myShop ? myShop.name : "No Shop assigned"}
-                      </span>
-                    </div>
+                    {shops.length > 1 ? (
+                      <select
+                        required
+                        value={createShopId}
+                        onChange={(e) => setCreateShopId(e.target.value)}
+                        className="w-full px-3.5 py-2 rounded-lg border border-line bg-surface text-ink text-xs focus:outline-none focus:border-primary"
+                      >
+                        {shops.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                            {s.status !== "APPROVED" && s.status !== "ACTIVE"
+                              ? ` (${s.status_display || s.status})`
+                              : ""}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <div className="w-full px-3.5 py-2 rounded-lg border border-line bg-surface-alt text-ink-muted text-xs flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-[16px] shrink-0">
+                          storefront
+                        </span>
+                        <span className="truncate font-semibold text-ink">
+                          {hasShop ? shops[0].name : "No Shop assigned"}
+                        </span>
+                      </div>
+                    )}
                   </div>
 
                   <div>

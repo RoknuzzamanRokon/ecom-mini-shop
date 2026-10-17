@@ -728,7 +728,7 @@ export interface SellerProfile {
   user: number;
   username: string;
   user_email: string;
-  seller_type: "FULL_SHOP_OWNER" | "LIMITED_SHOP_OWNER" | "PRODUCT_OWNER" | string;
+  seller_type: "FULL_SHOP_OWNER" | "LIMITED_SHOP_OWNER" | string;
   seller_type_display: string;
   status: "PENDING" | "UNDER_REVIEW" | "APPROVED" | "REJECTED" | "SUSPENDED" | string;
   status_display: string;
@@ -748,12 +748,15 @@ export interface SellerProfile {
   updated_at: string;
 }
 
+// Mirrors sellers/services.py::get_seller_capabilities.
 export interface SellerCapabilities {
-  can_create_shops: boolean;
-  max_shops: number | null;
-  can_create_products: boolean;
-  can_manage_inventory: boolean;
-  can_manage_orders: boolean;
+  can_create_shop: boolean;
+  can_manage_products: boolean;
+  has_full_catalog: boolean;
+  /** null for a Full Shop Owner (unlimited); the configured cap for a Limited one. */
+  product_limit: number | null;
+  products_count: number;
+  seller_type: string;
 }
 
 export interface SellerDashboardData {

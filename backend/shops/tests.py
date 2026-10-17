@@ -65,19 +65,6 @@ class ShopSystemTests(TestCase):
             status=SellerProfile.STATUS_ACTIVE,
         )
 
-        # Product Owner User
-        cls.user_prod = User.objects.create_user(
-            username="prod_owner",
-            email="prod@example.com",
-            password="TestPassword123!",
-        )
-        cls.seller_prod = SellerProfile.objects.create(
-            user=cls.user_prod,
-            seller_type=SellerProfile.TYPE_PRODUCT_OWNER,
-            business_name="Artisan Solo Crafts",
-            status=SellerProfile.STATUS_ACTIVE,
-        )
-
         # Suspended Seller User
         cls.user_suspended = User.objects.create_user(
             username="suspended_seller",
@@ -134,7 +121,7 @@ class ShopSystemTests(TestCase):
     # 1b. Seller self-service shop creation is hard-disabled (Phase 1H core rule).
     def test_seller_self_service_shop_creation_is_disabled(self):
         """No seller — regardless of type or eligibility — may create a shop via the API."""
-        for user in (self.user_full, self.user_limited, self.user_prod, self.user_suspended):
+        for user in (self.user_full, self.user_limited, self.user_suspended):
             self.client.force_authenticate(user=user)
             response = self.client.post("/api/shops/mine/create/", {"name": "Attempted Shop"}, format="json")
             self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN, f"Failed for {user.username}")
@@ -154,12 +141,6 @@ class ShopSystemTests(TestCase):
         resp_non = self.client.post("/api/shops/mine/create/", {"name": "Buyer Shop"}, format="json")
         self.assertEqual(resp_non.status_code, status.HTTP_403_FORBIDDEN)
 
-    # 3. Product Owner shop restriction
-    def test_product_owner_cannot_create_shop(self):
-        """Product Owner sellers are strictly barred from creating shops, at the service level."""
-        with self.assertRaises(IneligibleSellerError):
-            ShopService.create_shop(self.seller_prod, name="Direct Service Shop")
-
     # 5. Limited Shop Owner behavior (limit of 1 shop)
     def test_limited_shop_owner_single_shop_limit(self):
         """Limited Shop Owner is eligible for exactly 1 shop, at the service level."""
@@ -169,14 +150,13 @@ class ShopSystemTests(TestCase):
         with self.assertRaises(ShopLimitExceededError):
             ShopService.create_shop(self.seller_limited, name="Kiosk Two")
 
-    # 5b. Full Shop Owner is also capped at exactly 1 shop under the confirmed
-    # single-Shop-per-owner business model (not just Limited Shop Owners).
-    def test_full_shop_owner_single_shop_limit(self):
-        """Full Shop Owner is eligible for exactly 1 shop, at the service level."""
-        ShopService.create_shop(self.seller_full, name="Full Owner Shop One")
+    # 5b. Full Shop Owner may own one or more shops.
+    def test_full_shop_owner_can_own_several_shops(self):
+        """Full Shop Owner has no shop cap, at the service level."""
+        for name in ("Full Owner Shop One", "Full Owner Shop Two", "Full Owner Shop Three"):
+            ShopService.create_shop(self.seller_full, name=name)
 
-        with self.assertRaises(ShopLimitExceededError):
-            ShopService.create_shop(self.seller_full, name="Full Owner Shop Two")
+        self.assertEqual(self.seller_full.shops.count(), 3)
 
     # 6. Seller ownership enforcement & 7. Cannot modify another seller's shop
     def test_seller_ownership_and_cross_modification_protection(self):
@@ -285,8 +265,7 @@ class ShopSystemTests(TestCase):
     # 11-15. Public visibility isolation
     def test_public_visibility_isolation(self):
         """Public users can ONLY see APPROVED or ACTIVE shops. All other states return 404."""
-        # Each Shop Owner is capped at exactly one Shop under the confirmed business
-        # model, so each status scenario below needs its own seller.
+        # Each status scenario below gets its own seller.
         def _make_full_shop_owner_seller(tag):
             user = User.objects.create_user(
                 username=f"visibility_{tag}",
@@ -347,7 +326,7 @@ class ShopSystemTests(TestCase):
         """Creating shops with duplicate names (for different owners) automatically generates unique slugs.
 
         Slug uniqueness is global across the Shop table, independent of ownership,
-        so this is exercised across two distinct sellers (each capped at one shop).
+        so this is exercised across two distinct sellers.
         """
         second_user = User.objects.create_user(
             username="full_owner_two",

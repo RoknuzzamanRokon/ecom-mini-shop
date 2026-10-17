@@ -69,7 +69,13 @@ from .serializers import (
     StaffOrderListSerializer,
     StaffOrderStatusUpdateSerializer,
 )
-from .services import IneligibleSellerError, OrderService, ProductOwnershipError, ProductService
+from .services import (
+    IneligibleSellerError,
+    OrderService,
+    ProductLimitExceededError,
+    ProductOwnershipError,
+    ProductService,
+)
 
 
 
@@ -524,9 +530,8 @@ class SellerProductListCreateAPIView(APIView):
         data = serializer.validated_data
         seller = request.user.seller_profile
 
-        # A Shop Owner has exactly one assigned Shop (Admin-created Shop Owner
-        # model). Auto-resolve it server-side rather than requiring the client
-        # to supply a shop_id. If a shop_id was supplied, validate_shop_id above
+        # A seller with exactly one assigned Shop may omit shop_id and have it
+        # auto-resolved here. If a shop_id was supplied, validate_shop_id above
         # has already confirmed it belongs to this seller — it can never be used
         # to target another seller's Shop.
         shop = data.get("shop_id")
@@ -538,20 +543,11 @@ class SellerProductListCreateAPIView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             if len(owned_shops) > 1:
-                # Single-shop-per-seller is a hard business rule; more than one
-                # owned Shop means the seller's data is inconsistent (e.g. legacy
-                # data or an out-of-band assignment). Never guess which Shop to
-                # use — that would be an ownership bypass risk. Surface a safe,
-                # explicit error instead and let an administrator resolve it.
+                # A Full Shop Owner may own several Shops. Never guess which one
+                # the product belongs to — the client has to say.
                 return Response(
-                    {
-                        "error": (
-                            "Your seller account is currently assigned to multiple Shops, which "
-                            "violates the single-shop-per-seller policy. Please contact an "
-                            "administrator to resolve this before creating products."
-                        )
-                    },
-                    status=status.HTTP_409_CONFLICT,
+                    {"error": "You own more than one Shop. Choose the Shop this product belongs to."},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
             shop = owned_shops[0]
 
@@ -582,6 +578,8 @@ class SellerProductListCreateAPIView(APIView):
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        except ProductLimitExceededError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except (IneligibleSellerError, ProductOwnershipError) as e:
             return Response({"error": str(e)}, status=status.HTTP_403_FORBIDDEN)
         except PermissionDenied as e:

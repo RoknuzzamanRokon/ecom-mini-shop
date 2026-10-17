@@ -3,7 +3,6 @@ from rest_framework.exceptions import PermissionDenied
 
 from rbac.models import Role
 from rbac.services import get_user_role_codes, has_user_permission
-from sellers.models import SellerProfile
 
 
 class CanViewStaffShops(BasePermission):
@@ -31,7 +30,7 @@ class CanApproveShops(BasePermission):
 class IsEligibleShopSeller(BasePermission):
     """
     Ensures an authenticated user is an active seller capable of owning a shop.
-    Rejects users without a seller profile, inactive sellers, and PRODUCT_OWNER sellers.
+    Rejects users without a seller profile and inactive sellers.
     """
     message = "Only active shop owners can perform shop management operations."
 
@@ -49,9 +48,6 @@ class IsEligibleShopSeller(BasePermission):
             raise PermissionDenied(
                 f"Your seller account is currently '{seller.status}'. Only active sellers can manage shops."
             )
-
-        if seller.seller_type == SellerProfile.TYPE_PRODUCT_OWNER:
-            raise PermissionDenied("Product Owners are not permitted to create or manage shops.")
 
         return True
 

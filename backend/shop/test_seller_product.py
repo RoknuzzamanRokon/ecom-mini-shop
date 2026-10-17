@@ -13,11 +13,16 @@ from points.models import PointTransaction, ProductCreationCost, SellerWallet
 from points.services import InsufficientPointsError, PointService
 from rbac.models import Role
 from rbac.services import assign_user_role
-from sellers.models import SellerProfile
+from sellers.models import LimitedShopOwnerProductLimit, SellerProfile
 from shops.fields import Point
 from shops.models import Shop
 from .models import Category, Product
-from .services import IneligibleSellerError, ProductOwnershipError, ProductService
+from .services import (
+    IneligibleSellerError,
+    ProductLimitExceededError,
+    ProductOwnershipError,
+    ProductService,
+)
 
 User = get_user_model()
 
@@ -89,21 +94,21 @@ class BaseSellerProductTestCase(TestCase):
             reason="Welcome bonus",
         )
 
-        # 3. Product Owner (Active) with products.create
-        cls.user_prod_owner = User.objects.create_user(
-            username="seller_prod_owner",
-            email="seller_prod_owner@example.com",
+        # 3. Full Shop Owner (Active) with products.create but no Shop assigned yet
+        cls.user_no_shop = User.objects.create_user(
+            username="seller_no_shop",
+            email="seller_no_shop@example.com",
             password="TestPassword123!",
         )
-        assign_user_role(cls.user_prod_owner, Role.ROLE_SALES_TEAM)
-        cls.seller_prod_owner = SellerProfile.objects.create(
-            user=cls.user_prod_owner,
-            seller_type=SellerProfile.TYPE_PRODUCT_OWNER,
+        assign_user_role(cls.user_no_shop, Role.ROLE_SALES_TEAM)
+        cls.seller_no_shop = SellerProfile.objects.create(
+            user=cls.user_no_shop,
+            seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
             business_name="Indie Maker",
             status=SellerProfile.STATUS_ACTIVE,
         )
         PointService.credit(
-            seller=cls.seller_prod_owner,
+            seller=cls.seller_no_shop,
             amount=10,
             transaction_type=PointTransaction.TYPE_BONUS,
             reason="Welcome bonus",
@@ -330,17 +335,17 @@ class ProductPermissionsAndStatusTests(BaseSellerProductTestCase):
         )
         self.assertIsNotNone(p_limited.id)
 
-    def test_product_owner_seller_cannot_create_product_without_owned_shop(self):
-        """PRODUCT_OWNER has no shops; attempting to bind to an unowned shop fails."""
+    def test_seller_without_shop_cannot_create_product_in_unowned_shop(self):
+        """A seller with no shop yet cannot bind a product to someone else's shop."""
         with self.assertRaises(ProductOwnershipError):
             ProductService.create_product(
-                seller=self.seller_prod_owner,
-                name="Product Owner Item",
+                seller=self.seller_no_shop,
+                name="No Shop Item",
                 category=self.category,
                 shop=self.shop_full,  # Belongs to seller_full!
                 description="Item",
                 price=Decimal("15.00"),
-                actor=self.user_prod_owner,
+                actor=self.user_no_shop,
             )
 
 
@@ -529,31 +534,33 @@ class SellerProductAPITests(BaseSellerProductTestCase):
 
     def test_api_seller_without_assigned_shop_cannot_create_product(self):
         """A Shop Owner with no assigned Shop yet gets a clear error, not a crash, when omitting shop_id."""
-        self.client.force_authenticate(user=self.user_prod_owner)
+        self.client.force_authenticate(user=self.user_no_shop)
         payload = {
             "name": "No Shop Product",
             "category_id": self.category.id,
-            "description": "Product Owner has no assigned Shop",
+            "description": "Seller has no assigned Shop",
             "price": "20.00",
         }
         res = self.client.post("/api/products/mine/", payload)
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("shop", str(res.data).lower())
 
-    def test_api_seller_with_inconsistent_multiple_shops_gets_safe_error_not_silent_pick(self):
-        """
-        Single-shop-per-seller is a hard business rule, but nothing at the DB layer
-        prevents legacy/inconsistent data from giving one seller two Shops. When
-        that happens, omitting shop_id must NOT silently pick one of them (that
-        would risk products landing under the wrong Shop) - it must fail safely.
-        """
-        Shop.objects.create(
+    def _give_full_owner_second_shop(self):
+        return Shop.objects.create(
             owner=self.seller_full,
-            name="Second Legacy Shop",
-            slug="second-legacy-shop",
+            name="Apex Second Branch",
+            slug="apex-second-branch",
             status=Shop.STATUS_ACTIVE,
             location=Point(90.4125, 23.8103),
         )
+
+    def test_api_multi_shop_owner_omitting_shop_id_must_choose(self):
+        """
+        A Full Shop Owner may own several Shops. Omitting shop_id must NOT
+        silently pick one of them (the product could land under the wrong
+        Shop) - the seller is asked to choose.
+        """
+        self._give_full_owner_second_shop()
 
         self.client.force_authenticate(user=self.user_full)
         prod_count_before = Product.objects.count()
@@ -566,12 +573,27 @@ class SellerProductAPITests(BaseSellerProductTestCase):
             "price": "20.00",
         }
         res = self.client.post("/api/products/mine/", payload)
-        self.assertEqual(res.status_code, status.HTTP_409_CONFLICT)
-        self.assertIn("multiple", str(res.data).lower())
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("more than one shop", str(res.data).lower())
 
         # Nothing was created and no points were touched.
         self.assertEqual(Product.objects.count(), prod_count_before)
         self.assertEqual(PointService.get_balance(self.seller_full), balance_before)
+
+    def test_api_multi_shop_owner_creates_product_in_chosen_shop(self):
+        second_shop = self._give_full_owner_second_shop()
+
+        self.client.force_authenticate(user=self.user_full)
+        payload = {
+            "name": "Second Branch Product",
+            "category_id": self.category.id,
+            "shop_id": second_shop.id,
+            "description": "Lands in the shop the seller picked",
+            "price": "20.00",
+        }
+        res = self.client.post("/api/products/mine/", payload)
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(res.data["shop"]["id"], second_shop.id)
 
     def test_api_seller_cannot_change_product_shop_to_another_sellers_shop(self):
         """PATCH /api/products/mine/<id>/ rejects reassigning a product to another seller's Shop."""
@@ -657,6 +679,76 @@ class SellerProductAPITests(BaseSellerProductTestCase):
         self.assertEqual(del_res.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(Product.objects.filter(id=p.id).exists())
 
+
+
+class LimitedShopOwnerProductLimitTests(BaseSellerProductTestCase):
+    """A Limited Shop Owner may hold at most LimitedShopOwnerProductLimit products."""
+
+    def setUp(self):
+        LimitedShopOwnerProductLimit.objects.create(max_products=1)
+
+    def _create(self, seller, shop, actor, name):
+        return ProductService.create_product(
+            seller=seller,
+            name=name,
+            category=self.category,
+            shop=shop,
+            description="Limit test item",
+            price=Decimal("20.00"),
+            actor=actor,
+        )
+
+    def _create_limited(self, name):
+        return self._create(self.seller_limited, self.shop_limited, self.user_limited, name)
+
+    def test_limited_owner_blocked_at_limit_without_charging_points(self):
+        self._create_limited("Within Limit")
+        balance_at_limit = PointService.get_balance(self.seller_limited)
+
+        with self.assertRaises(ProductLimitExceededError):
+            self._create_limited("Over Limit")
+
+        self.assertEqual(Product.objects.filter(shop=self.shop_limited).count(), 1)
+        self.assertEqual(PointService.get_balance(self.seller_limited), balance_at_limit)
+
+    def test_limit_is_reported_before_insufficient_points(self):
+        self._create_limited("Within Limit")
+        wallet = SellerWallet.objects.get(seller=self.seller_limited)
+        wallet.balance = 0
+        wallet.save()
+
+        with self.assertRaises(ProductLimitExceededError):
+            self._create_limited("Over Limit")
+
+    def test_deleting_a_product_frees_a_slot(self):
+        product = self._create_limited("First")
+        product.delete()
+
+        self.assertIsNotNone(self._create_limited("Replacement").id)
+
+    def test_full_owner_has_no_product_limit(self):
+        for name in ("Full One", "Full Two"):
+            self._create(self.seller_full, self.shop_full, self.user_full, name)
+
+        self.assertEqual(Product.objects.filter(shop=self.shop_full).count(), 2)
+
+    def test_api_returns_400_at_limit(self):
+        self._create_limited("Within Limit")
+
+        client = APIClient()
+        client.force_authenticate(user=self.user_limited)
+        res = client.post(
+            "/api/products/mine/",
+            {
+                "name": "Over Limit Via API",
+                "category_id": self.category.id,
+                "description": "Should be refused",
+                "price": "20.00",
+            },
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("limit of 1 product", res.data["error"])
+        self.assertFalse(Product.objects.filter(name="Over Limit Via API").exists())
 
 
 class ConcurrencySafetyTests(TransactionTestCase):

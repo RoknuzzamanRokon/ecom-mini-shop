@@ -1,10 +1,12 @@
+from typing import Optional
+
 from django.core.exceptions import ValidationError
 from django.db import transaction
 
 from notifications import events
 from notifications.publisher import publish
 
-from .models import SellerProfile
+from .models import LimitedShopOwnerProductLimit, SellerProfile
 
 
 @transaction.atomic
@@ -44,35 +46,45 @@ def create_seller_profile(user, **fields) -> SellerProfile:
     )
 
 
+def get_product_limit(seller: SellerProfile) -> Optional[int]:
+    """Products this seller may hold, or None when unlimited (Full Shop Owner)."""
+    if seller.seller_type == SellerProfile.TYPE_LIMITED_SHOP_OWNER:
+        return LimitedShopOwnerProductLimit.get_limit()
+    return None
+
+
+def count_seller_products(seller: SellerProfile) -> int:
+    """Products across every shop the seller owns (Product -> shop -> owner)."""
+    # Imported here: the shop app's models depend on this app.
+    from shop.models import Product
+
+    return Product.objects.filter(shop__owner=seller).count()
+
+
 def get_seller_capabilities(seller: SellerProfile) -> dict:
     """
     Returns capability flags determined by seller type.
 
-    Known Issue #4: `can_create_shop` is False for **every** seller type, including
-    FULL_SHOP_OWNER and LIMITED_SHOP_OWNER. Sellers do not create shops on this
-    platform -- shop creation is a management action, and seller self-service is
-    hard-denied with a 403. This flag previously claimed True for the two shop-owner
-    types, which contradicted the enforced policy and misled any UI that trusted it.
-    The fix is to report the truth here, not to relax the restriction.
+    Known Issue #4: `can_create_shop` is False for **every** seller type. Sellers
+    do not create shops on this platform -- shop creation is a management action,
+    and seller self-service is hard-denied with a 403. This flag previously claimed
+    True for both shop-owner types, which contradicted the enforced policy and
+    misled any UI that trusted it. The fix is to report the truth here, not to
+    relax the restriction.
+
+    `product_limit` is None for a Full Shop Owner (unlimited) and the configured
+    LimitedShopOwnerProductLimit for a Limited Shop Owner; `products_count` is
+    what the seller holds now, so a UI can show how many slots are left.
     """
-    capabilities = {
+    product_limit = get_product_limit(seller)
+    return {
         "can_create_shop": False,
-        "can_manage_products": False,
-        "has_full_catalog": False,
+        "can_manage_products": True,
+        "has_full_catalog": product_limit is None,
+        "product_limit": product_limit,
+        "products_count": count_seller_products(seller),
         "seller_type": seller.seller_type,
     }
-
-    if seller.seller_type == SellerProfile.TYPE_FULL_SHOP_OWNER:
-        capabilities["can_manage_products"] = True
-        capabilities["has_full_catalog"] = True
-    elif seller.seller_type == SellerProfile.TYPE_LIMITED_SHOP_OWNER:
-        capabilities["can_manage_products"] = True
-        capabilities["has_full_catalog"] = False
-    elif seller.seller_type == SellerProfile.TYPE_PRODUCT_OWNER:
-        capabilities["can_manage_products"] = True
-        capabilities["has_full_catalog"] = True
-
-    return capabilities
 
 
 def _publish_status_change(seller: SellerProfile, from_status: str, staff_user, reason: str = ""):

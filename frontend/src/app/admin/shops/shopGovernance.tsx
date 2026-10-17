@@ -260,9 +260,6 @@ export function shopOwnerEligibilityWarning(seller: AdminSeller): string | null 
   if (!seller.is_operational) {
     return `This seller's account is currently '${seller.status}'. Only an operational (APPROVED or ACTIVE) seller can own a shop.`;
   }
-  if (seller.seller_type === "PRODUCT_OWNER") {
-    return "Product Owners are not permitted to own shops under system business rules.";
-  }
   if (seller.seller_type === "LIMITED_SHOP_OWNER" && seller.shops_count >= 1) {
     return "This Limited Shop Owner already owns a shop and is capped at 1.";
   }

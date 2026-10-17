@@ -63,7 +63,6 @@ export const SELLER_STATUS_OPTIONS: AdminSelectOption[] = Object.entries(
 export const SELLER_TYPE_LABELS: Record<string, string> = {
   FULL_SHOP_OWNER: "Full Shop Owner",
   LIMITED_SHOP_OWNER: "Limited Shop Owner",
-  PRODUCT_OWNER: "Product Owner",
 };
 
 export const SELLER_TYPE_OPTIONS: AdminSelectOption[] = Object.entries(

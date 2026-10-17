@@ -21,6 +21,7 @@ from points.services import InsufficientPointsError, PointService
 from rbac.models import Role
 from rbac.services import get_user_role_codes, has_user_permission
 from sellers.models import SellerProfile
+from sellers.services import count_seller_products, get_product_limit
 from shops.models import Shop
 from .models import Category, Order, OrderItem, Product
 
@@ -45,6 +46,11 @@ class ProductOwnershipError(ProductServiceError):
     pass
 
 
+class ProductLimitExceededError(ProductServiceError):
+    """Raised when a Limited Shop Owner already holds their maximum number of products."""
+    pass
+
+
 class ProductModerationError(ProductServiceError):
     """Raised when staff moderation refuses an action, e.g. publishing for a shop that is not live."""
     pass
@@ -65,6 +71,15 @@ class ProductService:
     point deduction, and audit logging.
     Enforces atomic transaction boundaries and guarantees consistent rollback on failure.
     """
+
+    @staticmethod
+    def _check_product_limit(seller: SellerProfile, product_limit: int) -> None:
+        if count_seller_products(seller) >= product_limit:
+            noun = "product" if product_limit == 1 else "products"
+            raise ProductLimitExceededError(
+                f"You have reached the Limited Shop Owner limit of {product_limit} {noun}. "
+                "Delete a product to free a slot."
+            )
 
     @classmethod
     def create_product(
@@ -89,9 +104,10 @@ class ProductService:
           1. Seller operational status (APPROVED or ACTIVE)
           2. RBAC permission ('products.create')
           3. Shop ownership (shop.owner == seller)
-          4. Authoritative point creation cost determination
-          5. Concurrency-safe point balance verification & atomic debit
-          6. Comprehensive audit log entry
+          4. The Limited Shop Owner product limit
+          5. Authoritative point creation cost determination
+          6. Concurrency-safe point balance verification & atomic debit
+          7. Comprehensive audit log entry
         Rolls back all changes if any step fails.
         """
         # 1. Validate seller profile & operational status
@@ -118,10 +134,17 @@ class ProductService:
             if not has_user_permission(actor, "products.create"):
                 raise PermissionDenied("You do not have permission to create products ('products.create' required).")
 
-        # 4. Determine authoritative required point cost
+        # 4. Limited Shop Owners may hold only a fixed number of products. Checked
+        # here so a seller at the limit hears about it before any points message,
+        # and again under a lock inside the transaction below.
+        product_limit = get_product_limit(seller)
+        if product_limit is not None:
+            cls._check_product_limit(seller, product_limit)
+
+        # 5. Determine authoritative required point cost
         required_points = PointService.get_product_creation_cost()
 
-        # 5. Check seller wallet balance before starting creation
+        # 6. Check seller wallet balance before starting creation
         current_balance = PointService.get_balance(seller)
         if current_balance < required_points:
             raise InsufficientPointsError(
@@ -129,8 +152,13 @@ class ProductService:
                 f"but your wallet currently has {current_balance} points."
             )
 
-        # 6. Execute atomic creation, point debit, and audit logging
+        # 7. Execute atomic creation, point debit, and audit logging
         with transaction.atomic():
+            if product_limit is not None:
+                # Lock the seller row so two concurrent creates cannot both pass the count.
+                SellerProfile.objects.select_for_update().filter(pk=seller.pk).first()
+                cls._check_product_limit(seller, product_limit)
+
             # A. Generate unique slug
             base_slug = slugify(name.strip())
             slug = base_slug

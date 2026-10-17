@@ -472,7 +472,7 @@ class SellerWalletContractTests(TestCase):
         )
         other_seller = SellerProfile.objects.create(
             user=other_user,
-            seller_type=SellerProfile.TYPE_PRODUCT_OWNER,
+            seller_type=SellerProfile.TYPE_LIMITED_SHOP_OWNER,
             business_name="Unrelated Traders",
             status=SellerProfile.STATUS_ACTIVE,
         )

@@ -349,8 +349,8 @@ export async function updateAdminShopStatus(
  * always starts DRAFT (ShopService.create_shop hardcodes it when
  * submit_for_review is omitted) — this payload cannot set an initial status
  * because the serializer has no such field. `seller_id` eligibility (must be
- * operational, not PRODUCT_OWNER, and under the LIMITED_SHOP_OWNER 1-shop
- * cap) is enforced server-side by the same ShopService rule the removed
+ * operational, and under the LIMITED_SHOP_OWNER 1-shop cap; a
+ * FULL_SHOP_OWNER may own several shops) is enforced server-side by the same ShopService rule the removed
  * seller self-service endpoint used to enforce.
  */
 export interface AdminShopCreatePayload {
@@ -372,8 +372,8 @@ export interface AdminShopCreatePayload {
  * Requires 'shops.create' or 'shops.admin.manage' (CanCreateAdminShops).
  *
  * The backend rejects a seller_id that does not exist, or one that is
- * ineligible (ineligible status, PRODUCT_OWNER, or LIMITED_SHOP_OWNER already
- * at its 1-shop cap), with a 400 field/validation error — this client does
+ * ineligible (ineligible status, or LIMITED_SHOP_OWNER already at its 1-shop
+ * cap), with a 400 field/validation error — this client does
  * not pre-check any of that, it only surfaces what the backend decides.
  */
 export async function createAdminShop(

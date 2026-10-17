@@ -32,7 +32,7 @@
               {{ seller_filter.get_status_display }}
             </span>
             <span class="mp-profile-chip">
-              <span class="material-symbols-outlined" aria-hidden="true">{% if seller_filter.seller_type == "LIMITED_SHOP_OWNER" %}store{% elif seller_filter.seller_type == "PRODUCT_OWNER" %}inventory_2{% else %}storefront{% endif %}</span>
+              <span class="material-symbols-outlined" aria-hidden="true">{% if seller_filter.seller_type == "LIMITED_SHOP_OWNER" %}store{% else %}storefront{% endif %}</span>
               {{ seller_filter.get_seller_type_display }}
             </span>
           </div>

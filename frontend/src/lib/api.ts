@@ -579,8 +579,8 @@ export async function createSellerProduct(
   data: {
     name: string;
     category_id: number;
-    // Optional: a Shop Owner has exactly one assigned Shop, so the backend
-    // auto-resolves it when omitted. Never used to target another seller's Shop.
+    // Optional with one assigned Shop (the backend auto-resolves it); required
+    // once a Full Shop Owner owns several. Never targets another seller's Shop.
     shop_id?: number;
     description: string;
     price: string | number;
