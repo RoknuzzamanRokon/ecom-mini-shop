@@ -7,7 +7,8 @@ from django.core.exceptions import ValidationError
 from django.core.management import call_command
 from django.db import connection
 from django.http import QueryDict
-from django.test import TestCase
+from django.test import Client, TestCase
+from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -1092,3 +1093,85 @@ class NearbyProductSearchTests(TestCase):
         shops = ShopService.get_nearby_shops(23.7788, 90.4172, 5, product_query="Oak Chair")
         self.assertEqual([s.id for s in shops], [self.gulshan1.id])
 
+
+class ShopAdminOwnerCapTests(TestCase):
+    """
+    The Django admin's Shop form saves without ShopService.create_shop, so it
+    checks the Limited Shop Owner one-shop cap itself.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.superuser = User.objects.create_superuser(
+            username="cap_admin", email="cap_admin@example.com", password="TestPassword123!"
+        )
+
+        def seller(username, seller_type):
+            user = User.objects.create_user(
+                username=username, email=f"{username}@example.com", password="TestPassword123!"
+            )
+            return SellerProfile.objects.create(
+                user=user,
+                seller_type=seller_type,
+                business_name=f"{username} Co",
+                status=SellerProfile.STATUS_ACTIVE,
+            )
+
+        cls.limited = seller("cap_limited", SellerProfile.TYPE_LIMITED_SHOP_OWNER)
+        cls.full = seller("cap_full", SellerProfile.TYPE_FULL_SHOP_OWNER)
+        cls.limited_shop = Shop.objects.create(owner=cls.limited, name="Limited Only Shop")
+        cls.full_shop = Shop.objects.create(owner=cls.full, name="Full First Shop")
+
+    def setUp(self):
+        self.client = Client()
+        self.client.force_login(self.superuser)
+
+    def _form(self, owner, name, slug):
+        return {
+            "owner": str(owner.pk),
+            "name": name,
+            "slug": slug,
+            "description": "",
+            "phone": "",
+            "address": "",
+            "location": "POINT(90.4125000 23.8103000)",
+            "rejection_reason": "",
+            "suspension_reason": "",
+            "_save": "Save",
+        }
+
+    def test_add_refuses_second_shop_for_limited_owner(self):
+        response = self.client.post(
+            reverse("admin:shops_shop_add"),
+            self._form(self.limited, "Limited Second Shop", "limited-second-shop"),
+        )
+        # 200 is the form redisplayed with its error; a 302 would mean it saved.
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "maximum of 1 shop")
+        self.assertFalse(Shop.objects.filter(slug="limited-second-shop").exists())
+
+    def test_add_allows_another_shop_for_full_owner(self):
+        response = self.client.post(
+            reverse("admin:shops_shop_add"),
+            self._form(self.full, "Full Second Shop", "full-second-shop"),
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(self.full.shops.count(), 2)
+
+    def test_change_refuses_moving_a_shop_to_limited_owner_at_cap(self):
+        response = self.client.post(
+            reverse("admin:shops_shop_change", args=[self.full_shop.pk]),
+            self._form(self.limited, self.full_shop.name, self.full_shop.slug),
+        )
+        self.assertEqual(response.status_code, 200)
+        self.full_shop.refresh_from_db()
+        self.assertEqual(self.full_shop.owner, self.full)
+
+    def test_limited_owner_can_still_edit_their_own_shop(self):
+        response = self.client.post(
+            reverse("admin:shops_shop_change", args=[self.limited_shop.pk]),
+            self._form(self.limited, "Limited Renamed", self.limited_shop.slug),
+        )
+        self.assertEqual(response.status_code, 302)
+        self.limited_shop.refresh_from_db()
+        self.assertEqual(self.limited_shop.name, "Limited Renamed")

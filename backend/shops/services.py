@@ -142,9 +142,16 @@ class ShopService:
                 f"Seller must be approved and active to create a shop. Current status: '{seller.status}'."
             )
 
-        # A Full Shop Owner may own any number of Shops. A Limited Shop Owner is
-        # capped at exactly one; a Shop is always admin-created and admin-assigned,
-        # so this stops an administrator from assigning them a second one.
+        cls.validate_shop_cap(seller)
+
+    @staticmethod
+    def validate_shop_cap(seller: SellerProfile):
+        """
+        A Full Shop Owner may own any number of Shops. A Limited Shop Owner is
+        capped at exactly one; a Shop is always admin-created and admin-assigned,
+        so this stops an administrator from assigning them a second one. Call it
+        before `seller` takes ownership of a Shop they do not already own.
+        """
         if (
             seller.seller_type == SellerProfile.TYPE_LIMITED_SHOP_OWNER
             and seller.shops.count() >= 1

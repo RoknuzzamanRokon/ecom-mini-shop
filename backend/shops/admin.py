@@ -1,3 +1,4 @@
+from django import forms
 from django.contrib import admin
 from django.core.exceptions import ValidationError
 from django.db.models import Count, Q
@@ -6,14 +7,29 @@ from django.utils.html import format_html
 from audit.admin_mixins import ReasonRequiredActionMixin, StatusBadgeMixin
 from sellers.models import SellerProfile
 from .models import Shop
-from .services import ShopService, ShopError
+from .services import ShopService, ShopError, ShopLimitExceededError
 
 # The changelist query the seller profile's "Shops" link opens.
 OWNER_FILTER = 'owner__id__exact'
 
 
+class ShopAdminForm(forms.ModelForm):
+    def clean_owner(self):
+        owner = self.cleaned_data.get("owner")
+        # Saving here skips ShopService.create_shop, so the Limited Shop Owner
+        # cap is checked here too. Only a new shop, or one handed to a different
+        # seller, takes one of the owner's slots.
+        if owner and owner.pk != self.instance.owner_id:
+            try:
+                ShopService.validate_shop_cap(owner)
+            except ShopLimitExceededError as exc:
+                raise forms.ValidationError(str(exc))
+        return owner
+
+
 @admin.register(Shop)
 class ShopAdmin(ReasonRequiredActionMixin, StatusBadgeMixin, admin.ModelAdmin):
+    form = ShopAdminForm
     list_display = (
         'shop_display', 'owner_display', 'status_badge', 'product_count',
         'phone', 'created_at'
