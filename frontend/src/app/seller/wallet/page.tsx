@@ -14,6 +14,7 @@ const TXN_TYPES = [
   "BONUS",
   "REFUND",
   "ADJUSTMENT",
+  "EXPIRY",
 ];
 
 export default function SellerWalletPage() {
@@ -115,6 +116,52 @@ export default function SellerWalletPage() {
         </div>
       </div>
 
+      {/* Point expiry */}
+      {wallet && (
+        <div className="bg-surface rounded-2xl border border-line p-5 shadow-xs flex items-start gap-3">
+          <span className="material-symbols-outlined text-primary text-[22px] shrink-0">
+            hourglass_bottom
+          </span>
+          <div className="min-w-0 flex-1 space-y-2 text-xs">
+            <p className="text-sm font-bold text-ink">Point expiry</p>
+            {wallet.points_expire ? (
+              <>
+                <p className="text-ink-body leading-relaxed">
+                  Points expire {wallet.expiry_months} months after you receive them if they are not
+                  used. New product listings spend the points that expire soonest first.
+                </p>
+                {wallet.upcoming_expiries.length > 0 ? (
+                  <ul className="divide-y divide-line rounded-xl border border-line">
+                    {wallet.upcoming_expiries.map((lot) => (
+                      <li
+                        key={`${lot.expires_at}-${lot.points}`}
+                        className="flex items-center justify-between gap-3 px-3 py-2"
+                      >
+                        <span className="font-bold text-ink">{lot.points} points</span>
+                        <span className="text-ink-muted">
+                          expire {new Date(lot.expires_at).toLocaleDateString()}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-ink-muted">You have no points waiting to expire.</p>
+                )}
+                {wallet.total_expired > 0 && (
+                  <p className="text-ink-muted">
+                    {wallet.total_expired} points have expired unused so far.
+                  </p>
+                )}
+              </>
+            ) : (
+              <p className="text-ink-body leading-relaxed">
+                As a Full Shop Owner, your points never expire.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Platform Policy Notice */}
       <div className="p-4 rounded-xl bg-surface-alt/70 border border-line flex flex-col sm:flex-row sm:items-center gap-3 text-xs">
         <div className="flex items-start gap-3 flex-1">
@@ -187,7 +234,8 @@ export default function SellerWalletPage() {
               </thead>
               <tbody className="divide-y divide-line">
                 {transactions.map((txn) => {
-                  const isDebit = txn.amount < 0 || txn.transaction_type === "PRODUCT_CREATION" || txn.transaction_type === "ADMIN_DEBIT";
+                  // `amount` is always positive; the balance says which way it moved.
+                  const isDebit = txn.balance_after < txn.balance_before;
                   return (
                     <tr key={txn.id} className="hover:bg-surface-alt/40 transition-colors">
                       <td className="py-3 px-4">
@@ -204,7 +252,7 @@ export default function SellerWalletPage() {
 
                       <td className="py-3 px-4 font-black">
                         <span className={isDebit ? "text-accent" : "text-success"}>
-                          {txn.amount > 0 ? `+${txn.amount}` : txn.amount} Points
+                          {isDebit ? `-${txn.amount}` : `+${txn.amount}`} Points
                         </span>
                       </td>
 

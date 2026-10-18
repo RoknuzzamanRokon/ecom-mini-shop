@@ -123,6 +123,7 @@ const STAFF_MOVEMENT_ICONS: Record<string, string> = {
   SELLER_DEBIT: "undo",
   RECLAIM_OUT: "undo",
   RECLAIM_IN: "call_received",
+  EXPIRY: "hourglass_bottom",
 };
 
 /** Maps one staff wallet movement onto the shared PointMovementList row. */

@@ -1,6 +1,7 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from .models import (
+    PointExpiryPolicy,
     PointTransaction,
     ProductCreationCost,
     SellerWallet,
@@ -86,9 +87,11 @@ class StaffWalletAdmin(admin.ModelAdmin):
     (backend/utils/add_points.py) and move only through PointService.
     """
 
-    list_display = ('user', 'balance_display', 'created_at', 'updated_at')
+    list_display = ('user', 'balance_display', 'points_expire', 'created_at', 'updated_at')
     search_fields = ('user__username',)
-    readonly_fields = ('balance', 'created_at', 'updated_at')
+    # points_expire is switched from the Console user page, which records the
+    # reason in the audit log and restarts the clock when it is turned back on.
+    readonly_fields = ('balance', 'points_expire', 'created_at', 'updated_at')
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('user')
@@ -144,6 +147,19 @@ class ProductCreationCostAdmin(admin.ModelAdmin):
     def has_add_permission(self, request):
         # Singleton (pk=1) enforced in ProductCreationCost.save().
         return not ProductCreationCost.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(PointExpiryPolicy)
+class PointExpiryPolicyAdmin(admin.ModelAdmin):
+    list_display = ('expiry_months', 'updated_at')
+    readonly_fields = ('updated_at',)
+
+    def has_add_permission(self, request):
+        # Singleton (pk=1) enforced in PointExpiryPolicy.save().
+        return not PointExpiryPolicy.objects.exists()
 
     def has_delete_permission(self, request, obj=None):
         return False

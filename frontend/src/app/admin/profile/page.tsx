@@ -13,7 +13,7 @@ import {
 } from "@/lib/admin-auth";
 import { ADMIN_PERMISSIONS } from "@/lib/admin-navigation";
 import { getMyStaffWallet, type StaffWalletSummary } from "@/lib/admin-api";
-import { formatCount } from "@/lib/admin-format";
+import { formatCount, formatDate } from "@/lib/admin-format";
 import { formatImageUrl } from "@/lib/api";
 import { getAuthToken } from "@/lib/auth";
 import PointsBalanceTile, {
@@ -124,10 +124,13 @@ export default function AdminProfilePage() {
   const showLedgerLink = user.is_staff && (wallet?.transaction_count ?? 0) > 0;
 
   let tileCaption: React.ReactNode = "Points you can give to sellers.";
+  const nextExpiry = wallet?.points_expire ? wallet.upcoming_expiries[0] : undefined;
   if (wallet && wallet.balance === 0) {
     tileCaption = wallet.can_mint
       ? "No points yet. As a superuser you create them with utils/add_points.py."
       : "No points yet. A superuser sends staff the points they give to sellers.";
+  } else if (nextExpiry) {
+    tileCaption = `Points you can give to sellers. ${formatCount(nextExpiry.points)} pts expire on ${formatDate(nextExpiry.expires_at)}.`;
   }
 
   return (

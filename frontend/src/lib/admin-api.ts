@@ -1518,8 +1518,22 @@ export interface AdminSellerWallet {
   total_spent: number;
   /** The configured ProductCreationCost: points one new product listing costs. */
   product_creation_cost: number;
+  /** Points that ran out unused; counted apart from total_spent. */
+  total_expired: number;
+  /** False for a Full Shop Owner, whose points never expire. */
+  points_expire: boolean;
+  /** How long a batch of received points lasts (PointExpiryPolicy). */
+  expiry_months: number;
+  /** Soonest-expiring batches first (at most 5); empty when points_expire is false. */
+  upcoming_expiries: AdminUpcomingPointExpiry[];
   created_at: string;
   updated_at: string;
+}
+
+/** A batch of unspent points and when it expires (PointService.upcoming_expiries). */
+export interface AdminUpcomingPointExpiry {
+  points: number;
+  expires_at: string;
 }
 
 /** Exact PointTransaction.TRANSACTION_TYPE_CHOICES values. */
@@ -1529,7 +1543,8 @@ export type AdminPointTransactionType =
   | "ADMIN_DEBIT"
   | "PRODUCT_CREATION"
   | "REFUND"
-  | "ADJUSTMENT";
+  | "ADJUSTMENT"
+  | "EXPIRY";
 
 /** Mirrors PointTransactionSerializer field-for-field. */
 export interface AdminPointTransaction {
@@ -1634,9 +1649,19 @@ export interface StaffWalletSummary {
   sent_to_staff: number;
   /** Points a superuser took back out of this wallet. */
   taken_back: number;
+  /** Points that ran out unused. */
+  expired: number;
   transaction_count: number;
   /** Superusers create points (utils/add_points.py); nobody else can. */
   can_mint: boolean;
+  /** Whether these points expire: never for a superuser, else expiry_enabled. */
+  points_expire: boolean;
+  /** The per-wallet switch a superuser flips (POST .../expiry/); true by default. */
+  expiry_enabled: boolean;
+  /** How long a batch of received points lasts (PointExpiryPolicy). */
+  expiry_months: number;
+  /** Soonest-expiring batches first (at most 5); empty when points_expire is false. */
+  upcoming_expiries: AdminUpcomingPointExpiry[];
   /** The newest movements, newest first (at most 5). */
   recent: StaffPointMovement[];
 }
@@ -1794,6 +1819,30 @@ export async function transferAdminStaffPoints(
   payload: AdminStaffTransferPayload
 ): Promise<AdminStaffTransferResult> {
   return adminRequest<AdminStaffTransferResult>(`/api/points/staff/${userId}/transfer/`, token, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export interface AdminStaffExpiryResult {
+  message: string;
+  points_expire: boolean;
+}
+
+/**
+ * POST /api/points/staff/<user_id>/expiry/
+ *
+ * Active superusers only (IsPointSuperuser). Turns point expiry on or off for
+ * one staff member; turning it on gives what they hold a fresh expiry period.
+ * A superuser's own points never expire, so the backend refuses one as the
+ * target with a 400.
+ */
+export async function setAdminStaffPointExpiry(
+  token: string,
+  userId: number | string,
+  payload: { enabled: boolean; reason: string }
+): Promise<AdminStaffExpiryResult> {
+  return adminRequest<AdminStaffExpiryResult>(`/api/points/staff/${userId}/expiry/`, token, {
     method: "POST",
     body: JSON.stringify(payload),
   });

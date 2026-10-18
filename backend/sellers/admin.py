@@ -4,6 +4,8 @@ from django.db import transaction
 from django.db.models import Count
 
 from audit.admin_mixins import CONFIRM_FLAG, ReasonRequiredActionMixin, StatusBadgeMixin
+from points.models import SellerWallet
+from points.services import PointService
 from .models import LimitedShopOwnerProductLimit, SellerProfile
 from .services import approve_seller, suspend_seller, reject_seller, reactivate_seller
 
@@ -57,6 +59,20 @@ class SellerProfileAdmin(ReasonRequiredActionMixin, StatusBadgeMixin, admin.Mode
     )
     actions = ['approve_and_activate', 'suspend_sellers', 'reject_sellers', 'reactivate_sellers']
     
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        # A Full Shop Owner's points never expire. Made Limited, they start to,
+        # so what the seller holds gets a full expiry period from now rather
+        # than vanishing at once.
+        if (
+            change
+            and "seller_type" in form.changed_data
+            and obj.seller_type == SellerProfile.TYPE_LIMITED_SHOP_OWNER
+        ):
+            wallet = SellerWallet.objects.filter(seller=obj).first()
+            if wallet is not None:
+                PointService.restart_expiry_clock(wallet)
+
     def get_fieldsets(self, request, obj=None):
         # "mp-form" is the stacked two-column card layout in japanese_admin.css.
         # Status, the counts and the contact line live in the profile header

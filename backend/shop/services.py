@@ -191,16 +191,16 @@ class ProductService:
             InventoryService.get_or_create_inventory(product, default_available=product.stock)
 
             # B. Atomically debit points via PointService (enforces row locking & ledger append)
-            if required_points > 0:
-                PointService.debit(
-                    seller=seller,
-                    amount=required_points,
-                    transaction_type=PointTransaction.TYPE_PRODUCT_CREATION,
-                    reason=f"Product creation fee for '{product.name}'",
-                    actor=actor,
-                    reference_type="PRODUCT",
-                    reference_id=str(product.id),
-                )
+            # Every new product costs points (ProductCreationCost is at least 1).
+            PointService.debit(
+                seller=seller,
+                amount=required_points,
+                transaction_type=PointTransaction.TYPE_PRODUCT_CREATION,
+                reason=f"Product creation fee for '{product.name}'",
+                actor=actor,
+                reference_type="PRODUCT",
+                reference_id=str(product.id),
+            )
 
             # C. Record immutable audit log entry
             AuditService.log(

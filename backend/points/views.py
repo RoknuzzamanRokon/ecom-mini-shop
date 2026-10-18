@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 from audit.services import AuditService
 from audit.utils import get_client_ip
 from sellers.models import SellerProfile
-from .models import PointTransaction, SellerWallet, StaffWallet
+from .models import PointExpiryPolicy, PointTransaction, SellerWallet, StaffWallet
 from .permissions import (
     CanAdjustPoints,
     CanViewPoints,
@@ -22,14 +22,17 @@ from .serializers import (
     PointAdjustmentRequestSerializer,
     PointTransactionSerializer,
     SellerWalletSerializer,
+    StaffPointExpiryRequestSerializer,
     StaffPointTransactionSerializer,
     StaffPointTransferRequestSerializer,
+    UpcomingExpirySerializer,
 )
 from .services import (
     InsufficientPointsError,
     InsufficientStaffPointsError,
     PointError,
     PointService,
+    staff_points_expire,
 )
 
 User = get_user_model()
@@ -43,7 +46,7 @@ class SellerWalletView(APIView):
 
     def get(self, request):
         seller = request.user.seller_profile
-        wallet = PointService.get_or_create_wallet(seller)
+        wallet = PointService.expire_due_seller_points(PointService.get_or_create_wallet(seller))
         return Response(SellerWalletSerializer(wallet).data, status=status.HTTP_200_OK)
 
 
@@ -72,6 +75,11 @@ def staff_wallet_summary(user) -> dict:
     get_or_create_staff_wallet().
     """
     wallet = StaffWallet.objects.filter(user=user).first()
+    if wallet is not None:
+        wallet = PointService.expire_due_staff_points(wallet)
+    # A superuser's points never expire; anyone else's do unless a superuser
+    # turned it off for them (`expiry_enabled`, the per-wallet switch).
+    points_expire = staff_points_expire(wallet) if wallet else not user.is_superuser
     data = {
         "has_wallet": wallet is not None,
         "balance": wallet.balance if wallet else 0,
@@ -79,12 +87,21 @@ def staff_wallet_summary(user) -> dict:
         "given_to_sellers": 0,
         "sent_to_staff": 0,
         "taken_back": 0,
+        "expired": 0,
         "transaction_count": 0,
         "can_mint": bool(user.is_superuser),
+        "points_expire": points_expire,
+        "expiry_enabled": wallet.points_expire if wallet else True,
+        "expiry_months": PointExpiryPolicy.get_months(),
+        "upcoming_expiries": [],
         "recent": [],
     }
     if wallet is not None:
         data.update(PointService.get_staff_ledger_totals(wallet))
+        if points_expire:
+            data["upcoming_expiries"] = UpcomingExpirySerializer(
+                PointService.upcoming_expiries(wallet), many=True
+            ).data
         entries = wallet.transactions.select_related(
             "counterparty", "seller_transaction__seller"
         ).order_by("-created_at", "-pk")
@@ -123,7 +140,7 @@ class StaffSellerWalletView(APIView):
 
     def get(self, request, seller_id):
         seller = get_object_or_404(SellerProfile, pk=seller_id)
-        wallet = PointService.get_or_create_wallet(seller)
+        wallet = PointService.expire_due_seller_points(PointService.get_or_create_wallet(seller))
         return Response(SellerWalletSerializer(wallet).data, status=status.HTTP_200_OK)
 
 
@@ -361,3 +378,54 @@ class StaffPointTransferView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class StaffPointExpiryView(APIView):
+    """
+    POST /api/points/staff/<user_id>/expiry/
+
+    A superuser turns point expiry on or off for one staff member's wallet
+    (PointService.set_staff_points_expire). Turning it back on gives what
+    they hold a fresh expiry period. A superuser's own points never expire,
+    so their wallet cannot be switched. Audited like a transfer.
+    """
+    permission_classes = [IsPointSuperuser]
+
+    def post(self, request, user_id):
+        target = get_object_or_404(User, pk=user_id)
+        serializer = StaffPointExpiryRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        enabled = serializer.validated_data["enabled"]
+        reason = serializer.validated_data["reason"]
+
+        previous = (
+            StaffWallet.objects.filter(user=target).values_list("points_expire", flat=True).first()
+        )
+        previous = True if previous is None else previous
+        try:
+            with transaction.atomic():
+                wallet = PointService.set_staff_points_expire(target, enabled)
+                if previous != enabled:
+                    AuditService.log(
+                        action="SUPERUSER_POINTS_EXPIRY_ENABLED" if enabled else "SUPERUSER_POINTS_EXPIRY_DISABLED",
+                        target=wallet,
+                        actor=request.user,
+                        reason=reason,
+                        previous_state={"points_expire": previous},
+                        new_state={"points_expire": enabled},
+                        metadata={"staff_member": target.username, "balance": wallet.balance},
+                        ip_address=get_client_ip(request),
+                    )
+        except PointError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        if previous == enabled:
+            message = f"Point expiry was already {'on' if enabled else 'off'} for {target.username}."
+        elif enabled:
+            message = (
+                f"Point expiry is on for {target.username}. What they hold now lasts at least "
+                f"{PointExpiryPolicy.get_months()} months."
+            )
+        else:
+            message = f"Point expiry is off for {target.username}. Their points no longer expire."
+        return Response({"message": message, "points_expire": wallet.points_expire}, status=status.HTTP_200_OK)

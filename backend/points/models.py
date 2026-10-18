@@ -1,7 +1,19 @@
+import calendar
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
+from django.utils import timezone
+
+
+def add_months(moment, months: int):
+    """`moment` moved `months` calendar months on, clamping the day (Jan 31 + 1 -> Feb 28/29)."""
+    month_index = moment.month - 1 + months
+    year = moment.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(moment.day, calendar.monthrange(year, month)[1])
+    return moment.replace(year=year, month=month, day=day)
 
 
 class SellerWallet(models.Model):
@@ -55,6 +67,7 @@ class PointTransaction(models.Model):
     TYPE_PRODUCT_CREATION = "PRODUCT_CREATION"
     TYPE_REFUND = "REFUND"
     TYPE_ADJUSTMENT = "ADJUSTMENT"
+    TYPE_EXPIRY = "EXPIRY"
 
     TRANSACTION_TYPE_CHOICES = [
         (TYPE_BONUS, "Bonus / Promotional Credit"),
@@ -63,6 +76,7 @@ class PointTransaction(models.Model):
         (TYPE_PRODUCT_CREATION, "Product Creation Fee"),
         (TYPE_REFUND, "Point Refund"),
         (TYPE_ADJUSTMENT, "Administrative Adjustment"),
+        (TYPE_EXPIRY, "Points Expired"),
     ]
 
     wallet = models.ForeignKey(
@@ -156,6 +170,13 @@ class StaffWallet(models.Model):
         validators=[MinValueValidator(0)],
         help_text="Points this staff member can still give to sellers.",
     )
+    points_expire = models.BooleanField(
+        default=True,
+        help_text=(
+            "Whether points in this wallet expire. A superuser's never do, whatever this says. "
+            "Change it from the Console user page, which records why and restarts the clock."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -195,6 +216,7 @@ class StaffPointTransaction(models.Model):
     TYPE_SELLER_DEBIT = "SELLER_DEBIT"
     TYPE_RECLAIM_OUT = "RECLAIM_OUT"
     TYPE_RECLAIM_IN = "RECLAIM_IN"
+    TYPE_EXPIRY = "EXPIRY"
 
     TRANSACTION_TYPE_CHOICES = [
         (TYPE_MINT, "Created by Superuser"),
@@ -204,6 +226,7 @@ class StaffPointTransaction(models.Model):
         (TYPE_SELLER_DEBIT, "Taken back from Seller"),
         (TYPE_RECLAIM_OUT, "Taken back by Superuser"),
         (TYPE_RECLAIM_IN, "Taken back from Staff"),
+        (TYPE_EXPIRY, "Expired"),
     ]
 
     wallet = models.ForeignKey(
@@ -275,10 +298,11 @@ class ProductCreationCost(models.Model):
     Authoritative configuration for points required to create a new product.
     Implements a singleton pattern (pk=1) so administrators can adjust the cost dynamically.
     """
+    # At least 1: every new product costs its seller points, whatever their type.
     required_points = models.PositiveIntegerField(
         default=5,
-        validators=[MinValueValidator(0)],
-        help_text="Number of points debited from seller wallet for each new product creation.",
+        validators=[MinValueValidator(1)],
+        help_text="Number of points debited from seller wallet for each new product creation (at least 1).",
     )
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -295,11 +319,104 @@ class ProductCreationCost(models.Model):
 
     @classmethod
     def get_cost(cls) -> int:
+        cost = getattr(settings, "PRODUCT_CREATION_POINT_COST", 5)
         try:
             config = cls.objects.filter(pk=1).first()
             if config:
-                return config.required_points
+                cost = config.required_points
         except Exception:
             pass
-        return getattr(settings, "PRODUCT_CREATION_POINT_COST", 5)
+        # A product is never free, even if a row predates the validator.
+        return max(cost, 1)
+
+
+class PointExpiryPolicy(models.Model):
+    """
+    How long received points last before they expire. Singleton (pk=1),
+    administrator-adjustable like ProductCreationCost. A change applies to
+    points received afterwards; points already held keep their date.
+    """
+    expiry_months = models.PositiveSmallIntegerField(
+        default=2,
+        validators=[MinValueValidator(1)],
+        help_text="Months a batch of received points lasts before it expires.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Point Expiry Policy"
+        verbose_name_plural = "Point Expiry Policy"
+
+    def __str__(self):
+        return f"Point Expiry Policy: {self.expiry_months} months"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def get_months(cls) -> int:
+        config = cls.objects.filter(pk=1).first()
+        if config:
+            return config.expiry_months
+        return getattr(settings, "POINT_EXPIRY_MONTHS", 2)
+
+    @classmethod
+    def expiry_for(cls, received_at):
+        return add_months(received_at, cls.get_months())
+
+
+class PointLot(models.Model):
+    """
+    One receipt of points. A wallet's lots say when each of its points
+    expires; the wallet's `balance` stays the authoritative total. Spending
+    takes from the lot that expires first. Every lot carries a date, and
+    PointService decides at expiry time whether the holder's points expire
+    at all (a Full Shop Owner's and a superuser's never do).
+    """
+    amount = models.PositiveIntegerField(
+        validators=[MinValueValidator(1)],
+        help_text="Points received in this batch.",
+    )
+    remaining = models.PositiveIntegerField(
+        help_text="Points from this batch not yet spent, moved or expired.",
+    )
+    received_at = models.DateTimeField(default=timezone.now)
+    expires_at = models.DateTimeField(db_index=True)
+
+    class Meta:
+        abstract = True
+        ordering = ["expires_at", "id"]
+
+
+class SellerPointLot(PointLot):
+    wallet = models.ForeignKey(SellerWallet, on_delete=models.CASCADE, related_name="lots")
+    source = models.OneToOneField(
+        PointTransaction,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="lot",
+        help_text="The credit that brought these points in.",
+    )
+
+    class Meta(PointLot.Meta):
+        verbose_name = "Seller Point Lot"
+        verbose_name_plural = "Seller Point Lots"
+
+
+class StaffPointLot(PointLot):
+    wallet = models.ForeignKey(StaffWallet, on_delete=models.CASCADE, related_name="lots")
+    source = models.OneToOneField(
+        StaffPointTransaction,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="lot",
+        help_text="The movement that brought these points in.",
+    )
+
+    class Meta(PointLot.Meta):
+        verbose_name = "Staff Point Lot"
+        verbose_name_plural = "Staff Point Lots"
 

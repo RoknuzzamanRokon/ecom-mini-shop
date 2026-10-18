@@ -866,6 +866,7 @@ _POINT_STYLES = {
     StaffPointTransaction.TYPE_SELLER_DEBIT: ("undo", "amber"),
     StaffPointTransaction.TYPE_RECLAIM_OUT: ("undo", "amber"),
     StaffPointTransaction.TYPE_RECLAIM_IN: ("call_received", "green"),
+    StaffPointTransaction.TYPE_EXPIRY: ("hourglass_bottom", "muted"),
 }
 
 
@@ -877,6 +878,8 @@ def _points(user, viewable, seller):
     account without one simply has 0.
     """
     wallet = StaffWallet.objects.filter(user=user).first()
+    if wallet is not None:
+        wallet = PointService.expire_due_staff_points(wallet)
     balance = wallet.balance if wallet else 0
     data = {
         "balance": balance,
@@ -923,9 +926,10 @@ def _points(user, viewable, seller):
         # A lookup on the model's own FK, so the admin allows it without a list_filter.
         data["ledger_url"] = _changelist_url(viewable, StaffPointTransaction, f"wallet__id__exact={wallet.pk}")
     if seller is not None:
-        data["seller_balance"] = (
-            SellerWallet.objects.filter(seller=seller).values_list("balance", flat=True).first() or 0
-        )
+        seller_wallet = SellerWallet.objects.filter(seller=seller).first()
+        if seller_wallet is not None:
+            seller_wallet = PointService.expire_due_seller_points(seller_wallet)
+        data["seller_balance"] = seller_wallet.balance if seller_wallet else 0
         data["seller_balance_display"] = f"{data['seller_balance']:,}"
     return data
 

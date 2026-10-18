@@ -5,10 +5,14 @@ from notifications import events
 from notifications.publisher import publish
 from django.db.models import F, Q, Sum
 from django.db.models.functions import Coalesce
+from django.utils import timezone
 from .models import (
+    PointExpiryPolicy,
     PointTransaction,
     ProductCreationCost,
+    SellerPointLot,
     SellerWallet,
+    StaffPointLot,
     StaffPointTransaction,
     StaffWallet,
 )
@@ -42,11 +46,31 @@ class InsufficientStaffPointsError(PointError):
     pass
 
 
+#: Upcoming expiries listed on a wallet payload.
+UPCOMING_EXPIRY_LIMIT = 5
+
+
+def seller_points_expire(seller) -> bool:
+    """A Full Shop Owner's points never expire; everyone else's do."""
+    return seller.seller_type != seller.TYPE_FULL_SHOP_OWNER
+
+
+def staff_points_expire(wallet) -> bool:
+    """A superuser's points never expire; other staff's do unless a superuser turned it off."""
+    return wallet.points_expire and not wallet.user.is_superuser
+
+
 class PointService:
     """
     Centralized domain service responsible for all point operations.
     Enforces atomic execution, concurrency safety (row locks), append-only ledger entries,
     and guarantees non-negative wallet balances.
+
+    Expiry: every point a wallet receives arrives as a lot dated
+    PointExpiryPolicy months ahead, and spending takes from the lot that
+    expires first. Due lots are expired whenever their wallet is locked or
+    read, and by the expire_points command for wallets nobody touches, so an
+    expired point can never be spent or moved.
     """
 
     @classmethod
@@ -60,8 +84,8 @@ class PointService:
 
     @classmethod
     def get_balance(cls, seller) -> int:
-        """Returns the current point balance for a seller."""
-        wallet = cls.get_or_create_wallet(seller)
+        """Returns the current point balance for a seller, after expiring any due points."""
+        wallet = cls.expire_due_seller_points(cls.get_or_create_wallet(seller))
         return wallet.balance
 
     @classmethod
@@ -96,13 +120,16 @@ class PointService:
         touched. `amount` is always positive, so the direction cannot be read
         from it.
         """
+        expiry = Q(transaction_type=PointTransaction.TYPE_EXPIRY)
         return PointTransaction.objects.filter(seller=seller).aggregate(
             total_earned=Coalesce(
                 Sum("amount", filter=Q(balance_after__gte=F("balance_before"))), 0
             ),
+            # Expired points were lost, not spent, so they are counted apart.
             total_spent=Coalesce(
-                Sum("amount", filter=Q(balance_after__lt=F("balance_before"))), 0
+                Sum("amount", filter=Q(balance_after__lt=F("balance_before")) & ~expiry), 0
             ),
+            total_expired=Coalesce(Sum("amount", filter=expiry), 0),
         )
 
     @classmethod
@@ -127,10 +154,7 @@ class PointService:
             raise InvalidTransactionError("A non-empty reason is mandatory for all point operations.")
 
         with transaction.atomic():
-            wallet, _ = SellerWallet.objects.select_for_update().get_or_create(
-                seller=seller,
-                defaults={"balance": 0},
-            )
+            wallet = cls._lock_seller_wallet(seller)
 
             balance_before = wallet.balance
             balance_after = balance_before + amount
@@ -150,6 +174,7 @@ class PointService:
                 reference_id=str(reference_id or "").strip(),
                 actor=actor,
             )
+            cls._add_lot(SellerPointLot, wallet, amount, txn)
 
             logger.info(
                 f"[POINTS] Credited {amount} pts to seller {seller.id} ({seller.business_name}). "
@@ -180,10 +205,7 @@ class PointService:
             raise InvalidTransactionError("A non-empty reason is mandatory for all point operations.")
 
         with transaction.atomic():
-            wallet, _ = SellerWallet.objects.select_for_update().get_or_create(
-                seller=seller,
-                defaults={"balance": 0},
-            )
+            wallet = cls._lock_seller_wallet(seller)
 
             if wallet.balance < amount:
                 raise InsufficientPointsError(
@@ -208,6 +230,7 @@ class PointService:
                 reference_id=str(reference_id or "").strip(),
                 actor=actor,
             )
+            cls._consume_lots(wallet.lots, amount)
 
             logger.info(
                 f"[POINTS] Debited {amount} pts from seller {seller.id} ({seller.business_name}). "
@@ -332,7 +355,8 @@ class PointService:
         does, so a new inflow type is counted without this method changing. The
         three outflows are reported apart because they mean different things to
         the holder: points given to sellers, points passed on to other staff,
-        and points a superuser took back out of this wallet.
+        and points a superuser took back out of this wallet. `expired` is what
+        ran out unused.
         """
         return StaffPointTransaction.objects.filter(wallet=wallet).aggregate(
             received=Coalesce(Sum("amount", filter=Q(balance_after__gte=F("balance_before"))), 0),
@@ -344,6 +368,9 @@ class PointService:
             ),
             taken_back=Coalesce(
                 Sum("amount", filter=Q(transaction_type=StaffPointTransaction.TYPE_RECLAIM_OUT)), 0
+            ),
+            expired=Coalesce(
+                Sum("amount", filter=Q(transaction_type=StaffPointTransaction.TYPE_EXPIRY)), 0
             ),
         )
 
@@ -459,11 +486,15 @@ class PointService:
 
     @classmethod
     def _lock_staff_wallet(cls, user) -> StaffWallet:
-        """Must be called inside transaction.atomic(); the lock lasts until it commits."""
+        """
+        Must be called inside transaction.atomic(); the lock lasts until it commits.
+        Due points are expired first, so they can never be moved.
+        """
         wallet, _ = StaffWallet.objects.select_for_update().get_or_create(
             user=user,
             defaults={"balance": 0},
         )
+        cls._expire_locked_staff_wallet(wallet)
         return wallet
 
     @classmethod
@@ -493,7 +524,7 @@ class PointService:
         wallet.balance = balance_before - amount if outgoing else balance_before + amount
         wallet.save(update_fields=["balance", "updated_at"])
 
-        return StaffPointTransaction.objects.create(
+        txn = StaffPointTransaction.objects.create(
             wallet=wallet,
             transaction_type=transaction_type,
             amount=amount,
@@ -504,3 +535,210 @@ class PointService:
             seller_transaction=seller_transaction,
             actor=actor,
         )
+        if outgoing:
+            cls._consume_lots(wallet.lots, amount)
+        else:
+            cls._add_lot(StaffPointLot, wallet, amount, txn)
+        return txn
+
+    # ------------------------------------------------------------------
+    # Expiry
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def _lock_seller_wallet(cls, seller) -> SellerWallet:
+        """
+        Must be called inside transaction.atomic(); the lock lasts until it commits.
+        Due points are expired first, so they can never be spent.
+        """
+        wallet, _ = SellerWallet.objects.select_for_update().get_or_create(
+            seller=seller,
+            defaults={"balance": 0},
+        )
+        cls._expire_locked_seller_wallet(wallet)
+        return wallet
+
+    @staticmethod
+    def _add_lot(lot_model, wallet, amount: int, source):
+        now = timezone.now()
+        return lot_model.objects.create(
+            wallet=wallet,
+            amount=amount,
+            remaining=amount,
+            received_at=now,
+            expires_at=PointExpiryPolicy.expiry_for(now),
+            source=source,
+        )
+
+    @staticmethod
+    def _consume_lots(lots, amount: int) -> None:
+        """
+        Takes `amount` from a locked wallet's lots, soonest-expiring first. The
+        balance is authoritative: if the lots hold less (a balance edited
+        outside PointService), the rest is simply not tracked.
+        """
+        for lot in lots.filter(remaining__gt=0).order_by("expires_at", "id"):
+            if amount <= 0:
+                break
+            taken = min(lot.remaining, amount)
+            lot.remaining -= taken
+            lot.save(update_fields=["remaining"])
+            amount -= taken
+
+    @staticmethod
+    def _due_lots(wallet):
+        return wallet.lots.filter(remaining__gt=0, expires_at__lte=timezone.now())
+
+    @classmethod
+    def _take_due(cls, wallet) -> int:
+        """
+        Zeroes a locked wallet's due lots and returns how many points that
+        removes, capped at the balance so a drifted wallet never goes negative.
+        """
+        due = cls._due_lots(wallet)
+        total = due.aggregate(total=Coalesce(Sum("remaining"), 0))["total"]
+        if not total:
+            return 0
+        due.update(remaining=0)
+        return min(total, wallet.balance)
+
+    @classmethod
+    def _expire_locked_seller_wallet(cls, wallet: SellerWallet):
+        if not seller_points_expire(wallet.seller):
+            return None
+        amount = cls._take_due(wallet)
+        if not amount:
+            return None
+        balance_before = wallet.balance
+        wallet.balance = balance_before - amount
+        wallet.save(update_fields=["balance", "updated_at"])
+        txn = PointTransaction.objects.create(
+            wallet=wallet,
+            seller=wallet.seller,
+            transaction_type=PointTransaction.TYPE_EXPIRY,
+            amount=amount,
+            balance_before=balance_before,
+            balance_after=wallet.balance,
+            reason=f"{amount} point{'' if amount == 1 else 's'} expired unused.",
+        )
+        logger.info(
+            f"[POINTS] Expired {amount} pts from seller {wallet.seller_id}. "
+            f"Balance: {balance_before} -> {wallet.balance}."
+        )
+        return txn
+
+    @classmethod
+    def _expire_locked_staff_wallet(cls, wallet: StaffWallet):
+        if not staff_points_expire(wallet):
+            return None
+        amount = cls._take_due(wallet)
+        if not amount:
+            return None
+        balance_before = wallet.balance
+        wallet.balance = balance_before - amount
+        wallet.save(update_fields=["balance", "updated_at"])
+        txn = StaffPointTransaction.objects.create(
+            wallet=wallet,
+            transaction_type=StaffPointTransaction.TYPE_EXPIRY,
+            amount=amount,
+            balance_before=balance_before,
+            balance_after=wallet.balance,
+            reason=f"{amount} point{'' if amount == 1 else 's'} expired unused.",
+        )
+        logger.info(
+            f"[POINTS] Expired {amount} pts from {wallet.user.username}'s staff wallet. "
+            f"Balance: {balance_before} -> {wallet.balance}."
+        )
+        return txn
+
+    @classmethod
+    def expire_due_seller_points(cls, wallet: SellerWallet) -> SellerWallet:
+        """
+        `wallet` with any due points expired, for read paths. Locks only when
+        something is due, so a read with nothing to expire stays one query.
+        """
+        if not seller_points_expire(wallet.seller) or not cls._due_lots(wallet).exists():
+            return wallet
+        with transaction.atomic():
+            locked = SellerWallet.objects.select_for_update().get(pk=wallet.pk)
+            cls._expire_locked_seller_wallet(locked)
+        return locked
+
+    @classmethod
+    def expire_due_staff_points(cls, wallet: StaffWallet) -> StaffWallet:
+        """The staff-wallet counterpart of expire_due_seller_points."""
+        if not staff_points_expire(wallet) or not cls._due_lots(wallet).exists():
+            return wallet
+        with transaction.atomic():
+            locked = StaffWallet.objects.select_for_update().get(pk=wallet.pk)
+            cls._expire_locked_staff_wallet(locked)
+        return locked
+
+    @classmethod
+    def expire_all_due_points(cls) -> dict:
+        """
+        Expires due points in every wallet, for the expire_points command.
+        Each wallet commits on its own, so one failure loses no other's work.
+        """
+        result = {"seller_wallets": 0, "staff_wallets": 0, "points": 0}
+        now = timezone.now()
+        for kind, lot_model, wallet_model, expire in (
+            ("seller_wallets", SellerPointLot, SellerWallet, cls._expire_locked_seller_wallet),
+            ("staff_wallets", StaffPointLot, StaffWallet, cls._expire_locked_staff_wallet),
+        ):
+            wallet_ids = (
+                lot_model.objects.filter(remaining__gt=0, expires_at__lte=now)
+                .values_list("wallet_id", flat=True)
+                .distinct()
+            )
+            for wallet_id in list(wallet_ids):
+                with transaction.atomic():
+                    wallet = wallet_model.objects.select_for_update().get(pk=wallet_id)
+                    txn = expire(wallet)
+                if txn is not None:
+                    result[kind] += 1
+                    result["points"] += txn.amount
+        return result
+
+    @staticmethod
+    def upcoming_expiries(wallet, limit: int = UPCOMING_EXPIRY_LIMIT) -> list:
+        """The wallet's soonest-expiring unspent lots, as {points, expires_at}."""
+        return [
+            {"points": lot.remaining, "expires_at": lot.expires_at}
+            for lot in wallet.lots.filter(remaining__gt=0).order_by("expires_at", "id")[:limit]
+        ]
+
+    @staticmethod
+    def restart_expiry_clock(wallet) -> int:
+        """
+        Gives the wallet's unspent points at least a full expiry period from
+        now. Used when a holder whose points did not expire starts to (a Full
+        Shop Owner made Limited, a staff member's expiry turned back on), so
+        old points do not vanish the moment the rule starts to apply.
+        Returns how many lots moved.
+        """
+        fresh = PointExpiryPolicy.expiry_for(timezone.now())
+        return wallet.lots.filter(remaining__gt=0, expires_at__lt=fresh).update(expires_at=fresh)
+
+    @classmethod
+    def set_staff_points_expire(cls, user, enabled: bool) -> StaffWallet:
+        """
+        Turns expiry on or off for one staff member's wallet. Turning it on
+        restarts the clock on what they hold. A superuser's points never
+        expire, so their wallet cannot be switched.
+        """
+        if user.is_superuser:
+            raise PointError(f"{user.username} is a superuser; their points never expire.")
+        with transaction.atomic():
+            wallet, _ = StaffWallet.objects.select_for_update().get_or_create(
+                user=user, defaults={"balance": 0}
+            )
+            if wallet.points_expire == enabled:
+                return wallet
+            # Points already due go before the switch, whichever way it turns.
+            cls._expire_locked_staff_wallet(wallet)
+            wallet.points_expire = enabled
+            wallet.save(update_fields=["points_expire", "updated_at"])
+            if enabled:
+                cls.restart_expiry_clock(wallet)
+        return wallet

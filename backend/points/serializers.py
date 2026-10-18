@@ -1,6 +1,11 @@
 from rest_framework import serializers
-from .models import PointTransaction, SellerWallet, StaffPointTransaction
-from .services import PointService
+from .models import PointExpiryPolicy, PointTransaction, SellerWallet, StaffPointTransaction
+from .services import PointService, seller_points_expire
+
+
+class UpcomingExpirySerializer(serializers.Serializer):
+    points = serializers.IntegerField()
+    expires_at = serializers.DateTimeField()
 
 
 class SellerWalletSerializer(serializers.ModelSerializer):
@@ -19,6 +24,14 @@ class SellerWalletSerializer(serializers.ModelSerializer):
     # already fetches before spending them.
     product_creation_cost = serializers.SerializerMethodField()
 
+    # Expiry: whether this seller's points expire at all (a Full Shop Owner's
+    # never do), how long a batch lasts, the soonest batches to go, and what
+    # has already expired unused.
+    total_expired = serializers.SerializerMethodField()
+    points_expire = serializers.SerializerMethodField()
+    expiry_months = serializers.SerializerMethodField()
+    upcoming_expiries = serializers.SerializerMethodField()
+
     class Meta:
         model = SellerWallet
         fields = [
@@ -28,7 +41,11 @@ class SellerWalletSerializer(serializers.ModelSerializer):
             "balance",
             "total_earned",
             "total_spent",
+            "total_expired",
             "product_creation_cost",
+            "points_expire",
+            "expiry_months",
+            "upcoming_expiries",
             "created_at",
             "updated_at",
         ]
@@ -50,6 +67,20 @@ class SellerWalletSerializer(serializers.ModelSerializer):
 
     def get_product_creation_cost(self, obj) -> int:
         return PointService.get_product_creation_cost()
+
+    def get_total_expired(self, obj) -> int:
+        return self._ledger_totals(obj)["total_expired"]
+
+    def get_points_expire(self, obj) -> bool:
+        return seller_points_expire(obj.seller)
+
+    def get_expiry_months(self, obj) -> int:
+        return PointExpiryPolicy.get_months()
+
+    def get_upcoming_expiries(self, obj) -> list:
+        if not seller_points_expire(obj.seller):
+            return []
+        return UpcomingExpirySerializer(PointService.upcoming_expiries(obj), many=True).data
 
 
 class PointTransactionSerializer(serializers.ModelSerializer):
@@ -143,6 +174,17 @@ class PointAdjustmentRequestSerializer(serializers.Serializer):
         allow_blank=True,
         default="",
         max_length=100,
+    )
+
+
+class StaffPointExpiryRequestSerializer(serializers.Serializer):
+    """A superuser turning point expiry on or off for one staff member."""
+
+    enabled = serializers.BooleanField(required=True)
+    reason = serializers.CharField(
+        min_length=3,
+        required=True,
+        help_text="Mandatory business reason for the change.",
     )
 
 

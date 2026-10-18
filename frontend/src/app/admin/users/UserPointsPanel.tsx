@@ -24,14 +24,16 @@ import {
   getAdminStaffWallet,
   getInsufficientPointsInfo,
   getMyStaffWallet,
+  setAdminStaffPointExpiry,
   transferAdminStaffPoints,
   type AdminPointTransaction,
   type AdminSellerWallet,
   type AdminStaffWallet,
+  type AdminUpcomingPointExpiry,
   type AdminUserDetail,
   type StaffWalletSummary,
 } from "@/lib/admin-api";
-import { formatCount } from "@/lib/admin-format";
+import { formatCount, formatDate } from "@/lib/admin-format";
 import { AdminConfirmModal } from "@/components/admin/shared";
 import PointMovementList, { type PointMovementRow } from "@/components/points/PointMovementList";
 import { toStaffMovementRow } from "../profile/adminProfile";
@@ -60,7 +62,21 @@ const SELLER_MOVEMENT_ICONS: Record<string, string> = {
   BONUS: "redeem",
   REFUND: "undo",
   ADJUSTMENT: "tune",
+  EXPIRY: "hourglass_bottom",
 };
+
+/** One line on when a wallet's points expire, or that they never do. */
+function expiryNote(
+  wallet: { points_expire: boolean; expiry_months: number; upcoming_expiries: AdminUpcomingPointExpiry[] },
+  neverText: string
+): string {
+  if (!wallet.points_expire) return neverText;
+  const next = wallet.upcoming_expiries[0];
+  const rule = `Points expire ${wallet.expiry_months} months after they arrive.`;
+  return next
+    ? `${rule} Next: ${formatCount(next.points)} pts on ${formatDate(next.expires_at)}.`
+    : rule;
+}
 
 function toSellerMovementRow(txn: AdminPointTransaction): PointMovementRow {
   return {
@@ -132,6 +148,9 @@ export default function UserPointsPanel({ target, actor }: UserPointsPanelProps)
   const [pending, setPending] = useState<PendingMove | null>(null);
   const [moveError, setMoveError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  // The value a superuser is about to give the staff wallet's expiry switch.
+  const [expiryPending, setExpiryPending] = useState<boolean | null>(null);
+  const [expiryError, setExpiryError] = useState<string | null>(null);
 
   // State is only set in the promise callbacks, so the effect below never
   // updates state synchronously; a retry flips the loading flag itself first.
@@ -246,6 +265,28 @@ export default function UserPointsPanel({ target, actor }: UserPointsPanelProps)
     setPending(null);
     setMoveError(null);
   }, []);
+
+  const confirmExpiry = useCallback(
+    async (reason: string) => {
+      if (expiryPending === null) return;
+      const token = getAuthToken();
+      if (!token) {
+        setExpiryError("No active session token was found. Please sign in again.");
+        return;
+      }
+      try {
+        setExpiryError(null);
+        const result = await setAdminStaffPointExpiry(token, target.id, { enabled: expiryPending, reason });
+        setExpiryPending(null);
+        setSuccess(result.message);
+        setLoading(true);
+        load();
+      } catch (err) {
+        setExpiryError(err instanceof AdminApiError ? err.message : "Failed to change point expiry.");
+      }
+    },
+    [expiryPending, target.id, load]
+  );
 
   if (!canView) return null;
 
@@ -501,10 +542,12 @@ export default function UserPointsPanel({ target, actor }: UserPointsPanelProps)
               figures={[
                 { label: "Earned", value: sellerWallet?.total_earned },
                 { label: "Spent", value: sellerWallet?.total_spent },
+                { label: "Expired", value: sellerWallet?.total_expired },
               ]}
               note={
                 sellerWallet
-                  ? `Points pay for new product listings, ${formatCount(sellerWallet.product_creation_cost)} pts each.`
+                  ? `Points pay for new product listings, ${formatCount(sellerWallet.product_creation_cost)} pts each. ` +
+                    expiryNote(sellerWallet, "A Full Shop Owner's points never expire.")
                   : null
               }
               rows={sellerRows}
@@ -541,13 +584,21 @@ export default function UserPointsPanel({ target, actor }: UserPointsPanelProps)
                 { label: "Given to sellers", value: staffWallet.given_to_sellers },
                 { label: "Sent to staff", value: staffWallet.sent_to_staff },
                 { label: "Taken back", value: staffWallet.taken_back },
+                { label: "Expired", value: staffWallet.expired },
               ]}
               note={
-                isSelf
+                (isSelf
                   ? actor?.is_superuser
                     ? "Your own wallet. Create points with utils/add_points.py, then give them to staff or sellers from their pages."
                     : "Your own wallet. A superuser sends you the points you give to sellers."
-                  : "Points this account can give to sellers. Only a superuser can send or take back staff points."
+                  : "Points this account can give to sellers. Only a superuser can send or take back staff points.") +
+                " " +
+                expiryNote(
+                  staffWallet,
+                  staffWallet.can_mint
+                    ? "A superuser's points never expire."
+                    : "Point expiry is off for this account."
+                )
               }
               rows={staffRows}
               rowsLabel={`Recent staff wallet movements for ${who}`}
@@ -562,6 +613,25 @@ export default function UserPointsPanel({ target, actor }: UserPointsPanelProps)
             >
               {renderActions("staff", canMoveStaff, canMoveStaff)}
               {renderDraftForm("staff")}
+              {canMoveStaff && !staffWallet.can_mint && (
+                <div className="mt-3">
+                  <button
+                    type="button"
+                    disabled={loading}
+                    onClick={() => {
+                      setExpiryError(null);
+                      setSuccess(null);
+                      setExpiryPending(!staffWallet.expiry_enabled);
+                    }}
+                    className={SECONDARY_BUTTON}
+                  >
+                    <span aria-hidden="true" className="material-symbols-outlined" style={ICON_16}>
+                      {staffWallet.expiry_enabled ? "timer_off" : "timer"}
+                    </span>
+                    {staffWallet.expiry_enabled ? "Turn point expiry off" : "Turn point expiry on"}
+                  </button>
+                </div>
+              )}
             </WalletCard>
           )}
         </div>
@@ -615,6 +685,36 @@ export default function UserPointsPanel({ target, actor }: UserPointsPanelProps)
         reasonPlaceholder="Explain why these points are moving…"
         onConfirm={confirmMove}
         onCancel={cancelConfirm}
+      />
+
+      <AdminConfirmModal
+        open={expiryPending !== null}
+        title={expiryPending ? "Turn Point Expiry On" : "Turn Point Expiry Off"}
+        message={
+          <>
+            {expiryPending ? (
+              <>
+                Points in <strong>{who}</strong>&apos;s staff wallet will expire again. What they hold now
+                gets a fresh {staffWallet ? staffWallet.expiry_months : 2}-month period.
+              </>
+            ) : (
+              <>
+                Points in <strong>{who}</strong>&apos;s staff wallet will stop expiring until you turn it back on.
+              </>
+            )}
+            {expiryError && <span className="block mt-2 font-semibold text-danger">{expiryError}</span>}
+          </>
+        }
+        confirmLabel={expiryPending ? "Turn expiry on" : "Turn expiry off"}
+        requireReason
+        reasonRequired
+        reasonLabel="Reason (recorded in the audit log)"
+        reasonPlaceholder="Explain why this changes…"
+        onConfirm={confirmExpiry}
+        onCancel={() => {
+          setExpiryPending(null);
+          setExpiryError(null);
+        }}
       />
     </section>
   );

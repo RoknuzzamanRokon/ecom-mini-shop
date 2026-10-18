@@ -798,6 +798,12 @@ export interface SellerShop {
 // so the wallet tiles read undefined and rendered +0/-0 forever while `tsc`
 // stayed silent. Keep this in step with the serializer; a field here that the
 // backend does not send is invisible to the type checker.
+/** A batch of unspent points and when it expires (PointService.upcoming_expiries). */
+export interface UpcomingPointExpiry {
+  points: number;
+  expires_at: string;
+}
+
 export interface SellerWallet {
   id: number;
   seller_id: number;
@@ -805,7 +811,15 @@ export interface SellerWallet {
   balance: number;
   total_earned: number;
   total_spent: number;
+  /** Points that ran out unused; counted apart from total_spent. */
+  total_expired: number;
   product_creation_cost: number;
+  /** False for a Full Shop Owner, whose points never expire. */
+  points_expire: boolean;
+  /** How long a batch of received points lasts (PointExpiryPolicy). */
+  expiry_months: number;
+  /** Soonest-expiring batches first (at most 5); empty when points_expire is false. */
+  upcoming_expiries: UpcomingPointExpiry[];
   created_at: string;
   updated_at: string;
 }
@@ -819,7 +833,8 @@ export type PointTransactionType =
   | "ADMIN_DEBIT"
   | "PRODUCT_CREATION"
   | "REFUND"
-  | "ADJUSTMENT";
+  | "ADJUSTMENT"
+  | "EXPIRY";
 
 export interface PointTransaction {
   id: number;

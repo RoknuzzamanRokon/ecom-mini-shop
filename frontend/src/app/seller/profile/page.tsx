@@ -148,19 +148,24 @@ export default function SellerProfilePage() {
   const cost = wallet?.product_creation_cost ?? 0;
   const shortfall = wallet && cost > 0 && wallet.balance < cost ? cost - wallet.balance : 0;
 
+  // Every listing costs at least 1 point (ProductCreationCost), so cost > 0 here.
   let tileCaption: React.ReactNode = "Points pay for new product listings.";
-  if (wallet) {
-    if (cost <= 0) {
-      tileCaption = "Listing a product costs no points right now.";
-    } else if (!shortfall) {
-      const listings = Math.floor(wallet.balance / cost);
-      tileCaption = (
-        <>
-          Enough for <strong className="text-nav-active-text">{formatCount(listings)}</strong> new{" "}
-          {listings === 1 ? "listing" : "listings"} at {formatCount(cost)} pts each.
-        </>
-      );
-    }
+  const nextExpiry = wallet?.upcoming_expiries[0];
+  if (wallet && cost > 0 && !shortfall) {
+    const listings = Math.floor(wallet.balance / cost);
+    tileCaption = (
+      <>
+        Enough for <strong className="text-nav-active-text">{formatCount(listings)}</strong> new{" "}
+        {listings === 1 ? "listing" : "listings"} at {formatCount(cost)} pts each.
+        {nextExpiry && (
+          <>
+            {" "}
+            {formatCount(nextExpiry.points)} pts expire on{" "}
+            {new Date(nextExpiry.expires_at).toLocaleDateString()}.
+          </>
+        )}
+      </>
+    );
   }
 
   return (

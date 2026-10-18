@@ -4,6 +4,7 @@ from .views import (
     SellerWalletView,
     StaffOwnWalletView,
     StaffPointAdjustmentView,
+    StaffPointExpiryView,
     StaffPointTransferView,
     StaffSellerHistoryView,
     StaffSellerWalletView,
@@ -24,6 +25,7 @@ urlpatterns = [
     # points into or out of it
     path("staff/<int:user_id>/", StaffUserWalletView.as_view(), name="staff-user-wallet"),
     path("staff/<int:user_id>/transfer/", StaffPointTransferView.as_view(), name="staff-user-transfer"),
+    path("staff/<int:user_id>/expiry/", StaffPointExpiryView.as_view(), name="staff-user-expiry"),
 
     # Staff / Admin RBAC endpoints
     path("sellers/<int:seller_id>/", StaffSellerWalletView.as_view(), name="staff-seller-wallet"),
