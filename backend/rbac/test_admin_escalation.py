@@ -388,6 +388,16 @@ class UserAdminPathTests(AdminEscalationTestCase):
         target.refresh_from_db()
         self.assertEqual(target.first_name, "Edited")
 
+    def test_can_edit_a_customer_account(self):
+        """CUSTOMER's self-service codes do not count against the actor."""
+        target = User.objects.create_user(username="a_customer", password=PASSWORD)
+        assign_user_role(target, Role.ROLE_CUSTOMER)
+        response = self.client.post(
+            reverse("admin:auth_user_change", args=[target.pk]),
+            user_form_payload(target, first_name="Edited"),
+        )
+        self.assertEqual(response.status_code, 302)
+
     def test_cannot_add_permissions_to_ones_own_group(self):
         group = Group.objects.create(name="Ops")
         self.actor.groups.add(group)

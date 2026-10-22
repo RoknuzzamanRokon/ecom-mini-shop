@@ -1,5 +1,6 @@
 from typing import Set
 from django.contrib.auth import get_user_model
+from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
 from django.db.models import Q
 from .models import Permission, Role, UserPermission, UserRole
 
@@ -175,17 +176,37 @@ def has_wildcard_delegation(actor) -> bool:
     return "*" in get_user_permissions(actor)
 
 
+def get_self_service_permission_codes() -> Set[str]:
+    """
+    The permissions of the active CUSTOMER role.
+
+    Anyone can get these by registering, and each one acts only on the
+    holder's own profile, cart, orders, reviews and tickets. The delegation
+    checks below therefore leave them out: an operator need not hold
+    'reviews.create' to give someone the CUSTOMER role or to deactivate a
+    customer, and the ADMINISTRATOR role deliberately does not hold the
+    customer-only codes (docs/SUPPORT_SYSTEM.md §4).
+    """
+    return set(
+        Permission.objects.filter(
+            role_permissions__role__code=Role.ROLE_CUSTOMER,
+            role_permissions__role__is_active=True,
+        ).values_list("code", flat=True)
+    )
+
+
 def get_user_management_denial(actor, target):
     """
     Why `actor` may not manage `target`'s account, or None when they may.
 
-    "Manage" covers editing the account, changing its password, deactivating
-    or deleting it, and changing its roles or grants. A wildcard holder may
-    manage anyone. Everyone else may only manage an account that has no
-    protected role and whose effective permissions are a subset of their own,
-    so they can never act as, or lock out, someone above them. Only a Django
-    superuser may manage another superuser: the flag also unlocks the whole
-    Django admin, which the RBAC wildcard does not.
+    "Manage" covers editing the account, changing its password, activating,
+    deactivating or deleting it, and changing its roles or grants. A wildcard
+    holder may manage anyone. Everyone else may only manage an account that
+    has no protected role and whose effective permissions, self-service ones
+    aside, are a subset of their own, so they can never act as, or lock out,
+    someone above them. Only a Django superuser may manage another superuser:
+    the flag also unlocks the whole Django admin, which the RBAC wildcard does
+    not.
 
     Self-management is a separate question each caller answers: editing one's
     own profile is fine, changing one's own roles never is.
@@ -198,10 +219,55 @@ def get_user_management_denial(actor, target):
         return None
     if get_user_role_codes(target) & PROTECTED_ROLE_CODES:
         return "Only a Super Administrator can modify an account that holds a protected role."
-    beyond = get_user_permissions(target) - get_user_permissions(actor)
+    beyond = (
+        get_user_permissions(target)
+        - get_user_permissions(actor)
+        - get_self_service_permission_codes()
+    )
     if beyond:
         return "This account holds permissions you do not hold: " + ", ".join(sorted(beyond))
     return None
+
+
+def assert_can_manage_user(actor, target) -> None:
+    """get_user_management_denial() as a PermissionDenied (403 under DRF)."""
+    denial = get_user_management_denial(actor, target)
+    if denial:
+        raise DjangoPermissionDenied(denial)
+
+
+def assert_can_assign_roles(actor, target, desired_roles) -> None:
+    """
+    The delegation boundary for giving `target` the roles `desired_roles`
+    (BUG-003). `target` is None for an account being created.
+
+    - An existing target must be one the actor may manage at all
+      (get_user_management_denial).
+    - Every role being added must grant only permissions the actor holds,
+      self-service ones aside -- "you may only give away what you hold", as
+      for role editing. Otherwise an operator could hand a role above their
+      own to an account they control, a new one they create included.
+
+    Wildcard holders are unrestricted. Raises PermissionDenied; unknown role
+    codes are left to the caller, which reports them as a 400.
+    """
+    if target is not None:
+        assert_can_manage_user(actor, target)
+    if has_wildcard_delegation(actor):
+        return
+
+    current = get_user_role_codes(target) if target is not None else set()
+    added = set(desired_roles) - current
+    if not added:
+        return
+    granted = set(
+        Permission.objects.filter(role_permissions__role__code__in=added).values_list("code", flat=True)
+    )
+    beyond = granted - get_user_permissions(actor) - get_self_service_permission_codes()
+    if beyond:
+        raise DjangoPermissionDenied(
+            "Cannot assign roles that grant permissions you do not hold: " + ", ".join(sorted(beyond))
+        )
 
 
 def get_delegatable_permission_codes(actor) -> Set[str]:

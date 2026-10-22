@@ -25,6 +25,8 @@ from customers.models import CustomerProfile, Review, ShopReview
 from customers.services import ReviewModerationError, ReviewModerationService
 from rbac.models import Permission, Role, RolePermission, UserRole
 from rbac.services import (
+    assert_can_assign_roles,
+    assert_can_manage_user,
     assign_user_role,
     get_delegatable_permission_codes,
     get_undelegatable_permission_codes,
@@ -185,6 +187,10 @@ class AdminUserListAPIView(APIView):
         be a Super Administrator, and the actor cannot be modifying themselves.
         The last-active-Super-Administrator rule likewise cannot be violated by
         a creation, which can only ever increase that count.
+
+        Check 4 matters most here (BUG-003): without it, an operator could
+        create an account with a password they choose and a role above their
+        own, then sign in as it.
         """
         serializer = AdminUserCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -213,6 +219,9 @@ class AdminUserListAPIView(APIView):
             missing_codes = desired_roles - existing_roles
             if missing_codes:
                 raise DRFValidationError({"roles": f"Unknown or inactive role codes: {sorted(list(missing_codes))}"})
+
+        # Check 4: every role must grant only permissions the actor holds.
+        assert_can_assign_roles(actor, None, desired_roles)
 
         with transaction.atomic():
             new_user = User.objects.create_user(
@@ -295,6 +304,13 @@ class AdminUserDetailAPIView(APIView):
             if target_is_super and not actor_is_super:
                 raise PermissionDenied("Only a Super Administrator can modify another Super Administrator account.")
 
+            # Check 1b (BUG-003): below the wildcard, only an account with no
+            # protected role and no permissions beyond the actor's own may be
+            # activated, deactivated or have its roles changed -- or an
+            # operator could lock out the administrators above them.
+            if actor.id != target_user.id:
+                assert_can_manage_user(actor, target_user)
+
             # Check 2: Self-modification of roles is strictly forbidden to prevent self-escalation
             if actor.id == target_user.id and "roles" in data:
                 raise PermissionDenied("Self-modification of roles is strictly prohibited.")
@@ -343,6 +359,9 @@ class AdminUserDetailAPIView(APIView):
                 missing_codes = desired_roles - set(existing_roles.keys())
                 if missing_codes:
                     raise DRFValidationError({"roles": f"Unknown or inactive role codes: {sorted(list(missing_codes))}"})
+
+                # Check 5 (BUG-003): added roles grant only what the actor holds.
+                assert_can_assign_roles(actor, target_user, desired_roles)
 
                 # Determine roles to add and remove
                 roles_to_add = desired_roles - target_role_codes

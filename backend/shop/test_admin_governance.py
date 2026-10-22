@@ -2261,3 +2261,134 @@ class AdminShopStatusTransitionRuleTests(APITestCase):
         self.assertEqual(shop.rejection_reason, "")
         self.assertEqual(shop.reviewed_by, self.admin)
         self.assertIsNotNone(shop.approved_at)
+
+
+class AdminUserDelegationTests(APITestCase):
+    """
+    BUG-003: the Console user API applies "you may only give away what you
+    hold", and an operator below the wildcard cannot modify an account that
+    outranks them.
+    """
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_rbac")
+
+        cls.admin = User.objects.create_user(
+            username="dg_admin", email="dg_admin@minishop.com", password="AdminPassword123!"
+        )
+        assign_user_role(cls.admin, Role.ROLE_ADMINISTRATOR)
+
+        cls.other_admin = User.objects.create_user(
+            username="dg_other_admin", email="dg_other_admin@minishop.com", password="AdminPassword123!"
+        )
+        assign_user_role(cls.other_admin, Role.ROLE_ADMINISTRATOR)
+
+        # A custom role holding only the user-management codes.
+        manager_role = Role.objects.create(code="DG_USER_MANAGER", name="User Manager")
+        for code in ("users.admin.view", "users.admin.manage"):
+            RolePermission.objects.create(role=manager_role, permission=Permission.objects.get(code=code))
+        cls.manager = User.objects.create_user(
+            username="dg_manager", email="dg_manager@minishop.com", password="ManagerPassword123!"
+        )
+        assign_user_role(cls.manager, "DG_USER_MANAGER")
+
+        cls.customer = User.objects.create_user(
+            username="dg_customer", email="dg_customer@minishop.com", password="CustomerPassword123!"
+        )
+        assign_user_role(cls.customer, Role.ROLE_CUSTOMER)
+
+        cls.support = User.objects.create_user(
+            username="dg_support", email="dg_support@minishop.com", password="SupportPassword123!"
+        )
+        assign_user_role(cls.support, Role.ROLE_SUPPORT_TEAM)
+
+    def _create(self, roles, username="dg_created"):
+        return self.client.post(
+            "/api/admin/users/",
+            data={
+                "username": username,
+                "email": f"{username}@minishop.com",
+                "password": "BrandNewPassword123!",
+                "password_confirm": "BrandNewPassword123!",
+                "roles": roles,
+                "reason": "delegation test",
+            },
+            format="json",
+        )
+
+    def _patch(self, target, **data):
+        return self.client.patch(
+            f"/api/admin/users/{target.id}/", data={**data, "reason": "delegation test"}, format="json"
+        )
+
+    # -- an operator below the roles they hand out -----------------------------
+
+    def test_manager_cannot_create_an_account_with_a_role_above_their_own(self):
+        self.client.force_authenticate(user=self.manager)
+        res = self._create([Role.ROLE_FINANCE])
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("payments.refund", str(res.data))
+        self.assertFalse(User.objects.filter(username="dg_created").exists())
+
+    def test_manager_cannot_add_a_role_above_their_own(self):
+        self.client.force_authenticate(user=self.manager)
+        res = self._patch(self.customer, roles=[Role.ROLE_CUSTOMER, Role.ROLE_FINANCE])
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(get_user_role_codes(self.customer), {Role.ROLE_CUSTOMER})
+
+    def test_manager_cannot_deactivate_an_administrator(self):
+        self.client.force_authenticate(user=self.manager)
+        res = self._patch(self.admin, is_active=False)
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.admin.refresh_from_db()
+        self.assertTrue(self.admin.is_active)
+
+    def test_manager_cannot_revoke_an_administrators_role(self):
+        self.client.force_authenticate(user=self.manager)
+        res = self._patch(self.admin, roles=[])
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn(Role.ROLE_ADMINISTRATOR, get_user_role_codes(self.admin))
+
+    def test_manager_cannot_modify_an_account_with_more_permissions(self):
+        self.client.force_authenticate(user=self.manager)
+        res = self._patch(self.support, is_active=False)
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.support.refresh_from_db()
+        self.assertTrue(self.support.is_active)
+
+    # -- what stays allowed ---------------------------------------------------
+
+    def test_manager_may_still_create_and_manage_customers(self):
+        """CUSTOMER's self-service codes are not a privilege to delegate."""
+        self.client.force_authenticate(user=self.manager)
+        res = self._create([Role.ROLE_CUSTOMER])
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED, res.data)
+
+        res = self._patch(self.customer, is_active=False)
+        self.assertEqual(res.status_code, status.HTTP_200_OK, res.data)
+
+    def test_administrator_may_assign_finance(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self._create([Role.ROLE_FINANCE])
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED, res.data)
+
+        res = self._patch(self.customer, roles=[Role.ROLE_CUSTOMER, Role.ROLE_FINANCE])
+        self.assertEqual(res.status_code, status.HTTP_200_OK, res.data)
+        self.assertIn(Role.ROLE_FINANCE, get_user_role_codes(self.customer))
+
+    def test_administrator_cannot_deactivate_another_administrator(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self._patch(self.other_admin, is_active=False)
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.other_admin.refresh_from_db()
+        self.assertTrue(self.other_admin.is_active)
+
+    def test_super_administrator_is_unrestricted(self):
+        superadmin = User.objects.create_user(
+            username="dg_super", email="dg_super@minishop.com", password="SuperPassword123!"
+        )
+        assign_user_role(superadmin, Role.ROLE_SUPER_ADMINISTRATOR)
+        self.client.force_authenticate(user=superadmin)
+        res = self._patch(self.other_admin, is_active=False)
+        self.assertEqual(res.status_code, status.HTTP_200_OK, res.data)
