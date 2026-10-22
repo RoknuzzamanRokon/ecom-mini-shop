@@ -42,7 +42,6 @@ class InventoryTests(APITestCase):
             email="seller_a@test.com",
             password="Password123!",
         )
-        assign_user_role(cls.user_seller_a, Role.ROLE_SALES_TEAM)
         cls.seller_a = SellerProfile.objects.create(
             user=cls.user_seller_a,
             seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
@@ -63,7 +62,6 @@ class InventoryTests(APITestCase):
             email="seller_b@test.com",
             password="Password123!",
         )
-        assign_user_role(cls.user_seller_b, Role.ROLE_SALES_TEAM)
         cls.seller_b = SellerProfile.objects.create(
             user=cls.user_seller_b,
             seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
@@ -84,7 +82,6 @@ class InventoryTests(APITestCase):
             email="seller_c@test.com",
             password="Password123!",
         )
-        assign_user_role(cls.user_seller_c, Role.ROLE_SALES_TEAM)
         cls.seller_c = SellerProfile.objects.create(
             user=cls.user_seller_c,
             seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,

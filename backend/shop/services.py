@@ -102,7 +102,7 @@ class ProductService:
         Creates a new product belonging to a seller's shop in an atomic transaction.
         Enforces:
           1. Seller operational status (APPROVED or ACTIVE)
-          2. RBAC permission ('products.create')
+          2. (No RBAC code since TASK-005: seller status is the gate)
           3. Shop ownership (shop.owner == seller)
           4. The Limited Shop Owner product limit
           5. Authoritative point creation cost determination
@@ -129,10 +129,8 @@ class ProductService:
                 f"Shop '{shop.name}' is currently '{shop.status}'. Products can only be created for active/approved shops."
             )
 
-        # 3. Validate RBAC permission on actor
-        if actor and getattr(actor, "is_authenticated", False):
-            if not has_user_permission(actor, "products.create"):
-                raise PermissionDenied("You do not have permission to create products ('products.create' required).")
+        # 3. No RBAC code: an operational seller creating in their own shop is
+        # the whole rule (TASK-005), checked above.
 
         # 4. Limited Shop Owners may hold only a fixed number of products. Checked
         # here so a seller at the limit hears about it before any points message,
@@ -247,10 +245,6 @@ class ProductService:
 
         if not seller.is_operational:
             raise IneligibleSellerError("Suspended or unapproved sellers cannot update products.")
-
-        if actor and getattr(actor, "is_authenticated", False):
-            if not has_user_permission(actor, "products.update"):
-                raise PermissionDenied("You do not have permission to update products.")
 
         with transaction.atomic():
             changed_fields = []

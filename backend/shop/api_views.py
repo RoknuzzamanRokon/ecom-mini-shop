@@ -27,17 +27,14 @@ from .permissions import (
     CanAdjustInventory,
     CanCancelOrder,
     CanCreateOrder,
-    CanCreateProduct,
     CanDeleteProduct,
     CanRefundPayment,
     CanUpdateProduct,
-    CanUpdateSellerOrder,
     CanUpdateStaffOrders,
     CanVerifyPayment,
     CanViewInventory,
     CanViewOrder,
     CanViewPayment,
-    CanViewSellerOrder,
     CanViewStaffOrders,
     IsEligibleOrderSeller,
     IsEligibleProductSeller,
@@ -481,8 +478,8 @@ class SellerProductListCreateAPIView(APIView):
     pagination_class = StandardResultsSetPagination
 
     def get_permissions(self):
-        if self.request.method == "POST":
-            return [permissions.IsAuthenticated(), IsEligibleProductSeller(), CanCreateProduct()]
+        # Seller status and shop ownership are the whole gate (TASK-005): no
+        # RBAC code is needed, so sellers hold no staff role.
         return [permissions.IsAuthenticated(), IsEligibleProductSeller()]
 
     def get(self, request):
@@ -596,8 +593,8 @@ class SellerProductDetailAPIView(APIView):
     """
     Seller self-service product detail endpoint:
       GET: Retrieve product details.
-      PATCH/PUT: Update product attributes (requires products.update).
-      DELETE: Delete product (requires products.delete).
+      PATCH/PUT: Update product attributes (an operational owner needs no RBAC code).
+      DELETE: Delete product (requires products.delete, which sellers do not hold).
     Strictly verifies ownership: product must belong to a shop owned by the authenticated seller.
     """
     permission_classes = [permissions.IsAuthenticated, IsEligibleProductSeller, IsProductOwner]
@@ -617,11 +614,6 @@ class SellerProductDetailAPIView(APIView):
 
     def patch(self, request, pk):
         product = self.get_object(pk)
-        if not has_user_permission(request.user, "products.update"):
-            return Response(
-                {"error": "You do not have permission to update products ('products.update' required)."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
 
         serializer = SellerProductUpdateSerializer(data=request.data, context={"request": request}, partial=True)
         serializer.is_valid(raise_exception=True)
@@ -679,7 +671,7 @@ class SellerOrderListAPIView(APIView):
       Each order's items list contains only that seller's items.
     """
     pagination_class = StandardResultsSetPagination
-    permission_classes = [permissions.IsAuthenticated, IsEligibleOrderSeller, CanViewSellerOrder]
+    permission_classes = [permissions.IsAuthenticated, IsEligibleOrderSeller]
 
     def get(self, request):
         seller = request.user.seller_profile
@@ -712,7 +704,7 @@ class SellerOrderDetailAPIView(APIView):
       Enforces that the order contains items belonging to the authenticated seller.
       Excludes another seller's items and private customer credentials.
     """
-    permission_classes = [permissions.IsAuthenticated, IsEligibleOrderSeller, CanViewSellerOrder]
+    permission_classes = [permissions.IsAuthenticated, IsEligibleOrderSeller]
 
     def get(self, request, order_number=None, *args, **kwargs):
         seller = request.user.seller_profile
@@ -732,7 +724,7 @@ class SellerOrderStatusUpdateAPIView(APIView):
       Safely advances an order's lifecycle status.
       Rejects unilateral transitions on multi-seller orders.
     """
-    permission_classes = [permissions.IsAuthenticated, IsEligibleOrderSeller, CanUpdateSellerOrder]
+    permission_classes = [permissions.IsAuthenticated, IsEligibleOrderSeller]
 
     def patch(self, request, order_number=None, *args, **kwargs):
         seller = request.user.seller_profile
@@ -780,11 +772,11 @@ class SellerInventoryDetailAPIView(APIView):
         product = get_object_or_404(Product, pk=product_id)
 
         # NOTE (Phase 2D): this role-code override was deliberately left as-is.
-        # There is no platform-wide inventory permission in the RBAC catalogue --
-        # only 'inventory.view'/'inventory.adjust', which sellers must already
-        # hold to reach this endpoint (CanViewInventory), so neither can express
-        # "staff, not scoped to one shop" without handing every seller access to
-        # every shop's stock. Recorded as Known Issue #27.
+        # Sellers reach this endpoint by seller status, not by an RBAC code
+        # (TASK-005), but staff who hold 'inventory.*' without being in the
+        # list below (SALES_TEAM, SUPPORT_TEAM, ...) are still scoped as
+        # sellers, so the codes cannot yet stand for "staff, any shop". Known
+        # Issue #27.
         role_codes = get_user_role_codes(request.user)
         is_staff_override = (
             request.user.is_superuser
@@ -829,11 +821,11 @@ class SellerInventoryAdjustAPIView(APIView):
         product = get_object_or_404(Product, pk=product_id)
 
         # NOTE (Phase 2D): this role-code override was deliberately left as-is.
-        # There is no platform-wide inventory permission in the RBAC catalogue --
-        # only 'inventory.view'/'inventory.adjust', which sellers must already
-        # hold to reach this endpoint (CanViewInventory), so neither can express
-        # "staff, not scoped to one shop" without handing every seller access to
-        # every shop's stock. Recorded as Known Issue #27.
+        # Sellers reach this endpoint by seller status, not by an RBAC code
+        # (TASK-005), but staff who hold 'inventory.*' without being in the
+        # list below (SALES_TEAM, SUPPORT_TEAM, ...) are still scoped as
+        # sellers, so the codes cannot yet stand for "staff, any shop". Known
+        # Issue #27.
         role_codes = get_user_role_codes(request.user)
         is_staff_override = (
             request.user.is_superuser
@@ -887,11 +879,11 @@ class SellerInventoryListAPIView(generics.ListAPIView):
     def get_queryset(self):
         user = self.request.user
         # NOTE (Phase 2D): this role-code override was deliberately left as-is.
-        # There is no platform-wide inventory permission in the RBAC catalogue --
-        # only 'inventory.view'/'inventory.adjust', which sellers must already
-        # hold to reach this endpoint (CanViewInventory), so neither can express
-        # "staff, not scoped to one shop" without handing every seller access to
-        # every shop's stock. Recorded as Known Issue #27.
+        # Sellers reach this endpoint by seller status, not by an RBAC code
+        # (TASK-005), but staff who hold 'inventory.*' without being in the
+        # list below (SALES_TEAM, SUPPORT_TEAM, ...) are still scoped as
+        # sellers, so the codes cannot yet stand for "staff, any shop". Known
+        # Issue #27.
         role_codes = get_user_role_codes(user)
         is_staff_override = (
             user.is_superuser
@@ -931,11 +923,11 @@ class SellerInventoryTransactionsAPIView(generics.ListAPIView):
         user = self.request.user
 
         # NOTE (Phase 2D): this role-code override was deliberately left as-is.
-        # There is no platform-wide inventory permission in the RBAC catalogue --
-        # only 'inventory.view'/'inventory.adjust', which sellers must already
-        # hold to reach this endpoint (CanViewInventory), so neither can express
-        # "staff, not scoped to one shop" without handing every seller access to
-        # every shop's stock. Recorded as Known Issue #27.
+        # Sellers reach this endpoint by seller status, not by an RBAC code
+        # (TASK-005), but staff who hold 'inventory.*' without being in the
+        # list below (SALES_TEAM, SUPPORT_TEAM, ...) are still scoped as
+        # sellers, so the codes cannot yet stand for "staff, any shop". Known
+        # Issue #27.
         role_codes = get_user_role_codes(user)
         is_staff_override = (
             user.is_superuser

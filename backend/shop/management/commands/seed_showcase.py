@@ -7,7 +7,6 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 from django.utils.text import slugify
 
-from rbac.models import Role, UserRole
 from sellers.models import SellerProfile
 from shop.management.commands.seed_demo_data import generate_placeholder_image
 from shop.models import Category, Product, ProductImage, ProductInventory
@@ -16,8 +15,6 @@ from shops.models import Shop
 
 UNSPLASH_URL = "https://images.unsplash.com/{photo_id}?auto=format&q=80&fit=crop&crop={crop}&w={width}&h={height}"
 FLICKR_URL = "https://loremflickr.com/{width}/{height}/{keyword}"
-
-SELLER_ROLE_CODE = "SALES_TEAM"
 
 # (name, icon, photo_id, keyword, description)
 CATEGORIES = [
@@ -264,7 +261,9 @@ class Command(BaseCommand):
 
     def seed_shops(self, force, password):
         User = get_user_model()
-        seller_role = Role.objects.filter(code=SELLER_ROLE_CODE).first()
+        # Demo sellers get no RBAC role: the Seller Center admits them by seller
+        # status (TASK-005). SALES_TEAM is a staff role and would open the
+        # staff Console to them.
         shops = {}
 
         for entry in SHOPS:
@@ -281,9 +280,6 @@ class Command(BaseCommand):
             elif password:
                 user.set_password(password)
                 user.save()
-
-            if seller_role:
-                UserRole.objects.get_or_create(user=user, role=seller_role)
 
             seller, _ = SellerProfile.objects.get_or_create(
                 user=user,

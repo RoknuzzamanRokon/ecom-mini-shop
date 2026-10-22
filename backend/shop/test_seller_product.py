@@ -45,7 +45,6 @@ class BaseSellerProductTestCase(TestCase):
             email="seller_full@example.com",
             password="TestPassword123!",
         )
-        assign_user_role(cls.user_full, Role.ROLE_SALES_TEAM)  # Contains products.create, products.update, products.view
         cls.seller_full = SellerProfile.objects.create(
             user=cls.user_full,
             seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
@@ -73,7 +72,6 @@ class BaseSellerProductTestCase(TestCase):
             email="seller_limited@example.com",
             password="TestPassword123!",
         )
-        assign_user_role(cls.user_limited, Role.ROLE_SALES_TEAM)
         cls.seller_limited = SellerProfile.objects.create(
             user=cls.user_limited,
             seller_type=SellerProfile.TYPE_LIMITED_SHOP_OWNER,
@@ -100,7 +98,6 @@ class BaseSellerProductTestCase(TestCase):
             email="seller_no_shop@example.com",
             password="TestPassword123!",
         )
-        assign_user_role(cls.user_no_shop, Role.ROLE_SALES_TEAM)
         cls.seller_no_shop = SellerProfile.objects.create(
             user=cls.user_no_shop,
             seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
@@ -120,7 +117,6 @@ class BaseSellerProductTestCase(TestCase):
             email="seller_competitor@example.com",
             password="TestPassword123!",
         )
-        assign_user_role(cls.user_competitor, Role.ROLE_SALES_TEAM)
         cls.seller_competitor = SellerProfile.objects.create(
             user=cls.user_competitor,
             seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
@@ -147,7 +143,6 @@ class BaseSellerProductTestCase(TestCase):
             email="seller_suspended@example.com",
             password="TestPassword123!",
         )
-        assign_user_role(cls.user_suspended, Role.ROLE_SALES_TEAM)
         cls.seller_suspended = SellerProfile.objects.create(
             user=cls.user_suspended,
             seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
@@ -169,7 +164,7 @@ class BaseSellerProductTestCase(TestCase):
             reason="Initial grant",
         )
 
-        # 6. User WITHOUT products.create permission
+        # 6. Active seller whose only role (SUPPORT_TEAM) lacks products.create
         cls.user_unauthorized = User.objects.create_user(
             username="seller_unauth",
             email="seller_unauth@example.com",
@@ -267,8 +262,8 @@ class ProductOwnershipTests(BaseSellerProductTestCase):
 
 
 class ProductPermissionsAndStatusTests(BaseSellerProductTestCase):
-    def test_user_without_products_create_permission_rejected(self):
-        """A seller lacking 'products.create' RBAC permission is denied."""
+    def test_active_seller_needs_no_rbac_code_to_create(self):
+        """Seller status and shop ownership are the whole gate, not 'products.create' (TASK-005)."""
         client = APIClient()
         client.force_authenticate(user=self.user_unauthorized)
 
@@ -276,11 +271,11 @@ class ProductPermissionsAndStatusTests(BaseSellerProductTestCase):
             "name": "Unauthorized Keyboard",
             "category_id": self.category.id,
             "shop_id": self.shop_unauthorized.id,
-            "description": "Will be blocked",
+            "description": "Created without any product permission",
             "price": "99.00",
         }
         res = client.post("/api/products/mine/", payload)
-        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED, res.data)
 
     def test_unauthenticated_request_rejected(self):
         """Unauthenticated requests receive 401 Unauthorized."""
@@ -760,7 +755,6 @@ class ConcurrencySafetyTests(TransactionTestCase):
         call_command("seed_rbac")
         self.category = Category.objects.create(name="Gizmos", slug="gizmos")
         self.user = User.objects.create_user(username="concur_seller", email="concur@test.com", password="Pass123!")
-        assign_user_role(self.user, Role.ROLE_SALES_TEAM)
         self.seller = SellerProfile.objects.create(
             user=self.user,
             seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,

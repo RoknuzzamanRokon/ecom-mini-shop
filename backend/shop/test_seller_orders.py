@@ -31,13 +31,12 @@ class SellerOrderTests(APITestCase):
         )
         assign_user_role(cls.admin_user, Role.ROLE_ADMINISTRATOR)
 
-        # 2. Seller A (Active, Full Shop Owner, has orders.seller.view & orders.seller.update via ROLE_SALES_TEAM)
+        # 2. Seller A (Active, Full Shop Owner). Sellers hold no RBAC role: seller status is the gate (TASK-005).
         cls.user_seller_a = User.objects.create_user(
             username="seller_a_user",
             email="seller_a@test.com",
             password="Password123!",
         )
-        assign_user_role(cls.user_seller_a, Role.ROLE_SALES_TEAM)
         cls.seller_a = SellerProfile.objects.create(
             user=cls.user_seller_a,
             seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
@@ -57,7 +56,6 @@ class SellerOrderTests(APITestCase):
             email="seller_b@test.com",
             password="Password123!",
         )
-        assign_user_role(cls.user_seller_b, Role.ROLE_SALES_TEAM)
         cls.seller_b = SellerProfile.objects.create(
             user=cls.user_seller_b,
             seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
@@ -77,7 +75,6 @@ class SellerOrderTests(APITestCase):
             email="suspended@test.com",
             password="Password123!",
         )
-        assign_user_role(cls.user_suspended, Role.ROLE_SALES_TEAM)
         cls.seller_suspended = SellerProfile.objects.create(
             user=cls.user_suspended,
             seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
@@ -296,8 +293,8 @@ class SellerOrderTests(APITestCase):
     # 3. RBAC Permissions
     # -------------------------------------------------------------------------
 
-    def test_unauthorized_seller_without_order_permission_rejected(self):
-        """Seller user lacking 'orders.seller.view' receives 403 Forbidden."""
+    def test_active_seller_needs_no_rbac_role(self):
+        """An active seller with no role at all reads their (empty) order list (TASK-005)."""
         user_no_perm = User.objects.create_user(
             username="seller_no_perm",
             password="Password123!",
@@ -310,7 +307,8 @@ class SellerOrderTests(APITestCase):
         )
         self.client.force_authenticate(user=user_no_perm)
         resp = self.client.get("/api/seller/orders/")
-        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["count"], 0)
 
     # -------------------------------------------------------------------------
     # 4. Seller Order List & Multi-Seller Item Filtering

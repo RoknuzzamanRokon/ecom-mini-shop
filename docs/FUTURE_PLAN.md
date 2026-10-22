@@ -585,6 +585,25 @@ split is its natural foundation.
 
 ---
 
+## Decisions from the 2026-10-22 audit (TASK-048)
+
+`audit/BUG_FIX_TASKS.md` TASK-048 lists business rules that gate fixes. They
+are recorded here as they are made.
+
+1. **Seller permission model** — decided 2026-10-23, implemented in TASK-005.
+   - Sellers hold no staff role. The Seller Center (product create and edit,
+     seller orders, seller inventory) admits a user by an APPROVED or ACTIVE
+     seller profile, then scopes them to their own shops. No RBAC code is
+     involved.
+   - Product delete still needs `products.delete`, which sellers do not hold,
+     the same as before.
+   - SALES_TEAM stays a staff role. Migration
+     `sellers/0003_sellers_leave_sales_team` deactivated it on plain seller
+     accounts, and `seed_showcase` no longer assigns it.
+   - Staff access is unchanged. Known #27 (the inventory role-code override) is
+     still open: staff who hold `inventory.*` outside the override list are
+     still scoped as sellers.
+
 ## Not in this roadmap
 
 A short honest roadmap beats an exhaustive wish list. These are known and

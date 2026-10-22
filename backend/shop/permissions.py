@@ -16,6 +16,20 @@ ORDER_OVERRIDE_ROLES = frozenset(
 )
 
 
+def is_operational_seller(user) -> bool:
+    """
+    Whether `user` has an APPROVED or ACTIVE seller profile.
+
+    This, not an RBAC code, is what admits a seller to the Seller Center
+    endpoints (TASK-005 / BUG-004): sellers hold no staff role, and each
+    endpoint scopes what they reach to their own shops.
+    """
+    if not user or not user.is_authenticated:
+        return False
+    seller = getattr(user, "seller_profile", None)
+    return bool(seller and seller.is_operational)
+
+
 def can_user_view_any_order(user) -> bool:
     """
     Returns True when the user may read orders that are not their own.
@@ -203,49 +217,11 @@ class IsEligibleOrderSeller(BasePermission):
         return seller.is_operational
 
 
-class CanViewSellerOrder(BasePermission):
-    """
-    Enforces that the user holds 'orders.seller.view' or 'orders.view' permission.
-    """
-    message = "You do not have permission to view seller orders."
-
-    def has_permission(self, request, view):
-        user = request.user
-        if not user or not user.is_authenticated:
-            return False
-
-        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
-            return True
-
-        return (
-            has_user_permission(user, "orders.seller.view")
-            or has_user_permission(user, "orders.view")
-        )
-
-
-class CanUpdateSellerOrder(BasePermission):
-    """
-    Enforces that the user holds 'orders.seller.update' or 'orders.update' permission.
-    """
-    message = "You do not have permission to update seller orders."
-
-    def has_permission(self, request, view):
-        user = request.user
-        if not user or not user.is_authenticated:
-            return False
-
-        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
-            return True
-
-        return (
-            has_user_permission(user, "orders.seller.update")
-            or has_user_permission(user, "orders.update")
-        )
-
-
 class CanViewInventory(BasePermission):
     """
-    Enforces that the user holds 'inventory.view' permission or admin/superuser bypass.
+    Admits holders of 'inventory.view', operational sellers, and the
+    admin/superuser bypass. The inventory views then scope a seller to the
+    products of their own shops.
     """
     message = "You do not have permission to view inventory."
 
@@ -257,12 +233,14 @@ class CanViewInventory(BasePermission):
         if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
             return True
 
-        return has_user_permission(user, "inventory.view")
+        return has_user_permission(user, "inventory.view") or is_operational_seller(user)
 
 
 class CanAdjustInventory(BasePermission):
     """
-    Enforces that the user holds 'inventory.adjust' permission or admin/superuser bypass.
+    Admits holders of 'inventory.adjust', operational sellers, and the
+    admin/superuser bypass. The adjust view then limits a seller to the
+    products of their own shops.
     """
     message = "You do not have permission to adjust inventory."
 
@@ -274,7 +252,7 @@ class CanAdjustInventory(BasePermission):
         if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
             return True
 
-        return has_user_permission(user, "inventory.adjust")
+        return has_user_permission(user, "inventory.adjust") or is_operational_seller(user)
 
 
 class CanViewPayment(BasePermission):
