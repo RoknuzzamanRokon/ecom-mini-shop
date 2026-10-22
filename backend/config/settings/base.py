@@ -90,6 +90,8 @@ INSTALLED_APPS = [
     'corsheaders',
     'rest_framework',
     'rest_framework_simplejwt',
+    # Records issued refresh tokens and blacklists rotated or logged-out ones.
+    'rest_framework_simplejwt.token_blacklist',
     'rbac',
     'sellers',
     'points',
@@ -184,10 +186,13 @@ DATABASES = {
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
 AUTH_PASSWORD_VALIDATORS = [
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {
         'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
-        'OPTIONS': {'min_length': 4},
+        'OPTIONS': {'min_length': 8},
     },
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
 
@@ -243,7 +248,28 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 12,
+    # Throttles identify an anonymous client by address. Left unset, DRF takes
+    # the whole X-Forwarded-For header as that address, so a client could dodge
+    # every limit by sending a new one each time. 0 means REMOTE_ADDR; behind N
+    # trusted proxies, set DJANGO_NUM_PROXIES=N.
+    "NUM_PROXIES": int(os.environ.get("DJANGO_NUM_PROXIES") or 0),
 }
+
+# Request limits on the authentication endpoints, per client address (per user
+# once signed in); rbac/throttles.py reads them on every request. The counts
+# live in the default cache, which is per process unless CACHES says otherwise.
+AUTH_THROTTLE_RATES = {
+    "auth_token": "10/min",
+    "auth_refresh": "30/min",
+    "auth_register": "20/hour",
+    "auth_password": "10/hour",
+}
+
+# Django-admin sign-in lockout: this many failed attempts from one address
+# within the window blocks further attempts until the window ends
+# (config/admin_site.py).
+ADMIN_LOGIN_FAILURE_LIMIT = 10
+ADMIN_LOGIN_FAILURE_WINDOW_SECONDS = 15 * 60
 
 # SimpleJWT settings
 SIMPLE_JWT = {
@@ -252,7 +278,15 @@ SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME": timedelta(minutes=60),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
     "ROTATE_REFRESH_TOKENS": True,
-    "BLACKLIST_AFTER_ROTATION": False,
+    # A refresh token works once: the rotated-out token is blacklisted, so a
+    # stolen copy cannot be chained forever. POST /api/auth/logout/ blacklists
+    # the current one.
+    "BLACKLIST_AFTER_ROTATION": True,
+    # Tokens carry a hash of the password hash; a password change rejects every
+    # access token issued before it, and rbac's refresh serializer rejects the
+    # matching refresh tokens.
+    "CHECK_REVOKE_TOKEN": True,
+    "TOKEN_REFRESH_SERIALIZER": "rbac.serializers.RevocationCheckingTokenRefreshSerializer",
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 

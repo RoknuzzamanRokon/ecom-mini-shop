@@ -74,7 +74,7 @@ Then open:
 | `config.settings.base` | neither, directly | Shared configuration only. |
 | `config.settings.dev` | `manage.py` (default) | `DEBUG = True`. Refuses to start without both secret keys. |
 | `config.settings.test` | the test suite | Same application behaviour as `dev`; only the cost of running it differs. Makes up throwaway keys when none are set. |
-| `config.settings.prod` | any deployment | `DEBUG = False`, HTTPS redirect, HSTS, secure cookies, full password validators; hosts and origins from the environment. |
+| `config.settings.prod` | any deployment | `DEBUG = False`, HTTPS redirect, HSTS, secure cookies; hosts and origins from the environment. |
 
 `wsgi.py` and `asgi.py` have no default: a server started without
 `DJANGO_SETTINGS_MODULE` stops with an error instead of running as `dev`.
@@ -94,6 +94,7 @@ environment variable wins over the same line in `.env`.
 | `DJANGO_CSRF_TRUSTED_ORIGINS` | `prod` | Comma-separated. Optional. |
 | `DJANGO_BEHIND_TLS_PROXY` | `prod` | `true` when a proxy terminates HTTPS and sets `X-Forwarded-Proto`. Only when the proxy overwrites that header. |
 | `DJANGO_SECURE_HSTS_SECONDS` | `prod` | Optional; one year by default. |
+| `DJANGO_NUM_PROXIES` | all | Trusted proxies in front of Django, so rate limits see the real client address. `0` (the default) uses `REMOTE_ADDR`. |
 
 Generate each key with:
 

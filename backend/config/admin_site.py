@@ -10,8 +10,10 @@ changelist -- which is why this is not a context processor.
 """
 from django.conf import settings
 from django.contrib import admin
+from django.core.cache import cache
 from django.core.files.storage import default_storage
 from django.db.models import Count, Q
+from django.http import HttpResponse
 from django.urls import path
 
 
@@ -53,6 +55,38 @@ class MiniShopAdminSite(admin.AdminSite):
             .first()
         )
         return default_storage.url(name) if name else ""
+
+    def login(self, request, extra_context=None):
+        """
+        Django's admin login, with a per-address lockout (BUG-014): after
+        ADMIN_LOGIN_FAILURE_LIMIT failed attempts inside the window, every
+        attempt from that address gets 429, without checking the password,
+        until the window ends. A failed attempt is a POST that re-renders the
+        form instead of redirecting.
+        """
+        if request.method != "POST":
+            return super().login(request, extra_context)
+
+        key = f"admin-login-failures:{request.META.get('REMOTE_ADDR', '')}"
+        if cache.get(key, 0) >= settings.ADMIN_LOGIN_FAILURE_LIMIT:
+            response = HttpResponse(
+                "Too many failed sign-in attempts. Try again later.",
+                status=429,
+                content_type="text/plain; charset=utf-8",
+            )
+            response["Retry-After"] = str(settings.ADMIN_LOGIN_FAILURE_WINDOW_SECONDS)
+            return response
+
+        response = super().login(request, extra_context)
+        if response.status_code == 200:
+            # add() starts the window on the first failure; incr() leaves the
+            # expiry where it is, so the window is fixed, not sliding.
+            if not cache.add(key, 1, settings.ADMIN_LOGIN_FAILURE_WINDOW_SECONDS):
+                try:
+                    cache.incr(key)
+                except ValueError:  # expired between add() and incr()
+                    cache.add(key, 1, settings.ADMIN_LOGIN_FAILURE_WINDOW_SECONDS)
+        return response
 
     def get_urls(self):
         # Ahead of super()'s patterns, whose final catch-all would 404 it.

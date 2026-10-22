@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
-import { loginUser, getCurrentUser } from "@/lib/api";
+import { loginUser, getCurrentUser, revokeRefreshToken } from "@/lib/api";
 import { clearTokens, safeNextPath, setTokens } from "@/lib/auth";
 import { isManagementUser } from "@/lib/admin-auth";
 import LoginRing, {
@@ -126,8 +126,10 @@ function AdminLoginForm() {
       if (!isManagementUser(userData)) {
         // Purge tokens immediately, through the shared accessor (Phase 2J) so
         // the legacy access-token keys it also clears cannot leave a
-        // non-management session half-signed-in.
+        // non-management session half-signed-in. The pair just issued is
+        // never stored, so its refresh token is revoked server-side too.
         clearTokens();
+        void revokeRefreshToken(tokens.refresh);
         showError("Access denied: You do not have management portal permissions.");
         return;
       }

@@ -1101,6 +1101,28 @@ export async function refreshAccessToken(
   return await res.json();
 }
 
+/**
+ * Blacklists a refresh token server-side (`POST /api/auth/logout/`), so a
+ * copy of it can no longer mint access tokens. Needs no access token.
+ * Best-effort: signing out locally must not wait on, or fail with, the
+ * network, so errors are swallowed. `keepalive` lets the request finish while
+ * the page navigates away.
+ */
+export async function revokeRefreshToken(refreshToken: string): Promise<void> {
+  try {
+    await fetch(`${API_BASE_URL}/api/auth/logout/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ refresh: refreshToken }),
+      keepalive: true,
+    });
+  } catch {
+    /* already signed out locally; the token still expires on its own */
+  }
+}
+
 export async function getCurrentUser(token: string): Promise<AuthUser> {
   const res = await customerRequest(`/api/auth/me/`, token, {
     cache: "no-store",
@@ -1342,12 +1364,14 @@ export async function getMyReviews(token: string): Promise<MyReviews> {
 }
 
 /**
- * Password change
+ * Password change. The new password revokes every earlier token, this
+ * device's included, so the response carries a fresh pair for the caller to
+ * store.
  */
 export async function changePassword(
   payload: PasswordChangePayload,
   token: string
-): Promise<void> {
+): Promise<{ access: string; refresh: string }> {
   const res = await customerRequest(`/api/auth/change-password/`, token, {
     method: "POST",
     headers: {
@@ -1364,6 +1388,8 @@ export async function changePassword(
       data.detail;
     throw new Error(firstError || "Failed to change password");
   }
+  const data = await res.json();
+  return { access: data.access, refresh: data.refresh };
 }
 
 /**

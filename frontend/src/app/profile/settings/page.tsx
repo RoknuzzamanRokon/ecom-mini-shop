@@ -9,7 +9,7 @@ import {
   updateCustomerProfile,
   uploadAvatar,
 } from "@/lib/api";
-import { getAuthToken } from "@/lib/auth";
+import { getAuthToken, setTokens } from "@/lib/auth";
 
 type Banner = { type: "success" | "error"; text: string } | null;
 
@@ -109,7 +109,9 @@ export default function ProfileSettingsPage() {
     setSavingPassword(true);
     setPasswordBanner(null);
     try {
-      await changePassword(passwords, token);
+      const tokens = await changePassword(passwords, token);
+      // The old pair is revoked server-side; keep this device signed in.
+      setTokens(tokens.access, tokens.refresh);
       setPasswords({
         current_password: "",
         new_password: "",
@@ -290,7 +292,7 @@ export default function ProfileSettingsPage() {
       <section className="bg-surface rounded-2xl border border-line shadow-sm p-6">
         <h2 className="text-lg font-bold text-ink mb-1">Change Password</h2>
         <p className="text-xs text-ink-muted mb-4">
-          Minimum 4 characters. You will stay signed in on this device.
+          Minimum 8 characters. You will stay signed in on this device; other devices are signed out.
         </p>
 
         <form onSubmit={handlePasswordSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-4">

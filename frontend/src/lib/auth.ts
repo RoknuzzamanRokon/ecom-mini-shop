@@ -13,9 +13,9 @@
  * `onAuthCleared` subscription below, which `AuthProvider` listens to and
  * answers with its existing `logout()`.
  *
- * Per the Master Prompt (§10, §28) the backend has no logout or token
- * revocation endpoint, so clearing tokens client-side is all "logging out"
- * can mean here. Nothing in this file pretends otherwise.
+ * Logging out clears the tokens here and revokes the refresh token through
+ * `POST /api/auth/logout/` (`revokeRefreshToken` in api.ts, called by
+ * AuthContext). An access token already issued stays valid until it expires.
  */
 
 /** Canonical keys. Written by every login path and by a successful refresh. */
@@ -133,9 +133,9 @@ let inFlightRefresh: Promise<string | null> | null = null;
  * `POST /api/auth/token/refresh/`. This matters beyond saving requests:
  * `ROTATE_REFRESH_TOKENS` is on, so N parallel refreshes would each mint a
  * different refresh token and race on the write, leaving whichever lost the
- * race orphaned. (`BLACKLIST_AFTER_ROTATION` is currently off, so they would
- * all still succeed today — single-flight is what keeps that from becoming a
- * silent session loss if blacklisting is ever turned on.)
+ * race orphaned. `BLACKLIST_AFTER_ROTATION` is on, so a refresh token works
+ * once: a second refresh with it is refused, and would sign the user out.
+ * Every refresh in the app must therefore go through this function.
  *
  * Resolves to the new access token, or to null when the session is gone — in
  * which case the tokens have already been cleared and `onAuthCleared`

@@ -36,6 +36,14 @@ ALLOWED_HOSTS = ["127.0.0.1", "localhost", "testserver"]
 # this is a low-iteration PBKDF2 rather than the usual MD5 swap.
 PASSWORD_HASHERS = ["config.settings.hashers.FastPBKDF2PasswordHasher"]
 
+# --- Authentication limits --------------------------------------------------
+# Every test client is 127.0.0.1, and the cache that holds throttle counts
+# outlives a single test, so realistic limits would let one test class's
+# logins exhaust the next one's allowance. The throttle and lockout tests set
+# their own low limits with override_settings and clear the cache.
+AUTH_THROTTLE_RATES = {scope: "100000/min" for scope in AUTH_THROTTLE_RATES}  # noqa: F405
+ADMIN_LOGIN_FAILURE_LIMIT = 100000
+
 # --- Logging ----------------------------------------------------------------
 # The notifications logger reports every routed event at INFO; across the suite
 # that is noise. Warnings and errors still print, and assertLogs() sets its own

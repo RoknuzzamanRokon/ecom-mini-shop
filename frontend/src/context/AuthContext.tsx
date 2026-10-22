@@ -8,12 +8,13 @@ import React, {
   useCallback,
 } from "react";
 import { AuthUser } from "@/lib/types";
-import { loginUser, refreshAccessToken, getCurrentUser } from "@/lib/api";
+import { loginUser, getCurrentUser, revokeRefreshToken } from "@/lib/api";
 import {
   clearTokens,
   getAuthToken,
   getRefreshToken,
   onAuthCleared,
+  refreshTokenOnce,
   setTokens,
 } from "@/lib/auth";
 
@@ -55,20 +56,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const userData = await getCurrentUser(token);
       setUser(userData);
     } catch {
-      // Access token may be expired — try refresh
-      const refresh = getRefreshToken();
-      if (refresh) {
-        try {
-          const tokens = await refreshAccessToken(refresh);
-          setTokens(tokens.access, tokens.refresh);
-          const userData = await getCurrentUser(tokens.access);
-          setUser(userData);
-        } catch {
-          // Refresh also failed — clear everything silently
-          clearTokens();
-          setUser(null);
-        }
-      } else {
+      // Access token may be expired — try refresh, through the shared
+      // single-flight coordinator: refresh tokens are single-use
+      // (BLACKLIST_AFTER_ROTATION), so a second, parallel refresh with the
+      // same token would be refused and sign the user out.
+      try {
+        const access = await refreshTokenOnce();
+        if (!access) throw new Error("Session expired");
+        const userData = await getCurrentUser(access);
+        setUser(userData);
+      } catch {
+        // Refresh also failed — clear everything silently
         clearTokens();
         setUser(null);
       }
@@ -94,11 +92,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // -----------------------------------------------------------------------
   // Logout — clears auth tokens but does NOT touch the guest cart
-  // (guest cart uses a different localStorage key: "minishop-cart")
+  // (guest cart uses a different localStorage key: "minishop-cart").
+  // The refresh token is also revoked server-side, without waiting on it.
+  // After a failed refresh (onAuthCleared below) the tokens are already
+  // gone, so there is nothing to revoke.
   // -----------------------------------------------------------------------
   const logout = useCallback(() => {
+    const refresh = getRefreshToken();
     clearTokens();
     setUser(null);
+    if (refresh) void revokeRefreshToken(refresh);
   }, []);
 
   // -----------------------------------------------------------------------

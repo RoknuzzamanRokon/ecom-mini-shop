@@ -1,8 +1,36 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
+from rest_framework_simplejwt.exceptions import InvalidToken
+from rest_framework_simplejwt.serializers import TokenRefreshSerializer
+from rest_framework_simplejwt.settings import api_settings as jwt_settings
+from rest_framework_simplejwt.utils import get_md5_hash_password
+
 from .services import get_user_role_codes, get_user_permissions
 
 User = get_user_model()
+
+
+class RevocationCheckingTokenRefreshSerializer(TokenRefreshSerializer):
+    """SimpleJWT's refresh serializer, plus the password-change check (BUG-013).
+
+    With CHECK_REVOKE_TOKEN, SimpleJWT compares the password-hash claim on
+    access tokens only. A refresh token issued before a password change would
+    keep minting access tokens that are each rejected on use, leaving the
+    client half signed in, so it is refused here instead. A token whose user
+    no longer exists also gets a 401, where the parent raises DoesNotExist.
+    """
+
+    def validate(self, attrs):
+        refresh = self.token_class(attrs["refresh"])
+        user_id = refresh.payload.get(jwt_settings.USER_ID_CLAIM)
+        user = User.objects.filter(**{jwt_settings.USER_ID_FIELD: user_id}).first()
+        if user is None:
+            raise InvalidToken("No active account found for the given token.")
+        if jwt_settings.CHECK_REVOKE_TOKEN and refresh.payload.get(
+            jwt_settings.REVOKE_TOKEN_CLAIM
+        ) != get_md5_hash_password(user.password):
+            raise InvalidToken("The user's password has been changed.")
+        return super().validate(attrs)
 
 
 class CurrentUserSerializer(serializers.ModelSerializer):
