@@ -35,6 +35,12 @@ source venv/bin/activate       # macOS/Linux
 # 2. Install dependencies
 pip install -r requirements.txt
 
+# 2b. Create backend/.env (gitignored) with the database URL and two
+#     different secret keys -- see "Environment variables" below
+#     DATABASE_URL=mysql://user:password@127.0.0.1:3306/minishop
+#     DJANGO_SECRET_KEY=<generated>
+#     DJANGO_JWT_SIGNING_KEY=<generated, not the same value>
+
 # 3. Apply database migrations
 python manage.py migrate
 
@@ -60,14 +66,51 @@ Then open:
 
 ## Settings
 
-`config/settings/` holds three modules. Select one with `--settings=` or
+`config/settings/` holds four modules. Select one with `--settings=` or
 `DJANGO_SETTINGS_MODULE`.
 
 | Module | Selected by | Notes |
 | --- | --- | --- |
 | `config.settings.base` | neither, directly | Shared configuration only. |
-| `config.settings.dev` | `manage.py`, `wsgi.py`, `asgi.py` (default) | `DEBUG = True`. Value-for-value identical to the pre-split `config/settings.py`. |
-| `config.settings.test` | the test suite | Same application behaviour as `dev`; only the cost of running it differs. |
+| `config.settings.dev` | `manage.py` (default) | `DEBUG = True`. Refuses to start without both secret keys. |
+| `config.settings.test` | the test suite | Same application behaviour as `dev`; only the cost of running it differs. Makes up throwaway keys when none are set. |
+| `config.settings.prod` | any deployment | `DEBUG = False`, HTTPS redirect, HSTS, secure cookies, full password validators; hosts and origins from the environment. |
+
+`wsgi.py` and `asgi.py` have no default: a server started without
+`DJANGO_SETTINGS_MODULE` stops with an error instead of running as `dev`.
+
+### Environment variables
+
+Read from the environment, or from `backend/.env` (gitignored). A real
+environment variable wins over the same line in `.env`.
+
+| Variable | Used by | Notes |
+| --- | --- | --- |
+| `DATABASE_URL` | all | `mysql://user:password@host:3306/name`. MySQL 8 only. |
+| `DJANGO_SECRET_KEY` | all | Sessions, CSRF, password-reset links. Required by `dev` and `prod`. |
+| `DJANGO_JWT_SIGNING_KEY` | all | Signs API access and refresh tokens. Must differ from `DJANGO_SECRET_KEY`. Required by `dev` and `prod`. |
+| `DJANGO_ALLOWED_HOSTS` | `prod` | Comma-separated. Required. |
+| `DJANGO_CORS_ALLOWED_ORIGINS` | `prod` | Comma-separated storefront origins, e.g. `https://shop.example.com`. Required. |
+| `DJANGO_CSRF_TRUSTED_ORIGINS` | `prod` | Comma-separated. Optional. |
+| `DJANGO_BEHIND_TLS_PROXY` | `prod` | `true` when a proxy terminates HTTPS and sets `X-Forwarded-Proto`. Only when the proxy overwrites that header. |
+| `DJANGO_SECURE_HSTS_SECONDS` | `prod` | Optional; one year by default. |
+
+Generate each key with:
+
+```bash
+python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+```
+
+`prod` wants each key at least 50 characters long. The key that used to be
+committed in `config/settings/base.py` is in git history: treat it as public
+and never reuse it. Changing `DJANGO_JWT_SIGNING_KEY` signs every API client
+out; changing `DJANGO_SECRET_KEY` ends every admin session.
+
+Before a deployment, this must report no issues:
+
+```bash
+python manage.py check --deploy --fail-level WARNING --settings=config.settings.prod
+```
 
 ## Running Tests
 
@@ -102,7 +145,7 @@ against a MySQL 8 service container, then `npm run typecheck` and `npm run build
 for the frontend. It is verification only — no deploy, publish or release step.
 
 CI supplies `DATABASE_URL` as an environment variable (there is no `.env` in a
-fresh checkout) and runs the suite with `--parallel 4` rather than the settings
+fresh checkout), generates throwaway secret keys for each run, and runs the suite with `--parallel 4` rather than the settings
 default, because against a local database the suite is CPU-bound rather than
 round-trip-bound.
 

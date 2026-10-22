@@ -79,6 +79,14 @@ jobs:
           echo "MySQL did not become ready in time"
           exit 1
 
+      - name: Generate throwaway secret keys
+        # config.settings.dev refuses to start without both keys, and there is
+        # no backend/.env in a fresh checkout. Made up per run: nothing CI signs
+        # outlives the job. (config.settings.test would make its own.)
+        run: |
+          echo "DJANGO_SECRET_KEY=$(python -c 'import secrets; print(secrets.token_urlsafe(50))')" >> "$GITHUB_ENV"
+          echo "DJANGO_JWT_SIGNING_KEY=$(python -c 'import secrets; print(secrets.token_urlsafe(50))')" >> "$GITHUB_ENV"
+
       - name: Django system checks
         working-directory: backend
         run: |

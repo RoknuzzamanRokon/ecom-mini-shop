@@ -10,12 +10,21 @@ a change would, it belongs in a test, not in this file.
 
 import os
 
+from django.core.management.utils import get_random_secret_key
+
 from .base import *  # noqa: F401,F403
 from .base import database_config_from_url
 
 # Django's test runner forces ``DEBUG = False`` anyway (``setup_test_environment``);
 # stating it here keeps the module honest about what the suite actually runs under.
 DEBUG = False
+
+# --- Secrets ----------------------------------------------------------------
+# The suite signs nothing that outlives the run, so a fresh checkout or CI job
+# needs no keys: missing ones are made up here. Keys from backend/.env are used
+# when present.
+SECRET_KEY = SECRET_KEY or get_random_secret_key()  # noqa: F405
+SIMPLE_JWT["SIGNING_KEY"] = SIMPLE_JWT["SIGNING_KEY"] or get_random_secret_key()  # noqa: F405
 
 ALLOWED_HOSTS = ["127.0.0.1", "localhost", "testserver"]
 
