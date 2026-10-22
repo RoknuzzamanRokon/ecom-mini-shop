@@ -1228,6 +1228,8 @@ body.mp-userform { accent-color: var(--mp-grant); }
 .mp-role-status input:checked ~ .mp-role-status-pill .mp-role-status-on { display: inline; }
 .mp-role-status input:checked ~ .mp-role-status-pill .mp-role-status-off { display: none; }
 
+.mp-role-status input:disabled ~ .mp-role-status-pill { cursor: default; }
+
 .mp-role-status input:focus-visible ~ .mp-role-status-pill {
   outline: 2px solid var(--jp-kinari-gold);
   outline-offset: 2px;

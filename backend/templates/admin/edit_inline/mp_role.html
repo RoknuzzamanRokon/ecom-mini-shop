@@ -51,9 +51,15 @@
           </span>
 
           <span class="mp-role-head-actions">
-            {# The is_active checkbox, drawn as a status pill. #}
+            {# The is_active checkbox, drawn as a status pill. Without change #}
+            {# permission (writes need the RBAC wildcard) the pill shows the  #}
+            {# saved state from a disabled, unnamed box and posts nothing.    #}
             <span class="mp-role-status">
-              {{ inline_admin_form.form.is_active }}
+              {% if inline_admin_formset.has_change_permission %}
+                {{ inline_admin_form.form.is_active }}
+              {% else %}
+                <input type="checkbox" id="{{ inline_admin_form.form.is_active.id_for_label }}" disabled{% if original.is_active %} checked{% endif %}>
+              {% endif %}
               <label for="{{ inline_admin_form.form.is_active.id_for_label }}"
                      class="mp-role-status-pill">
                 <span class="mp-role-dot" aria-hidden="true"></span>

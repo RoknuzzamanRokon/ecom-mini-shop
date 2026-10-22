@@ -5,6 +5,11 @@ from .models import Permission, Role, UserPermission, UserRole
 
 User = get_user_model()
 
+#: System roles only a wildcard holder may assign, revoke, edit or deactivate,
+#: and that nobody may delete. The Console API and the Django admin both read
+#: this one definition.
+PROTECTED_ROLE_CODES = frozenset({Role.ROLE_SUPER_ADMINISTRATOR, Role.ROLE_ADMINISTRATOR})
+
 
 def get_user_role_codes(user) -> Set[str]:
     """
@@ -168,6 +173,35 @@ def has_wildcard_delegation(actor) -> bool:
     if actor.is_superuser:
         return True
     return "*" in get_user_permissions(actor)
+
+
+def get_user_management_denial(actor, target):
+    """
+    Why `actor` may not manage `target`'s account, or None when they may.
+
+    "Manage" covers editing the account, changing its password, deactivating
+    or deleting it, and changing its roles or grants. A wildcard holder may
+    manage anyone. Everyone else may only manage an account that has no
+    protected role and whose effective permissions are a subset of their own,
+    so they can never act as, or lock out, someone above them. Only a Django
+    superuser may manage another superuser: the flag also unlocks the whole
+    Django admin, which the RBAC wildcard does not.
+
+    Self-management is a separate question each caller answers: editing one's
+    own profile is fine, changing one's own roles never is.
+    """
+    if not actor or not actor.is_authenticated:
+        return "Not signed in."
+    if target.is_superuser and not actor.is_superuser:
+        return "Only a superuser can modify a superuser account."
+    if has_wildcard_delegation(actor):
+        return None
+    if get_user_role_codes(target) & PROTECTED_ROLE_CODES:
+        return "Only a Super Administrator can modify an account that holds a protected role."
+    beyond = get_user_permissions(target) - get_user_permissions(actor)
+    if beyond:
+        return "This account holds permissions you do not hold: " + ", ".join(sorted(beyond))
+    return None
 
 
 def get_delegatable_permission_codes(actor) -> Set[str]:

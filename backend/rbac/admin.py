@@ -2,13 +2,17 @@ from django import forms
 from django.contrib import admin
 from django.contrib.admin.widgets import RelatedFieldWidgetWrapper
 from django.db.models import Count
-from django.contrib.auth.models import Permission as AuthPermission, User
-from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.contrib.auth.models import Group, Permission as AuthPermission, User
+from django.contrib.auth.admin import GroupAdmin as BaseGroupAdmin, UserAdmin as BaseUserAdmin
 from django.contrib.auth.forms import UserChangeForm as BaseUserChangeForm
+from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext_lazy as _
 from .models import Permission, Role, RolePermission, UserPermission, UserRole
 from .services import (
+    PROTECTED_ROLE_CODES,
     get_delegatable_permission_codes,
+    get_user_management_denial,
+    get_user_permissions,
     get_user_role_codes,
     has_wildcard_delegation,
 )
@@ -43,6 +47,28 @@ def can_edit_minishop_permissions(user):
     if user is None or not user.is_authenticated:
         return False
     return user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user)
+
+
+class WildcardOnlyWritesMixin:
+    """
+    Add, change and delete for wildcard holders only (BUG-002).
+
+    These admins write RBAC rows directly -- a role assignment, a direct
+    grant, a role's permission, the permission catalogue itself -- so any
+    write is a way to hand out any permission, the actor's own included. The
+    Django model permission alone is not enough; viewing still follows it.
+    Role assignments and grants for everyone else go through the Console API,
+    which applies the delegation rules.
+    """
+
+    def has_add_permission(self, request, *args):
+        return super().has_add_permission(request, *args) and has_wildcard_delegation(request.user)
+
+    def has_change_permission(self, request, obj=None):
+        return super().has_change_permission(request, obj) and has_wildcard_delegation(request.user)
+
+    def has_delete_permission(self, request, obj=None):
+        return super().has_delete_permission(request, obj) and has_wildcard_delegation(request.user)
 
 
 class MiniShopUserChangeForm(BaseUserChangeForm):
@@ -102,6 +128,19 @@ class RoleAdminForm(forms.ModelForm):
         model = Role
         fields = "__all__"
 
+    def clean_code(self):
+        """
+        Only reached on add: RoleAdmin makes the code read-only afterwards,
+        because permissions resolve by role code, so renaming a role into
+        SUPER_ADMINISTRATOR would hand its holders the wildcard (BUG-002).
+        """
+        code = (self.cleaned_data.get("code") or "").strip()
+        if code == "*":
+            raise forms.ValidationError(_('"*" is not a role code.'))
+        if code in PROTECTED_ROLE_CODES and (self.actor is None or not has_wildcard_delegation(self.actor)):
+            raise forms.ValidationError(_("Only a Super Administrator can create a protected role."))
+        return code
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         field = self.fields[ROLE_PERMS_FIELD]
@@ -151,6 +190,49 @@ class RoleAdmin(admin.ModelAdmin):
             ),
         }),
     )
+
+    def get_readonly_fields(self, request, obj=None):
+        readonly = tuple(super().get_readonly_fields(request, obj))
+        return readonly + ("code",) if obj is not None else readonly
+
+    def has_change_permission(self, request, obj=None):
+        """Protected roles are read-only to everyone below the wildcard."""
+        if obj is not None and obj.code in PROTECTED_ROLE_CODES and not has_wildcard_delegation(request.user):
+            return False
+        return super().has_change_permission(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        """Protected roles are never deleted here, matching the Console API."""
+        if obj is not None and obj.code in PROTECTED_ROLE_CODES:
+            return False
+        return super().has_delete_permission(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        # The changelist's bulk delete checks the model permission only.
+        if queryset.filter(code__in=PROTECTED_ROLE_CODES).exists():
+            raise PermissionDenied("Protected roles cannot be deleted.")
+        super().delete_queryset(request, queryset)
+
+    def save_model(self, request, obj, form, change):
+        """
+        Re-checked here because the changelist's is_active column saves
+        through this method without opening the change form.
+        """
+        if change and not has_wildcard_delegation(request.user):
+            previous = Role.objects.filter(pk=obj.pk).values("code", "is_active").first()
+            if previous and previous["code"] in PROTECTED_ROLE_CODES:
+                raise PermissionDenied("Only a Super Administrator can modify a protected role.")
+            # Activating a role hands its permissions to every holder, so the
+            # actor must hold all of them -- otherwise reactivating a role that
+            # was switched off to revoke their own access would undo that.
+            if previous and not previous["is_active"] and obj.is_active:
+                beyond = set(obj.permissions.values_list("code", flat=True)) - get_user_permissions(request.user)
+                if beyond:
+                    raise PermissionDenied(
+                        "Cannot activate a role that grants permissions you do not hold: "
+                        + ", ".join(sorted(beyond))
+                    )
+        super().save_model(request, obj, form, change)
 
     def get_form(self, request, obj=None, **kwargs):
         """
@@ -211,6 +293,16 @@ class RoleAdmin(admin.ModelAdmin):
                 role=role, permission_id__in=removed
             ).delete()
 
+    @admin.display(description=_("Permissions"))
+    def role_permissions(self, obj):
+        """
+        What the board shows when the viewer may not edit the role (a
+        protected role, below the wildcard). Django renders a read-only field
+        through a ModelAdmin method of the same name.
+        """
+        codes = obj.permissions.order_by("code").values_list("code", flat=True) if obj else []
+        return ", ".join(codes) or "-"
+
     def get_queryset(self, request):
         qs = super().get_queryset(request)
         return qs.annotate(
@@ -229,15 +321,34 @@ class RoleAdmin(admin.ModelAdmin):
     permission_count.admin_order_field = "permission_count"
 
 
+class PermissionAdminForm(forms.ModelForm):
+    class Meta:
+        model = Permission
+        fields = "__all__"
+
+    def clean_code(self):
+        code = (self.cleaned_data.get("code") or "").strip()
+        if code == "*":
+            raise forms.ValidationError(_('"*" is the wildcard, not a permission code.'))
+        return code
+
+
 @admin.register(Permission)
-class PermissionAdmin(admin.ModelAdmin):
+class PermissionAdmin(WildcardOnlyWritesMixin, admin.ModelAdmin):
     list_display = ("code", "name", "resource", "action", "created_at")
     search_fields = ("code", "name", "resource", "action", "description")
     list_filter = ("resource", "created_at")
+    form = PermissionAdminForm
+
+    def get_readonly_fields(self, request, obj=None):
+        # Grants and checks reference the code, so renaming a permission would
+        # silently change what every holder can do.
+        readonly = tuple(super().get_readonly_fields(request, obj))
+        return readonly + ("code", "resource", "action") if obj is not None else readonly
 
 
 @admin.register(UserRole)
-class UserRoleAdmin(admin.ModelAdmin):
+class UserRoleAdmin(WildcardOnlyWritesMixin, admin.ModelAdmin):
     list_display = ("user", "role", "is_active", "assigned_at", "assigned_by")
     list_editable = ("is_active",)
     search_fields = ("user__username", "user__email", "role__code", "role__name")
@@ -250,7 +361,7 @@ class UserRoleAdmin(admin.ModelAdmin):
 
 
 @admin.register(UserPermission)
-class UserPermissionAdmin(admin.ModelAdmin):
+class UserPermissionAdmin(WildcardOnlyWritesMixin, admin.ModelAdmin):
     """
     Direct per-user grants, listed the same way UserRole assignments are.
 
@@ -277,7 +388,7 @@ class UserPermissionAdmin(admin.ModelAdmin):
 
 
 @admin.register(RolePermission)
-class RolePermissionAdmin(admin.ModelAdmin):
+class RolePermissionAdmin(WildcardOnlyWritesMixin, admin.ModelAdmin):
     list_display = ("role", "permission", "created_at")
     search_fields = ("role__code", "role__name", "permission__code", "permission__name")
     list_filter = ("role", "permission__resource")
@@ -290,7 +401,7 @@ class RolePermissionAdmin(admin.ModelAdmin):
 
 # --- Custom User Admin ---
 
-class UserRoleInline(admin.TabularInline):
+class UserRoleInline(WildcardOnlyWritesMixin, admin.TabularInline):
     """
     Role assignments, rendered as cards rather than Django's stock table.
 
@@ -317,10 +428,40 @@ class UserRoleInline(admin.TabularInline):
     verbose_name = _("role assignment")
     verbose_name_plural = _("Role assignments")
     template = "admin/edit_inline/mp_role.html"
+    # Writes need the wildcard (WildcardOnlyWritesMixin): an inline row is a
+    # role assignment, and the inline has no delegation rules of its own. Other
+    # operators see the cards read-only and assign roles in the Console.
 
     def get_queryset(self, request):
         # The card shows the role's code, name and permission count per row.
         return super().get_queryset(request).select_related("role", "assigned_by")
+
+
+admin.site.unregister(Group)
+
+
+@admin.register(Group)
+class GroupAdmin(BaseGroupAdmin):
+    """
+    Groups carry Django-admin permissions, so editing one -- the actor's own
+    included -- changes what its members may do in this admin. Superusers
+    only, like the user form's group and permission fields.
+    """
+
+    def has_add_permission(self, request):
+        return request.user.is_superuser
+
+    def has_change_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+    def has_delete_permission(self, request, obj=None):
+        return request.user.is_superuser
+
+
+#: Fields on the user form that decide Django-admin access. Read-only for
+#: everyone but superusers, or auth.change_user would be a path to any
+#: permission, superuser status included (BUG-002 (f)).
+SUPERUSER_ONLY_USER_FIELDS = ("is_superuser", "is_staff", "user_permissions", "groups")
 
 
 admin.site.unregister(User)
@@ -412,6 +553,36 @@ class UserAdmin(BaseUserAdmin):
         """
         return render_minishop_permission_board(obj)
 
+    def get_readonly_fields(self, request, obj=None):
+        readonly = tuple(super().get_readonly_fields(request, obj))
+        if request.user.is_superuser:
+            return readonly
+        return readonly + SUPERUSER_ONLY_USER_FIELDS
+
+    def _may_manage(self, request, obj):
+        """
+        The Console's boundary (rbac.services.get_user_management_denial),
+        except that anyone may edit their own account here -- the fields that
+        would let them raise their own access are read-only or wildcard-only.
+        """
+        if obj is None or obj.pk == request.user.pk:
+            return True
+        return get_user_management_denial(request.user, obj) is None
+
+    def has_change_permission(self, request, obj=None):
+        # Also guards the "change password" form, which asks this method.
+        return super().has_change_permission(request, obj) and self._may_manage(request, obj)
+
+    def has_delete_permission(self, request, obj=None):
+        return super().has_delete_permission(request, obj) and self._may_manage(request, obj)
+
+    def delete_queryset(self, request, queryset):
+        # The changelist's bulk delete checks the model permission only.
+        for user in queryset:
+            if not self._may_manage(request, user):
+                raise PermissionDenied(f"You may not delete {user.username}.")
+        super().delete_queryset(request, queryset)
+
     def get_fieldsets(self, request, obj=None):
         """
         Swap the read-only board for the editable one, for superusers only.
@@ -467,7 +638,16 @@ class UserAdmin(BaseUserAdmin):
 
         Revoking sets is_active=False rather than deleting, matching UserRole,
         so the grant history and its granted_by/granted_at survive.
+
+        Only the checkboxes the board rendered editable are reconciled
+        (BUG-039). A locked one -- inherited from a role, or every one when
+        the account has full access -- is disabled and posts nothing, which
+        must read as "leave it alone", never as "revoke it". The lock is read
+        before the role inline is saved, so it matches what the form showed.
         """
+        user = form.instance
+        locked_ids = self._locked_permission_ids(user)
+
         super().save_related(request, form, formsets, change)
 
         # Re-checked server-side: the fieldset swap above is a UI affordance,
@@ -478,26 +658,20 @@ class UserAdmin(BaseUserAdmin):
         if DIRECT_PERMS_FIELD not in form.fields:
             return
 
-        user = form.instance
         submitted = {p.pk for p in form.cleaned_data.get(DIRECT_PERMS_FIELD, [])}
+        submitted -= locked_ids
 
-        # Anything the roles already grant is not an exception, so it never
-        # becomes a direct row even if a crafted POST asserts it.
-        inherited_ids = set(
-            Permission.objects.filter(
-                role_permissions__role__user_roles__user=user,
-                role_permissions__role__user_roles__is_active=True,
-                role_permissions__role__is_active=True,
-            ).values_list("id", flat=True)
-        )
-        submitted -= inherited_ids
+        # Anything the roles grant now (a role added in this same POST
+        # included) is not an exception, so it never becomes a direct row even
+        # if a crafted POST asserts it. A ticked existing row is still kept.
+        to_grant = submitted - self._locked_permission_ids(user, inherited_only=True)
 
         existing = {
             row.permission_id: row
             for row in UserPermission.objects.filter(user=user)
         }
 
-        for permission_id in submitted:
+        for permission_id in to_grant:
             row = existing.get(permission_id)
             if row is None:
                 UserPermission.objects.create(
@@ -511,9 +685,28 @@ class UserAdmin(BaseUserAdmin):
                 row.save(update_fields=["is_active", "granted_by"])
 
         for permission_id, row in existing.items():
-            if row.is_active and permission_id not in submitted:
+            if row.is_active and permission_id not in submitted and permission_id not in locked_ids:
                 row.is_active = False
                 row.save(update_fields=["is_active"])
+
+    @staticmethod
+    def _locked_permission_ids(user, inherited_only=False):
+        """
+        Ids the direct-grant board renders locked for `user`: those an active
+        role grants, or every permission for a full-access account (the same
+        rule as rbac.widgets). `inherited_only` skips the full-access case.
+        """
+        if not inherited_only and (
+            user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user)
+        ):
+            return set(Permission.objects.values_list("id", flat=True))
+        return set(
+            Permission.objects.filter(
+                role_permissions__role__user_roles__user=user,
+                role_permissions__role__user_roles__is_active=True,
+                role_permissions__role__is_active=True,
+            ).values_list("id", flat=True)
+        )
 
     def formfield_for_manytomany(self, db_field, request, **kwargs):
         if db_field.name == "user_permissions":

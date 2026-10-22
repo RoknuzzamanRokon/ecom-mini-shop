@@ -9,7 +9,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 
 from rbac.models import Role, Permission, UserRole
-from rbac.services import get_user_permissions, get_user_role_codes
+from rbac.services import PROTECTED_ROLE_CODES, get_user_permissions, get_user_role_codes
 from sellers.models import SellerProfile
 from shops.models import Shop
 from shop.models import Category, Product, Order
@@ -17,8 +17,6 @@ from customers.models import CustomerProfile, Address
 from audit.models import AuditLog
 
 User = get_user_model()
-
-PROTECTED_ROLE_CODES = {Role.ROLE_SUPER_ADMINISTRATOR, Role.ROLE_ADMINISTRATOR}
 
 
 # ==============================================================================
