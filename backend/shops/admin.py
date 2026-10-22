@@ -4,8 +4,9 @@ from django.core.exceptions import ValidationError
 from django.db.models import Count, Q
 from django.utils.html import format_html
 
-from audit.admin_mixins import ReasonRequiredActionMixin, StatusBadgeMixin
+from audit.admin_mixins import ChangeFormAuditMixin, ReasonRequiredActionMixin, StatusBadgeMixin
 from sellers.models import SellerProfile
+from sellers.services import count_seller_products, get_product_limit
 from .models import Shop
 from .services import ShopService, ShopError, ShopLimitExceededError
 
@@ -17,19 +18,35 @@ class ShopAdminForm(forms.ModelForm):
     def clean_owner(self):
         owner = self.cleaned_data.get("owner")
         # Saving here skips ShopService.create_shop, so the Limited Shop Owner
-        # cap is checked here too. Only a new shop, or one handed to a different
-        # seller, takes one of the owner's slots.
+        # caps are checked here too. Only a new shop, or one handed to a
+        # different seller, takes one of the owner's slots.
         if owner and owner.pk != self.instance.owner_id:
+            # The change form runs in one transaction, so this lock holds until
+            # the shop is saved: two forms cannot both hand this owner a shop.
+            SellerProfile.objects.select_for_update().filter(pk=owner.pk).first()
             try:
                 ShopService.validate_shop_cap(owner)
             except ShopLimitExceededError as exc:
                 raise forms.ValidationError(str(exc))
+            # The shop's products come with it, and a Limited owner's product
+            # cap counts every product they hold (BUG-046).
+            limit = get_product_limit(owner)
+            if limit is not None and self.instance.pk:
+                incoming = self.instance.products.count()
+                if count_seller_products(owner) + incoming > limit:
+                    raise forms.ValidationError(
+                        f"This shop has {incoming} products, which would take {owner.business_name} "
+                        f"over the Limited Shop Owner limit of {limit}."
+                    )
         return owner
 
 
 @admin.register(Shop)
-class ShopAdmin(ReasonRequiredActionMixin, StatusBadgeMixin, admin.ModelAdmin):
+class ShopAdmin(ChangeFormAuditMixin, ReasonRequiredActionMixin, StatusBadgeMixin, admin.ModelAdmin):
     form = ShopAdminForm
+    # Edits and creations, ownership moves included, write ADMIN_SHOP_EDITED /
+    # ADMIN_SHOP_CREATED; lifecycle changes go through the actions below.
+    audit_action_prefix = 'ADMIN_SHOP'
     list_display = (
         'shop_display', 'owner_display', 'status_badge', 'product_count',
         'phone', 'created_at'

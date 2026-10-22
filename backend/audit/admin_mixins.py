@@ -9,6 +9,7 @@ therefore import from here without creating a cycle.
 from django.contrib import messages
 from django.contrib.admin import helpers
 from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.files import File
 from django.template.response import TemplateResponse
 from django.utils.html import format_html
 
@@ -71,6 +72,62 @@ class StatusBadgeMixin:
 
 CONFIRM_FLAG = 'apply_reason'
 REASON_FIELD = 'reason'
+
+
+def _audit_value(value):
+    """A form value as something the AuditLog JSON column can store."""
+    if value is None or isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, File):  # an upload, or the stored file
+        return value.name
+    if hasattr(value, 'pk'):  # a model instance
+        return value.pk
+    if isinstance(value, (list, tuple, set)) or hasattr(value, 'values_list'):
+        return [_audit_value(item) for item in value]
+    if hasattr(value, 'isoformat'):
+        return value.isoformat()
+    return str(value)
+
+
+class ChangeFormAuditMixin:
+    """
+    One AuditLog row per save made through the admin add or change form, or
+    through the changelist's editable columns, which reach the same
+    save_model() (TASK-006). An edit records only the fields that changed,
+    as previous_state and new_state.
+
+    Set `audit_action_prefix` (e.g. 'ADMIN_ORDER'); the actions are
+    '<prefix>_CREATED' and '<prefix>_EDITED'. Lifecycle changes do not come
+    through here: those fields are read-only and go through the services,
+    which write their own rows.
+    """
+
+    audit_action_prefix = None
+    #: False when a service already records the creation (ProductAdmin).
+    audit_creations = True
+
+    def audit_context(self, obj):
+        """Hook for per-model AuditService kwargs (shop=..., seller=...)."""
+        return {}
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        if (change and not form.changed_data) or (not change and not self.audit_creations):
+            return
+        fields = form.changed_data if change else list(form.cleaned_data)
+        new_state = {name: _audit_value(form.cleaned_data.get(name)) for name in fields}
+        previous_state = (
+            {name: _audit_value(form.initial.get(name)) for name in fields} if change else None
+        )
+        AuditService.log(
+            action=f"{self.audit_action_prefix}_{'EDITED' if change else 'CREATED'}",
+            target=obj,
+            actor=request.user,
+            previous_state=previous_state,
+            new_state=new_state,
+            ip_address=get_client_ip(request),
+            **self.audit_context(obj),
+        )
 
 
 class ReasonRequiredActionMixin:

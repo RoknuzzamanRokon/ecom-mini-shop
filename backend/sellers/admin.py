@@ -3,11 +3,15 @@ from django.contrib import admin
 from django.db import transaction
 from django.db.models import Count
 
-from audit.admin_mixins import CONFIRM_FLAG, ReasonRequiredActionMixin, StatusBadgeMixin
+from audit.admin_mixins import (
+    CONFIRM_FLAG, ChangeFormAuditMixin, ReasonRequiredActionMixin, StatusBadgeMixin,
+)
 from points.models import SellerWallet
 from points.services import PointService
 from .models import LimitedShopOwnerProductLimit, SellerProfile
-from .services import approve_seller, suspend_seller, reject_seller, reactivate_seller
+from .services import (
+    approve_seller, count_seller_products, suspend_seller, reject_seller, reactivate_seller,
+)
 
 
 class SellerProfileAdminForm(forms.ModelForm):
@@ -31,22 +35,31 @@ class SellerProfileAdminForm(forms.ModelForm):
                 self.fields[name].widget.attrs["rows"] = 4
 
     def clean_seller_type(self):
-        # A Full Shop Owner may own several shops; a Limited one only one.
+        # A Full Shop Owner may own several shops; a Limited one only one, and
+        # only up to the product limit (BUG-046).
         seller_type = self.cleaned_data.get("seller_type")
-        if (
-            seller_type == SellerProfile.TYPE_LIMITED_SHOP_OWNER
-            and self.instance.pk
-            and self.instance.shops.count() > 1
-        ):
-            raise forms.ValidationError(
-                "This seller owns more than one shop. A Limited Shop Owner may own only one."
-            )
+        if seller_type == SellerProfile.TYPE_LIMITED_SHOP_OWNER and self.instance.pk:
+            # Held until the form is saved (the change form is one transaction),
+            # so no shop or product can be added to the seller in between.
+            SellerProfile.objects.select_for_update().filter(pk=self.instance.pk).first()
+            if self.instance.shops.count() > 1:
+                raise forms.ValidationError(
+                    "This seller owns more than one shop. A Limited Shop Owner may own only one."
+                )
+            limit = LimitedShopOwnerProductLimit.get_limit()
+            products = count_seller_products(self.instance)
+            if products > limit:
+                raise forms.ValidationError(
+                    f"This seller has {products} products. A Limited Shop Owner may hold at most {limit}."
+                )
         return seller_type
 
 
 @admin.register(SellerProfile)
-class SellerProfileAdmin(ReasonRequiredActionMixin, StatusBadgeMixin, admin.ModelAdmin):
+class SellerProfileAdmin(ChangeFormAuditMixin, ReasonRequiredActionMixin, StatusBadgeMixin, admin.ModelAdmin):
     form = SellerProfileAdminForm
+    # Every edit and creation writes ADMIN_SELLER_EDITED / ADMIN_SELLER_CREATED.
+    audit_action_prefix = 'ADMIN_SELLER'
     list_display = (
         'user', 'business_name', 'seller_type', 'status_badge', 
         'shop_count', 'product_count', 'created_at'
@@ -58,7 +71,13 @@ class SellerProfileAdmin(ReasonRequiredActionMixin, StatusBadgeMixin, admin.Mode
         'suspended_at', 'created_at', 'updated_at'
     )
     actions = ['approve_and_activate', 'suspend_sellers', 'reject_sellers', 'reactivate_sellers']
-    
+
+    def get_readonly_fields(self, request, obj=None):
+        readonly = tuple(super().get_readonly_fields(request, obj))
+        # Re-pointing a profile at another account would hand that account the
+        # seller's wallet, shops and products (BUG-046).
+        return readonly + ('user',) if obj is not None else readonly
+
     def save_model(self, request, obj, form, change):
         super().save_model(request, obj, form, change)
         # A Full Shop Owner's points never expire. Made Limited, they start to,

@@ -3,6 +3,8 @@ from decimal import Decimal
 from django import forms
 from django.conf import settings
 from django.contrib import admin, messages
+from django.contrib.admin import helpers
+from django.template.response import TemplateResponse
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
@@ -16,9 +18,14 @@ from .models import (
     LOW_STOCK_THRESHOLD, Category, Order, OrderItem, Product, ProductImage,
     ProductInventory, InventoryTransaction, Payment, Refund
 )
-from shop.services import OrderService
+from shop.inventory_service import InventoryService
+from shop.services import OrderService, ProductLimitExceededError, ProductService
 from shop.invoice import build_order_invoice_pdf, invoice_filename
-from audit.admin_mixins import StatusBadgeMixin
+from audit.admin_mixins import (
+    CONFIRM_FLAG, REASON_FIELD, ChangeFormAuditMixin, StatusBadgeMixin,
+)
+from audit.utils import get_client_ip
+from points.services import InsufficientPointsError
 
 
 @admin.register(Category)
@@ -131,6 +138,19 @@ class ProductAdminForm(forms.ModelForm):
                 widget = self.fields[name].widget
                 widget.attrs["class"] = f"{widget.attrs.get('class', '')} mp-money".strip()
 
+    def clean(self):
+        cleaned = super().clean()
+        # Adding a product here is creating one for the shop's seller, so the
+        # Limited-owner cap and the creation fee apply as in the Seller Center
+        # (BUG-046). The fee itself is charged in ProductAdmin.save_model.
+        shop = cleaned.get("shop")
+        if self.instance.pk is None and shop is not None:
+            try:
+                ProductService.check_admin_creation_allowed(shop.owner)
+            except (ProductLimitExceededError, InsufficientPointsError) as exc:
+                self.add_error("shop", str(exc))
+        return cleaned
+
 
 def storefront_checks(product):
     """What decides whether `product` shows on the storefront, one check per
@@ -154,8 +174,16 @@ def storefront_checks(product):
 
 
 @admin.register(Product)
-class ProductAdmin(StatusBadgeMixin, admin.ModelAdmin):
+class ProductAdmin(ChangeFormAuditMixin, StatusBadgeMixin, admin.ModelAdmin):
     form = ProductAdminForm
+    audit_action_prefix = "ADMIN_PRODUCT"
+    # ProductService.record_admin_created_product writes PRODUCT_CREATED.
+    audit_creations = False
+
+    #: Moderation goes through ProductService (the Console's product actions);
+    #: a raw form save would skip the transition rules and the audit trail, and
+    #: could name any staff member as the reviewer (BUG-021).
+    LIFECYCLE_FIELDS = ("status", "submitted_at", "reviewed_at", "reviewed_by", "rejection_reason")
     list_display = (
         "name",
         "category",
@@ -169,7 +197,9 @@ class ProductAdmin(StatusBadgeMixin, admin.ModelAdmin):
         "is_active",
         "image_preview",
     )
-    list_editable = ("price", "old_price", "stock", "badge", "is_active")
+    # Not "stock": it is changed through InventoryService (the "Adjust stock"
+    # action on Product inventories), never by overwriting the number.
+    list_editable = ("price", "old_price", "badge", "is_active")
     list_filter = ("status", "category", "shop", "is_active", "badge")
     search_fields = ("name", "description", "shop__name", "shop__owner__business_name")
     prepopulated_fields = {"slug": ("name",)}
@@ -213,6 +243,21 @@ class ProductAdmin(StatusBadgeMixin, admin.ModelAdmin):
                 "fields": ("status", "is_active", "storefront_checklist"),
             }),
         )
+
+    def get_readonly_fields(self, request, obj=None):
+        readonly = tuple(super().get_readonly_fields(request, obj)) + self.LIFECYCLE_FIELDS
+        if obj is not None:
+            # Moving a product between shops (and sellers) skips the product cap
+            # and the creation fee; stock goes through InventoryService.
+            readonly += ("shop", "stock")
+        return readonly
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        if not change:
+            ProductService.record_admin_created_product(
+                obj, actor=request.user, ip_address=get_client_ip(request)
+            )
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('category', 'shop', 'shop__owner')
@@ -348,7 +393,8 @@ class OrderItemInline(admin.TabularInline):
 
 
 @admin.register(Order)
-class OrderAdmin(StatusBadgeMixin, admin.ModelAdmin):
+class OrderAdmin(ChangeFormAuditMixin, StatusBadgeMixin, admin.ModelAdmin):
+    audit_action_prefix = "ADMIN_ORDER"
     list_display = (
         "order_number",
         "user",
@@ -364,6 +410,13 @@ class OrderAdmin(StatusBadgeMixin, admin.ModelAdmin):
     readonly_fields = (
         "order_number",
         "user",
+        # Status changes only through the five actions below, which run
+        # OrderService: transition rules, stock release, refunds, delivery,
+        # audit and notifications (BUG-006).
+        "status",
+        # A select over every saved address in the database; the shipping_*
+        # fields hold the order's own copy.
+        "shipping_address",
         "subtotal",
         "discount_total",
         "shipping_fee",
@@ -384,6 +437,14 @@ class OrderAdmin(StatusBadgeMixin, admin.ModelAdmin):
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('user').prefetch_related('items')
+
+    def has_add_permission(self, request):
+        # Orders come from checkout, which reserves stock and prices the items.
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        # Deleting an order cascades its payments and refunds; cancel it instead.
+        return False
 
     def get_urls(self):
         # Registered ahead of super() so "<pk>/invoice/" is matched before
@@ -529,13 +590,98 @@ class StockLevelFilter(admin.SimpleListFilter):
 
 @admin.register(ProductInventory)
 class ProductInventoryAdmin(admin.ModelAdmin):
+    """
+    Counters are read-only (BUG-021): a form saved from a stale page would
+    overwrite reservations made since it loaded, and write no ledger row.
+    Stock changes go through the "Adjust stock" action, which calls
+    InventoryService.adjust_stock under a row lock and records the ledger
+    and audit entries. Rows are created and removed with their product.
+    """
+
     list_display = ("product", "available_display", "reserved_quantity", "sold_quantity", "total_display", "updated_at")
     list_filter = (StockLevelFilter, "updated_at")
     search_fields = ("product__name", "product__slug")
-    readonly_fields = ("created_at", "updated_at")
+    readonly_fields = (
+        "product", "available_quantity", "reserved_quantity", "sold_quantity", "created_at", "updated_at",
+    )
+    actions = ["adjust_stock"]
 
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('product')
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    @admin.action(description="Adjust stock of selected products (reason required)", permissions=["change"])
+    def adjust_stock(self, request, queryset):
+        if not self.has_change_permission(request):
+            raise PermissionDenied
+        quantity_raw = (request.POST.get("quantity") or "").strip()
+        reason = (request.POST.get(REASON_FIELD) or "").strip()
+        errors = []
+
+        if request.POST.get(CONFIRM_FLAG):
+            try:
+                quantity = int(quantity_raw)
+            except ValueError:
+                quantity = None
+                errors.append("Enter the change as a whole number, such as 5 or -3.")
+            if quantity == 0:
+                errors.append("The change cannot be zero.")
+            if len(reason) < 10:
+                errors.append("A reason of at least 10 characters is required.")
+            if not errors:
+                done = 0
+                for inventory in queryset.select_related("product"):
+                    try:
+                        InventoryService.adjust_stock(
+                            product=inventory.product,
+                            quantity_delta=quantity,
+                            actor=request.user,
+                            reason=reason,
+                            ip_address=get_client_ip(request),
+                        )
+                    except ValidationError as exc:
+                        self.message_user(
+                            request, f"Adjusting {inventory.product} failed: {' '.join(exc.messages)}",
+                            messages.ERROR,
+                        )
+                        continue
+                    done += 1
+                if done:
+                    self.message_user(request, f"Adjusted stock of {done} product(s).", messages.SUCCESS)
+                return None
+
+        context = {
+            **self.admin_site.each_context(request),
+            "title": "Adjust stock",
+            "verb": "Adjust stock",
+            "help_text": "The change is added to the available stock of each selected product "
+                         "(use a minus sign to remove units) and recorded in the inventory ledger.",
+            "opts": self.model._meta,
+            "queryset": queryset,
+            "action_checkbox_name": helpers.ACTION_CHECKBOX_NAME,
+            "action_name": "adjust_stock",
+            "confirm_flag": CONFIRM_FLAG,
+            "reason_field": REASON_FIELD,
+            "reason_label": "Reason",
+            "reason": reason,
+            "reason_min_length": 10,
+            "extra_fields": [{
+                "name": "quantity",
+                "label": "Change in available stock",
+                "type": "number",
+                "value": quantity_raw,
+                "hint": "For example 12 to add twelve units, or -3 to remove three.",
+            }],
+            "select_across": request.POST.get("select_across", "0"),
+            "errors": errors,
+            "media": self.media,
+        }
+        return TemplateResponse(request, "admin/admin_actions.html", context)
 
     def available_display(self, obj):
         val = obj.available_quantity

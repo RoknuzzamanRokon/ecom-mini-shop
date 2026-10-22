@@ -56,7 +56,8 @@
 
   .jp-required { color: #DC2626; }
 
-  .jp-action-panel textarea {
+  .jp-action-panel textarea,
+  .jp-action-panel .jp-action-input {
     width: 100%;
     box-sizing: border-box;
     padding: 10px 12px;
@@ -70,7 +71,10 @@
     resize: vertical;
   }
 
-  .jp-action-panel textarea:focus {
+  .jp-action-field { margin-bottom: 16px; }
+
+  .jp-action-panel textarea:focus,
+  .jp-action-panel .jp-action-input:focus {
     outline: none;
     border-color: var(--jp-kinari-gold);
     box-shadow: 0 0 0 3px rgba(186, 134, 48, 0.18);
@@ -152,6 +156,14 @@
   </ul>
 
   <form method="post">{% csrf_token %}
+    {% for field in extra_fields %}
+    <div class="jp-action-field">
+      <label for="id_{{ field.name }}">{{ field.label }} <span class="jp-required">*</span></label>
+      <input id="id_{{ field.name }}" class="jp-action-input" name="{{ field.name }}"
+             type="{{ field.type|default:'text' }}" value="{{ field.value }}" required>
+      {% if field.hint %}<div class="jp-action-hint">{{ field.hint }}</div>{% endif %}
+    </div>
+    {% endfor %}
     <label for="id_reason">{{ reason_label }} <span class="jp-required">*</span></label>
     <textarea id="id_reason"
               name="{{ reason_field }}"

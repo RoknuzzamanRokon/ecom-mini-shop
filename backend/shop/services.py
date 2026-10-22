@@ -82,6 +82,66 @@ class ProductService:
             )
 
     @classmethod
+    def check_admin_creation_allowed(cls, seller: SellerProfile) -> None:
+        """
+        The Limited-owner product cap and the points balance, for a product
+        about to be added in the Django admin (BUG-046). Takes the seller row
+        lock that create_product takes; the admin's change form runs in one
+        transaction, so the lock holds until the product is saved. Raises
+        ProductLimitExceededError or InsufficientPointsError.
+        """
+        product_limit = get_product_limit(seller)
+        if product_limit is not None:
+            SellerProfile.objects.select_for_update().filter(pk=seller.pk).first()
+            cls._check_product_limit(seller, product_limit)
+        required_points = PointService.get_product_creation_cost()
+        balance = PointService.get_balance(seller)
+        if balance < required_points:
+            raise InsufficientPointsError(
+                f"Insufficient points: creating a product requires {required_points} points, "
+                f"but {seller.business_name}'s wallet has {balance} points."
+            )
+
+    @classmethod
+    def record_admin_created_product(cls, product: Product, actor=None, ip_address: Optional[str] = None) -> None:
+        """
+        What create_product does after saving, for a product the Django admin
+        has just saved: the inventory row, the creation fee (every new product
+        costs points, whoever adds it) and the PRODUCT_CREATED audit row. Call
+        inside the admin's transaction, after check_admin_creation_allowed().
+        """
+        from shop.inventory_service import InventoryService
+
+        seller = product.shop.owner
+        InventoryService.get_or_create_inventory(product, default_available=product.stock)
+        required_points = PointService.get_product_creation_cost()
+        PointService.debit(
+            seller=seller,
+            amount=required_points,
+            transaction_type=PointTransaction.TYPE_PRODUCT_CREATION,
+            reason=f"Product creation fee for '{product.name}' (added in the Django admin)",
+            actor=actor,
+            reference_type="PRODUCT",
+            reference_id=str(product.id),
+        )
+        AuditService.log(
+            action="PRODUCT_CREATED",
+            target=product,
+            actor=actor,
+            shop=product.shop,
+            seller=seller,
+            metadata={
+                "name": product.name,
+                "price": str(product.price),
+                "category": product.category.name if product.category_id else None,
+                "shop": product.shop.name,
+                "points_debited": required_points,
+                "created_via": "django_admin",
+            },
+            ip_address=ip_address,
+        )
+
+    @classmethod
     def create_product(
         cls,
         seller: SellerProfile,
