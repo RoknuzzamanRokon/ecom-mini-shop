@@ -21,13 +21,46 @@ export default function Header({ onSearch, searchQuery = "" }: HeaderProps) {
   const router = useRouter();
   const [query, setQuery] = useState(searchQuery);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isMobileSearchOpen, setIsMobileSearchOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Follow the page's search (e.g. Back to /?q=lamp) without an effect, but
+  // not the echo of a search sent from here: the user may have typed on.
+  const [shownSearchQuery, setShownSearchQuery] = useState(searchQuery);
+  const [sentQuery, setSentQuery] = useState(searchQuery);
+  if (searchQuery !== shownSearchQuery) {
+    setShownSearchQuery(searchQuery);
+    if (searchQuery !== sentQuery.trim()) setQuery(searchQuery);
+  }
+
+  useEffect(() => () => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+  }, []);
+
+  // A page with its own search gets it once typing pauses, not per key.
+  const handleQueryChange = (value: string) => {
+    setQuery(value);
+    if (!onSearch) return;
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      setSentQuery(value);
+      onSearch(value);
+    }, 350);
+  };
+
+  // Every other page searches the catalogue on the home page (BUG-033).
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    setIsMobileSearchOpen(false);
     if (onSearch) {
+      setSentQuery(query);
       onSearch(query);
+      return;
     }
+    const term = query.trim();
+    router.push(term ? `/?q=${encodeURIComponent(term)}` : "/");
   };
 
   const handleLogout = () => {
@@ -78,15 +111,12 @@ export default function Header({ onSearch, searchQuery = "" }: HeaderProps) {
         </div>
 
         {/* Quick Search Form */}
-        <form onSubmit={handleSubmit} className="hidden md:flex flex-1 max-w-xl mx-4">
+        <form onSubmit={handleSubmit} role="search" className="hidden md:flex flex-1 max-w-xl mx-4">
           <div className="relative w-full flex items-center shadow-inner rounded-md overflow-hidden bg-surface">
             <input
-              type="text"
+              type="search"
               value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                if (onSearch) onSearch(e.target.value);
-              }}
+              onChange={(e) => handleQueryChange(e.target.value)}
               placeholder="Search products, brands and categories..."
               className="w-full bg-surface text-ink placeholder-ink-muted text-sm py-2 pl-3.5 pr-10 border-0 focus:outline-none"
             />
@@ -102,6 +132,20 @@ export default function Header({ onSearch, searchQuery = "" }: HeaderProps) {
 
         {/* Right Utility Actions */}
         <div className="flex items-center gap-1 sm:gap-4 text-on-nav shrink-0">
+          {/* Phones get search too: this opens the row below the bar. */}
+          <button
+            type="button"
+            onClick={() => setIsMobileSearchOpen((open) => !open)}
+            className="md:hidden flex items-center p-1.5 hover:bg-white/10 rounded-full transition-colors"
+            title="Search"
+            aria-expanded={isMobileSearchOpen}
+            aria-controls="mobile-search"
+          >
+            <span className="material-symbols-outlined text-[24px]">
+              {isMobileSearchOpen ? "close" : "search"}
+            </span>
+          </button>
+
           {/* The nearby page asks for the location itself, so this is a plain link.
               Glow, beacon ring and hover sweep live in .nearby-cta (globals.css). */}
           <Link
@@ -281,6 +325,29 @@ export default function Header({ onSearch, searchQuery = "" }: HeaderProps) {
           </div>
         </div>
       </div>
+
+      {isMobileSearchOpen && (
+        <form id="mobile-search" role="search" onSubmit={handleSubmit} className="md:hidden px-4 pb-2.5">
+          <div className="flex items-center shadow-inner rounded-md overflow-hidden bg-surface">
+            <input
+              type="search"
+              autoFocus
+              value={query}
+              onChange={(e) => handleQueryChange(e.target.value)}
+              placeholder="Search products..."
+              aria-label="Search products"
+              className="w-full bg-surface text-ink placeholder-ink-muted text-sm py-2 pl-3.5 pr-3 border-0 focus:outline-none"
+            />
+            <button
+              type="submit"
+              className="bg-accent hover:bg-accent-hover text-on-accent px-4 py-2 font-medium text-sm flex items-center justify-center transition-colors"
+              title="Search"
+            >
+              <span className="material-symbols-outlined text-[20px]">search</span>
+            </button>
+          </div>
+        </form>
+      )}
     </header>
   );
 }

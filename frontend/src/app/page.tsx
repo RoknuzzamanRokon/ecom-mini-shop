@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useEffect, useState, useTransition } from "react";
+import React, { Suspense, useEffect, useState, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Header from "@/components/layout/Header";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
@@ -12,13 +13,38 @@ import Pagination from "@/components/home/Pagination";
 import { Category, Product } from "@/lib/types";
 import { getCategories, getHotDeal, getProducts } from "@/lib/api";
 
+/**
+ * The catalogue's category, search and page live in the URL (?category=,
+ * ?q=, ?page=), so the Navbar, the Header search and breadcrumb links from
+ * any page land on the right listing, and Back/Forward work (BUG-032/033).
+ * useSearchParams needs a Suspense boundary for the static build.
+ */
 export default function HomePage() {
+  return (
+    <Suspense fallback={<HomeFallback />}>
+      <HomeContent />
+    </Suspense>
+  );
+}
+
+function HomeFallback() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-page">
+      <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
+    </div>
+  );
+}
+
+function HomeContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const selectedCategory = searchParams.get("category") || "all";
+  const searchQuery = searchParams.get("q") || "";
+  const currentPage = Math.max(1, Number.parseInt(searchParams.get("page") || "1", 10) || 1);
+
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [hotDeal, setHotDeal] = useState<Product | null>(null);
-  const [selectedCategory, setSelectedCategory] = useState<string>("all");
-  const [searchQuery, setSearchQuery] = useState<string>("");
-  const [currentPage, setCurrentPage] = useState<number>(1);
   const [totalPages, setTotalPages] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(true);
   const [isPending, startTransition] = useTransition();
@@ -55,18 +81,34 @@ export default function HomePage() {
     };
   }, [selectedCategory, searchQuery, currentPage]);
 
-  const handleCategoryChange = (slug: string) => {
+  /** Writes the given keys into the URL (null removes one); any filter change returns to page 1. */
+  const updateUrl = (changes: Record<string, string | null>, mode: "push" | "replace" = "push") => {
+    const params = new URLSearchParams(searchParams.toString());
+    for (const [key, value] of Object.entries(changes)) {
+      if (value) params.set(key, value);
+      else params.delete(key);
+    }
+    const query = params.toString();
+    const href = query ? `/?${query}` : "/";
     startTransition(() => {
-      setSelectedCategory(slug);
-      setCurrentPage(1);
+      if (mode === "replace") router.replace(href, { scroll: false });
+      else router.push(href, { scroll: false });
     });
   };
 
+  const handleCategoryChange = (slug: string) => {
+    updateUrl({ category: slug === "all" ? null : slug, page: null });
+  };
+
+  // The Header debounces typing, so this runs once per pause, not per key.
   const handleSearch = (q: string) => {
-    startTransition(() => {
-      setSearchQuery(q);
-      setCurrentPage(1);
-    });
+    const term = q.trim();
+    if (term === searchQuery) return;
+    updateUrl({ q: term || null, page: null }, "replace");
+  };
+
+  const handlePageChange = (page: number) => {
+    updateUrl({ page: page > 1 ? String(page) : null });
   };
 
   return (
@@ -114,7 +156,7 @@ export default function HomePage() {
               <Pagination
                 currentPage={currentPage}
                 totalPages={totalPages}
-                onPageChange={(p) => setCurrentPage(p)}
+                onPageChange={handlePageChange}
               />
             )}
           </section>
