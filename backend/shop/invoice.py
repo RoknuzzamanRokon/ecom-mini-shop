@@ -17,6 +17,7 @@ from __future__ import annotations
 import io
 import os
 from dataclasses import dataclass
+from xml.sax.saxutils import escape
 from decimal import Decimal
 from functools import lru_cache
 
@@ -220,6 +221,38 @@ def _styles(fonts: FontSet) -> dict[str, ParagraphStyle]:
     }
 
 
+def _text(value) -> str:
+    """
+    `value` as literal Paragraph text (BUG-019).
+
+    Paragraph parses an XML-like markup: an unclosed "<b>" in a customer's
+    name made the whole invoice fail, and "<a href>" or "<img src>" in a
+    product name became a link or an embedded local file. Every value that
+    comes from the database goes through here; the markup this module
+    writes itself does not.
+    """
+    return escape(str(value))
+
+
+def balance_due(order) -> Decimal:
+    """
+    What the customer still owes on `order` (BUG-020).
+
+    - A cancelled order owes nothing.
+    - Otherwise it is the grand total less everything paid. A refund gives
+      money back for part of the order, so it lowers what was charged and
+      what was kept by the same amount: the balance does not move, and
+      refunded money is never billed again.
+    - Never below zero.
+    """
+    from shop.models import Order
+
+    if order.status == Order.STATUS_CANCELLED:
+        return Decimal("0.00")
+    total = order.total_amount or Decimal("0.00")
+    return max(Decimal("0.00"), total - order.total_paid_amount)
+
+
 def _fmt_dt(value) -> str:
     if not value:
         return "\u2014"
@@ -331,7 +364,7 @@ def _masthead(order, fonts: FontSet, st: dict, content_width: float) -> Table:
     ]
     right = [
         Paragraph("ORDER INVOICE", st["doctype"]),
-        Paragraph(order.order_number or f"Order #{order.pk}", st["doctype_sub"]),
+        Paragraph(_text(order.order_number or f"Order #{order.pk}"), st["doctype_sub"]),
     ]
     table = Table(
         [[left, right]],
@@ -362,7 +395,7 @@ def _meta_strip(order, fonts: FontSet, st: dict, content_width: float) -> Table:
         ("Method", payment.get_payment_method_display() if payment else "\u2014"),
     ]
     header = [Paragraph(label.upper(), st["label"]) for label, _ in cells]
-    values = [Paragraph(str(value), st["value_strong"]) for _, value in cells]
+    values = [Paragraph(_text(value), st["value_strong"]) for _, value in cells]
 
     # Proportional, not equal: the order number is the longest value on the
     # strip and wrapped onto a second line at 1/5 of the width.
@@ -389,24 +422,24 @@ def _party_block(order, fonts: FontSet, st: dict, content_width: float) -> Table
     account = order.user
     billed = [Paragraph("BILLED TO", st["label"]), Spacer(1, 3)]
     billed.append(Paragraph(
-        order.customer_name or order.shipping_recipient_name or "\u2014",
+        _text(order.customer_name or order.shipping_recipient_name or "\u2014"),
         st["value_strong"],
     ))
     for line in (order.phone or order.shipping_phone, getattr(account, "email", "")):
         if line:
-            billed.append(Paragraph(str(line), st["value"]))
+            billed.append(Paragraph(_text(line), st["value"]))
     if account:
-        billed.append(Paragraph(f"Account: {account.get_username()}", st["cell_muted"]))
+        billed.append(Paragraph(f"Account: {_text(account.get_username())}", st["cell_muted"]))
 
     shipped = [Paragraph("SHIP TO", st["label"]), Spacer(1, 3)]
     shipped.append(Paragraph(
-        order.shipping_recipient_name or order.customer_name or "\u2014",
+        _text(order.shipping_recipient_name or order.customer_name or "\u2014"),
         st["value_strong"],
     ))
     if order.shipping_phone:
-        shipped.append(Paragraph(order.shipping_phone, st["value"]))
+        shipped.append(Paragraph(_text(order.shipping_phone), st["value"]))
     for line in _shipping_lines(order):
-        shipped.append(Paragraph(line, st["value"]))
+        shipped.append(Paragraph(_text(line), st["value"]))
 
     half = content_width / 2
     table = Table([[billed, shipped]], colWidths=[half, half])
@@ -443,9 +476,9 @@ def _items_table(order, fonts: FontSet, st: dict, content_width: float) -> Table
         origin = " \u00b7 ".join(
             part for part in (item.shop_name, item.seller_name) if part
         )
-        cell = [Paragraph(item.product_name or "\u2014", st["cell_strong"])]
+        cell = [Paragraph(_text(item.product_name or "\u2014"), st["cell_strong"])]
         if origin:
-            cell.append(Paragraph(origin, st["cell_muted"]))
+            cell.append(Paragraph(_text(origin), st["cell_muted"]))
         rows.append([
             Paragraph(str(index), st["cell"]),
             cell,
@@ -482,7 +515,7 @@ def _items_table(order, fonts: FontSet, st: dict, content_width: float) -> Table
 def _totals_table(order, fonts: FontSet, st: dict, content_width: float) -> Table:
     paid = order.total_paid_amount
     refunded = order.total_refunded_amount
-    balance = (order.total_amount or Decimal("0.00")) - paid + refunded
+    balance = balance_due(order)
 
     discount = order.discount_total or Decimal("0.00")
     lines = [
@@ -554,10 +587,10 @@ def _payments_section(order, fonts: FontSet, st: dict, content_width: float) -> 
     rows = []
     for payment in order.payments.all().order_by("created_at"):
         rows.append([
-            Paragraph(payment.payment_number, st["cell_strong"]),
-            Paragraph(payment.get_payment_method_display(), st["cell"]),
-            Paragraph(payment.transaction_id or "\u2014", st["cell"]),
-            Paragraph(payment.get_status_display(), st["cell"]),
+            Paragraph(_text(payment.payment_number), st["cell_strong"]),
+            Paragraph(_text(payment.get_payment_method_display()), st["cell"]),
+            Paragraph(_text(payment.transaction_id or "\u2014"), st["cell"]),
+            Paragraph(_text(payment.get_status_display()), st["cell"]),
             Paragraph(_fmt_dt(payment.paid_at or payment.created_at), st["cell"]),
             Paragraph(money(payment.amount, fonts), st["num_strong"]),
         ])
@@ -571,10 +604,10 @@ def _refunds_section(order, fonts: FontSet, st: dict, content_width: float) -> l
     rows = []
     for refund in order.refunds.all().order_by("created_at"):
         rows.append([
-            Paragraph(refund.refund_number, st["cell_strong"]),
-            Paragraph(refund.payment.payment_number if refund.payment_id else "\u2014", st["cell"]),
-            Paragraph(refund.reason or "\u2014", st["cell"]),
-            Paragraph(refund.get_status_display(), st["cell"]),
+            Paragraph(_text(refund.refund_number), st["cell_strong"]),
+            Paragraph(_text(refund.payment.payment_number if refund.payment_id else "\u2014"), st["cell"]),
+            Paragraph(_text(refund.reason or "\u2014"), st["cell"]),
+            Paragraph(_text(refund.get_status_display()), st["cell"]),
             Paragraph(_fmt_dt(refund.created_at), st["cell"]),
             Paragraph(money(refund.amount, fonts), st["num_strong"]),
         ])
