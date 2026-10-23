@@ -37,10 +37,6 @@ const CARD_TITLE = "text-sm font-extrabold text-ink uppercase tracking-wider";
 const SECONDARY_BUTTON =
   "inline-flex items-center justify-center gap-1.5 min-h-10 px-4 rounded-lg border border-line bg-surface text-ink text-xs font-extrabold uppercase tracking-wider hover:bg-surface-alt transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
 
-// Material Symbols ignores Tailwind's text-[Npx] (the Google Fonts stylesheet
-// wins the cascade), so a glyph that must sit below 24px is sized inline.
-const ICON_16 = { fontSize: 16 } as const;
-const ICON_18 = { fontSize: 18 } as const;
 
 const STAT_TONES = {
   primary: "bg-primary/10 text-primary",
@@ -94,7 +90,7 @@ export default function AdminProfilePage() {
       href="/admin"
       className="inline-flex items-center gap-1.5 text-xs font-bold text-ink-muted hover:text-ink transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary rounded-sm"
     >
-      <span aria-hidden="true" className="material-symbols-outlined" style={ICON_18}>
+      <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
         arrow_back
       </span>
       Back to Dashboard
@@ -162,7 +158,7 @@ export default function AdminProfilePage() {
               <div className="min-w-0">
                 <ul aria-label="Access" className="flex flex-wrap gap-1.5">
                   <li className="inline-flex items-center gap-1 min-h-7 px-2.5 rounded-full text-[11px] font-extrabold bg-primary/10 text-primary border border-primary/20">
-                    <span aria-hidden="true" className="material-symbols-outlined" style={ICON_16}>
+                    <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
                       {user.is_superuser ? "workspace_premium" : "shield_person"}
                     </span>
                     {roleLabel}
@@ -201,14 +197,14 @@ export default function AdminProfilePage() {
 
             <div className="flex flex-wrap gap-2 sm:pl-24">
               <Link href="/profile/settings" className={SECONDARY_BUTTON}>
-                <span aria-hidden="true" className="material-symbols-outlined" style={ICON_18}>
+                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
                   edit
                 </span>
                 Edit details
               </Link>
               {user.is_staff && (
                 <a href={DJANGO_ADMIN_PROFILE_URL} className={SECONDARY_BUTTON}>
-                  <span aria-hidden="true" className="material-symbols-outlined" style={ICON_18}>
+                  <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
                     open_in_new
                   </span>
                   Django admin profile
@@ -227,7 +223,7 @@ export default function AdminProfilePage() {
               wallet && !walletError ? (
                 <a href="#points" className={POINTS_TILE_HEADER_LINK}>
                   History
-                  <span aria-hidden="true" className="material-symbols-outlined" style={ICON_16}>
+                  <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
                     south
                   </span>
                 </a>
@@ -237,7 +233,7 @@ export default function AdminProfilePage() {
             {canGivePoints && (balance ?? 0) > 0 && (
               <div className="mt-1">
                 <Link href="/admin/sellers" className={POINTS_TILE_PRIMARY_ACTION}>
-                  <span aria-hidden="true" className="material-symbols-outlined" style={ICON_18}>
+                  <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
                     storefront
                   </span>
                   Give points to a seller
@@ -282,7 +278,7 @@ export default function AdminProfilePage() {
               className="inline-flex items-center gap-1 text-xs font-bold text-primary hover:underline rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
             >
               Full ledger
-              <span aria-hidden="true" className="material-symbols-outlined" style={ICON_16}>
+              <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
                 open_in_new
               </span>
             </a>
@@ -472,7 +468,7 @@ export default function AdminProfilePage() {
 function MetaItem({ icon, children }: { icon: string; children: React.ReactNode }) {
   return (
     <li className="inline-flex items-center gap-1.5 min-w-0 break-all">
-      <span aria-hidden="true" className="material-symbols-outlined text-ink-faint" style={ICON_16}>
+      <span aria-hidden="true" className="material-symbols-outlined text-ink-faint text-[16px]">
         {icon}
       </span>
       {children}
@@ -593,8 +589,7 @@ function PermissionGrid({ groups }: { groups: PermissionGroup[] }) {
               <li key={code} className="flex items-start gap-1.5 text-[11px]">
                 <span
                   aria-hidden="true"
-                  className="material-symbols-outlined text-success shrink-0"
-                  style={ICON_16}
+                  className="material-symbols-outlined text-success shrink-0 text-[16px]"
                 >
                   check
                 </span>

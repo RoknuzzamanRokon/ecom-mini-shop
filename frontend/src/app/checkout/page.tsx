@@ -4,8 +4,7 @@ import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import Header from "@/components/layout/Header";
-import Navbar from "@/components/layout/Navbar";
+import StorefrontChrome from "@/components/layout/StorefrontChrome";
 import Footer from "@/components/layout/Footer";
 import { useCart } from "@/context/CartContext";
 import { useAuth } from "@/context/AuthContext";
@@ -250,10 +249,7 @@ export default function CheckoutPage() {
   if (needsSignIn) {
     return (
       <div className="min-h-screen flex flex-col bg-page">
-        <div className="sticky top-0 z-40 w-full shadow-sm">
-          <Header />
-          <Navbar />
-        </div>
+        <StorefrontChrome />
         <main className="max-w-[1360px] mx-auto px-4 sm:px-6 py-12 flex-1 flex flex-col items-center justify-center text-center">
           <span className="material-symbols-outlined text-[64px] text-ink-muted/40 mb-3">
             account_circle
@@ -277,10 +273,7 @@ export default function CheckoutPage() {
   if (!cartReady) {
     return (
       <div className="min-h-screen flex flex-col bg-page">
-        <div className="sticky top-0 z-40 w-full shadow-sm">
-          <Header />
-          <Navbar />
-        </div>
+        <StorefrontChrome />
         <main
           className="max-w-[1360px] mx-auto px-4 sm:px-6 py-12 flex-1 flex flex-col items-center justify-center text-center"
           role="status"
@@ -296,10 +289,7 @@ export default function CheckoutPage() {
   if (items.length === 0) {
     return (
       <div className="min-h-screen flex flex-col bg-page">
-        <div className="sticky top-0 z-40 w-full shadow-sm">
-          <Header />
-          <Navbar />
-        </div>
+        <StorefrontChrome />
         <main className="max-w-[1360px] mx-auto px-4 sm:px-6 py-12 flex-1 flex flex-col items-center justify-center text-center">
           <span className="material-symbols-outlined text-[64px] text-ink-muted/40 mb-3">
             shopping_cart
@@ -320,10 +310,7 @@ export default function CheckoutPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-page transition-colors duration-200">
-      <div className="sticky top-0 z-40 w-full shadow-sm">
-        <Header />
-        <Navbar />
-      </div>
+      <StorefrontChrome />
 
       <main className="max-w-[1360px] mx-auto px-4 sm:px-6 py-8 flex-1 w-full">
         <h1 className="text-2xl font-extrabold text-ink tracking-tight mb-6">

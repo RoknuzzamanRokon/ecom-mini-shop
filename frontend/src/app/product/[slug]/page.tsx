@@ -4,9 +4,9 @@ import React, { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { notFound, useParams, useRouter } from "next/navigation";
-import Header from "@/components/layout/Header";
-import Navbar from "@/components/layout/Navbar";
+import StorefrontChrome from "@/components/layout/StorefrontChrome";
 import Footer from "@/components/layout/Footer";
+import { RouteSpinner } from "@/components/feedback";
 import ProductCard from "@/components/home/ProductCard";
 import ProductImageZoom from "@/components/product/ProductImageZoom";
 import FavoriteButton from "@/components/product/FavoriteButton";
@@ -70,10 +70,8 @@ export default function ProductDetailPage() {
   if (loading) {
     return (
       <div className="min-h-screen flex flex-col bg-page">
-        <Header />
-        <div className="flex-1 flex items-center justify-center">
-          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
-        </div>
+        <StorefrontChrome />
+        <RouteSpinner label="Loading product…" />
         <Footer />
       </div>
     );
@@ -95,10 +93,7 @@ export default function ProductDetailPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-page transition-colors duration-200">
-      <div className="sticky top-0 z-40 w-full shadow-sm">
-        <Header />
-        <Navbar />
-      </div>
+      <StorefrontChrome />
 
       <main className="max-w-[1360px] mx-auto px-4 sm:px-6 py-6 flex-1 w-full">
         {/* Breadcrumb */}

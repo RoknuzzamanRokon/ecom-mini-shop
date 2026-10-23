@@ -3,8 +3,7 @@
 import React, { useEffect, useState, useTransition } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import Header from "@/components/layout/Header";
-import Navbar from "@/components/layout/Navbar";
+import StorefrontChrome from "@/components/layout/StorefrontChrome";
 import Footer from "@/components/layout/Footer";
 import Pagination from "@/components/home/Pagination";
 import StarRating from "@/components/reviews/StarRating";
@@ -69,10 +68,7 @@ export default function ShopsDirectoryPage() {
   return (
     <div className="min-h-screen flex flex-col bg-page transition-colors duration-200">
       {/* Sticky Top Navigation Bar (Header + Category Strip) */}
-      <div className="sticky top-0 z-40 w-full shadow-sm">
-        <Header onSearch={handleSearch} searchQuery={searchQuery} />
-        <Navbar categories={categories} />
-      </div>
+      <StorefrontChrome onSearch={handleSearch} searchQuery={searchQuery} categories={categories} />
 
       <main className="max-w-[1360px] mx-auto px-4 sm:px-6 py-6 flex-1 w-full flex flex-col gap-6">
         {/* Breadcrumbs */}

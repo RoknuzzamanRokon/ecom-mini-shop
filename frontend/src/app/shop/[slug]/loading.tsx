@@ -1,4 +1,4 @@
-import Header from "@/components/layout/Header";
+import StorefrontChrome from "@/components/layout/StorefrontChrome";
 import Footer from "@/components/layout/Footer";
 import { RouteSpinner } from "@/components/feedback";
 
@@ -6,7 +6,7 @@ import { RouteSpinner } from "@/components/feedback";
 export default function ShopStorefrontLoading() {
   return (
     <div className="min-h-screen flex flex-col bg-page">
-      <Header />
+      <StorefrontChrome />
       <RouteSpinner label="Loading shop…" />
       <Footer />
     </div>

@@ -6,18 +6,14 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { safeNextPath } from "@/lib/auth";
 import { registerCustomer } from "@/lib/api";
-import Header from "@/components/layout/Header";
-import Navbar from "@/components/layout/Navbar";
+import StorefrontChrome from "@/components/layout/StorefrontChrome";
 
 export default function RegisterPage() {
   return (
     <Suspense
       fallback={
         <>
-          <div className="sticky top-0 z-40 w-full shadow-sm">
-            <Header />
-            <Navbar />
-          </div>
+          <StorefrontChrome />
           <main className="flex-1 flex items-center justify-center bg-page">
             <div className="flex items-center gap-2 text-ink-muted">
               <span className="material-symbols-outlined animate-spin text-[24px]">
@@ -131,10 +127,7 @@ function RegisterPageContent() {
   if (authLoading) {
     return (
       <>
-        <div className="sticky top-0 z-40 w-full shadow-sm">
-          <Header />
-          <Navbar />
-        </div>
+        <StorefrontChrome />
         <main className="flex-1 flex items-center justify-center bg-page">
           <div className="flex items-center gap-2 text-ink-muted">
             <span className="material-symbols-outlined animate-spin text-[24px]">
@@ -158,10 +151,7 @@ function RegisterPageContent() {
 
   return (
     <>
-      <div className="sticky top-0 z-40 w-full shadow-sm">
-        <Header />
-        <Navbar />
-      </div>
+      <StorefrontChrome />
 
       <main className="flex-1 flex items-center justify-center bg-page px-4 py-10">
         <div className="w-full max-w-lg">

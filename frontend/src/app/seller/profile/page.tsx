@@ -22,10 +22,6 @@ const LABEL = "block text-xs font-semibold text-ink mb-1.5";
 const REQUEST_POINTS_HREF = "/seller/support/new?category=POINTS";
 const RECENT_MOVEMENTS = 4;
 
-// Material Symbols ignores Tailwind's text-[Npx] (the Google Fonts stylesheet
-// wins the cascade), so a glyph that must sit below 24px is sized inline.
-const ICON_16 = { fontSize: 16 } as const;
-const ICON_18 = { fontSize: 18 } as const;
 
 const MOVEMENT_ICONS: Record<string, string> = {
   PRODUCT_CREATION: "inventory_2",
@@ -243,7 +239,7 @@ export default function SellerProfilePage() {
             headerAction={
               <Link href="/seller/wallet" className={POINTS_TILE_HEADER_LINK}>
                 Wallet
-                <span aria-hidden="true" className="material-symbols-outlined" style={ICON_16}>
+                <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
                   arrow_forward
                 </span>
               </Link>
@@ -251,7 +247,7 @@ export default function SellerProfilePage() {
           >
             {shortfall > 0 && (
               <p className="flex items-start gap-2 rounded-lg bg-accent/15 border border-accent/30 px-3 py-2 text-xs text-nav-active-text">
-                <span aria-hidden="true" className="material-symbols-outlined text-accent shrink-0" style={ICON_18}>
+                <span aria-hidden="true" className="material-symbols-outlined text-accent shrink-0 text-[18px]">
                   warning
                 </span>
                 <span>
@@ -266,7 +262,7 @@ export default function SellerProfilePage() {
                   href={REQUEST_POINTS_HREF}
                   className={shortfall > 0 ? POINTS_TILE_PRIMARY_ACTION : POINTS_TILE_SECONDARY_ACTION}
                 >
-                  <span aria-hidden="true" className="material-symbols-outlined" style={ICON_18}>
+                  <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
                     add_card
                   </span>
                   Request points
@@ -411,14 +407,14 @@ export default function SellerProfilePage() {
               >
                 {submitting ? (
                   <>
-                    <span aria-hidden="true" className="material-symbols-outlined animate-spin" style={ICON_18}>
+                    <span aria-hidden="true" className="material-symbols-outlined animate-spin text-[18px]">
                       progress_activity
                     </span>
                     <span>Saving...</span>
                   </>
                 ) : (
                   <>
-                    <span aria-hidden="true" className="material-symbols-outlined" style={ICON_18}>
+                    <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
                       save
                     </span>
                     <span>Save changes</span>
@@ -441,7 +437,7 @@ export default function SellerProfilePage() {
                 className="inline-flex items-center gap-1 text-xs font-bold text-primary hover:underline rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               >
                 Full history
-                <span aria-hidden="true" className="material-symbols-outlined" style={ICON_16}>
+                <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
                   arrow_forward
                 </span>
               </Link>
@@ -518,7 +514,7 @@ export default function SellerProfilePage() {
 function MetaItem({ icon, children }: { icon: string; children: React.ReactNode }) {
   return (
     <li className="inline-flex items-center gap-1.5 min-w-0 break-all">
-      <span aria-hidden="true" className="material-symbols-outlined text-ink-faint" style={ICON_16}>
+      <span aria-hidden="true" className="material-symbols-outlined text-ink-faint text-[16px]">
         {icon}
       </span>
       {children}

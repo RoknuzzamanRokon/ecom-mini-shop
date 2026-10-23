@@ -2,8 +2,7 @@
 
 import React, { Suspense, useEffect, useState, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import Header from "@/components/layout/Header";
-import Navbar from "@/components/layout/Navbar";
+import StorefrontChrome from "@/components/layout/StorefrontChrome";
 import Footer from "@/components/layout/Footer";
 import CategorySidebar from "@/components/home/CategorySidebar";
 import HotDealWidget from "@/components/home/HotDealWidget";
@@ -114,14 +113,13 @@ function HomeContent() {
   return (
     <div className="min-h-screen flex flex-col bg-page transition-colors duration-200">
       {/* Sticky Top Navigation Bar (Header + Category Strip) */}
-      <div className="sticky top-0 z-40 w-full shadow-sm">
-        <Header onSearch={handleSearch} searchQuery={searchQuery} />
-        <Navbar
-          categories={categories}
-          activeCategory={selectedCategory}
-          onSelectCategory={handleCategoryChange}
-        />
-      </div>
+      <StorefrontChrome
+        onSearch={handleSearch}
+        searchQuery={searchQuery}
+        categories={categories}
+        activeCategory={selectedCategory}
+        onSelectCategory={handleCategoryChange}
+      />
 
       {/* Main 2-Column Catalog Layout */}
       <main className="max-w-[1360px] mx-auto px-4 sm:px-6 py-6 flex-1 w-full">

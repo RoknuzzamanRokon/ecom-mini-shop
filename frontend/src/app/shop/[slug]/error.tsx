@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import Header from "@/components/layout/Header";
+import StorefrontChrome from "@/components/layout/StorefrontChrome";
 import Footer from "@/components/layout/Footer";
 import { RouteErrorState } from "@/components/feedback";
 
@@ -22,7 +22,7 @@ export default function ShopStorefrontError({
 
   return (
     <div className="min-h-screen flex flex-col bg-page">
-      <Header />
+      <StorefrontChrome />
       <RouteErrorState
         title="This shop could not be loaded"
         description="Something went wrong while loading this storefront. Please try again, or browse the other shops."

@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import Header from "@/components/layout/Header";
-import Navbar from "@/components/layout/Navbar";
+import StorefrontChrome from "@/components/layout/StorefrontChrome";
 import Footer from "@/components/layout/Footer";
 import { RouteErrorState } from "@/components/feedback";
 
@@ -19,10 +18,7 @@ export default function ShopsDirectoryError({
 
   return (
     <div className="min-h-screen flex flex-col bg-page">
-      <div className="sticky top-0 z-40 w-full shadow-sm">
-        <Header />
-        <Navbar />
-      </div>
+      <StorefrontChrome />
       <RouteErrorState
         title="Shops could not be loaded"
         description="Something went wrong while loading the shop directory. Please try again, or return to the catalog."

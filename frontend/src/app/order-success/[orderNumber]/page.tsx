@@ -3,8 +3,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import Header from "@/components/layout/Header";
-import Navbar from "@/components/layout/Navbar";
+import StorefrontChrome from "@/components/layout/StorefrontChrome";
 import Footer from "@/components/layout/Footer";
 import { Order } from "@/lib/types";
 import { getOrderDetail } from "@/lib/api";
@@ -30,10 +29,7 @@ export default function OrderSuccessPage() {
 
   return (
     <div className="min-h-screen flex flex-col bg-page transition-colors duration-200">
-      <div className="sticky top-0 z-40 w-full shadow-sm">
-        <Header />
-        <Navbar />
-      </div>
+      <StorefrontChrome />
 
       <main className="max-w-[720px] mx-auto px-4 sm:px-6 py-12 flex-1 flex flex-col items-center justify-center text-center">
         {/* Animated Checkmark Circle */}

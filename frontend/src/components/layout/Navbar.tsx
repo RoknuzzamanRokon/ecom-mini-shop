@@ -4,7 +4,7 @@ import React, { useState, useRef, useEffect } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import { Category } from "@/lib/types";
 
-interface NavbarProps {
+export interface NavbarProps {
   categories?: Category[];
   activeCategory?: string;
   onSelectCategory?: (slug: string) => void;

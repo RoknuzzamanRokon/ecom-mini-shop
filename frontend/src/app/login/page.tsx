@@ -5,8 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { safeNextPath } from "@/lib/auth";
-import Header from "@/components/layout/Header";
-import Navbar from "@/components/layout/Navbar";
+import StorefrontChrome from "@/components/layout/StorefrontChrome";
 import LoginRing, {
   LoginRingPasswordField,
   SUCCESS_ANIMATION_MS,
@@ -19,10 +18,7 @@ export default function LoginPage() {
     <Suspense
       fallback={
         <>
-          <div className="sticky top-0 z-40 w-full shadow-sm">
-            <Header />
-            <Navbar />
-          </div>
+          <StorefrontChrome />
           <main className="flex-1 flex items-center justify-center bg-page">
             <div className="flex items-center gap-2 text-ink-muted">
               <span className="material-symbols-outlined animate-spin text-[24px]">
@@ -120,10 +116,7 @@ function LoginPageContent() {
   if (authLoading) {
     return (
       <>
-        <div className="sticky top-0 z-40 w-full shadow-sm">
-          <Header />
-          <Navbar />
-        </div>
+        <StorefrontChrome />
         <main className="flex-1 flex items-center justify-center bg-page">
           <div className="flex items-center gap-2 text-ink-muted">
             <span className="material-symbols-outlined animate-spin text-[24px]">
@@ -143,10 +136,7 @@ function LoginPageContent() {
 
   return (
     <>
-      <div className="sticky top-0 z-40 w-full shadow-sm">
-        <Header />
-        <Navbar />
-      </div>
+      <StorefrontChrome />
 
       <main className="flex-1 flex flex-col items-center justify-center bg-page px-4 py-10">
         <LoginRing

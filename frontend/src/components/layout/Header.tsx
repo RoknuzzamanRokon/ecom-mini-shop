@@ -10,7 +10,7 @@ import { useAuth } from "@/context/AuthContext";
 import { isManagementUser } from "@/lib/admin-auth";
 import { canUseSupport } from "@/lib/support";
 
-interface HeaderProps {
+export interface HeaderProps {
   onSearch?: (query: string) => void;
   searchQuery?: string;
 }
@@ -162,11 +162,11 @@ export default function Header({ onSearch, searchQuery = "" }: HeaderProps) {
               </span>
             </span>
             <span className="sr-only sm:not-sr-only whitespace-nowrap">Shops near you</span>
-            {/* Wrapped: the icon font's own display rule would beat `hidden`. */}
-            <span aria-hidden="true" className="hidden lg:flex -ml-1">
-              <span className="material-symbols-outlined text-[16px] transition-transform duration-200 motion-safe:group-hover:translate-x-0.5">
-                arrow_forward
-              </span>
+            <span
+              aria-hidden="true"
+              className="material-symbols-outlined hidden lg:inline-block -ml-1 text-[16px] transition-transform duration-200 motion-safe:group-hover:translate-x-0.5"
+            >
+              arrow_forward
             </span>
           </Link>
 

@@ -44,10 +44,6 @@ import {
   isCreditTransaction,
 } from "../sellers/sellerGovernance";
 
-// Material Symbols ignores Tailwind's text-[Npx] (the Google Fonts stylesheet
-// wins the cascade), so a glyph that must sit below 24px is sized inline.
-const ICON_16 = { fontSize: 16 } as const;
-const ICON_18 = { fontSize: 18 } as const;
 
 /** Movements shown per wallet; the seller page and Django admin hold the full ledgers. */
 const RECENT_LIMIT = 5;
@@ -327,7 +323,7 @@ export default function UserPointsPanel({ target, actor }: UserPointsPanelProps)
               onClick={() => startDraft(kind, "CREDIT")}
               className={PRIMARY_BUTTON}
             >
-              <span aria-hidden="true" className="material-symbols-outlined" style={ICON_16}>
+              <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
                 add_circle
               </span>
               Give points
@@ -340,7 +336,7 @@ export default function UserPointsPanel({ target, actor }: UserPointsPanelProps)
               onClick={() => startDraft(kind, "DEBIT")}
               className={DANGER_OUTLINE_BUTTON}
             >
-              <span aria-hidden="true" className="material-symbols-outlined" style={ICON_16}>
+              <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
                 remove_circle
               </span>
               Take back
@@ -464,7 +460,7 @@ export default function UserPointsPanel({ target, actor }: UserPointsPanelProps)
         </div>
         {myWallet && (
           <div className="shrink-0 inline-flex items-center gap-2 rounded-xl border border-line bg-surface-alt/60 px-3 py-2">
-            <span aria-hidden="true" className="material-symbols-outlined text-accent" style={ICON_18}>
+            <span aria-hidden="true" className="material-symbols-outlined text-accent text-[18px]">
               account_balance_wallet
             </span>
             <span className="text-[11px] font-semibold text-ink-muted">
@@ -478,7 +474,7 @@ export default function UserPointsPanel({ target, actor }: UserPointsPanelProps)
 
       {success && (
         <div className="mb-4 rounded-xl border border-success/30 bg-success/10 p-3 flex items-start gap-2" role="status">
-          <span aria-hidden="true" className="material-symbols-outlined text-success shrink-0" style={ICON_18}>
+          <span aria-hidden="true" className="material-symbols-outlined text-success shrink-0 text-[18px]">
             check_circle
           </span>
           <p className="text-xs font-semibold text-ink">
@@ -500,7 +496,7 @@ export default function UserPointsPanel({ target, actor }: UserPointsPanelProps)
             <span className="font-bold text-ink">Couldn&apos;t load points.</span> {loadError}
           </p>
           <button type="button" onClick={retry} className={SECONDARY_BUTTON}>
-            <span aria-hidden="true" className="material-symbols-outlined" style={ICON_16}>
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
               refresh
             </span>
             Try again
@@ -560,7 +556,7 @@ export default function UserPointsPanel({ target, actor }: UserPointsPanelProps)
                     className="inline-flex items-center gap-1 text-[11px] font-bold text-primary hover:underline rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                   >
                     All {formatCount(sellerCount)} movements on the seller page
-                    <span aria-hidden="true" className="material-symbols-outlined" style={ICON_16}>
+                    <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
                       arrow_forward
                     </span>
                   </Link>
@@ -625,7 +621,7 @@ export default function UserPointsPanel({ target, actor }: UserPointsPanelProps)
                     }}
                     className={SECONDARY_BUTTON}
                   >
-                    <span aria-hidden="true" className="material-symbols-outlined" style={ICON_16}>
+                    <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
                       {staffWallet.expiry_enabled ? "timer_off" : "timer"}
                     </span>
                     {staffWallet.expiry_enabled ? "Turn point expiry off" : "Turn point expiry on"}

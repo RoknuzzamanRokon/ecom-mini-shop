@@ -1,6 +1,5 @@
 import Link from "next/link";
-import Header from "@/components/layout/Header";
-import Navbar from "@/components/layout/Navbar";
+import StorefrontChrome from "@/components/layout/StorefrontChrome";
 import Footer from "@/components/layout/Footer";
 
 /**
@@ -13,10 +12,7 @@ import Footer from "@/components/layout/Footer";
 export default function NotFound() {
   return (
     <div className="min-h-screen flex flex-col bg-page">
-      <div className="sticky top-0 z-40 w-full shadow-sm">
-        <Header />
-        <Navbar />
-      </div>
+      <StorefrontChrome />
       <div className="flex-1 flex flex-col items-center justify-center p-6 text-center">
         <span className="material-symbols-outlined text-[64px] text-ink-muted/50 mb-2">
           travel_explore

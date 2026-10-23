@@ -47,11 +47,10 @@ export default function PointsBalanceTile({
       aria-busy={loading || undefined}
       className={`relative isolate overflow-hidden rounded-2xl border border-accent/25 bg-linear-to-br from-nav to-nav-strip text-nav-active-text p-5 sm:p-6 flex flex-col gap-3 min-w-0 shadow-sm ${className}`}
     >
-      {/* Decorative coin. Material Symbols ignores Tailwind's text-[Npx], so the size is inline. */}
+      {/* Decorative coin. */}
       <span
         aria-hidden="true"
-        className="material-symbols-outlined pointer-events-none absolute -right-5 -bottom-8 -z-10 text-accent opacity-15 select-none"
-        style={{ fontSize: 132 }}
+        className="material-symbols-outlined pointer-events-none absolute -right-5 -bottom-8 -z-10 text-accent opacity-15 select-none text-[132px]"
       >
         toll
       </span>
@@ -61,7 +60,7 @@ export default function PointsBalanceTile({
           id={labelId}
           className="flex items-center gap-2 text-[11px] font-extrabold uppercase tracking-wider text-nav-text"
         >
-          <span aria-hidden="true" className="material-symbols-outlined text-accent" style={{ fontSize: 18 }}>
+          <span aria-hidden="true" className="material-symbols-outlined text-accent text-[18px]">
             toll
           </span>
           {label}
@@ -83,7 +82,7 @@ export default function PointsBalanceTile({
               onClick={onRetry}
               className="inline-flex items-center gap-1.5 min-h-9 px-3 rounded-lg border border-nav-text/40 text-xs font-bold hover:bg-nav-active-text/10 transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
             >
-              <span aria-hidden="true" className="material-symbols-outlined" style={{ fontSize: 18 }}>
+              <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
                 refresh
               </span>
               Try again

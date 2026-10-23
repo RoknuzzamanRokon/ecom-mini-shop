@@ -45,8 +45,7 @@ export default function RatingSummary({ average, count, breakdown }: RatingSumma
                   {level}
                   <span
                     aria-hidden="true"
-                    className="material-symbols-outlined fill-active text-star leading-none"
-                    style={{ fontSize: 12 }}
+                    className="material-symbols-outlined fill-active text-star leading-none text-[12px]"
                   >
                     star
                   </span>
