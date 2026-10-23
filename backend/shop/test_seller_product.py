@@ -676,6 +676,47 @@ class SellerProductAPITests(BaseSellerProductTestCase):
 
 
 
+class SellerProductReassignmentTests(BaseSellerProductTestCase):
+    """TASK-023 / BUG-069: PATCH category_id / shop_id actually changes the product."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.user_full)
+        self.product = ProductService.create_product(
+            seller=self.seller_full, name="Mislabelled Lamp", category=self.category,
+            shop=self.shop_full, description="Filed under the wrong category",
+            price=Decimal("50.00"), actor=self.user_full,
+        )
+        self.other_category = Category.objects.create(name="Lighting", slug="reassign-lighting")
+
+    def test_patch_category_id_changes_the_category(self):
+        res = self.client.patch(
+            f"/api/products/mine/{self.product.id}/", {"category_id": self.other_category.id}, format="json"
+        )
+        self.assertEqual(res.status_code, status.HTTP_200_OK, res.data)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.category, self.other_category)
+        self.assertEqual(res.data["category"]["id"], self.other_category.id)
+
+    def test_patch_shop_id_moves_it_to_another_own_shop(self):
+        second_shop = Shop.objects.create(
+            owner=self.seller_full, name="Apex Annex", slug="apex-annex", status=Shop.STATUS_ACTIVE,
+            location=Point(90.4125, 23.8103),
+        )
+        res = self.client.patch(f"/api/products/mine/{self.product.id}/", {"shop_id": second_shop.id}, format="json")
+        self.assertEqual(res.status_code, status.HTTP_200_OK, res.data)
+        self.product.refresh_from_db()
+        self.assertEqual(self.product.shop, second_shop)
+
+    def test_multipart_blank_old_price_clears_it(self):
+        self.product.old_price = Decimal("80.00")
+        self.product.save()
+        res = self.client.patch(f"/api/products/mine/{self.product.id}/", {"old_price": "", "name": "Lamp"})
+        self.assertEqual(res.status_code, status.HTTP_200_OK, res.data)
+        self.product.refresh_from_db()
+        self.assertIsNone(self.product.old_price)
+
+
 class LimitedShopOwnerProductLimitTests(BaseSellerProductTestCase):
     """A Limited Shop Owner may hold at most LimitedShopOwnerProductLimit products."""
 

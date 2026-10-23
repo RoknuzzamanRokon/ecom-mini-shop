@@ -19,6 +19,7 @@ import {
 } from "@/lib/api";
 import { Product, SellerShop, Category } from "@/lib/types";
 import { getAuthToken } from "@/lib/auth";
+import { useSeller } from "@/components/seller/SellerGuard";
 
 // Sent with every list request, so the page count always matches (BUG-024).
 const PRODUCTS_PAGE_SIZE = 12;
@@ -78,7 +79,15 @@ export default function SellerProductsPage() {
 
   // Shops are admin-assigned. A Full Shop Owner may own several and picks one
   // when adding a product; the choice is limited to the seller's own Shops.
-  const hasShop = shops.length > 0;
+  // Products can only be created in an APPROVED or ACTIVE shop (BUG-027).
+  const eligibleShops = shops.filter((s) => s.status === "APPROVED" || s.status === "ACTIVE");
+  const hasShop = eligibleShops.length > 0;
+  const [shopsLoaded, setShopsLoaded] = useState(false);
+  // Why the add/edit form cannot be trusted right now (shops or categories
+  // failed to load), instead of guessing "no shop" or using demo data.
+  const [setupError, setSetupError] = useState<string | null>(null);
+  const { seller } = useSeller();
+  const sellerOperational = seller?.is_operational !== false;
   const [createShopId, setCreateShopId] = useState<string>("");
   const atProductLimit = productLimit !== null && productsCount >= productLimit;
 
@@ -128,8 +137,19 @@ export default function SellerProductsPage() {
     const token = getAuthToken();
     if (!token) return;
 
-    getSellerShops(token).then((res) => setShops(res)).catch(() => {});
-    getCategories().then((res) => setCategories(res)).catch(() => {});
+    getSellerShops(token)
+      .then((res) => {
+        setShops(res);
+        setShopsLoaded(true);
+      })
+      .catch((err: unknown) => {
+        setSetupError(err instanceof Error ? err.message : "Your shops could not be loaded.");
+      });
+    getCategories({ allowDemo: false })
+      .then((res) => setCategories(res))
+      .catch(() => {
+        setSetupError("Categories could not be loaded. Reload the page before adding or editing a product.");
+      });
     getSellerWallet(token)
       .then((res) => {
         setWalletBalance(res.balance);
@@ -177,7 +197,7 @@ export default function SellerProductsPage() {
       description: "",
       is_active: true,
     });
-    setCreateShopId(shops.length > 0 ? shops[0].id.toString() : "");
+    setCreateShopId(eligibleShops.length > 0 ? eligibleShops[0].id.toString() : "");
     setImageFile(null);
     setImagePreview(null);
     setActionError(null);
@@ -232,7 +252,9 @@ export default function SellerProductsPage() {
 
     if (!hasShop) {
       setActionError(
-        "You have not been assigned a Shop yet. Contact an authorized administrator to have a Shop assigned to your account."
+        shops.length > 0
+          ? "Your shop is not approved yet. Products can be added once staff approve it."
+          : "You have not been assigned a Shop yet. Contact an authorized administrator to have a Shop assigned to your account."
       );
       return;
     }
@@ -300,6 +322,10 @@ export default function SellerProductsPage() {
         name: formData.name,
         price: parseFloat(formData.price),
         old_price: formData.old_price ? parseFloat(formData.old_price) : null,
+        // The category can be corrected without recreating the product (BUG-069).
+        ...(formData.category_id && formData.category_id !== (editingProduct.category?.id?.toString() ?? "")
+          ? { category_id: parseInt(formData.category_id) }
+          : {}),
         ...(newStock !== seenStock ? { stock: newStock, expected_stock: seenStock } : {}),
         badge: formData.badge,
         description: formData.description,
@@ -385,7 +411,7 @@ export default function SellerProductsPage() {
           <button
             type="button"
             onClick={handleOpenAdd}
-            disabled={!hasShop || atProductLimit}
+            disabled={!sellerOperational || !hasShop || atProductLimit || Boolean(setupError)}
             className="px-4 py-2.5 rounded-lg bg-primary hover:bg-primary-hover disabled:opacity-50 text-on-primary font-bold text-xs uppercase tracking-wider transition-colors shadow-sm flex items-center gap-2 cursor-pointer disabled:cursor-not-allowed"
           >
             <span className="material-symbols-outlined text-[18px]">add_box</span>
@@ -412,14 +438,32 @@ export default function SellerProductsPage() {
         </div>
       )}
 
-      {!hasShop && (
+      {setupError ? (
         <div className="p-3.5 rounded-xl bg-accent/10 border border-accent/20 text-accent text-xs flex items-center gap-2">
-          <span className="material-symbols-outlined text-[18px] shrink-0">warning</span>
+          <span className="material-symbols-outlined text-[18px] shrink-0">error</span>
+          <span>{setupError}</span>
+        </div>
+      ) : !sellerOperational ? (
+        <div className="p-3.5 rounded-xl bg-accent/10 border border-accent/20 text-accent text-xs flex items-center gap-2">
+          <span className="material-symbols-outlined text-[18px] shrink-0">block</span>
           <span>
-            You have not been assigned a Shop yet. Contact an authorized administrator to have a
-            Shop assigned to your account before creating products.
+            Your seller account is {seller?.status_display || seller?.status}. You cannot add or edit
+            products until it is active again.
+            {seller?.suspension_reason ? ` Reason: ${seller.suspension_reason}` : ""}
           </span>
         </div>
+      ) : (
+        shopsLoaded &&
+        !hasShop && (
+          <div className="p-3.5 rounded-xl bg-accent/10 border border-accent/20 text-accent text-xs flex items-center gap-2">
+            <span className="material-symbols-outlined text-[18px] shrink-0">warning</span>
+            <span>
+              {shops.length > 0
+                ? `Your shop ${shops.map((s) => `"${s.name}" (${s.status_display || s.status})`).join(", ")} is not approved yet. You can add products once staff approve it.`
+                : "You have not been assigned a Shop yet. Contact an authorized administrator to have a Shop assigned to your account before creating products."}
+            </span>
+          </div>
+        )
       )}
 
       {actionSuccess && (
@@ -543,24 +587,26 @@ export default function SellerProductsPage() {
                   );
                   return (
                     <tr key={p.id} className="hover:bg-surface-alt/40 transition-colors">
-                      <td className="py-3 px-4 flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg overflow-hidden bg-surface-alt border border-line shrink-0 relative">
-                          <Image
-                            src={imgUrl}
-                            alt={p.name}
-                            fill
-                            className="object-cover"
-                          />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="font-bold text-ink truncate max-w-[200px] sm:max-w-xs">
-                            {p.name}
-                          </p>
-                          {p.badge && (
-                            <span className="inline-block text-[9px] uppercase font-extrabold px-1.5 py-0.2 rounded bg-accent/15 text-accent mt-0.5">
-                              {p.badge}
-                            </span>
-                          )}
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg overflow-hidden bg-surface-alt border border-line shrink-0 relative">
+                            <Image
+                              src={imgUrl}
+                              alt={p.name}
+                              fill
+                              className="object-cover"
+                            />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-bold text-ink truncate max-w-[200px] sm:max-w-xs">
+                              {p.name}
+                            </p>
+                            {p.badge && (
+                              <span className="inline-block text-[9px] uppercase font-extrabold px-1.5 py-0.2 rounded bg-accent/15 text-accent mt-0.5">
+                                {p.badge}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </td>
 
@@ -773,19 +819,16 @@ export default function SellerProductsPage() {
                     <label className="block text-xs font-semibold text-ink mb-1.5">
                       Shop
                     </label>
-                    {shops.length > 1 ? (
+                    {eligibleShops.length > 1 ? (
                       <select
                         required
                         value={createShopId}
                         onChange={(e) => setCreateShopId(e.target.value)}
                         className="w-full px-3.5 py-2 rounded-lg border border-line bg-surface text-ink text-xs focus:outline-none focus:border-primary"
                       >
-                        {shops.map((s) => (
+                        {eligibleShops.map((s) => (
                           <option key={s.id} value={s.id}>
                             {s.name}
-                            {s.status !== "APPROVED" && s.status !== "ACTIVE"
-                              ? ` (${s.status_display || s.status})`
-                              : ""}
                           </option>
                         ))}
                       </select>
@@ -795,7 +838,7 @@ export default function SellerProductsPage() {
                           storefront
                         </span>
                         <span className="truncate font-semibold text-ink">
-                          {hasShop ? shops[0].name : "No Shop assigned"}
+                          {hasShop ? eligibleShops[0].name : "No approved Shop"}
                         </span>
                       </div>
                     )}
@@ -821,6 +864,27 @@ export default function SellerProductsPage() {
                       ))}
                     </select>
                   </div>
+                </div>
+              )}
+
+              {!isAddOpen && (
+                <div>
+                  <label className="block text-xs font-semibold text-ink mb-1.5">
+                    Category <span className="text-accent">*</span>
+                  </label>
+                  <select
+                    required
+                    value={formData.category_id}
+                    onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
+                    className="w-full px-3.5 py-2 rounded-lg border border-line bg-surface text-ink text-xs focus:outline-none focus:border-primary"
+                  >
+                    <option value="">Select Category</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               )}
 

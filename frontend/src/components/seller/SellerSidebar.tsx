@@ -111,7 +111,18 @@ export default function SellerSidebar({
                 {seller.business_name}
               </p>
               <div className="flex items-center gap-1.5 mt-1">
-                <span className="inline-block w-2 h-2 rounded-full bg-success"></span>
+                {/* The dot follows the account's real status (BUG-096). */}
+                <span
+                  className={`inline-block w-2 h-2 rounded-full ${
+                    seller.is_operational
+                      ? "bg-success"
+                      : seller.status === "SUSPENDED" || seller.status === "REJECTED"
+                      ? "bg-accent"
+                      : "bg-ink-muted"
+                  }`}
+                  title={seller.status_display || seller.status}
+                  aria-label={`Account status: ${seller.status_display || seller.status}`}
+                ></span>
                 <span className="text-[10px] font-semibold text-ink-muted uppercase tracking-wider">
                   {seller.seller_type_display || seller.seller_type}
                 </span>

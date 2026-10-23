@@ -288,7 +288,12 @@ export const DEMO_PRODUCTS: Product[] = [
   },
 ];
 
-export async function getCategories(): Promise<Category[]> {
+/**
+ * Active categories. The storefront falls back to demo categories when the
+ * API is down; a form that saves a category id passes `allowDemo: false` and
+ * gets the error instead, since demo ids do not exist (BUG-071).
+ */
+export async function getCategories({ allowDemo = true }: { allowDemo?: boolean } = {}): Promise<Category[]> {
   try {
     const res = await fetch(`${API_BASE_URL}/api/categories/`, {
       cache: "no-store",
@@ -296,6 +301,7 @@ export async function getCategories(): Promise<Category[]> {
     if (!res.ok) throw new Error("Failed to fetch categories");
     return await res.json();
   } catch (err) {
+    if (!allowDemo) throw err instanceof Error ? err : new Error("Failed to fetch categories");
     console.warn("Using fallback demo categories:", err);
     return DEMO_CATEGORIES;
   }
@@ -1473,13 +1479,23 @@ export async function getSellerProfile(token: string): Promise<SellerProfile> {
   return await res.json();
 }
 
+/** The signed-in account has no seller profile (the dashboard's 404). */
+export class SellerProfileMissingError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SellerProfileMissingError";
+  }
+}
+
 export async function getSellerDashboard(token: string): Promise<SellerDashboardData> {
   const res = await customerRequest(`/api/sellers/dashboard/`, token, {
     cache: "no-store",
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(extractApiError(err, "Failed to load seller dashboard"));
+    const message = extractApiError(err, "Failed to load seller dashboard");
+    if (res.status === 404) throw new SellerProfileMissingError(message);
+    throw new Error(message);
   }
   return await res.json();
 }
@@ -1614,7 +1630,13 @@ export async function updateSellerProduct(
   if (hasImageFile) {
     const formData = new FormData();
     Object.entries(data).forEach(([key, value]) => {
-      if (value === undefined || value === null) return;
+      if (value === undefined) return;
+      // FormData cannot carry null; an empty value is read as null by the
+      // server, so clearing the old price works with a new image too (BUG-070).
+      if (value === null) {
+        formData.append(key, "");
+        return;
+      }
       formData.append(key, value instanceof File ? value : String(value));
     });
     body = formData;

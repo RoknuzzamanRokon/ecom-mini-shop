@@ -1,10 +1,10 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import SellerAccountRequired from "@/components/seller/SellerAccountRequired";
-import { getSellerDashboard } from "@/lib/api";
+import { getSellerDashboard, SellerProfileMissingError } from "@/lib/api";
 import { getAuthToken } from "@/lib/auth";
 import { SellerDashboardData, SellerProfile, SellerCapabilities } from "@/lib/types";
 
@@ -12,7 +12,10 @@ interface SellerContextType {
   dashboardData: SellerDashboardData | null;
   seller: SellerProfile | null;
   capabilities: SellerCapabilities | null;
+  /** True only until the first dashboard load settles. */
   loading: boolean;
+  /** A background refreshDashboard() is in flight; the page stays mounted. */
+  refreshing: boolean;
   error: string | null;
   refreshDashboard: () => Promise<void>;
 }
@@ -30,53 +33,67 @@ export function useSeller() {
 export default function SellerGuard({ children }: { children: React.ReactNode }) {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
 
   const [dashboardData, setDashboardData] = useState<SellerDashboardData | null>(null);
+  // The first load shows the full-screen spinner; later refreshes only set
+  // `refreshing`, so a page's own state (a success message) survives them
+  // (BUG-072).
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isNotSeller, setIsNotSeller] = useState(false);
 
-  const fetchDashboard = useCallback(async () => {
+  // State changes only in the promise callbacks, so calling this from the
+  // effect below never sets state synchronously.
+  const fetchDashboard = useCallback((): Promise<void> => {
     const token = getAuthToken();
+    if (!token) return Promise.resolve().then(() => setLoading(false));
 
-    if (!token) {
-      setLoading(false);
-      return;
-    }
-
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await getSellerDashboard(token);
-      setDashboardData(data);
-      setIsNotSeller(false);
-    } catch (err: any) {
-      console.warn("Seller dashboard fetch error:", err);
-      // 404 or missing seller profile
-      if (
-        err?.message?.includes("No seller profile") ||
-        err?.message?.includes("404") ||
-        err?.message?.includes("not have a seller")
-      ) {
-        setIsNotSeller(true);
-      } else {
-        setError(err?.message || "Failed to load seller information.");
-      }
-    } finally {
-      setLoading(false);
-    }
+    return getSellerDashboard(token)
+      .then((data) => {
+        setDashboardData(data);
+        setIsNotSeller(false);
+        setError(null);
+      })
+      .catch((err: unknown) => {
+        if (err instanceof SellerProfileMissingError) {
+          setIsNotSeller(true);
+        } else {
+          // Shown as an error with Retry, never as a "Not Operational" portal
+          // built from missing data (BUG-030).
+          setError(err instanceof Error && err.message ? err.message : "Failed to load seller information.");
+        }
+      })
+      .finally(() => {
+        setRefreshing(false);
+        setLoading(false);
+      });
   }, []);
+
+  const refreshDashboard = useCallback(() => {
+    setRefreshing(true);
+    return fetchDashboard();
+  }, [fetchDashboard]);
+
+  const retry = useCallback(() => {
+    setLoading(true);
+    setError(null);
+    fetchDashboard();
+  }, [fetchDashboard]);
 
   useEffect(() => {
     if (authLoading) return;
 
     if (!isAuthenticated) {
-      router.push("/login?next=/seller");
+      // replace, so Back does not return to a page that only redirects, and
+      // keep the deep link for after sign-in.
+      router.replace(`/login?next=${encodeURIComponent(pathname || "/seller")}`);
       return;
     }
 
     fetchDashboard();
-  }, [isAuthenticated, authLoading, router, fetchDashboard]);
+  }, [isAuthenticated, authLoading, router, pathname, fetchDashboard]);
 
   if (authLoading || loading) {
     return (
@@ -96,6 +113,29 @@ export default function SellerGuard({ children }: { children: React.ReactNode })
     return <SellerAccountRequired account={user?.email || user?.username} />;
   }
 
+  if (error && !dashboardData) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-page p-4">
+        <div
+          role="alert"
+          className="max-w-md w-full bg-surface rounded-2xl border border-line p-8 shadow-xs flex flex-col items-center text-center gap-3"
+        >
+          <span className="material-symbols-outlined text-[40px] text-accent">cloud_off</span>
+          <h1 className="text-lg font-black text-ink">Seller Center could not load</h1>
+          <p className="text-xs text-ink-muted leading-relaxed">{error}</p>
+          <button
+            type="button"
+            onClick={retry}
+            className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-primary hover:bg-primary-hover text-on-primary text-xs font-bold uppercase tracking-wider cursor-pointer"
+          >
+            <span className="material-symbols-outlined text-[16px]">refresh</span>
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <SellerContext.Provider
       value={{
@@ -103,8 +143,9 @@ export default function SellerGuard({ children }: { children: React.ReactNode })
         seller: dashboardData?.seller || null,
         capabilities: dashboardData?.capabilities || null,
         loading,
+        refreshing,
         error,
-        refreshDashboard: fetchDashboard,
+        refreshDashboard,
       }}
     >
       {children}

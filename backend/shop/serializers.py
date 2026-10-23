@@ -299,6 +299,13 @@ class SellerProductUpdateSerializer(serializers.Serializer):
                 )
         else:
             attrs.pop("expected_stock", None)
+        # validate_category_id / validate_shop_id return the objects; hand them
+        # to ProductService.update_product under the names it applies, or the
+        # change was silently dropped (BUG-069).
+        if "category_id" in attrs:
+            attrs["category"] = attrs.pop("category_id")
+        if "shop_id" in attrs:
+            attrs["shop"] = attrs.pop("shop_id")
         return attrs
 
     def validate_name(self, value):

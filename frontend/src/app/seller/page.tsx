@@ -29,7 +29,10 @@ export default function SellerDashboardPage() {
 
     Promise.allSettled([
       getSellerShops(token).then((data) => setShops(data)),
-      getSellerProducts(token, { page: 1 }).then((data) => setProductsCount(data.count)),
+      // Only published products are live; drafts and rejected ones are not (BUG-096).
+      getSellerProducts(token, { page: 1, page_size: 1, status: "PUBLISHED" }).then((data) =>
+        setProductsCount(data.count)
+      ),
       getSellerOrders(token, undefined, 1).then((data) => {
         setOrders(data.results.slice(0, 5));
         setOrdersCount(data.count);
@@ -106,13 +109,13 @@ export default function SellerDashboardPage() {
         <div className="bg-surface rounded-xl border border-line p-5 shadow-xs flex items-center justify-between">
           <div>
             <p className="text-xs font-bold uppercase tracking-wider text-ink-muted">
-              Listed Products
+              Published Products
             </p>
             <p className="text-2xl font-black text-ink mt-1">
               {loadingMetrics ? "..." : productsCount}
             </p>
             <p className="text-[11px] text-ink-muted mt-0.5">
-              Active across your shops
+              Live in the storefront
             </p>
           </div>
           <div className="w-12 h-12 rounded-xl bg-accent/10 text-accent flex items-center justify-center">
