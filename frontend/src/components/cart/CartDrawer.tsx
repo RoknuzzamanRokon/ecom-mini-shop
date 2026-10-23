@@ -3,7 +3,7 @@
 import React from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useCart } from "@/context/CartContext";
+import { maxCartQuantity, useCart } from "@/context/CartContext";
 import { formatImageUrl } from "@/lib/api";
 
 export default function CartDrawer() {
@@ -18,9 +18,17 @@ export default function CartDrawer() {
     totalItemsCount,
     totalAmount,
     hasUnavailableItems,
+    isLoading,
+    isMutating,
+    error,
+    clearError,
   } = useCart();
 
   if (!isCartOpen) return null;
+
+  // Each change waits for the previous one, so a quantity is never computed
+  // from a cart the server has already moved past.
+  const busy = isLoading || isMutating;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true">
@@ -54,6 +62,24 @@ export default function CartDrawer() {
 
         {/* Item List */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          {error && (
+            <div
+              role="alert"
+              className="p-3 bg-danger/10 border border-danger/30 rounded-lg flex items-start gap-2.5 text-xs text-danger"
+            >
+              <span className="material-symbols-outlined text-[18px] shrink-0 mt-0.5">error</span>
+              <p className="flex-1">{error}</p>
+              <button
+                type="button"
+                onClick={clearError}
+                className="shrink-0 hover:opacity-80 cursor-pointer"
+                title="Dismiss"
+              >
+                <span className="material-symbols-outlined text-[16px]">close</span>
+              </button>
+            </div>
+          )}
+
           {hasUnavailableItems && (
             <div className="p-3 bg-amber-500/10 border border-amber-500/30 rounded-lg flex items-start gap-2.5 text-xs text-amber-700 dark:text-amber-400">
               <span className="material-symbols-outlined text-[18px] shrink-0 mt-0.5">warning</span>
@@ -87,6 +113,7 @@ export default function CartDrawer() {
                 (product.image ? product.image : "/placeholder.svg")
               );
               const isUnavailable = is_available === false;
+              const atLimit = quantity >= maxCartQuantity(product);
 
               return (
                 <div
@@ -129,7 +156,8 @@ export default function CartDrawer() {
                         <div className="flex items-center border border-line rounded bg-surface overflow-hidden">
                           <button
                             onClick={() => decreaseQuantity(product.id)}
-                            className="px-2 py-0.5 text-xs text-ink hover:bg-surface-sunken transition-colors cursor-pointer"
+                            disabled={busy}
+                            className="px-2 py-0.5 text-xs text-ink hover:bg-surface-sunken transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                             type="button"
                             title="Decrease"
                           >
@@ -140,9 +168,10 @@ export default function CartDrawer() {
                           </span>
                           <button
                             onClick={() => increaseQuantity(product.id)}
-                            className="px-2 py-0.5 text-xs text-ink hover:bg-surface-sunken transition-colors cursor-pointer"
+                            disabled={busy || atLimit}
+                            className="px-2 py-0.5 text-xs text-ink hover:bg-surface-sunken transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                             type="button"
-                            title="Increase"
+                            title={atLimit ? `At most ${maxCartQuantity(product)} per order` : "Increase"}
                           >
                             +
                           </button>
@@ -157,7 +186,8 @@ export default function CartDrawer() {
                         </span>
                         <button
                           onClick={() => removeFromCart(product.id)}
-                          className="text-danger hover:text-danger/80 transition-colors cursor-pointer"
+                          disabled={busy}
+                          className="text-danger hover:text-danger/80 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                           type="button"
                           title="Remove"
                         >
@@ -191,7 +221,8 @@ export default function CartDrawer() {
             <div className="flex gap-2">
               <button
                 onClick={clearCart}
-                className="px-3 py-2 text-xs font-semibold text-ink-muted hover:text-danger hover:bg-surface-sunken rounded border border-line transition-colors cursor-pointer"
+                disabled={busy}
+                className="px-3 py-2 text-xs font-semibold text-ink-muted hover:text-danger hover:bg-surface-sunken rounded border border-line transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                 type="button"
               >
                 Clear

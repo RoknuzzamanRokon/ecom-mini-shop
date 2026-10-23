@@ -8,6 +8,7 @@ import {
   updateCartItemApi,
   removeCartItemApi,
   clearCartApi,
+  CartApiError,
 } from "@/lib/api";
 // Phase 2J: the byte-identical copy of this reader that used to live below is
 // gone; the three legacy access-token keys are resolved in one place now.
@@ -17,9 +18,42 @@ import { useAuth } from "@/context/AuthContext";
 // Items added while logged out live only in this browser under this key.
 const GUEST_CART_KEY = "minishop-cart";
 
+// The server's per-line cap (cart.models.CartItem.MAX_QUANTITY).
+export const MAX_CART_QUANTITY = 99;
+
+/** The most of a product one cart line can hold: its stock, within the server's cap. */
+export function maxCartQuantity(product: Pick<Product, "stock">): number {
+  const stock = typeof product.stock === "number" ? product.stock : MAX_CART_QUANTITY;
+  return Math.max(0, Math.min(stock, MAX_CART_QUANTITY));
+}
+
+function readGuestCart(): CartItem[] {
+  try {
+    const saved = JSON.parse(localStorage.getItem(GUEST_CART_KEY) || "[]");
+    return Array.isArray(saved) ? saved : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeGuestCart(items: CartItem[]) {
+  try {
+    if (items.length > 0) localStorage.setItem(GUEST_CART_KEY, JSON.stringify(items));
+    else localStorage.removeItem(GUEST_CART_KEY);
+  } catch {}
+}
+
+function unitPrice(product: Product): number {
+  return typeof product.price === "string" ? parseFloat(product.price) : product.price;
+}
+
 interface CartContextType {
   items: CartItem[];
-  addToCart: (product: Product, quantity?: number) => Promise<void>;
+  /**
+   * Resolves true once the item is in the cart. The drawer opens to show the
+   * item or the refusal, unless `openCart: false`.
+   */
+  addToCart: (product: Product, quantity?: number, options?: { openCart?: boolean }) => Promise<boolean>;
   removeFromCart: (productId: number) => Promise<void>;
   increaseQuantity: (productId: number) => Promise<void>;
   decreaseQuantity: (productId: number) => Promise<void>;
@@ -30,6 +64,11 @@ interface CartContextType {
   totalAmount: number;
   hasUnavailableItems: boolean;
   isLoading: boolean;
+  /** A signed-in change is on its way to the server; steppers wait for it. */
+  isMutating: boolean;
+  /** Why the last cart change did not happen (the cart shown is the server's). */
+  error: string | null;
+  clearError: () => void;
   refreshCart: () => Promise<void>;
 }
 
@@ -41,9 +80,19 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false);
   const [hasUnavailableItems, setHasUnavailableItems] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isMutating, setIsMutating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const { isAuthenticated, isLoading: authLoading } = useAuth();
   // null until auth has resolved once, then the last auth state we acted on.
   const wasAuthenticated = useRef<boolean | null>(null);
+  // One signed-in change at a time: a second click while one is in flight is
+  // dropped, so quantities are never computed from a stale cart.
+  const busy = useRef(false);
+  // The latest items, for handlers created by an earlier render.
+  const itemsRef = useRef<CartItem[]>([]);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
   const applyBackendCart = useCallback((backendCart: BackendCart) => {
     const mapped: CartItem[] = (backendCart.items || []).map((bi) => {
@@ -75,28 +124,69 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
   }, [applyBackendCart]);
 
-  // Moves the logged-out cart into the account's server cart, one POST per
-  // item (the server adds to any quantity already there), then drops the local
-  // copy. Checkout orders from the server cart only, so without this a login
-  // mid-session left the page showing items the server had never seen.
-  const mergeGuestCart = useCallback(async (token: string) => {
-    let guestItems: CartItem[] = [];
-    try {
-      const saved = JSON.parse(localStorage.getItem(GUEST_CART_KEY) || "[]");
-      if (Array.isArray(saved)) guestItems = saved;
-    } catch {}
-    for (const item of guestItems) {
-      if (!item?.product?.id || !(item.quantity > 0)) continue;
+  // A signed-in change goes to the server only. On failure the local cart is
+  // left alone, the error is kept for the UI and the server cart is re-read,
+  // so what is shown is always what checkout will order (BUG-010).
+  const mutateServerCart = useCallback(
+    async (request: () => Promise<BackendCart | null>, failure: string): Promise<boolean> => {
+      if (busy.current) return false;
+      busy.current = true;
+      setIsMutating(true);
+      setError(null);
       try {
-        await addToCartApi(item.product.id, item.quantity, token);
+        const backendCart = await request();
+        if (backendCart) {
+          applyBackendCart(backendCart);
+        } else {
+          setItems([]);
+          setHasUnavailableItems(false);
+        }
+        return true;
       } catch (err) {
-        // e.g. the product is no longer for sale; skip it rather than block login.
-        console.warn(`Could not move "${item.product.name}" into your cart:`, err);
+        setError(err instanceof Error && err.message ? err.message : failure);
+        await refreshCart();
+        return false;
+      } finally {
+        busy.current = false;
+        setIsMutating(false);
       }
+    },
+    [applyBackendCart, refreshCart]
+  );
+
+  // Moves the logged-out cart into the account's server cart, one POST per
+  // item (the server adds to any quantity already there). Checkout orders from
+  // the server cart only, so without this a login mid-session left the page
+  // showing items the server had never seen. Each line leaves the saved copy
+  // as soon as it is merged, so an interrupted run never adds it twice
+  // (BUG-084). A line the server refuses is dropped and named; one that hit an
+  // outage stays saved and is tried again on the next load.
+  const mergeGuestCart = useCallback(async (token: string) => {
+    let pending = readGuestCart();
+    if (pending.length === 0) return;
+    const refused: string[] = [];
+    for (const item of [...pending]) {
+      if (item?.product?.id && item.quantity > 0) {
+        try {
+          await addToCartApi(item.product.id, item.quantity, token);
+        } catch (err) {
+          const isRefusal =
+            err instanceof CartApiError && err.status >= 400 && err.status < 500 && ![401, 408, 429].includes(err.status);
+          if (!isRefusal) continue;
+          refused.push(item.product.name);
+        }
+      }
+      pending = pending.filter((other) => other !== item);
+      writeGuestCart(pending);
     }
-    try {
-      localStorage.removeItem(GUEST_CART_KEY);
-    } catch {}
+    const notes: string[] = [];
+    if (refused.length > 0) {
+      notes.push(`Could not move ${refused.join(", ")} from your guest cart: no longer available in that quantity.`);
+    }
+    if (pending.length > 0) {
+      notes.push(`${pending.length} item(s) from your guest cart could not be moved yet. We will try again on your next visit.`);
+    }
+    if (notes.length > 0) setError(notes.join(" "));
   }, []);
 
   const loadAccountCart = useCallback(
@@ -116,13 +206,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   // Initial load: restore the guest cart; a logged-in cart loads via the auth effect below
   useEffect(() => {
     if (!getAuthToken()) {
-      try {
-        const saved = localStorage.getItem(GUEST_CART_KEY);
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          setItems(parsed);
-        }
-      } catch {}
+      const saved = readGuestCart();
+      if (saved.length > 0) setItems(saved);
     }
     setMounted(true);
   }, []);
@@ -145,6 +230,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   const [cartIsAccountCart, setCartIsAccountCart] = useState(false);
   if (!authLoading && cartIsAccountCart !== isAuthenticated) {
     setCartIsAccountCart(isAuthenticated);
+    setError(null);
     if (isAuthenticated) {
       setIsLoading(true);
     } else {
@@ -155,183 +241,109 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   // Save guest cart changes to localStorage
   useEffect(() => {
-    if (mounted && !getAuthToken()) {
-      try {
-        localStorage.setItem(GUEST_CART_KEY, JSON.stringify(items));
-      } catch {}
-    }
+    if (mounted && !getAuthToken()) writeGuestCart(items);
   }, [items, mounted]);
 
-  const addToCart = async (product: Product, quantity: number = 1) => {
+  const addToCart = async (
+    product: Product,
+    quantity: number = 1,
+    { openCart = true }: { openCart?: boolean } = {}
+  ): Promise<boolean> => {
     const token = getAuthToken();
     if (token) {
-      try {
-        setIsLoading(true);
-        const updatedCart = await addToCartApi(product.id, quantity, token);
-        applyBackendCart(updatedCart);
-        setIsCartOpen(true);
-        return;
-      } catch (err) {
-        console.warn("Backend add to cart failed, falling back to local state:", err);
-      } finally {
-        setIsLoading(false);
-      }
+      const added = await mutateServerCart(
+        () => addToCartApi(product.id, quantity, token),
+        "Could not add this item to your cart."
+      );
+      // The drawer opens either way: it shows the item, or why it was refused.
+      if (openCart) setIsCartOpen(true);
+      return added;
     }
 
-    // Guest / fallback mode
+    // Guest cart: kept in this browser only.
+    const limit = maxCartQuantity(product);
+    const existing = itemsRef.current.find((item) => item.product.id === product.id);
+    if ((existing?.quantity ?? 0) + quantity > limit) {
+      setError(`You can have at most ${limit} of "${product.name}" in your cart.`);
+      if (openCart) setIsCartOpen(true);
+      return false;
+    }
+    setError(null);
     setItems((prev) => {
-      const existing = prev.find((item) => item.product.id === product.id);
-      const price = typeof product.price === "string" ? parseFloat(product.price) : product.price;
-
-      if (existing) {
+      const price = unitPrice(product);
+      if (prev.some((item) => item.product.id === product.id)) {
         return prev.map((item) => {
-          if (item.product.id === product.id) {
-            const newQty = item.quantity + quantity;
-            return {
-              ...item,
-              quantity: newQty,
-              subtotal: price * newQty,
-            };
-          }
-          return item;
+          if (item.product.id !== product.id) return item;
+          const newQty = item.quantity + quantity;
+          return { ...item, quantity: newQty, subtotal: price * newQty };
         });
       }
-
-      return [
-        ...prev,
-        {
-          product,
-          quantity,
-          subtotal: price * quantity,
-          is_available: true,
-        },
-      ];
+      return [...prev, { product, quantity, subtotal: price * quantity, is_available: true }];
     });
-    setIsCartOpen(true);
+    if (openCart) setIsCartOpen(true);
+    return true;
   };
 
-  const removeFromCart = async (productId: number) => {
+  /** Moves a line to `quantity` (0 removes it), on the server when signed in. */
+  const setLineQuantity = async (productId: number, quantity: number) => {
+    const item = itemsRef.current.find((i) => i.product.id === productId);
+    if (!item) return;
     const token = getAuthToken();
-    const item = items.find((i) => i.product.id === productId);
-
-    if (token && item?.id) {
-      try {
-        setIsLoading(true);
-        const updatedCart = await removeCartItemApi(item.id, token);
-        applyBackendCart(updatedCart);
+    if (token) {
+      const itemId = item.id;
+      if (!itemId) {
+        await refreshCart();
         return;
-      } catch (err) {
-        console.warn("Backend remove item failed, falling back to local state:", err);
-      } finally {
-        setIsLoading(false);
       }
+      await mutateServerCart(
+        () => (quantity > 0 ? updateCartItemApi(itemId, quantity, token) : removeCartItemApi(itemId, token)),
+        "Could not update your cart."
+      );
+      return;
     }
 
-    // Guest / fallback mode
-    setItems((prev) => prev.filter((item) => item.product.id !== productId));
+    setError(null);
+    setItems((prev) =>
+      prev
+        .map((line) =>
+          line.product.id === productId
+            ? { ...line, quantity, subtotal: unitPrice(line.product) * quantity }
+            : line
+        )
+        .filter((line) => line.quantity > 0)
+    );
   };
+
+  const removeFromCart = (productId: number) => setLineQuantity(productId, 0);
 
   const increaseQuantity = async (productId: number) => {
-    const token = getAuthToken();
-    const item = items.find((i) => i.product.id === productId);
-
-    if (token && item?.id) {
-      try {
-        setIsLoading(true);
-        const updatedCart = await updateCartItemApi(item.id, item.quantity + 1, token);
-        applyBackendCart(updatedCart);
-        return;
-      } catch (err) {
-        console.warn("Backend increase quantity failed, falling back to local state:", err);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    // Guest / fallback mode
-    setItems((prev) =>
-      prev.map((item) => {
-        if (item.product.id === productId) {
-          const price =
-            typeof item.product.price === "string"
-              ? parseFloat(item.product.price)
-              : item.product.price;
-          const newQty = item.quantity + 1;
-          return {
-            ...item,
-            quantity: newQty,
-            subtotal: price * newQty,
-          };
-        }
-        return item;
-      })
-    );
+    const item = itemsRef.current.find((i) => i.product.id === productId);
+    if (!item || item.quantity >= maxCartQuantity(item.product)) return;
+    await setLineQuantity(productId, item.quantity + 1);
   };
 
   const decreaseQuantity = async (productId: number) => {
-    const token = getAuthToken();
-    const item = items.find((i) => i.product.id === productId);
-
-    if (token && item?.id) {
-      try {
-        setIsLoading(true);
-        if (item.quantity > 1) {
-          const updatedCart = await updateCartItemApi(item.id, item.quantity - 1, token);
-          applyBackendCart(updatedCart);
-        } else {
-          const updatedCart = await removeCartItemApi(item.id, token);
-          applyBackendCart(updatedCart);
-        }
-        return;
-      } catch (err) {
-        console.warn("Backend decrease quantity failed, falling back to local state:", err);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    // Guest / fallback mode
-    setItems((prev) =>
-      prev
-        .map((item) => {
-          if (item.product.id === productId) {
-            const price =
-              typeof item.product.price === "string"
-                ? parseFloat(item.product.price)
-                : item.product.price;
-            const newQty = item.quantity - 1;
-            return {
-              ...item,
-              quantity: newQty,
-              subtotal: price * newQty,
-            };
-          }
-          return item;
-        })
-        .filter((item) => item.quantity > 0)
-    );
+    const item = itemsRef.current.find((i) => i.product.id === productId);
+    if (!item) return;
+    await setLineQuantity(productId, item.quantity - 1);
   };
 
   const clearCart = async () => {
     const token = getAuthToken();
     if (token) {
-      try {
-        setIsLoading(true);
+      await mutateServerCart(async () => {
         await clearCartApi(token);
-        setItems([]);
-        setHasUnavailableItems(false);
-        return;
-      } catch (err) {
-        console.warn("Backend clear cart failed, falling back to local state:", err);
-      } finally {
-        setIsLoading(false);
-      }
+        return null;
+      }, "Could not clear your cart.");
+      return;
     }
 
-    // Guest / fallback mode
+    setError(null);
     setItems([]);
     setHasUnavailableItems(false);
   };
+
+  const clearError = useCallback(() => setError(null), []);
 
   // Authoritative sums: exclude unavailable items from totals
   const totalItemsCount = items.reduce(
@@ -358,6 +370,9 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
         totalAmount,
         hasUnavailableItems,
         isLoading,
+        isMutating,
+        error,
+        clearError,
         refreshCart,
       }}
     >

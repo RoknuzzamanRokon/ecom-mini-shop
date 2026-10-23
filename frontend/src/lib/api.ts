@@ -727,12 +727,32 @@ export async function setDefaultCustomerAddress(id: number, token: string): Prom
   return await res.json();
 }
 
+/**
+ * A cart request the server answered with an error. `status` tells a refusal
+ * (4xx: not for sale, over the quantity cap) from an outage worth retrying.
+ */
+export class CartApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "CartApiError";
+    this.status = status;
+  }
+}
+
+async function cartApiError(res: Response, fallback: string): Promise<CartApiError> {
+  const data = await res.json().catch(() => ({}));
+  const first = (value: unknown) => (Array.isArray(value) ? value[0] : value);
+  const message = [data.detail, data.product_id, data.quantity]
+    .map(first)
+    .find((value): value is string => typeof value === "string" && value.length > 0);
+  return new CartApiError(message || fallback, res.status);
+}
+
 export async function getCart(token: string): Promise<BackendCart> {
   const res = await customerRequest(`/api/cart/`, token);
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || "Failed to fetch cart");
-  }
+  if (!res.ok) throw await cartApiError(res, "Failed to fetch cart");
   return await res.json();
 }
 
@@ -748,10 +768,7 @@ export async function addToCartApi(
     },
     body: JSON.stringify({ product_id: productId, quantity }),
   });
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || errorData.product_id || "Failed to add item to cart");
-  }
+  if (!res.ok) throw await cartApiError(res, "Failed to add item to cart");
   return await res.json();
 }
 
@@ -767,10 +784,7 @@ export async function updateCartItemApi(
     },
     body: JSON.stringify({ quantity }),
   });
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || errorData.quantity || "Failed to update cart item");
-  }
+  if (!res.ok) throw await cartApiError(res, "Failed to update cart item");
   return await res.json();
 }
 
@@ -781,10 +795,7 @@ export async function removeCartItemApi(
   const res = await customerRequest(`/api/cart/items/${itemId}/`, token, {
     method: "DELETE",
   });
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || "Failed to remove item from cart");
-  }
+  if (!res.ok) throw await cartApiError(res, "Failed to remove item from cart");
   return await res.json();
 }
 
@@ -792,10 +803,7 @@ export async function clearCartApi(token: string): Promise<void> {
   const res = await customerRequest(`/api/cart/`, token, {
     method: "DELETE",
   });
-  if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || "Failed to clear cart");
-  }
+  if (!res.ok) throw await cartApiError(res, "Failed to clear cart");
 }
 
 export async function getSellerOrders(

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -20,8 +20,28 @@ import { getAuthToken } from "@/lib/auth";
 
 export default function CheckoutPage() {
   const router = useRouter();
-  const { items, totalAmount, clearCart, isLoading: cartLoading } = useCart();
-  const { user, isAuthenticated } = useAuth();
+  const {
+    items,
+    totalAmount,
+    clearCart,
+    isLoading: cartLoading,
+    refreshCart,
+    error: cartError,
+    clearError: clearCartError,
+  } = useCart();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
+
+  // Signed in, the order is built from the server cart, so the totals shown
+  // here come from a fresh read of it, never from what this tab assumed
+  // (BUG-010). The read waits for any account-cart load already running.
+  const [cartVerified, setCartVerified] = useState(false);
+  const verifyRequested = useRef(false);
+  useEffect(() => {
+    if (!isAuthenticated || cartLoading || verifyRequested.current) return;
+    verifyRequested.current = true;
+    refreshCart().finally(() => setCartVerified(true));
+  }, [isAuthenticated, cartLoading, refreshCart]);
+  const cartReady = !authLoading && (!isAuthenticated || (cartVerified && !cartLoading));
 
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [loadingAddresses, setLoadingAddresses] = useState(false);
@@ -210,6 +230,25 @@ export default function CheckoutPage() {
     }
   };
 
+  if (!cartReady) {
+    return (
+      <div className="min-h-screen flex flex-col bg-page">
+        <div className="sticky top-0 z-40 w-full shadow-sm">
+          <Header />
+          <Navbar />
+        </div>
+        <main
+          className="max-w-[1360px] mx-auto px-4 sm:px-6 py-12 flex-1 flex flex-col items-center justify-center text-center"
+          role="status"
+        >
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-primary"></div>
+          <p className="text-sm text-ink-muted mt-3">Loading your cart...</p>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
+
   if (items.length === 0) {
     return (
       <div className="min-h-screen flex flex-col bg-page">
@@ -250,6 +289,18 @@ export default function CheckoutPage() {
         {error && (
           <div className="mb-6 p-4 rounded-lg bg-danger/10 border border-danger/30 text-danger text-sm">
             {error}
+          </div>
+        )}
+
+        {cartError && (
+          <div
+            role="alert"
+            className="mb-6 p-4 rounded-lg bg-danger/10 border border-danger/30 text-danger text-sm flex items-start justify-between gap-3"
+          >
+            <span>{cartError}</span>
+            <button type="button" onClick={clearCartError} className="shrink-0 hover:opacity-80 cursor-pointer" title="Dismiss">
+              <span className="material-symbols-outlined text-[18px]">close</span>
+            </button>
           </div>
         )}
 

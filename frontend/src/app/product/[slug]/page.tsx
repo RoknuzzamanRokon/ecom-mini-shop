@@ -14,7 +14,7 @@ import ProductReviews from "@/components/product/ProductReviews";
 import StarRating from "@/components/reviews/StarRating";
 import { Product } from "@/lib/types";
 import { getProductDetail, formatImageUrl } from "@/lib/api";
-import { useCart } from "@/context/CartContext";
+import { maxCartQuantity, useCart } from "@/context/CartContext";
 
 export default function ProductDetailPage() {
   const params = useParams();
@@ -25,12 +25,25 @@ export default function ProductDetailPage() {
   const [loading, setLoading] = useState(true);
   const [selectedImage, setSelectedImage] = useState<string>("/placeholder.svg");
   const [quantity, setQuantity] = useState(1);
-  const { addToCart } = useCart();
+  const { addToCart, error: cartError } = useCart();
+  // Which button's add is in flight, and whether the last add failed.
+  const [adding, setAdding] = useState<"cart" | "buy" | null>(null);
+  const [addFailed, setAddFailed] = useState(false);
 
-  const handleBuyNow = () => {
-    if (!product || !product.in_stock) return;
-    addToCart(product, quantity);
-    router.push("/checkout");
+  // Buy Now waits for the item to be in the cart and goes straight to
+  // checkout, without the drawer (BUG-087).
+  const handleAdd = async (mode: "cart" | "buy") => {
+    if (!product || !product.in_stock || adding) return;
+    setAdding(mode);
+    setAddFailed(false);
+    const qty = Math.min(quantity, Math.max(1, maxCartQuantity(product)));
+    const added = await addToCart(product, qty, { openCart: mode === "cart" });
+    setAdding(null);
+    if (!added) {
+      setAddFailed(true);
+      return;
+    }
+    if (mode === "buy") router.push("/checkout");
   };
 
   const loadProduct = useCallback(
@@ -250,8 +263,9 @@ export default function ProductDetailPage() {
                   {quantity}
                 </span>
                 <button
-                  onClick={() => setQuantity(quantity + 1)}
-                  className="px-3.5 py-2.5 text-sm text-ink hover:bg-surface-sunken transition-colors cursor-pointer"
+                  onClick={() => setQuantity(Math.min(maxCartQuantity(product), quantity + 1))}
+                  disabled={quantity >= maxCartQuantity(product)}
+                  className="px-3.5 py-2.5 text-sm text-ink hover:bg-surface-sunken transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                   type="button"
                 >
                   +
@@ -259,27 +273,33 @@ export default function ProductDetailPage() {
               </div>
 
               <button
-                onClick={() => addToCart(product, quantity)}
-                disabled={!product.in_stock}
+                onClick={() => handleAdd("cart")}
+                disabled={!product.in_stock || adding !== null}
                 className="flex-1 bg-surface-alt hover:bg-surface-sunken border border-line disabled:opacity-50 text-ink font-bold text-xs uppercase tracking-wider py-3 px-4 rounded-lg shadow-2xs transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
                 type="button"
               >
                 <span className="material-symbols-outlined text-[18px]">add_shopping_cart</span>
-                <span>Add to Cart</span>
+                <span>{adding === "cart" ? "Adding..." : "Add to Cart"}</span>
               </button>
 
               <button
-                onClick={handleBuyNow}
-                disabled={!product.in_stock}
+                onClick={() => handleAdd("buy")}
+                disabled={!product.in_stock || adding !== null}
                 className="flex-1 bg-primary hover:bg-primary-hover disabled:opacity-50 text-on-primary font-bold text-xs uppercase tracking-wider py-3 px-4 rounded-lg shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98"
                 type="button"
               >
                 <span className="material-symbols-outlined text-[18px]">bolt</span>
-                <span>Buy Now</span>
+                <span>{adding === "buy" ? "Adding..." : "Buy Now"}</span>
               </button>
 
               <FavoriteButton productId={product.id} size="md" />
             </div>
+
+            {addFailed && cartError && (
+              <p role="alert" className="mt-3 text-xs font-semibold text-danger">
+                {cartError}
+              </p>
+            )}
 
             {/* Perks breakdown */}
             <div className="mt-8 grid grid-cols-2 gap-3 pt-6 border-t border-line text-xs text-ink-body">
