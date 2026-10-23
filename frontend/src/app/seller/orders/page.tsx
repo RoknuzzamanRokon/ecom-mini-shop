@@ -5,6 +5,9 @@ import { getSellerOrderDetail, getSellerOrders, updateSellerOrderStatus } from "
 import { SellerOrder, SellerOrderDetail } from "@/lib/types";
 import { getAuthToken } from "@/lib/auth";
 
+// Sent with every list request, so the page count always matches (BUG-024).
+const ORDERS_PAGE_SIZE = 10;
+
 const ORDER_STATUSES = [
   "ALL",
   "PENDING",
@@ -33,8 +36,10 @@ export default function SellerOrdersPage() {
   const [totalPages, setTotalPages] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(true);
 
-  // Filters
+  // Filters. The search box is debounced into searchQuery, which the server
+  // matches across all the seller's orders, not just this page (BUG-025).
   const [selectedStatus, setSelectedStatus] = useState<string>("ALL");
+  const [searchInput, setSearchInput] = useState<string>("");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   // Order Details Modal. The list row has no delivery address, so the modal
@@ -65,23 +70,12 @@ export default function SellerOrdersPage() {
       const res = await getSellerOrders(
         token,
         selectedStatus !== "ALL" ? selectedStatus : undefined,
-        page
+        page,
+        { q: searchQuery, pageSize: ORDERS_PAGE_SIZE }
       );
-      // Filter locally or pass query if backend supports
-      let filtered = res.results;
-      if (selectedStatus !== "ALL") {
-        filtered = filtered.filter(
-          (o) => o.status.toUpperCase() === selectedStatus.toUpperCase()
-        );
-      }
-      if (searchQuery) {
-        // The list carries no customer names, only order numbers.
-        const q = searchQuery.toLowerCase();
-        filtered = filtered.filter((o) => o.order_number.toLowerCase().includes(q));
-      }
-      setOrders(filtered);
+      setOrders(res.results);
       setTotalCount(res.count);
-      setTotalPages(Math.ceil(res.count / 10) || 1);
+      setTotalPages(Math.max(1, Math.ceil(res.count / ORDERS_PAGE_SIZE)));
     } catch (err: any) {
       setActionError(err.message || "Failed to load seller orders.");
     } finally {
@@ -92,6 +86,15 @@ export default function SellerOrdersPage() {
   useEffect(() => {
     fetchOrdersList();
   }, [fetchOrdersList]);
+
+  // A new search starts from page 1, once typing pauses.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchQuery(searchInput.trim());
+      setPage(1);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   const loadOrderDetail = (order: SellerOrder) => {
     const token = getAuthToken();
@@ -193,9 +196,9 @@ export default function SellerOrdersPage() {
         <div className="w-full sm:w-72">
           <input
             type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search order #..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search order # or recipient..."
             className="w-full px-3.5 py-2 rounded-lg border border-line bg-surface text-ink text-xs focus:outline-none focus:border-primary"
           />
         </div>
@@ -205,7 +208,10 @@ export default function SellerOrdersPage() {
             <button
               key={st}
               type="button"
-              onClick={() => setSelectedStatus(st)}
+              onClick={() => {
+                setSelectedStatus(st);
+                setPage(1);
+              }}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer ${
                 selectedStatus === st
                   ? "bg-primary text-on-primary shadow-xs"
@@ -317,6 +323,32 @@ export default function SellerOrdersPage() {
           })
         )}
       </div>
+
+      {totalPages > 1 && (
+        <div className="bg-surface rounded-xl border border-line p-4 flex items-center justify-between text-xs">
+          <span className="text-ink-muted">
+            Page {page} of {totalPages} ({totalCount} orders)
+          </span>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={page <= 1 || loading}
+              onClick={() => setPage(page - 1)}
+              className="px-3 py-1.5 rounded-lg border border-line hover:bg-surface-alt disabled:opacity-40 text-ink font-semibold cursor-pointer disabled:cursor-not-allowed"
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              disabled={page >= totalPages || loading}
+              onClick={() => setPage(page + 1)}
+              className="px-3 py-1.5 rounded-lg border border-line hover:bg-surface-alt disabled:opacity-40 text-ink font-semibold cursor-pointer disabled:cursor-not-allowed"
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Order Detail Modal */}
       {viewingOrder && (

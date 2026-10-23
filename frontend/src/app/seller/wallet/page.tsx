@@ -20,6 +20,12 @@ const TXN_TYPES = [
 export default function SellerWalletPage() {
   const [wallet, setWallet] = useState<SellerWallet | null>(null);
   const [transactions, setTransactions] = useState<PointTransaction[]>([]);
+  // The ledger is paged by the server; "Load more" fetches the next page
+  // instead of silently stopping at the first one (BUG-026).
+  const [historyPage, setHistoryPage] = useState<number>(1);
+  const [hasMoreHistory, setHasMoreHistory] = useState<boolean>(false);
+  const [totalHistory, setTotalHistory] = useState<number>(0);
+  const [loadingMore, setLoadingMore] = useState<boolean>(false);
   const [selectedType, setSelectedType] = useState<string>("ALL");
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +42,10 @@ export default function SellerWalletPage() {
         getSellerPointHistory(token, selectedType !== "ALL" ? selectedType : undefined),
       ]);
       setWallet(walletRes);
-      setTransactions(historyRes);
+      setTransactions(historyRes.results);
+      setHistoryPage(1);
+      setHasMoreHistory(Boolean(historyRes.next));
+      setTotalHistory(historyRes.count);
     } catch (err: any) {
       setError(err.message || "Failed to load wallet data.");
     } finally {
@@ -47,6 +56,24 @@ export default function SellerWalletPage() {
   useEffect(() => {
     fetchWalletData();
   }, [fetchWalletData]);
+
+  const loadMoreHistory = async () => {
+    const token = getAuthToken();
+    if (!token || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const next = historyPage + 1;
+      const res = await getSellerPointHistory(token, selectedType !== "ALL" ? selectedType : undefined, next);
+      setTransactions((prev) => [...prev, ...res.results]);
+      setHistoryPage(next);
+      setHasMoreHistory(Boolean(res.next));
+      setTotalHistory(res.count);
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to load more transactions.");
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -268,6 +295,21 @@ export default function SellerWalletPage() {
                 })}
               </tbody>
             </table>
+            <div className="p-4 border-t border-line flex items-center justify-between gap-3 text-xs">
+              <span className="text-ink-muted">
+                Showing {transactions.length} of {totalHistory} transactions
+              </span>
+              {hasMoreHistory && (
+                <button
+                  type="button"
+                  onClick={loadMoreHistory}
+                  disabled={loadingMore}
+                  className="px-3 py-1.5 rounded-lg border border-line hover:bg-surface-alt disabled:opacity-40 text-ink font-semibold cursor-pointer disabled:cursor-not-allowed"
+                >
+                  {loadingMore ? "Loading..." : "Load more"}
+                </button>
+              )}
+            </div>
           </div>
         )}
       </div>

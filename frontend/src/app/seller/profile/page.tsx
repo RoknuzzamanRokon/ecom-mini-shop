@@ -89,7 +89,7 @@ export default function SellerProfilePage() {
     return Promise.all([getSellerWallet(token), getSellerPointHistory(token)])
       .then(([walletRes, historyRes]) => {
         setWallet(walletRes);
-        setHistory(historyRes);
+        setHistory(historyRes.results);
         setWalletError(null);
       })
       .catch((err: unknown) => {

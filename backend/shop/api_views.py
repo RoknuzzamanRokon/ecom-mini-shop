@@ -308,6 +308,20 @@ class OrderListCreateAPIView(APIView):
             .order_by("-created_at")
         )
 
+        # ?status=PENDING,SHIPPED: only orders in these statuses, so "Current
+        # Orders" finds an old active order behind newer ones (BUG-026).
+        status_param = request.query_params.get("status", "")
+        if status_param.strip():
+            wanted = {value.strip().upper() for value in status_param.split(",") if value.strip()}
+            unknown = wanted - {code.upper() for code, _label in Order.STATUS_CHOICES}
+            if unknown:
+                raise DRFValidationError({"status": f"Unknown order status: {', '.join(sorted(unknown))}."})
+            # Case-insensitive, so legacy lowercase rows match too.
+            matches = Q()
+            for value in wanted:
+                matches |= Q(status__iexact=value)
+            queryset = queryset.filter(matches)
+
         paginator = self.pagination_class()
         page = paginator.paginate_queryset(queryset, request)
         if page is not None:

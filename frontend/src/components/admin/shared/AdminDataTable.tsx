@@ -178,6 +178,18 @@ export default function AdminDataTable<T>({
   const headerCellClass =
     "px-4 py-3 text-[10px] font-extrabold uppercase tracking-wider text-ink-muted whitespace-nowrap";
 
+  // A page past the last one (an old bookmark, or rows removed since) is DRF's
+  // 404 "Invalid page."; go back to page 1 rather than a dead end (BUG-079).
+  const pageOutOfRange =
+    Boolean(error) &&
+    !loading &&
+    (page ?? 1) > 1 &&
+    Boolean(onPageChange) &&
+    /^invalid page\.?$/i.test((error ?? "").trim());
+  React.useEffect(() => {
+    if (pageOutOfRange) onPageChange?.(1);
+  }, [pageOutOfRange, onPageChange]);
+
   // ---- Error state ---------------------------------------------------------
   if (error && !loading) {
     return (
@@ -194,18 +206,32 @@ export default function AdminDataTable<T>({
             <p className="text-sm font-bold text-ink">Unable to load data</p>
             <p className="text-xs text-ink-muted mt-1 max-w-md">{error}</p>
           </div>
-          {onRetry && (
-            <button
-              type="button"
-              onClick={onRetry}
-              className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-on-primary text-xs font-bold transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-            >
-              <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
-                refresh
-              </span>
-              Try Again
-            </button>
-          )}
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            {onRetry && (
+              <button
+                type="button"
+                onClick={onRetry}
+                className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-on-primary text-xs font-bold transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              >
+                <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+                  refresh
+                </span>
+                Try Again
+              </button>
+            )}
+            {onPageChange && (page ?? 1) > 1 && (
+              <button
+                type="button"
+                onClick={() => onPageChange(1)}
+                className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-line hover:bg-surface-alt text-ink text-xs font-bold transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              >
+                <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
+                  first_page
+                </span>
+                Back to Page 1
+              </button>
+            )}
+          </div>
         </div>
       </div>
     );

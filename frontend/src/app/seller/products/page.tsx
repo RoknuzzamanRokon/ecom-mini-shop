@@ -20,6 +20,9 @@ import {
 import { Product, SellerShop, Category } from "@/lib/types";
 import { getAuthToken } from "@/lib/auth";
 
+// Sent with every list request, so the page count always matches (BUG-024).
+const PRODUCTS_PAGE_SIZE = 12;
+
 const STATUS_BADGE_STYLES: Record<string, string> = {
   DRAFT: "bg-surface-alt text-ink-muted",
   SUBMITTED: "bg-primary/15 text-primary",
@@ -66,6 +69,8 @@ export default function SellerProductsPage() {
   // Feedback notifications
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Why the list itself failed to load; cleared by the next successful load.
+  const [listError, setListError] = useState<string | null>(null);
   // The product whose "Submit for review" call is in flight.
   const [submittingId, setSubmittingId] = useState<number | null>(null);
   // Shown in the edit modal when its stock figure went stale (BUG-008).
@@ -97,6 +102,7 @@ export default function SellerProductsPage() {
       setLoading(true);
       const params: Parameters<typeof getSellerProducts>[1] = {
         page,
+        page_size: PRODUCTS_PAGE_SIZE,
         q: searchQuery || undefined,
         shop_id: selectedShopId ? parseInt(selectedShopId) : undefined,
         category: selectedCategory || undefined,
@@ -104,9 +110,10 @@ export default function SellerProductsPage() {
       const res = await getSellerProducts(token, params);
       setProducts(res.results);
       setTotalCount(res.count);
-      setTotalPages(Math.ceil(res.count / 10) || 1);
+      setTotalPages(Math.max(1, Math.ceil(res.count / PRODUCTS_PAGE_SIZE)));
+      setListError(null);
     } catch (err: any) {
-      setActionError(err.message || "Failed to load products.");
+      setListError(err.message || "Failed to load products.");
     } finally {
       setLoading(false);
     }
@@ -350,7 +357,10 @@ export default function SellerProductsPage() {
       await deleteSellerProduct(token, deletingProduct.id);
       setActionSuccess(`Product "${deletingProduct.name}" deleted.`);
       setDeletingProduct(null);
-      await fetchProductsList();
+      // The last row of a later page: that page is gone, so step back to it
+      // (the page change reloads the list) instead of asking for a missing page.
+      if (products.length === 1 && page > 1) setPage(page - 1);
+      else await fetchProductsList();
       refreshProductQuota();
     } catch (err: any) {
       setActionError(err.message || "Failed to delete product.");
@@ -423,6 +433,29 @@ export default function SellerProductsPage() {
         <div className="p-4 rounded-xl bg-accent/10 border border-accent/30 text-accent text-xs font-semibold flex items-center gap-2">
           <span className="material-symbols-outlined text-[20px]">error</span>
           <span>{actionError}</span>
+        </div>
+      )}
+
+      {listError && (
+        <div className="p-4 rounded-xl bg-accent/10 border border-accent/30 text-accent text-xs font-semibold flex items-center gap-2">
+          <span className="material-symbols-outlined text-[20px]">error</span>
+          <span className="flex-1">{listError}</span>
+          {page > 1 && (
+            <button
+              type="button"
+              onClick={() => setPage(1)}
+              className="px-2.5 py-1 rounded-md border border-accent/30 hover:bg-accent/10 cursor-pointer"
+            >
+              Back to page 1
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={fetchProductsList}
+            className="px-2.5 py-1 rounded-md border border-accent/30 hover:bg-accent/10 cursor-pointer"
+          >
+            Retry
+          </button>
         </div>
       )}
 

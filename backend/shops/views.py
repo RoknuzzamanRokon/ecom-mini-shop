@@ -177,10 +177,13 @@ class PublicShopReviewListView(generics.ListAPIView):
 
 class SellerShopListView(generics.ListAPIView):
     """
-    Lists shops owned by the authenticated seller.
+    Lists shops owned by the authenticated seller. Not paginated: a Full Shop
+    Owner may hold several shops, and every shop picker needs all of them
+    (BUG-026).
     """
     permission_classes = [permissions.IsAuthenticated, IsEligibleShopSeller]
     serializer_class = SellerShopSerializer
+    pagination_class = None
 
     def get_queryset(self):
         return Shop.objects.filter(owner=self.request.user.seller_profile)

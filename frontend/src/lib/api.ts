@@ -506,11 +506,20 @@ export async function createOrder(
   return await res.json();
 }
 
+/**
+ * Pages are counted from the page size this function sends, never from a
+ * guessed backend default (BUG-024). `statuses` keeps only orders in those
+ * statuses, server-side.
+ */
 export async function getUserOrders(
   token: string,
-  page: number = 1
+  page: number = 1,
+  options: { pageSize?: number; statuses?: string[] } = {}
 ): Promise<PaginatedResponse<Order>> {
-  const res = await customerRequest(`/api/orders/?page=${page}`, token, {
+  const query = new URLSearchParams({ page: page.toString() });
+  if (options.pageSize) query.set("page_size", options.pageSize.toString());
+  if (options.statuses?.length) query.set("status", options.statuses.join(","));
+  const res = await customerRequest(`/api/orders/?${query.toString()}`, token, {
     cache: "no-store",
   });
 
@@ -541,7 +550,14 @@ export async function getOrderDetail(
 
 export async function getSellerProducts(
   token: string,
-  params?: { shop_id?: number; status?: string; category?: string; q?: string; page?: number }
+  params?: {
+    shop_id?: number;
+    status?: string;
+    category?: string;
+    q?: string;
+    page?: number;
+    page_size?: number;
+  }
 ): Promise<PaginatedResponse<Product>> {
   const query = new URLSearchParams();
   if (params?.shop_id) query.set("shop_id", params.shop_id.toString());
@@ -549,6 +565,7 @@ export async function getSellerProducts(
   if (params?.category) query.set("category", params.category);
   if (params?.q) query.set("q", params.q);
   if (params?.page) query.set("page", params.page.toString());
+  if (params?.page_size) query.set("page_size", params.page_size.toString());
 
   const res = await customerRequest(`/api/products/mine/?${query.toString()}`, token, {
     cache: "no-store",
@@ -809,10 +826,14 @@ export async function clearCartApi(token: string): Promise<void> {
 export async function getSellerOrders(
   token: string,
   status?: string,
-  page: number = 1
+  page: number = 1,
+  options: { q?: string; pageSize?: number } = {}
 ): Promise<PaginatedResponse<SellerOrder>> {
   const query = new URLSearchParams({ page: page.toString() });
   if (status) query.set("status", status);
+  // Searched server-side across all the seller's orders (BUG-025).
+  if (options.q?.trim()) query.set("q", options.q.trim());
+  if (options.pageSize) query.set("page_size", options.pageSize.toString());
 
   const res = await customerRequest(`/api/seller/orders/?${query.toString()}`, token, {
     cache: "no-store",
@@ -1634,12 +1655,18 @@ export async function getSellerWallet(token: string): Promise<SellerWallet> {
   return await res.json();
 }
 
+/**
+ * One page of the seller's point ledger, newest first, with the paging
+ * envelope kept so callers can load the rest (BUG-026).
+ */
 export async function getSellerPointHistory(
   token: string,
-  type?: string
-): Promise<PointTransaction[]> {
-  const query = type ? `?type=${encodeURIComponent(type)}` : "";
-  const res = await customerRequest(`/api/points/history/${query}`, token, {
+  type?: string,
+  page: number = 1
+): Promise<PaginatedResponse<PointTransaction>> {
+  const query = new URLSearchParams({ page: page.toString() });
+  if (type) query.set("type", type);
+  const res = await customerRequest(`/api/points/history/?${query.toString()}`, token, {
     cache: "no-store",
   });
   if (!res.ok) {
@@ -1647,7 +1674,8 @@ export async function getSellerPointHistory(
     throw new Error(err.detail || "Failed to load point transaction history");
   }
   const data = await res.json();
-  return Array.isArray(data) ? data : data.results || [];
+  if (Array.isArray(data)) return { count: data.length, next: null, previous: null, results: data };
+  return data;
 }
 
 // ---------------------------------------------------------------------------

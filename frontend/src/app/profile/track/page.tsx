@@ -2,13 +2,18 @@
 
 import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import Pagination from "@/components/home/Pagination";
 import OrderCard, { ACTIVE_STATUSES } from "@/components/profile/OrderCard";
 import { Order } from "@/lib/types";
 import { getUserOrders } from "@/lib/api";
 import { getAuthToken } from "@/lib/auth";
 
+const PAGE_SIZE = 10;
+
 export default function CurrentOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,18 +24,17 @@ export default function CurrentOrdersPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await getUserOrders(token, 1);
-      setOrders(
-        res.results.filter((order) =>
-          ACTIVE_STATUSES.includes((order.status || "").toUpperCase())
-        )
-      );
+      // Filtered by the server, so an older active order is never hidden
+      // behind a page of newer finished ones (BUG-026).
+      const res = await getUserOrders(token, page, { pageSize: PAGE_SIZE, statuses: ACTIVE_STATUSES });
+      setOrders(res.results);
+      setTotalPages(Math.max(1, Math.ceil(res.count / PAGE_SIZE)));
     } catch {
       setError("We could not load your current orders. Please try again.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [page]);
 
   useEffect(() => {
     load();
@@ -109,6 +113,9 @@ export default function CurrentOrdersPage() {
               }
             />
           ))}
+          {totalPages > 1 && (
+            <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
+          )}
         </div>
       )}
     </div>

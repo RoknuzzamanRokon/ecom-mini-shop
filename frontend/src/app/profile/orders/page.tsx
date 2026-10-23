@@ -24,7 +24,7 @@ export default function OrderHistoryPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await getUserOrders(token, page);
+      const res = await getUserOrders(token, page, { pageSize: PAGE_SIZE });
       setOrders(res.results);
       setTotalPages(Math.max(Math.ceil(res.count / PAGE_SIZE), 1));
     } catch {
