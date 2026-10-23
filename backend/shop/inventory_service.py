@@ -59,6 +59,24 @@ class InventoryService:
                     )
         return inventory
 
+    @classmethod
+    def lock_inventories(cls, products) -> None:
+        """
+        Locks the stock rows of `products` in product id order. Checkout calls
+        this before it writes anything, so two checkouts sharing products
+        queue here. Locking them one by one in cart order, after the order
+        items' inserts had share-locked the product rows, let two checkouts
+        each hold what the other needed next (BUG-058).
+        """
+        products = sorted({product.pk: product for product in products}.values(), key=lambda product: product.pk)
+        for product in products:
+            cls.get_or_create_inventory(product)
+        list(
+            ProductInventory.objects.select_for_update()
+            .filter(product_id__in=[product.pk for product in products])
+            .order_by("product_id")
+        )
+
     @staticmethod
     def _announce_low_stock(product: Product, before_available: int, after_available: int, actor=None):
         """
@@ -186,8 +204,9 @@ class InventoryService:
         Atomically reserves stock for each item in the order creation transaction.
         Must be executed within an existing transaction.atomic() block.
         Rejects order creation if any product has available_quantity < item.quantity.
+        Works in product id order, the order lock_inventories() locks in.
         """
-        for item in cart_items:
+        for item in sorted(cart_items, key=lambda cart_item: cart_item.product_id):
             product = item.product
             qty = item.quantity
 
@@ -311,7 +330,11 @@ class InventoryService:
             logger.warning("Order %s inventory reservation already released; skipping duplicate release.", order.order_number)
             return
 
-        order_items = list(order.items.select_for_update().select_related("product"))
+        # Only the item rows (of=), in product order: the product rows are
+        # locked after their stock row, as checkout does (BUG-058).
+        order_items = list(
+            order.items.select_for_update(of=("self",)).select_related("product").order_by("product_id")
+        )
         released_count = 0
         unreserved_count = 0
 
@@ -425,7 +448,11 @@ class InventoryService:
             logger.warning("Order %s inventory sale already finalized; skipping duplicate sale.", order.order_number)
             return
 
-        order_items = list(order.items.select_for_update().select_related("product"))
+        # Only the item rows (of=), in product order: the product rows are
+        # locked after their stock row, as checkout does (BUG-058).
+        order_items = list(
+            order.items.select_for_update(of=("self",)).select_related("product").order_by("product_id")
+        )
         finalized_count = 0
         unreserved_units = 0
 

@@ -101,6 +101,11 @@ class CartService:
         # 2. Atomic mutation with row-level locking
         with transaction.atomic():
             cart = cls.get_or_create_cart(user)
+            # Adds to one cart queue on its row (checkout takes the same lock
+            # first). Locking only the line found nothing to lock on a first
+            # add, so a double-clicked first add inserted the line twice and
+            # the second hit the unique constraint as a 500 (BUG-059).
+            Cart.objects.select_for_update().get(pk=cart.pk)
 
             # Check if CartItem already exists with row-level lock
             item = (

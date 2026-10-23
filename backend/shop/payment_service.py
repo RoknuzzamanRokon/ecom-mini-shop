@@ -34,6 +34,22 @@ class PaymentService:
         random_suffix = uuid.uuid4().hex[:8].upper()
         return f"PAY-{date_str}-{random_suffix}"
 
+    @staticmethod
+    def _lock_order_then_payment(payment_id):
+        """
+        Locks a payment's order, then the payment: the order-first sequence of
+        checkout, cancellation and delivery. Locking the payment first here
+        let a verify or refund and a cancel of the same order wait on each
+        other; MySQL broke the cycle with a deadlock error (BUG-058).
+        Returns (order, payment); payment is None when it does not exist.
+        """
+        order_id = Payment.objects.filter(pk=payment_id).values_list("order_id", flat=True).first()
+        if order_id is None:
+            return None, None
+        locked_order = Order.objects.select_for_update().filter(pk=order_id).first()
+        locked_payment = Payment.objects.select_for_update().filter(pk=payment_id).first()
+        return locked_order, locked_payment
+
     @classmethod
     def generate_refund_number(cls) -> str:
         """Generates unique refund identifier: REF-YYYYMMDD-XXXXXXXX."""
@@ -152,7 +168,7 @@ class PaymentService:
         """
         payment_id = payment.pk if isinstance(payment, Payment) else payment
         with transaction.atomic():
-            locked_payment = Payment.objects.select_for_update().filter(pk=payment_id).first()
+            locked_order, locked_payment = cls._lock_order_then_payment(payment_id)
             if not locked_payment:
                 raise ValidationError({"payment": "Payment record not found."})
 
@@ -166,7 +182,6 @@ class PaymentService:
                     "payment": f"Cannot transition payment in status '{locked_payment.status}' to PAID."
                 })
 
-            locked_order = Order.objects.select_for_update().filter(pk=locked_payment.order_id).first()
             if locked_order and locked_order.status == Order.STATUS_CANCELLED:
                 raise ValidationError({
                     "payment": "Cannot complete payment for a cancelled order."
@@ -298,7 +313,7 @@ class PaymentService:
         """
         payment_id = payment.pk if isinstance(payment, Payment) else payment
         with transaction.atomic():
-            locked_payment = Payment.objects.select_for_update().filter(pk=payment_id).first()
+            locked_order, locked_payment = cls._lock_order_then_payment(payment_id)
             if not locked_payment:
                 raise ValidationError({"payment": "Payment record not found."})
 
@@ -317,8 +332,6 @@ class PaymentService:
                 raise ValidationError({
                     "refund": f"Payment in status '{locked_payment.status}' is not eligible for refund."
                 })
-
-            locked_order = Order.objects.select_for_update().filter(pk=locked_payment.order_id).first()
 
             # Calculate server-authoritative cumulative refunded sum
             completed_sum = (

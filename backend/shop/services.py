@@ -726,6 +726,11 @@ class OrderService:
                         {"cart": f"Invalid quantity for '{product.name}'."}
                     )
 
+            # 3b. Lock the stock rows now, in product order, before the order
+            # items' inserts share-lock the product rows (BUG-058).
+            from shop.inventory_service import InventoryService
+            InventoryService.lock_inventories([item.product for item in cart_items])
+
             # 4. Resolve shipping address and historical snapshot
             shipping_address = None
             if address_id:
@@ -866,7 +871,6 @@ class OrderService:
                 )
 
             # 9. Atomically reserve inventory stock for cart items
-            from shop.inventory_service import InventoryService
             InventoryService.reserve_stock_for_cart(
                 order=order,
                 cart_items=cart_items,

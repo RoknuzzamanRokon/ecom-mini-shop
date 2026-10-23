@@ -255,6 +255,8 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 12,
+    # MySQL deadlocks and lock-wait timeouts answer 409 "try again", not 500.
+    "EXCEPTION_HANDLER": "config.api_errors.exception_handler",
     # Throttles identify an anonymous client by address. Left unset, DRF takes
     # the whole X-Forwarded-For header as that address, so a client could dodge
     # every limit by sending a new one each time. See TRUSTED_PROXY_COUNT.

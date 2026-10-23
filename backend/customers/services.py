@@ -3,6 +3,7 @@ from typing import Any, Dict, Optional, Tuple
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError, transaction
 from django.db.models import Count, QuerySet
+from django.http import Http404
 from django.utils import timezone
 
 from audit.services import AuditService
@@ -145,6 +146,21 @@ class AddressService:
     and concurrency safety.
     """
 
+    @staticmethod
+    def _lock_address_book(user, address: Optional[Address] = None) -> None:
+        """
+        Serializes every change to one user's addresses on their user row, then
+        re-reads `address` as the previous change left it (BUG-059). Locking the
+        address rows instead protected nothing when there were none yet, so a
+        double-submitted first address made two defaults and a 500.
+        """
+        User.objects.select_for_update().get(pk=user.pk)
+        if address is not None:
+            try:
+                address.refresh_from_db()
+            except Address.DoesNotExist:
+                raise Http404("Address not found.")
+
     @classmethod
     @transaction.atomic
     def create_address(
@@ -156,13 +172,13 @@ class AddressService:
     ) -> Address:
         """
         Creates an address for a user.
-        - Concurrency safe via select_for_update().
+        - Concurrency safe: serialized on the user row (_lock_address_book).
         - If first address, automatically set as default.
         - If is_default=True, demotes existing default address.
         - Logs ADDRESS_CREATED audit.
         """
-        # Lock user's existing addresses to prevent concurrent race conditions
-        existing_addresses = Address.objects.select_for_update().filter(user=user)
+        cls._lock_address_book(user)
+        existing_addresses = Address.objects.filter(user=user)
         has_existing = existing_addresses.exists()
 
         is_default = data.get("is_default", False)
@@ -205,13 +221,12 @@ class AddressService:
     ) -> Address:
         """
         Updates an address.
-        - Concurrency safe via select_for_update().
+        - Concurrency safe: serialized on the user row (_lock_address_book).
         - If setting is_default=True, demote any other default address for user.
         - Logs ADDRESS_UPDATED audit.
         """
         user = address.user
-        # Lock user's addresses
-        Address.objects.select_for_update().filter(user=user)
+        cls._lock_address_book(user, address)
 
         target_is_default = data.get("is_default", address.is_default)
         if target_is_default and not address.is_default:
@@ -263,6 +278,7 @@ class AddressService:
         - Logs ADDRESS_DELETED audit.
         """
         user = address.user
+        cls._lock_address_book(user, address)
         was_default = address.is_default
         address_id = address.pk
         metadata = {
@@ -271,9 +287,6 @@ class AddressService:
             "city": address.city,
             "was_default": was_default,
         }
-
-        # Lock user's addresses
-        Address.objects.select_for_update().filter(user=user)
 
         # Log audit entry before deletion while target is still present
         AuditService.log(
@@ -315,7 +328,7 @@ class AddressService:
         Sets a specific address as default, demoting any previous default.
         """
         user = address.user
-        Address.objects.select_for_update().filter(user=user)
+        cls._lock_address_book(user, address)
         Address.objects.filter(user=user, is_default=True).exclude(pk=address.pk).update(
             is_default=False, default_flag=None
         )

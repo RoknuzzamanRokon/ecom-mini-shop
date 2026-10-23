@@ -1,6 +1,6 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import IntegrityError, models, transaction
 from django.utils.text import slugify
 
 
@@ -166,15 +166,36 @@ class Shop(models.Model):
         if self.status == self.STATUS_SUSPENDED and not self.suspension_reason:
             raise ValidationError({"suspension_reason": "A suspension reason is mandatory when suspending a shop."})
 
-    def save(self, *args, **kwargs):
-        if not self.slug:
-            base_slug = slugify(self.name) or "shop"
-            slug_candidate = base_slug
-            counter = 1
-            while Shop.objects.filter(slug=slug_candidate).exclude(pk=self.pk).exists():
-                slug_candidate = f"{base_slug}-{counter}"
-                counter += 1
-            self.slug = slug_candidate
+    # How many generated slugs save() tries when concurrent saves keep taking them first.
+    SLUG_ATTEMPTS = 5
 
-        self.full_clean()
-        super().save(*args, **kwargs)
+    def _free_slug(self) -> str:
+        base_slug = slugify(self.name) or "shop"
+        slug_candidate = base_slug
+        counter = 1
+        while Shop.objects.filter(slug=slug_candidate).exclude(pk=self.pk).exists():
+            slug_candidate = f"{base_slug}-{counter}"
+            counter += 1
+        return slug_candidate
+
+    def save(self, *args, **kwargs):
+        if self.slug:
+            self.full_clean()
+            super().save(*args, **kwargs)
+            return
+
+        # A concurrent save can take the free slug between the check and the
+        # insert. The insert then fails on the unique index; take the next
+        # free slug instead of returning a 500 (BUG-059).
+        for attempt in range(1, self.SLUG_ATTEMPTS + 1):
+            self.slug = self._free_slug()
+            self.full_clean()
+            try:
+                with transaction.atomic():
+                    super().save(*args, **kwargs)
+                return
+            except IntegrityError:
+                taken = Shop.objects.filter(slug=self.slug).exclude(pk=self.pk).exists()
+                if attempt == self.SLUG_ATTEMPTS or not taken:
+                    raise
+                self.slug = ""
