@@ -7,6 +7,19 @@ from django.utils.text import slugify
 from shops.fields import MySQLPointField, Point
 
 
+class ShopQuerySet(models.QuerySet):
+    def public(self):
+        """
+        Shops the public may see: the shop is APPROVED or ACTIVE, and so is its
+        seller. Suspending or rejecting a seller hides their shops (BUG-018), the
+        same rule Product.objects.public() applies to their products.
+        """
+        return self.filter(
+            status__in=["APPROVED", "ACTIVE"],
+            owner__status__in=["APPROVED", "ACTIVE"],
+        )
+
+
 class Shop(models.Model):
     """
     Represents a commercial store owned by an approved seller.
@@ -27,6 +40,8 @@ class Shop(models.Model):
         (STATUS_SUSPENDED, "Suspended"),
         (STATUS_REJECTED, "Rejected"),
     ]
+
+    objects = ShopQuerySet.as_manager()
 
     owner = models.ForeignKey(
         "sellers.SellerProfile",
@@ -85,8 +100,11 @@ class Shop(models.Model):
 
     @property
     def is_publicly_visible(self) -> bool:
-        """Only APPROVED or ACTIVE shops are visible to anonymous/public customers."""
-        return self.status in (self.STATUS_APPROVED, self.STATUS_ACTIVE)
+        """The same rule as Shop.objects.public(): the shop and its seller are APPROVED or ACTIVE."""
+        return (
+            self.status in (self.STATUS_APPROVED, self.STATUS_ACTIVE)
+            and self.owner.status in ("APPROVED", "ACTIVE")
+        )
 
     @property
     def latitude(self):

@@ -139,7 +139,8 @@ class PublicNearbyShopListView(APIView):
 class PublicShopDetailView(generics.RetrieveAPIView):
     """
     Public retrieval of an active/approved shop by slug.
-    Returns 404 for any shop that is not APPROVED or ACTIVE.
+    Returns 404 for any shop that is not APPROVED or ACTIVE, or whose seller
+    is not (Shop.objects.public()).
     """
     permission_classes = [permissions.AllowAny]
     serializer_class = PublicShopDetailSerializer
@@ -153,18 +154,15 @@ class PublicShopReviewListView(generics.ListAPIView):
     """
     Public listing of customer reviews for a single shop.
     GET /api/shops/<slug>/reviews/?ordering=newest|oldest|highest|lowest
-    404s for shops that are not APPROVED/ACTIVE, exactly like PublicShopDetailView.
+    404s for shops the public may not see (Shop.objects.public()), exactly like
+    PublicShopDetailView.
     Unknown ordering values fall back to newest first.
     """
     permission_classes = [permissions.AllowAny]
     serializer_class = ShopReviewSerializer
 
     def get_queryset(self):
-        shop = get_object_or_404(
-            Shop,
-            slug=self.kwargs["slug"],
-            status__in=[Shop.STATUS_APPROVED, Shop.STATUS_ACTIVE],
-        )
+        shop = get_object_or_404(Shop.objects.public(), slug=self.kwargs["slug"])
         return (
             ShopReview.objects.visible()
             .filter(shop=shop)

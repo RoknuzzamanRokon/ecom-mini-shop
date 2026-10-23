@@ -264,17 +264,16 @@ class ShopReviewSerializer(ReviewSerializer):
 class ShopReviewCreateSerializer(serializers.Serializer):
     """
     Accepts a shop id and resolves it against publicly visible shops only
-    (APPROVED/ACTIVE, the same rule as the public shop endpoints), so draft,
-    pending, rejected or suspended shops can never receive a review.
+    (Shop.objects.public(), the same rule as the public shop endpoints), so
+    draft, pending, rejected or suspended shops, and shops of a suspended or
+    rejected seller, can never receive a review.
     """
     shop_id = serializers.IntegerField()
     rating = serializers.IntegerField(min_value=1, max_value=5)
     comment = serializers.CharField(required=False, allow_blank=True, max_length=2000, default="")
 
     def validate_shop_id(self, value):
-        if not Shop.objects.filter(
-            pk=value, status__in=[Shop.STATUS_APPROVED, Shop.STATUS_ACTIVE]
-        ).exists():
+        if not Shop.objects.public().filter(pk=value).exists():
             raise serializers.ValidationError("Shop not found.")
         return value
 

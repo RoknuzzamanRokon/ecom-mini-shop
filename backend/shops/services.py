@@ -266,14 +266,13 @@ class ShopService:
     @classmethod
     def get_public_shops_queryset(cls):
         """
-        Publicly visible (APPROVED/ACTIVE) shops, annotated with average_rating
-        and review_count from their customer shop reviews. The single source for
-        the public shop list and detail endpoints, so both report the same numbers.
+        Publicly visible shops (Shop.objects.public(): the shop and its seller
+        are APPROVED/ACTIVE), annotated with average_rating and review_count
+        from their customer shop reviews. The single source for the public shop
+        list, detail and nearby endpoints, so all report the same numbers.
         average_rating is NULL for a shop with no reviews.
         """
-        return Shop.objects.filter(
-            status__in=[Shop.STATUS_APPROVED, Shop.STATUS_ACTIVE]
-        ).annotate(
+        return Shop.objects.public().annotate(
             # Hidden (moderated) reviews never count toward public ratings.
             average_rating=Avg("customer_reviews__rating", filter=VISIBLE_REVIEWS),
             review_count=Count("customer_reviews", filter=VISIBLE_REVIEWS, distinct=True),

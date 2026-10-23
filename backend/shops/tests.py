@@ -966,7 +966,7 @@ class NearbyProductSearchTests(TestCase):
             owner=cls.seller, name="Uttara Home", status=Shop.STATUS_ACTIVE,
             location=Point(longitude=90.3978, latitude=23.8728),
         )
-        # Nearby, but its seller is suspended, so none of its products are public.
+        # Nearby, but its seller is suspended, so neither it nor its products are public.
         cls.suspended_shop = Shop.objects.create(
             owner=cls.seller_suspended, name="Suspended Home", status=Shop.STATUS_ACTIVE,
             location=Point(longitude=90.4170, latitude=23.7790),
@@ -1040,7 +1040,7 @@ class NearbyProductSearchTests(TestCase):
         self.product(shop, "Hidden Inactive Lamp", self.lighting, is_active=False)
         self.product(shop, "Hidden Archived Lamp", self.archived)
         self.assertEqual(self.search("Hidden")["results"], [])
-        # The suspended seller's lamp never qualifies its (otherwise public) shop.
+        # The suspended seller's lamp never qualifies its shop (itself hidden).
         ids = [r["id"] for r in self.search("Task Desk Lamp")["results"]]
         self.assertNotIn(self.suspended_shop.id, ids)
 
@@ -1075,7 +1075,9 @@ class NearbyProductSearchTests(TestCase):
         blank = self.search("   ")
         self.assertEqual(blank, plain)
         self.assertNotIn("q", plain)
-        self.assertEqual(plain["count"], 3)  # includes the suspended seller's shop, as before
+        # The suspended seller's shop is not public at all (BUG-018, TASK-020).
+        self.assertEqual(plain["count"], 2)
+        self.assertNotIn(self.suspended_shop.id, [shop["id"] for shop in plain["results"]])
         for shop in plain["results"]:
             self.assertNotIn("matched_products", shop)
             self.assertNotIn("matched_product_count", shop)
