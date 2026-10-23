@@ -1,6 +1,6 @@
 import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, SellerOrderDetail, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse, Favorite, PasswordChangePayload, SellerProfile, SellerDashboardData, SellerShop, SellerWallet, NearbyShopsResponse, PointTransaction, Review, ReviewCreatePayload, ReviewOrdering, ReviewUpdatePayload, ShopReview, ShopReviewCreatePayload, MyReviews, SupportChannel, SupportTicket, SupportTicketCreateInput, SupportTicketListStatus, SupportTicketSummary } from "./types";
 
-import { refreshTokenOnce } from "./auth";
+import { AuthUnavailableError, isTransientStatus, refreshTokenOnce } from "./auth";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
@@ -1162,6 +1162,9 @@ export async function refreshAccessToken(
   });
 
   if (!res.ok) {
+    // Only a refusal (400/401: expired, blacklisted, malformed) ends the
+    // session; an outage keeps the tokens (BUG-031).
+    if (isTransientStatus(res.status)) throw new AuthUnavailableError();
     throw new Error("Token refresh failed");
   }
 
@@ -1196,6 +1199,7 @@ export async function getCurrentUser(token: string): Promise<AuthUser> {
   });
 
   if (!res.ok) {
+    if (isTransientStatus(res.status)) throw new AuthUnavailableError();
     const errorData = await res.json().catch(() => ({}));
     throw new Error(extractApiError(errorData, "Failed to fetch current user"));
   }

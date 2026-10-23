@@ -13,8 +13,8 @@ import {
   clearTokens,
   getAuthToken,
   getRefreshToken,
+  isTransientAuthFailure,
   onAuthCleared,
-  refreshTokenOnce,
   setTokens,
 } from "@/lib/auth";
 
@@ -22,6 +22,12 @@ interface AuthContextType {
   user: AuthUser | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  /**
+   * Set when the stored session could not be checked because the server was
+   * unreachable; the tokens are kept and `retrySession` tries again.
+   */
+  sessionError: string | null;
+  retrySession: () => void;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
 }
@@ -40,44 +46,58 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [sessionError, setSessionError] = useState<string | null>(null);
 
   // -----------------------------------------------------------------------
   // Restore session on mount
   // -----------------------------------------------------------------------
-  const initialize = useCallback(async () => {
+  // An expired access token is renewed inside getCurrentUser: customerRequest
+  // answers a 401 with the shared single-flight refreshTokenOnce(), which
+  // clears the tokens itself when the server refuses them. So a failure here
+  // is either "signed out" (clear what is left) or an outage, which keeps the
+  // tokens and offers a retry instead of logging the user out (BUG-031).
+  // State is only set in the promise callbacks.
+  const initialize = useCallback((): Promise<void> => {
     const token = getAuthToken();
-    if (!token) {
-      setIsLoading(false);
-      return;
-    }
+    if (!token) return Promise.resolve().then(() => setIsLoading(false));
 
-    try {
-      // Try the stored access token first
-      const userData = await getCurrentUser(token);
-      setUser(userData);
-    } catch {
-      // Access token may be expired — try refresh, through the shared
-      // single-flight coordinator: refresh tokens are single-use
-      // (BLACKLIST_AFTER_ROTATION), so a second, parallel refresh with the
-      // same token would be refused and sign the user out.
-      try {
-        const access = await refreshTokenOnce();
-        if (!access) throw new Error("Session expired");
-        const userData = await getCurrentUser(access);
+    return getCurrentUser(token)
+      .then((userData) => {
         setUser(userData);
-      } catch {
-        // Refresh also failed — clear everything silently
-        clearTokens();
+        setSessionError(null);
+      })
+      .catch((err: unknown) => {
         setUser(null);
-      }
-    } finally {
-      setIsLoading(false);
-    }
+        if (isTransientAuthFailure(err)) {
+          setSessionError(
+            err instanceof Error && err.message && !(err instanceof TypeError)
+              ? err.message
+              : "The server could not be reached to restore your session."
+          );
+        } else {
+          clearTokens();
+          setSessionError(null);
+        }
+      })
+      .finally(() => setIsLoading(false));
   }, []);
 
   useEffect(() => {
     initialize();
   }, [initialize]);
+
+  const retrySession = useCallback(() => {
+    setIsLoading(true);
+    initialize();
+  }, [initialize]);
+
+  // Coming back online is a good moment to try again by itself.
+  useEffect(() => {
+    if (!sessionError) return;
+    const onOnline = () => retrySession();
+    window.addEventListener("online", onOnline);
+    return () => window.removeEventListener("online", onOnline);
+  }, [sessionError, retrySession]);
 
   // -----------------------------------------------------------------------
   // Login
@@ -86,8 +106,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const tokens = await loginUser(username, password);
     setTokens(tokens.access, tokens.refresh);
 
-    const userData = await getCurrentUser(tokens.access);
-    setUser(userData);
+    try {
+      const userData = await getCurrentUser(tokens.access);
+      setUser(userData);
+      setSessionError(null);
+    } catch (err) {
+      // No half-signed-in state: tokens stored while the UI shows "Login"
+      // would send cart calls to an account the user cannot see (BUG-092).
+      clearTokens();
+      throw err;
+    }
   }, []);
 
   // -----------------------------------------------------------------------
@@ -101,6 +129,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const refresh = getRefreshToken();
     clearTokens();
     setUser(null);
+    setSessionError(null);
     if (refresh) void revokeRefreshToken(refresh);
   }, []);
 
@@ -118,9 +147,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, isAuthenticated, isLoading, login, logout }}
+      value={{ user, isAuthenticated, isLoading, sessionError, retrySession, login, logout }}
     >
       {children}
+      {sessionError && !isLoading && (
+        <div
+          role="alert"
+          className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[60] w-[calc(100%-2rem)] max-w-md p-3.5 rounded-xl bg-surface border border-accent/40 shadow-lg text-xs text-ink flex items-center gap-3"
+        >
+          <span className="material-symbols-outlined text-[20px] text-accent shrink-0">cloud_off</span>
+          <span className="flex-1">{sessionError} Your sign-in is kept; retry once the connection is back.</span>
+          <button
+            type="button"
+            onClick={retrySession}
+            className="px-3 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-on-primary font-bold uppercase tracking-wider cursor-pointer"
+          >
+            Retry
+          </button>
+        </div>
+      )}
     </AuthContext.Provider>
   );
 }

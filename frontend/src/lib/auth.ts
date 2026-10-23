@@ -84,6 +84,32 @@ export function clearTokens(): void {
 }
 
 // ---------------------------------------------------------------------------
+// Transient failures
+// ---------------------------------------------------------------------------
+
+/**
+ * The session could not be checked or renewed because the server could not
+ * answer (network error, 5xx, 408, 429). The tokens are kept: only the server
+ * refusing them (400/401) ends a session (BUG-031).
+ */
+export class AuthUnavailableError extends Error {
+  constructor(message = "The server could not be reached to check your session. Try again in a moment.") {
+    super(message);
+    this.name = "AuthUnavailableError";
+  }
+}
+
+/** A status that says "try again later", not "these credentials are bad". */
+export function isTransientStatus(status: number): boolean {
+  return status >= 500 || status === 408 || status === 429;
+}
+
+/** True for AuthUnavailableError and for fetch's own network failure (TypeError). */
+export function isTransientAuthFailure(err: unknown): boolean {
+  return err instanceof AuthUnavailableError || err instanceof TypeError;
+}
+
+// ---------------------------------------------------------------------------
 // Auth-cleared notification
 // ---------------------------------------------------------------------------
 
@@ -140,6 +166,8 @@ let inFlightRefresh: Promise<string | null> | null = null;
  * Resolves to the new access token, or to null when the session is gone — in
  * which case the tokens have already been cleared and `onAuthCleared`
  * subscribers have already been notified. A null result means "do not retry".
+ * Rejects with AuthUnavailableError when the server could not answer; the
+ * tokens are then kept and nobody is signed out.
  */
 export function refreshTokenOnce(): Promise<string | null> {
   if (inFlightRefresh) return inFlightRefresh;
@@ -170,7 +198,10 @@ async function performRefresh(): Promise<string | null> {
     const tokens = await refreshAccessToken(refresh);
     setTokens(tokens.access, tokens.refresh);
     return tokens.access;
-  } catch {
+  } catch (err) {
+    if (isTransientAuthFailure(err)) {
+      throw err instanceof AuthUnavailableError ? err : new AuthUnavailableError();
+    }
     failRefresh();
     return null;
   }

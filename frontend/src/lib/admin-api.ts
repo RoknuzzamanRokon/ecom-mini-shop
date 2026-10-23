@@ -115,6 +115,19 @@ export class AdminApiError extends Error {
  * request. Everything else here (network-error wrapping, `extractErrorMessage`,
  * `AdminApiError` status/body, JSON parsing) is unchanged.
  */
+/**
+ * refreshTokenOnce, with an outage reported as the AdminApiError every console
+ * page already handles (the session itself is kept, BUG-031).
+ */
+async function refreshAdminToken(): Promise<string | null> {
+  try {
+    return await refreshTokenOnce();
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "Network error";
+    throw new AdminApiError(msg, 0);
+  }
+}
+
 async function adminRequest<T>(
   endpoint: string,
   token: string,
@@ -141,7 +154,7 @@ async function adminRequest<T>(
   }
 
   if (res.status === 401 && !retried) {
-    const refreshed = await refreshTokenOnce();
+    const refreshed = await refreshAdminToken();
     if (refreshed) {
       return adminRequest<T>(endpoint, refreshed, options, true);
     }
@@ -2272,7 +2285,7 @@ async function adminRawRequest(
   }
 
   if (res.status === 401 && !retried) {
-    const refreshed = await refreshTokenOnce();
+    const refreshed = await refreshAdminToken();
     if (refreshed) {
       return adminRawRequest(endpoint, refreshed, options, true);
     }
