@@ -66,7 +66,9 @@
 
     <div class="spot-grid">
 
-      <!-- Revenue: deliberately the darkest, highest-contrast tile on the page -->
+      <!-- Revenue: deliberately the darkest, highest-contrast tile on the page.
+           Only for 'payments.view'; otherwise metrics has no payments block. -->
+      {% if metrics.payments %}
       <a href="{% url 'admin:shop_payment_changelist' %}" class="spot-card spot-revenue">
         <div class="spot-top">
           <span class="spot-eyebrow">
@@ -102,6 +104,7 @@
           <span class="material-symbols-outlined">arrow_forward</span>
         </span>
       </a>
+      {% endif %}
 
       <!-- Order mix -->
       <a href="{% url 'admin:shop_order_changelist' %}" class="spot-card spot-orders acc-indigo">

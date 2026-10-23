@@ -1,6 +1,10 @@
 {% load i18n static %}
 <button class="sticky toggle-nav-sidebar" id="toggle-nav-sidebar" aria-label="{% translate 'Toggle navigation' %}" title="Toggle navigation (shortcut: A)"></button>
 <nav class="sticky" id="nav-sidebar" aria-label="{% translate 'Sidebar' %}">
+  {# Django's nav_sidebar.js (loaded by admin/base.html) wires its quick filter #}
+  {# to #nav-filter and threw a TypeError on every page without one (BUG-042). #}
+  {# This sidebar has no filter, so the input stays hidden. #}
+  <input type="search" id="nav-filter" hidden aria-hidden="true" tabindex="-1">
   <div class="sidebar-inner">
 
     <!-- Brand plate: pinned to the top of the rail while the body scrolls -->

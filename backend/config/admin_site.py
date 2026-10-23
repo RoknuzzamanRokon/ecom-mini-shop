@@ -104,10 +104,14 @@ class MiniShopAdminSite(admin.AdminSite):
 
     def index(self, request, extra_context=None):
         # Imported here so the module stays importable before apps are loaded.
+        from rbac.services import has_user_permission
         from shop.metrics import get_platform_metrics
 
+        # Revenue and the payment mix are finance data: like the Console's
+        # metrics API, only 'payments.view' gets them (BUG-038).
+        include_payments = has_user_permission(request.user, "payments.view")
         context = {
-            "metrics": get_platform_metrics(),
+            "metrics": get_platform_metrics(include_payments=include_payments),
             **(extra_context or {}),
         }
         return super().index(request, extra_context=context)

@@ -196,19 +196,25 @@ def inventory_metrics():
     )
 
 
-def get_platform_metrics():
-    """Nested payload for the Django admin dashboard. Seven aggregate queries."""
-    return {
+def get_platform_metrics(include_payments=True):
+    """
+    Nested payload for the Django admin dashboard. Seven aggregate queries,
+    six without the payments block, which callers leave out for anyone
+    without 'payments.view' (BUG-038).
+    """
+    metrics = {
         "users": user_metrics(),
         "sellers": seller_metrics(),
         "shops": shop_metrics(),
         "products": product_metrics(),
         "orders": order_metrics(),
-        "payments": payment_metrics(),
         "inventory": inventory_metrics(),
         "low_stock_threshold": LOW_STOCK_THRESHOLD,
         "new_user_window_days": NEW_USER_WINDOW_DAYS,
     }
+    if include_payments:
+        metrics["payments"] = payment_metrics()
+    return metrics
 
 
 def get_console_metrics():
