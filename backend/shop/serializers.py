@@ -514,6 +514,8 @@ class SellerOrderListSerializer(serializers.ModelSerializer):
     """
     Summary serializer for seller order listing.
     Filters items to only include items belonging to the requesting seller.
+    No customer contact data (that is on the detail), and no whole-order
+    total: on a mixed order it would reveal other merchants' sales (BUG-055).
     """
     items = serializers.SerializerMethodField()
     seller_subtotal = serializers.SerializerMethodField()
@@ -527,7 +529,6 @@ class SellerOrderListSerializer(serializers.ModelSerializer):
             "status",
             "seller_subtotal",
             "seller_item_count",
-            "total_amount",
             "created_at",
             "updated_at",
             "items",
@@ -589,7 +590,6 @@ class SellerOrderDetailSerializer(serializers.ModelSerializer):
             "city",
             "seller_subtotal",
             "seller_item_count",
-            "total_amount",
             "created_at",
             "updated_at",
             "items",
@@ -717,9 +717,17 @@ class InventoryTransactionSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_actor_name(self, obj):
-        if obj.actor:
-            return obj.actor.get_full_name() or obj.actor.username
-        return "System"
+        if not obj.actor:
+            return "System"
+        # Sellers see "Customer" for the shopper behind an order, not the
+        # shopper's account name (BUG-055). The view sets mask_customers.
+        if (
+            self.context.get("mask_customers")
+            and obj.order_id is not None
+            and obj.actor_id == obj.order.user_id
+        ):
+            return "Customer"
+        return obj.actor.get_full_name() or obj.actor.username
 
 
 class RefundSerializer(serializers.ModelSerializer):

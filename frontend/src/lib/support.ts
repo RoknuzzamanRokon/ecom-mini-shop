@@ -69,11 +69,14 @@ export const SUPPORT_CHANNEL_LABELS: Record<SupportChannel, string> = {
   SELLER: "Seller",
 };
 
-/** A recent order the requester can link a new ticket to. */
+/**
+ * A recent order the requester can link a new ticket to. `amount` is the
+ * order total for a customer, and only the seller's own share for a seller.
+ */
 export interface SupportOrderOption {
   order_number: string;
   created_at: string;
-  total_amount: string | number;
+  amount: string | number;
 }
 
 /**

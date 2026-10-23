@@ -21,8 +21,12 @@ async function loadRecentOrders(
   portal: SupportPortalConfig,
   token: string
 ): Promise<SupportOrderOption[]> {
-  const page = portal.channel === "SELLER" ? await getSellerOrders(token) : await getUserOrders(token, 1);
-  return page.results;
+  if (portal.channel === "SELLER") {
+    const page = await getSellerOrders(token);
+    return page.results.map((o) => ({ order_number: o.order_number, created_at: o.created_at, amount: o.seller_subtotal }));
+  }
+  const page = await getUserOrders(token, 1);
+  return page.results.map((o) => ({ order_number: o.order_number, created_at: o.created_at, amount: o.total_amount }));
 }
 
 /** Category a ?order= link preselects: the channel's order category. */
@@ -229,7 +233,7 @@ function NewTicketForm({ portal }: { portal: SupportPortalConfig }) {
             ))}
             {orders.map((order) => (
               <option key={order.order_number} value={order.order_number}>
-                {`${order.order_number} · ${formatSupportDateTime(order.created_at).split(",")[0]} · ৳${order.total_amount}`}
+                {`${order.order_number} · ${formatSupportDateTime(order.created_at).split(",")[0]} · ৳${order.amount}`}
               </option>
             ))}
           </select>

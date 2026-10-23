@@ -522,29 +522,37 @@ export interface SellerOrderItem {
   created_at?: string;
 }
 
+/**
+ * A row of GET /api/seller/orders/: the seller's own items and share only.
+ * No customer contact data and no whole-order total (other merchants' items).
+ */
 export interface SellerOrder {
   id: number;
   order_number: string;
   status: string;
   seller_subtotal: string;
   seller_item_count: number;
-  total_amount: string | number;
   created_at: string;
   updated_at?: string;
   items: SellerOrderItem[];
-  shipping_recipient_name?: string;
-  shipping_phone?: string;
-  shipping_address_line_1?: string;
-  shipping_address_line_2?: string;
-  shipping_area?: string;
-  shipping_city?: string;
-  shipping_state?: string;
-  shipping_postal_code?: string;
-  shipping_country?: string;
-  customer_name?: string;
-  phone?: string;
-  address?: string;
-  city?: string;
+}
+
+/** GET /api/seller/orders/<order_number>/: the row plus the delivery address. */
+export interface SellerOrderDetail extends SellerOrder {
+  shipping_recipient_name: string;
+  shipping_phone: string;
+  shipping_address_line_1: string;
+  shipping_address_line_2: string;
+  shipping_area: string;
+  shipping_city: string;
+  shipping_state: string;
+  shipping_postal_code: string;
+  shipping_country: string;
+  // Legacy pre-snapshot fields, used when the shipping_* ones are blank.
+  customer_name: string;
+  phone: string;
+  address: string;
+  city: string;
 }
 
 export interface SellerOrderStatusUpdatePayload {

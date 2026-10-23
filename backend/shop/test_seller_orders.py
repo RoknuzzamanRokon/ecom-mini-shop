@@ -14,7 +14,8 @@ from sellers.models import SellerProfile
 from shops.models import Shop
 from notifications import events
 from notifications.models import NotificationEvent
-from shop.models import Category, Order, OrderItem, Payment, Product, Refund
+from shop.inventory_service import InventoryService
+from shop.models import Category, InventoryTransaction, Order, OrderItem, Payment, Product, Refund
 from shop.payment_service import PaymentService
 from shop.services import OrderService
 
@@ -552,3 +553,64 @@ class SellerOrderTests(APITestCase):
         payment.refresh_from_db()
         self.assertEqual(payment.status, Payment.STATUS_CANCELLED)
         self.assertFalse(Refund.objects.filter(payment=payment).exists())
+
+    # -------------------------------------------------------------------------
+    # 9. Data minimisation: list vs detail (BUG-009, BUG-055)
+    # -------------------------------------------------------------------------
+
+    CONTACT_FIELDS = (
+        "shipping_recipient_name", "shipping_phone", "shipping_address_line_1",
+        "shipping_city", "customer_name", "phone", "address", "city",
+    )
+
+    def test_list_has_no_contact_data_and_no_whole_order_total(self):
+        self.client.force_authenticate(user=self.user_seller_a)
+        resp = self.client.get("/api/seller/orders/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+        for row in resp.data["results"]:
+            with self.subTest(order=row["order_number"]):
+                self.assertNotIn("total_amount", row)
+                for field in self.CONTACT_FIELDS:
+                    self.assertNotIn(field, row)
+        multi = next(o for o in resp.data["results"] if o["order_number"] == "ORD-MULTI-SELLER")
+        self.assertEqual(Decimal(multi["seller_subtotal"]), Decimal("120.00"))
+
+    def test_detail_has_the_delivery_address_but_no_whole_order_total(self):
+        self.client.force_authenticate(user=self.user_seller_a)
+        resp = self.client.get(f"/api/seller/orders/{self.order_multi.order_number}/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+        self.assertEqual(resp.data["shipping_recipient_name"], "Alice Multi")
+        self.assertEqual(resp.data["shipping_phone"], "+8801900000003")
+        self.assertEqual(resp.data["shipping_address_line_1"], "789 Ring Road")
+        self.assertNotIn("total_amount", resp.data)
+        # Only Seller A's share of the ৳210 order.
+        self.assertEqual(Decimal(resp.data["seller_subtotal"]), Decimal("120.00"))
+
+    def _ledger_row(self, actor, order=None):
+        inventory = InventoryService.get_or_create_inventory(self.product_a1)
+        return InventoryTransaction.objects.create(
+            inventory=inventory, product=self.product_a1,
+            transaction_type=InventoryTransaction.TYPE_RESERVATION if order else InventoryTransaction.TYPE_ADJUSTMENT,
+            quantity=1, actor=actor, order=order, reason="test row",
+        )
+
+    def _ledger_names(self, viewer):
+        """actor_name of the test rows, as `viewer` sees the product ledger."""
+        self.client.force_authenticate(user=viewer)
+        resp = self.client.get(f"/api/seller/inventory/{self.product_a1.pk}/transactions/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        return [row["actor_name"] for row in resp.data["results"] if row["reason"] == "test row"]
+
+    def test_seller_ledger_masks_the_customer_name(self):
+        self._ledger_row(self.customer_user, order=self.order_a)
+        self.assertEqual(self._ledger_names(self.user_seller_a), ["Customer"])
+
+    def test_seller_ledger_keeps_the_sellers_own_name(self):
+        self._ledger_row(self.user_seller_a)
+        self.assertEqual(self._ledger_names(self.user_seller_a), ["seller_a_user"])
+
+    def test_staff_ledger_shows_the_customer_name(self):
+        self._ledger_row(self.customer_user, order=self.order_a)
+        self.assertEqual(self._ledger_names(self.admin_user), ["regular_customer"])

@@ -952,7 +952,18 @@ class SellerInventoryTransactionsAPIView(generics.ListAPIView):
             if not (product.shop and product.shop.owner == seller):
                 raise PermissionDenied("You do not own the product associated with this inventory.")
 
-        return InventoryTransaction.objects.filter(product=product).order_by("-created_at")
+        # A seller does not see their customers' account names (BUG-055).
+        self.mask_customers = not is_staff_override
+        return (
+            InventoryTransaction.objects.filter(product=product)
+            .select_related("product", "actor", "order")
+            .order_by("-created_at")
+        )
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context["mask_customers"] = getattr(self, "mask_customers", True)
+        return context
 
 
 # ==============================================================================

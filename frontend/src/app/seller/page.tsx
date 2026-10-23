@@ -260,7 +260,6 @@ export default function SellerDashboardPage() {
                   </div>
                   <p className="text-xs text-ink-muted mt-1">
                     {ord.seller_item_count} item(s) · Subtotal: ৳{ord.seller_subtotal}
-                    {ord.shipping_city ? ` · Ships to ${ord.shipping_city}` : ""}
                   </p>
                 </div>
                 <Link

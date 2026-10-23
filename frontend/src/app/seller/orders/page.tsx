@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
-import { getSellerOrders, updateSellerOrderStatus } from "@/lib/api";
-import { SellerOrder } from "@/lib/types";
+import React, { useState, useEffect, useCallback, useRef } from "react";
+import { getSellerOrderDetail, getSellerOrders, updateSellerOrderStatus } from "@/lib/api";
+import { SellerOrder, SellerOrderDetail } from "@/lib/types";
 import { getAuthToken } from "@/lib/auth";
 
 const ORDER_STATUSES = [
@@ -15,6 +15,17 @@ const ORDER_STATUSES = [
   "CANCELLED",
 ];
 
+/** The detail's address as display lines, falling back to the legacy fields. */
+function deliveryAddressLines(order: SellerOrderDetail): string[] {
+  return [
+    order.shipping_address_line_1 || order.address,
+    order.shipping_address_line_2,
+    [order.shipping_area, order.shipping_city || order.city].filter(Boolean).join(", "),
+    [order.shipping_state, order.shipping_postal_code].filter(Boolean).join(" "),
+    order.shipping_country,
+  ].filter((line): line is string => Boolean(line));
+}
+
 export default function SellerOrdersPage() {
   const [orders, setOrders] = useState<SellerOrder[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
@@ -26,8 +37,14 @@ export default function SellerOrdersPage() {
   const [selectedStatus, setSelectedStatus] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState<string>("");
 
-  // Order Details Modal / Drawer
+  // Order Details Modal. The list row has no delivery address, so the modal
+  // loads the order's detail (BUG-009).
   const [viewingOrder, setViewingOrder] = useState<SellerOrder | null>(null);
+  const [orderDetail, setOrderDetail] = useState<SellerOrderDetail | null>(null);
+  const [detailLoading, setDetailLoading] = useState<boolean>(false);
+  const [detailError, setDetailError] = useState<string | null>(null);
+  // The order the modal shows now, so a late response for another is dropped.
+  const viewingNumber = useRef<string | null>(null);
 
   // Status Update Modal
   const [updatingOrder, setUpdatingOrder] = useState<SellerOrder | null>(null);
@@ -58,13 +75,9 @@ export default function SellerOrdersPage() {
         );
       }
       if (searchQuery) {
+        // The list carries no customer names, only order numbers.
         const q = searchQuery.toLowerCase();
-        filtered = filtered.filter(
-          (o) =>
-            o.order_number.toLowerCase().includes(q) ||
-            o.shipping_recipient_name?.toLowerCase().includes(q) ||
-            o.customer_name?.toLowerCase().includes(q)
-        );
+        filtered = filtered.filter((o) => o.order_number.toLowerCase().includes(q));
       }
       setOrders(filtered);
       setTotalCount(res.count);
@@ -79,6 +92,40 @@ export default function SellerOrdersPage() {
   useEffect(() => {
     fetchOrdersList();
   }, [fetchOrdersList]);
+
+  const loadOrderDetail = (order: SellerOrder) => {
+    const token = getAuthToken();
+    if (!token) return;
+    setOrderDetail(null);
+    setDetailError(null);
+    setDetailLoading(true);
+    getSellerOrderDetail(order.order_number, token)
+      .then((detail) => {
+        if (viewingNumber.current === order.order_number) setOrderDetail(detail);
+      })
+      .catch((err: Error) => {
+        if (viewingNumber.current === order.order_number) {
+          setDetailError(err.message || "Failed to load the order details.");
+        }
+      })
+      .finally(() => {
+        if (viewingNumber.current === order.order_number) setDetailLoading(false);
+      });
+  };
+
+  const openOrderDetail = (order: SellerOrder) => {
+    viewingNumber.current = order.order_number;
+    setViewingOrder(order);
+    loadOrderDetail(order);
+  };
+
+  const closeOrderDetail = () => {
+    viewingNumber.current = null;
+    setViewingOrder(null);
+    setOrderDetail(null);
+    setDetailError(null);
+    setDetailLoading(false);
+  };
 
   const handleOpenStatusModal = (order: SellerOrder) => {
     setUpdatingOrder(order);
@@ -148,7 +195,7 @@ export default function SellerOrdersPage() {
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search order #, customer..."
+            placeholder="Search order #..."
             className="w-full px-3.5 py-2 rounded-lg border border-line bg-surface text-ink text-xs focus:outline-none focus:border-primary"
           />
         </div>
@@ -213,14 +260,13 @@ export default function SellerOrdersPage() {
                     </div>
                     <p className="text-xs text-ink-muted mt-1">
                       Placed on {new Date(order.created_at).toLocaleDateString()}
-                      {order.shipping_city ? ` · Destination: ${order.shipping_city}` : ""}
                     </p>
                   </div>
 
                   <div className="flex items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => setViewingOrder(order)}
+                      onClick={() => openOrderDetail(order)}
                       className="px-3 py-1.5 rounded-lg border border-line hover:bg-surface-alt text-ink font-semibold text-xs transition-colors cursor-pointer"
                     >
                       View Details
@@ -287,7 +333,7 @@ export default function SellerOrdersPage() {
               </div>
               <button
                 type="button"
-                onClick={() => setViewingOrder(null)}
+                onClick={closeOrderDetail}
                 className="text-ink-muted hover:text-ink p-1 rounded-md"
               >
                 <span className="material-symbols-outlined text-[20px]">close</span>
@@ -299,16 +345,32 @@ export default function SellerOrdersPage() {
               <p className="font-bold text-ink uppercase tracking-wider text-[10px] text-ink-muted mb-1">
                 Delivery Address Snapshot
               </p>
-              <p className="font-bold text-ink">
-                {viewingOrder.shipping_recipient_name || viewingOrder.customer_name}
-              </p>
-              <p className="text-ink-muted">
-                {viewingOrder.shipping_phone || viewingOrder.phone}
-              </p>
-              <p className="text-ink-body">
-                {viewingOrder.shipping_address_line_1 || viewingOrder.address}
-                {viewingOrder.shipping_city ? `, ${viewingOrder.shipping_city}` : ""}
-              </p>
+              {detailLoading ? (
+                <p className="text-ink-muted">Loading delivery details...</p>
+              ) : detailError ? (
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-accent font-semibold">{detailError}</p>
+                  <button
+                    type="button"
+                    onClick={() => loadOrderDetail(viewingOrder)}
+                    className="px-2.5 py-1 rounded-md border border-line hover:bg-surface text-ink font-semibold cursor-pointer shrink-0"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : orderDetail ? (
+                <>
+                  <p className="font-bold text-ink">
+                    {orderDetail.shipping_recipient_name || orderDetail.customer_name}
+                  </p>
+                  <p className="text-ink-muted">{orderDetail.shipping_phone || orderDetail.phone}</p>
+                  {deliveryAddressLines(orderDetail).map((line) => (
+                    <p key={line} className="text-ink-body">
+                      {line}
+                    </p>
+                  ))}
+                </>
+              ) : null}
             </div>
 
             {/* Itemized List */}
@@ -317,7 +379,7 @@ export default function SellerOrdersPage() {
                 Your Shop Items
               </p>
               <div className="border border-line rounded-xl divide-y divide-line overflow-hidden">
-                {viewingOrder.items?.map((item) => (
+                {(orderDetail ?? viewingOrder).items?.map((item) => (
                   <div key={item.id} className="p-3 flex items-center justify-between text-xs">
                     <div>
                       <p className="font-bold text-ink">{item.product_name}</p>
@@ -341,7 +403,7 @@ export default function SellerOrdersPage() {
             <div className="flex justify-end pt-2">
               <button
                 type="button"
-                onClick={() => setViewingOrder(null)}
+                onClick={closeOrderDetail}
                 className="px-4 py-2 rounded-lg bg-surface-alt hover:bg-surface-sunken text-ink font-bold text-xs uppercase tracking-wider cursor-pointer"
               >
                 Close
