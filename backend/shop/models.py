@@ -425,8 +425,15 @@ class Order(models.Model):
 
     @property
     def current_payment(self):
-        """Returns the primary or most recent payment record associated with this order."""
-        return self.payments.order_by("-created_at").first()
+        """Returns the primary or most recent payment record associated with this order.
+
+        Reads prefetched payments when the queryset has them, so a list of
+        orders costs one payments query rather than one per row (BUG-022).
+        """
+        prefetched = getattr(self, "_prefetched_objects_cache", {}).get("payments")
+        if prefetched is not None:
+            return max(prefetched, key=lambda payment: (payment.created_at, payment.pk), default=None)
+        return self.payments.order_by("-created_at", "-pk").first()
 
     @property
     def is_paid(self) -> bool:

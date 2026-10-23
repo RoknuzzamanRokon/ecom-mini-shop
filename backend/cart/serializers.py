@@ -3,7 +3,7 @@ from decimal import Decimal
 from rest_framework import serializers
 
 from shop.models import Category, Product
-from shop.serializers import CategorySerializer, ShopSummarySerializer
+from shop.serializers import CategorySerializer, ShopSummarySerializer, category_fallback_products
 from .models import Cart, CartItem
 
 
@@ -88,6 +88,14 @@ class CartSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+    def to_representation(self, instance):
+        # Every line's category image in one lookup, not one per line (BUG-022).
+        self.context.setdefault(
+            "category_fallback_products",
+            category_fallback_products(item.product.category for item in instance.items.all()),
+        )
+        return super().to_representation(instance)
 
 
 class CartItemCreateSerializer(serializers.Serializer):

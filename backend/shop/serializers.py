@@ -1,4 +1,5 @@
 from decimal import Decimal
+from django.db.models import OuterRef, Subquery
 from rest_framework import serializers
 from customers.services import rating_breakdown
 from shops.models import Shop
@@ -38,12 +39,20 @@ class CategorySerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(obj.image.url)
             return obj.image.url
 
-        first_product = obj.products.filter(is_active=True).exclude(image="").first()
+        first_product = self._fallback_product(obj)
         if first_product and first_product.image and hasattr(first_product.image, "url"):
             if request:
                 return request.build_absolute_uri(first_product.image.url)
             return first_product.image.url
         return None
+
+    def _fallback_product(self, obj):
+        # A caller that preloaded the fallbacks (category_fallback_products)
+        # is served from them instead of one query per row (BUG-022).
+        preloaded = self.context.get("category_fallback_products")
+        if preloaded is not None and obj.pk in preloaded:
+            return preloaded[obj.pk]
+        return obj.products.filter(is_active=True).exclude(image="").first()
 
     def get_description(self, obj):
         if obj.description:
@@ -60,6 +69,30 @@ class CategorySerializer(serializers.ModelSerializer):
             "home-and-garden": "Elevate your living spaces with functional home decor, modern planters, cozy textures, and indoor botanicals.",
         }
         return CATEGORY_DESCRIPTIONS.get(obj.slug, "Explore our curated collection of quality products.")
+
+
+def category_fallback_products(categories):
+    """
+    {category id: the product whose image CategorySerializer shows in place of
+    the category's own}, in two queries for any number of categories. Pass the
+    result as the "category_fallback_products" serializer context.
+    """
+    ids = {category.pk for category in categories if category is not None and not category.image}
+    if not ids:
+        return {}
+    newest_with_image = (
+        Product.objects.filter(category=OuterRef("pk"), is_active=True)
+        .exclude(image="")
+        .order_by("-created_at")
+        .values("pk")[:1]
+    )
+    product_ids = dict(
+        Category.objects.filter(pk__in=ids)
+        .annotate(fallback_id=Subquery(newest_with_image))
+        .values_list("pk", "fallback_id")
+    )
+    products = Product.objects.in_bulk([pk for pk in product_ids.values() if pk])
+    return {category_id: products.get(product_id) for category_id, product_id in product_ids.items()}
 
 
 class ProductImageSerializer(serializers.ModelSerializer):
@@ -841,7 +874,10 @@ class PaymentSerializer(serializers.ModelSerializer):
         return obj.status == Payment.STATUS_PAID
 
     def get_refundable_amount(self, obj):
-        completed_refunds_sum = sum(r.amount for r in obj.refunds.filter(status=Refund.STATUS_COMPLETED))
+        # Filtered in Python so prefetched refunds are reused (BUG-022).
+        completed_refunds_sum = sum(
+            r.amount for r in obj.refunds.all() if r.status == Refund.STATUS_COMPLETED
+        )
         return max(Decimal("0.00"), obj.amount - completed_refunds_sum)
 
 
@@ -1129,8 +1165,9 @@ class StaffOrderDetailSerializer(serializers.ModelSerializer):
         return StaffOrderPaymentSummarySerializer(current).data
 
     def get_refunds(self, obj):
-        refunds_qs = obj.refunds.all().order_by("-created_at")
-        return StaffOrderRefundSummarySerializer(refunds_qs, many=True).data
+        # Sorted in Python so prefetched refunds are reused (BUG-022).
+        refunds = sorted(obj.refunds.all(), key=lambda refund: (refund.created_at, refund.pk), reverse=True)
+        return StaffOrderRefundSummarySerializer(refunds, many=True).data
 
     def get_allowed_transitions(self, obj):
         return Order.VALID_TRANSITIONS.get(obj.status.upper() if obj.status else "", [])

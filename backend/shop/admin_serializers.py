@@ -48,6 +48,10 @@ class AdminUserListSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_roles(self, obj):
+        # The users list prefetches the active roles (BUG-067).
+        active = getattr(obj, "active_user_roles", None)
+        if active is not None:
+            return sorted({user_role.role.code for user_role in active})
         return sorted(list(get_user_role_codes(obj)))
 
     def get_customer_profile_id(self, obj):
@@ -382,6 +386,9 @@ class AdminSellerSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_shops_count(self, obj):
+        # Lists annotate the count (BUG-067); a single seller counts here.
+        if hasattr(obj, "shops_count"):
+            return obj.shops_count
         return obj.shops.count()
 
 
@@ -556,6 +563,9 @@ class AdminShopSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_products_count(self, obj):
+        # Lists annotate the count (BUG-067); a single row counts here.
+        if hasattr(obj, "products_count"):
+            return obj.products_count
         return obj.products.count()
 
 
@@ -796,6 +806,9 @@ class AdminCategorySerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "products_count", "created_at", "updated_at"]
 
     def get_products_count(self, obj):
+        # Lists annotate the count (BUG-067); a single row counts here.
+        if hasattr(obj, "products_count"):
+            return obj.products_count
         return obj.products.count()
 
 
@@ -827,6 +840,9 @@ class AdminCustomerListSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_orders_count(self, obj):
+        # The list annotates the count (BUG-067); a single customer counts here.
+        if hasattr(obj, "orders_count"):
+            return obj.orders_count
         return Order.objects.filter(user=obj.user).count()
 
 

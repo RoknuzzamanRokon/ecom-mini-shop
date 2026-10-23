@@ -682,9 +682,11 @@ class OrderService:
             if not cart:
                 raise ValidationError({"cart": "Shopping cart not found for this user."})
 
-            # 2. Lock CartItems with row-level lock
+            # 2. Lock CartItems with row-level lock. Only the cart item rows:
+            # without of=, MySQL also locks every joined category, shop and
+            # seller row until the order commits (BUG-023).
             cart_items = list(
-                CartItem.objects.select_for_update()
+                CartItem.objects.select_for_update(of=("self",))
                 .filter(cart=cart)
                 .select_related(
                     "product",

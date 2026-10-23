@@ -10,7 +10,7 @@ import logging
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Q, Sum
+from django.db.models import Count, Prefetch, Q, Sum
 from rest_framework import status
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError as DRFValidationError
 from rest_framework.pagination import PageNumberPagination
@@ -137,7 +137,18 @@ class AdminUserListAPIView(APIView):
         return [IsAuthenticated(), CanViewAdminUsers()]
 
     def get(self, request):
-        qs = User.objects.all().order_by("-date_joined")
+        # Profiles and active roles in the page query, not per row (BUG-067).
+        qs = (
+            User.objects.select_related("customer_profile", "seller_profile")
+            .prefetch_related(
+                Prefetch(
+                    "user_roles",
+                    queryset=UserRole.objects.filter(is_active=True, role__is_active=True).select_related("role"),
+                    to_attr="active_user_roles",
+                )
+            )
+            .order_by("-date_joined")
+        )
         search = request.query_params.get("search", "").strip()
         if search:
             qs = qs.filter(
@@ -649,7 +660,8 @@ class AdminSellerListAPIView(APIView):
         return [IsAuthenticated(), CanViewAdminSellers()]
 
     def get(self, request):
-        qs = SellerProfile.objects.select_related("user").prefetch_related("shops").all().order_by("-created_at")
+        # Counted in the page query rather than loading every shop (BUG-067).
+        qs = SellerProfile.objects.select_related("user").annotate(shops_count=Count("shops")).order_by("-created_at")
 
         search = request.query_params.get("search", "").strip()
         if search:
@@ -782,7 +794,7 @@ class AdminSellerDetailAPIView(APIView):
 
     def get(self, request, pk):
         try:
-            seller = SellerProfile.objects.select_related("user").prefetch_related("shops").get(pk=pk)
+            seller = SellerProfile.objects.select_related("user").annotate(shops_count=Count("shops")).get(pk=pk)
         except SellerProfile.DoesNotExist:
             raise NotFound("Seller profile not found.")
         return Response(AdminSellerSerializer(seller).data, status=status.HTTP_200_OK)
@@ -925,7 +937,12 @@ class AdminShopListAPIView(APIView):
         return [IsAuthenticated(), CanViewAdminShops()]
 
     def get(self, request):
-        qs = Shop.objects.select_related("owner", "owner__user").prefetch_related("products").all().order_by("-created_at")
+        # Counted in the page query rather than loading every product (BUG-067).
+        qs = (
+            Shop.objects.select_related("owner", "owner__user")
+            .annotate(products_count=Count("products"))
+            .order_by("-created_at")
+        )
 
         search = request.query_params.get("search", "").strip()
         if search:
@@ -1016,7 +1033,7 @@ class AdminShopDetailAPIView(APIView):
 
     def get(self, request, pk):
         try:
-            shop = Shop.objects.select_related("owner", "owner__user").prefetch_related("products").get(pk=pk)
+            shop = Shop.objects.select_related("owner", "owner__user").annotate(products_count=Count("products")).get(pk=pk)
         except Shop.DoesNotExist:
             raise NotFound("Shop not found.")
         return Response(AdminShopSerializer(shop).data, status=status.HTTP_200_OK)
@@ -1304,7 +1321,7 @@ class AdminCategoryListCreateAPIView(APIView):
     permission_classes = [IsAuthenticated, CanManageAdminCategories]
 
     def get(self, request):
-        qs = Category.objects.all().order_by("name")
+        qs = Category.objects.annotate(products_count=Count("products")).order_by("name")  # BUG-067
         search = request.query_params.get("search", "").strip()
         if search:
             qs = qs.filter(Q(name__icontains=search) | Q(slug__icontains=search))
@@ -1420,7 +1437,12 @@ class AdminCustomerListAPIView(APIView):
     permission_classes = [IsAuthenticated, CanViewAdminCustomers]
 
     def get(self, request):
-        qs = CustomerProfile.objects.select_related("user").all().order_by("-created_at")
+        # Counted in the page query, not per row (BUG-067).
+        qs = (
+            CustomerProfile.objects.select_related("user")
+            .annotate(orders_count=Count("user__orders"))
+            .order_by("-created_at")
+        )
 
         search = request.query_params.get("search", "").strip()
         if search:

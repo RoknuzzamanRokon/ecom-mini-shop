@@ -48,6 +48,8 @@ class CartService:
                         "product__category",
                         "product__shop",
                         "product__shop__owner",
+                        # Product.in_stock reads it for every line (BUG-022).
+                        "product__inventory",
                     ),
                 )
             )

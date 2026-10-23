@@ -2,7 +2,7 @@ import uuid
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Count, F, Q
+from django.db.models import Count, F, Prefetch, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, permissions, status
@@ -304,6 +304,7 @@ class OrderListCreateAPIView(APIView):
                 "items__product",
                 "items__shop",
                 "items__seller",
+                "payments",
             )
             .order_by("-created_at")
         )
@@ -382,6 +383,7 @@ class OrderDetailAPIView(APIView):
             "items__product",
             "items__shop",
             "items__seller",
+            "payments",
         )
 
         if lookup_str.isdigit():
@@ -1088,6 +1090,11 @@ class CustomerOrderPaymentAPIView(APIView):
         return Response(output_serializer.data, status=status.HTTP_201_CREATED)
 
 
+def _payment_refunds():
+    """Refunds for PaymentSerializer, with the order and staff user it shows (BUG-022)."""
+    return Prefetch("refunds", queryset=Refund.objects.select_related("order", "processed_by"))
+
+
 class StaffPaymentListAPIView(generics.ListAPIView):
     """
     Staff Payment Management:
@@ -1099,7 +1106,7 @@ class StaffPaymentListAPIView(generics.ListAPIView):
     pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
-        qs = Payment.objects.select_related("order", "user").prefetch_related("refunds").order_by("-created_at")
+        qs = Payment.objects.select_related("order", "user").prefetch_related(_payment_refunds()).order_by("-created_at")
         status_filter = self.request.query_params.get("status")
         if status_filter:
             qs = qs.filter(status=status_filter.upper())
@@ -1120,7 +1127,7 @@ class StaffPaymentDetailAPIView(generics.RetrieveAPIView):
     """
     permission_classes = [permissions.IsAuthenticated, CanViewPayment]
     serializer_class = PaymentSerializer
-    queryset = Payment.objects.select_related("order", "user").prefetch_related("refunds")
+    queryset = Payment.objects.select_related("order", "user").prefetch_related(_payment_refunds())
 
 
 class StaffPaymentVerifyAPIView(APIView):
@@ -1235,16 +1242,11 @@ class StaffOrderListAPIView(generics.ListAPIView):
     pagination_class = StandardResultsSetPagination
 
     def get_queryset(self):
+        # Only what StaffOrderListSerializer reads; current_payment uses the
+        # prefetched payments (BUG-022).
         qs = (
-            Order.objects.select_related("user", "user__customer_profile", "shipping_address")
-            .prefetch_related(
-                "items",
-                "items__product",
-                "items__shop",
-                "items__seller",
-                "payments",
-                "refunds",
-            )
+            Order.objects.select_related("user", "user__customer_profile")
+            .prefetch_related("items", "payments")
             .order_by("-created_at")
         )
 
