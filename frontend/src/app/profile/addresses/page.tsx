@@ -31,6 +31,7 @@ export default function AddressesPage() {
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -46,8 +47,10 @@ export default function AddressesPage() {
     setError(null);
     try {
       setAddresses(await getCustomerAddresses(token));
+      setLoadFailed(false);
     } catch {
       setError("We could not load your addresses. Please try again.");
+      setLoadFailed(true);
     } finally {
       setLoading(false);
     }
@@ -329,6 +332,17 @@ export default function AddressesPage() {
             location_on
           </span>
           <p className="text-sm text-ink-body mt-2">Loading addresses…</p>
+        </div>
+      ) : loadFailed && addresses.length === 0 ? (
+        // The load failed: the banner above says so; this is not "No addresses saved" (BUG-090).
+        <div className="flex justify-center py-6">
+          <button
+            type="button"
+            onClick={load}
+            className="text-xs font-bold uppercase tracking-wider text-primary hover:underline cursor-pointer"
+          >
+            Retry
+          </button>
         </div>
       ) : addresses.length === 0 && !showForm ? (
         <div className="bg-surface rounded-2xl border border-line p-12 text-center">

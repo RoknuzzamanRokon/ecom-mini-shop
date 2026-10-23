@@ -19,7 +19,9 @@ export default function OrderSuccessPage() {
     async function load() {
       if (orderNumber) {
         const token = getAuthToken();
-        const data = await getOrderDetail(orderNumber, token);
+        // The order was placed; its summary is a nice-to-have, so a failed
+        // read only leaves the summary out.
+        const data = await getOrderDetail(orderNumber, token).catch(() => null);
         if (data) setOrder(data);
       }
     }

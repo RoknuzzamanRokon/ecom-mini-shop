@@ -9,8 +9,10 @@ import { useFavorites } from "@/context/FavoritesContext";
 
 export default function FavoritesPage() {
   const { addToCart } = useCart();
-  const { favorites, isLoading: loading, toggleFavorite, refresh } = useFavorites();
-  const [error, setError] = useState<string | null>(null);
+  const { favorites, isLoading: loading, error: loadError, toggleFavorite, refresh } = useFavorites();
+  const [actionError, setActionError] = useState<string | null>(null);
+  // A failed load is shown as an error with Retry, never as "No favorites yet".
+  const error = loadError || actionError;
   const [removingId, setRemovingId] = useState<number | null>(null);
 
   const load = refresh;
@@ -20,7 +22,7 @@ export default function FavoritesPage() {
     try {
       await toggleFavorite(productId);
     } catch {
-      setError("Could not remove that item.");
+      setActionError("Could not remove that item.");
     } finally {
       setRemovingId(null);
     }

@@ -389,17 +389,17 @@ export async function getProductById(id: number): Promise<Product | null> {
   }
 }
 
+/**
+ * The public shop, or null when there is none (404). An outage throws, so the
+ * page can show its error boundary instead of "not found" (BUG-035).
+ */
 export async function getShopDetail(slug: string): Promise<Shop | null> {
-  try {
-    const res = await fetch(`${API_BASE_URL}/api/shops/${slug}/`, {
-      cache: "no-store",
-    });
-    if (!res.ok) throw new Error("Shop not found");
-    return await res.json();
-  } catch (err) {
-    console.warn("Failed to fetch shop detail for slug:", slug, err);
-    return null;
-  }
+  const res = await fetch(`${API_BASE_URL}/api/shops/${encodeURIComponent(slug)}/`, {
+    cache: "no-store",
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw await responseError(res, "This shop could not be loaded.");
+  return await res.json();
 }
 
 export async function getShops(params?: {
@@ -577,21 +577,22 @@ export async function getUserOrders(
   return await res.json();
 }
 
+/**
+ * The order, or null when it does not exist for this customer (404). Any
+ * other failure throws, so an outage is shown as an error with a retry, not
+ * as "Order Not Found" (BUG-035/090).
+ */
 export async function getOrderDetail(
   orderNumber: string,
   token?: string | null
 ): Promise<Order | null> {
-  try {
-    // Optional token, as in createOrder — no token means no interception.
-    const res = await customerRequest(`/api/orders/${orderNumber}/`, token, {
-      cache: "no-store",
-    });
-    if (!res.ok) throw new Error("Order not found");
-    return await res.json();
-  } catch (err) {
-    console.error("Failed to fetch order detail:", err);
-    return null;
-  }
+  // Optional token, as in createOrder — no token means no interception.
+  const res = await customerRequest(`/api/orders/${encodeURIComponent(orderNumber)}/`, token, {
+    cache: "no-store",
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) throw await responseError(res, "We could not load this order. Please try again.");
+  return await res.json();
 }
 
 export async function getSellerProducts(

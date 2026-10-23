@@ -628,6 +628,18 @@ are recorded here as they are made.
    - Historical orders are not backfilled now. An order placed before this
      change gets its payment when it is delivered, and TASK-047 reports any
      remaining gaps.
+4. **Demo-data fallback** — decided 2026-10-23, applied in TASK-026.
+   - The demo catalogue fallback stays for now, during development.
+   - **Before the first production release it is removed.** That means
+     `DEMO_PRODUCTS`, `DEMO_CATEGORIES`, and the fallbacks in `getProducts`,
+     `getProductDetail`, `getHotDeal` and `getCategories` in
+     `frontend/src/lib/api.ts`.
+   - Until then BUG-035's risk stands. While the API is down the storefront
+     shows eight demo products as real ones, and a guest who adds one to the
+     cart gets the real product with the same id after logging in.
+   - Outages unrelated to demo data now show as errors, not as "not found" or
+     "empty": the order page, the shop page (its `error.tsx`), favorites and
+     addresses. Seller forms never use demo categories (TASK-023).
 
 ## Not in this roadmap
 

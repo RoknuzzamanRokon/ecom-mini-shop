@@ -44,6 +44,7 @@ export default function CustomerOrderDetailPage() {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
 
   // Cancellation modal state
   const [showCancelModal, setShowCancelModal] = useState(false);
@@ -61,16 +62,17 @@ export default function CustomerOrderDetailPage() {
 
     setLoading(true);
     setError(null);
+    setNotFound(false);
 
     try {
       const data = await getOrderDetail(orderNumber, token);
       if (!data) {
-        setError("Order not found or you do not have permission to view it.");
+        setNotFound(true);
       } else {
         setOrder(data);
       }
-    } catch {
-      setError("Unable to load order details. Please try again later.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unable to load order details. Please try again later.");
     } finally {
       setLoading(false);
     }
@@ -119,7 +121,28 @@ export default function CustomerOrderDetailPage() {
     );
   }
 
-  if (error || !order) {
+  // A failed load is an error with Retry; only a 404 is "not found" (BUG-090).
+  if (error) {
+    return (
+      <div className="bg-surface rounded-2xl border border-line p-10 text-center max-w-lg mx-auto">
+        <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-accent/10 flex items-center justify-center text-accent">
+          <span className="material-symbols-outlined text-[32px]">cloud_off</span>
+        </div>
+        <h1 className="text-lg font-bold text-ink">Could not load this order</h1>
+        <p className="text-sm text-ink-muted mt-1 mb-6 leading-relaxed">{error}</p>
+        <button
+          type="button"
+          onClick={loadOrder}
+          className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-on-primary font-bold text-xs uppercase tracking-wider px-6 py-2.5 rounded-lg shadow-sm transition-colors cursor-pointer"
+        >
+          <span className="material-symbols-outlined text-[16px]">refresh</span>
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  if (notFound || !order) {
     return (
       <div className="bg-surface rounded-2xl border border-line p-10 text-center max-w-lg mx-auto">
         <div className="w-14 h-14 mx-auto mb-3 rounded-full bg-accent/10 flex items-center justify-center text-accent">
@@ -127,7 +150,7 @@ export default function CustomerOrderDetailPage() {
         </div>
         <h1 className="text-lg font-bold text-ink">Order Not Found</h1>
         <p className="text-sm text-ink-muted mt-1 mb-6 leading-relaxed">
-          {error || "The requested order does not exist or belongs to another customer account."}
+          The requested order does not exist or belongs to another customer account.
         </p>
         <Link
           href="/profile/orders"

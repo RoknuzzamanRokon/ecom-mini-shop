@@ -23,6 +23,7 @@ export default function ShopStorefrontPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [loadingShop, setLoadingShop] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<Error | null>(null);
   const [loadingProducts, setLoadingProducts] = useState<boolean>(true);
 
   // Filters
@@ -40,13 +41,20 @@ export default function ShopStorefrontPage() {
     async function loadShopAndCategories() {
       if (!slug) return;
       setLoadingShop(true);
-      const [shopData, cats] = await Promise.all([
-        getShopDetail(slug),
-        getCategories(),
-      ]);
-      setShop(shopData);
-      setCategories(cats);
-      setLoadingShop(false);
+      try {
+        const [shopData, cats] = await Promise.all([
+          getShopDetail(slug),
+          getCategories(),
+        ]);
+        setShop(shopData);
+        setCategories(cats);
+      } catch (err) {
+        // Rethrown while rendering, so this route's error.tsx (with Retry)
+        // shows an outage instead of the not-found page.
+        setLoadError(err instanceof Error ? err : new Error("This shop could not be loaded."));
+      } finally {
+        setLoadingShop(false);
+      }
     }
     loadShopAndCategories();
   }, [slug]);
@@ -108,6 +116,10 @@ export default function ShopStorefrontPage() {
       setCurrentPage(1);
     });
   };
+
+  // An outage reaches this route's error.tsx (with Retry); only a missing
+  // shop falls through to notFound() below (BUG-035).
+  if (loadError) throw loadError;
 
   if (loadingShop) {
     return (

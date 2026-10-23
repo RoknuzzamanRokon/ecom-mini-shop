@@ -17,6 +17,8 @@ interface FavoritesContextType {
   favorites: Favorite[];
   favoriteIds: Set<number>;
   isLoading: boolean;
+  /** Why the list could not be loaded; the list is then not "empty" (BUG-090). */
+  error: string | null;
   isFavorite: (productId: number) => boolean;
   toggleFavorite: (productId: number) => Promise<void>;
   refresh: () => Promise<void>;
@@ -28,18 +30,22 @@ export function FavoritesProvider({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     const token = getAuthToken();
     if (!token) {
       setFavorites([]);
+      setError(null);
       return;
     }
     try {
       setIsLoading(true);
       setFavorites(await getFavorites(token));
+      setError(null);
     } catch {
-      setFavorites([]);
+      // Keep what is shown; an outage is not an empty list.
+      setError("We could not load your favorites. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -92,7 +98,7 @@ export function FavoritesProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <FavoritesContext.Provider
-      value={{ favorites, favoriteIds, isLoading, isFavorite, toggleFavorite, refresh }}
+      value={{ favorites, favoriteIds, isLoading, error, isFavorite, toggleFavorite, refresh }}
     >
       {children}
     </FavoritesContext.Provider>
