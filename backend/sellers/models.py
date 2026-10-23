@@ -5,6 +5,18 @@ from django.db import models
 from django.utils import timezone
 
 
+class SellerTransitionError(ValidationError):
+    """A staff lifecycle action was asked of a seller in a status it cannot start from."""
+
+    def __init__(self, action: str, status: str, allowed):
+        self.action = action
+        self.status = status
+        super().__init__(
+            f"Cannot {action} a seller who is {status}; "
+            f"{action} applies only to {' or '.join(allowed)} sellers."
+        )
+
+
 class SellerProfile(models.Model):
     # Seller Types
     TYPE_FULL_SHOP_OWNER = "FULL_SHOP_OWNER"
@@ -119,7 +131,26 @@ class SellerProfile(models.Model):
         super().save(*args, **kwargs)
 
     # Lifecycle State Transitions
+    #
+    # The statuses each staff transition may start from (BUG-017). A
+    # suspension is lifted only by reactivate (sellers.suspend), and an
+    # applicant is admitted only by approve (sellers.approve), so neither
+    # authority can stand in for the other.
+    TRANSITION_SOURCES = {
+        "approve": (STATUS_PENDING, STATUS_UNDER_REVIEW, STATUS_REJECTED),
+        "reject": (STATUS_PENDING, STATUS_UNDER_REVIEW),
+        "suspend": (STATUS_APPROVED, STATUS_ACTIVE),
+        "reactivate": (STATUS_SUSPENDED,),
+    }
+
+    def require_transition(self, action: str):
+        """Raise SellerTransitionError unless `action` may start from the current status."""
+        allowed = self.TRANSITION_SOURCES[action]
+        if self.status not in allowed:
+            raise SellerTransitionError(action, self.status, allowed)
+
     def approve(self, staff_user):
+        self.require_transition("approve")
         self.status = self.STATUS_APPROVED
         self.reviewed_by = staff_user
         self.reviewed_at = timezone.now()
@@ -134,7 +165,13 @@ class SellerProfile(models.Model):
         self.suspension_reason = ""
         self.save(update_fields=["status", "suspension_reason", "updated_at"])
 
+    def reactivate(self, staff_user=None):
+        """Lift a suspension: SUSPENDED -> ACTIVE."""
+        self.require_transition("reactivate")
+        self.activate(staff_user)
+
     def suspend(self, staff_user, reason: str):
+        self.require_transition("suspend")
         if not reason or not reason.strip():
             raise ValidationError("A non-empty suspension reason is required.")
         self.status = self.STATUS_SUSPENDED
@@ -143,6 +180,7 @@ class SellerProfile(models.Model):
         self.save(update_fields=["status", "suspension_reason", "suspended_at", "updated_at"])
 
     def reject(self, staff_user, reason: str):
+        self.require_transition("reject")
         if not reason or not reason.strip():
             raise ValidationError("A non-empty rejection reason is required.")
         self.status = self.STATUS_REJECTED

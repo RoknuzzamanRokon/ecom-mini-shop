@@ -878,14 +878,21 @@ class AdminSellerStatusAPIView(APIView):
 
             old_status = seller.status
 
-            if action == "approve":
-                seller = approve_seller(seller, request.user)
-            elif action == "reject":
-                seller = reject_seller(seller, request.user, reason)
-            elif action == "suspend":
-                seller = suspend_seller(seller, request.user, reason)
-            elif action == "reactivate":
-                seller = reactivate_seller(seller, request.user)
+            # A transition the seller's status does not allow (BUG-017), or a
+            # missing reason, is a 400 rather than a 500 (BUG-050).
+            try:
+                if action == "approve":
+                    seller = approve_seller(seller, request.user)
+                elif action == "reject":
+                    seller = reject_seller(seller, request.user, reason)
+                elif action == "suspend":
+                    seller = suspend_seller(seller, request.user, reason)
+                elif action == "reactivate":
+                    seller = reactivate_seller(seller, request.user)
+            except DjangoValidationError as exc:
+                raise DRFValidationError(
+                    exc.message_dict if hasattr(exc, "message_dict") else {"detail": exc.messages}
+                )
 
             AuditService.log(
                 action=f"ADMIN_SELLER_{action.upper()}",

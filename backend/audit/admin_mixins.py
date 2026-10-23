@@ -131,6 +131,11 @@ class ChangeFormAuditMixin:
         )
 
 
+def _error_text(exc) -> str:
+    """A ValidationError's messages as plain text, not a list repr."""
+    return '; '.join(getattr(exc, 'messages', None) or [str(exc)])
+
+
 class ReasonRequiredActionMixin:
     """
     Django's intermediate-confirmation-page pattern for admin actions that
@@ -184,7 +189,7 @@ class ReasonRequiredActionMixin:
                     )
             except catch as exc:
                 self.message_user(
-                    request, f'{verb} failed for {obj}: {exc}', messages.ERROR
+                    request, f'{verb} failed for {obj}: {_error_text(exc)}', messages.ERROR
                 )
                 continue
             done += 1
@@ -223,7 +228,7 @@ class ReasonRequiredActionMixin:
                             )
                     except catch as exc:
                         self.message_user(
-                            request, f'{verb} failed for {obj}: {exc}', messages.ERROR
+                            request, f'{verb} failed for {obj}: {_error_text(exc)}', messages.ERROR
                         )
                         continue
                     done += 1

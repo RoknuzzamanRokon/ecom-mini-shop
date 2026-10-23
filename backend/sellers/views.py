@@ -1,6 +1,7 @@
 from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -126,6 +127,17 @@ class SellerDetailView(generics.RetrieveAPIView):
     queryset = SellerProfile.objects.select_related("user")
 
 
+def _run_transition(perform, *args):
+    """
+    Run a seller lifecycle service; a refused transition (SellerTransitionError,
+    a missing reason) is a 400, never a 500, and leaves nothing written.
+    """
+    try:
+        return perform(*args)
+    except DjangoValidationError as exc:
+        raise ValidationError(exc.message_dict if hasattr(exc, "message_dict") else {"detail": exc.messages})
+
+
 class SellerApproveView(APIView):
     """
     Staff approval endpoint for seller applications.
@@ -143,7 +155,7 @@ class SellerApproveView(APIView):
             # unchanged -- the sibling raises DRF NotFound with a different detail.
             seller = get_object_or_404(SellerProfile.objects.select_for_update(), pk=pk)
             previous_state = {"status": seller.status}
-            approve_seller(seller, request.user)
+            _run_transition(approve_seller, seller, request.user)
             AuditService.log(
                 action="ADMIN_SELLER_APPROVE",
                 target=seller,
@@ -177,7 +189,7 @@ class SellerRejectView(APIView):
             reason = serializer.validated_data["reason"]
 
             previous_state = {"status": seller.status}
-            reject_seller(seller, request.user, reason)
+            _run_transition(reject_seller, seller, request.user, reason)
             AuditService.log(
                 action="ADMIN_SELLER_REJECT",
                 target=seller,
@@ -209,7 +221,7 @@ class SellerSuspendView(APIView):
             reason = serializer.validated_data["reason"]
 
             previous_state = {"status": seller.status}
-            suspend_seller(seller, request.user, reason)
+            _run_transition(suspend_seller, seller, request.user, reason)
             AuditService.log(
                 action="ADMIN_SELLER_SUSPEND",
                 target=seller,
@@ -235,16 +247,12 @@ class SellerReactivateView(APIView):
 
     def post(self, request, pk):
         with transaction.atomic():
-            # The is_suspended gate moves inside the lock with the read it depends on.
-            # Checking it against an unlocked row is the same TOCTOU as #23: the seller
-            # could be reactivated by a concurrent request between the check and the
-            # write. The rule itself is unchanged, and 404 still precedes 400.
+            # The SUSPENDED-only rule (SellerProfile.TRANSITION_SOURCES) is checked
+            # on this locked row, so a concurrent reactivation cannot slip between
+            # the check and the write (#23). 404 still precedes 400.
             seller = get_object_or_404(SellerProfile.objects.select_for_update(), pk=pk)
-            if not seller.is_suspended:
-                raise ValidationError("Only suspended sellers can be reactivated.")
-
             previous_state = {"status": seller.status}
-            reactivate_seller(seller, request.user)
+            _run_transition(reactivate_seller, seller, request.user)
             AuditService.log(
                 action="ADMIN_SELLER_REACTIVATE",
                 target=seller,

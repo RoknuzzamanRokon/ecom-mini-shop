@@ -131,6 +131,6 @@ def suspend_seller(seller: SellerProfile, staff_user, reason: str) -> SellerProf
 @transaction.atomic
 def reactivate_seller(seller: SellerProfile, staff_user) -> SellerProfile:
     from_status = seller.status
-    seller.activate(staff_user)
+    seller.reactivate(staff_user)
     _publish_status_change(seller, from_status, staff_user)
     return seller
