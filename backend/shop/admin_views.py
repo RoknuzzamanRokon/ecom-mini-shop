@@ -7,6 +7,8 @@ concurrency control, and comprehensive audit logging.
 """
 
 import logging
+from datetime import timedelta
+
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
@@ -22,9 +24,11 @@ from .metrics import get_console_metrics
 from audit.models import AuditLog
 from audit.services import AuditService
 from audit.utils import get_client_ip
+from config.params import business_day_start, date_param, id_param, is_whole_number
 from customers.models import CustomerProfile, Review, ShopReview
 from customers.services import ReviewModerationError, ReviewModerationService
 from rbac.models import Permission, Role, RolePermission, UserRole
+from rbac.serializers import create_login_account
 from rbac.services import (
     assert_can_assign_roles,
     assert_can_manage_user,
@@ -229,7 +233,7 @@ class AdminUserListAPIView(APIView):
         assert_can_assign_roles(actor, None, desired_roles)
 
         with transaction.atomic():
-            new_user = User.objects.create_user(
+            new_user = create_login_account(
                 username=data["username"],
                 email=data["email"],
                 password=data["password"],
@@ -716,7 +720,7 @@ class AdminSellerListAPIView(APIView):
 
         with transaction.atomic():
             if account:
-                target_user = User.objects.create_user(
+                target_user = create_login_account(
                     username=account["username"],
                     email=account["email"],
                     password=account["password"],
@@ -1213,11 +1217,12 @@ class AdminProductListAPIView(APIView):
         if prod_status:
             qs = qs.filter(status=prod_status)
 
-        category_id = request.query_params.get("category")
+        # 400 on a malformed id, not a ValueError from filter() (BUG-066).
+        category_id = id_param(request.query_params, "category")
         if category_id:
             qs = qs.filter(category_id=category_id)
 
-        shop_id = request.query_params.get("shop")
+        shop_id = id_param(request.query_params, "shop")
         if shop_id:
             qs = qs.filter(shop_id=shop_id)
 
@@ -1546,7 +1551,7 @@ class AdminAuditLogListAPIView(APIView):
         # 4. Actor filter (by user ID or username/email)
         actor_param = request.query_params.get("actor", "").strip()
         if actor_param:
-            if actor_param.isdigit():
+            if is_whole_number(actor_param):
                 qs = qs.filter(actor_user_id=int(actor_param))
             else:
                 # The snapshot also finds the rows of deleted accounts.
@@ -1555,14 +1560,14 @@ class AdminAuditLogListAPIView(APIView):
                     | Q(actor__email__icontains=actor_param)
                 )
 
-        # 5. Shop / Seller context filters
-        shop_id = request.query_params.get("shop_id")
-        if shop_id and str(shop_id).isdigit():
-            qs = qs.filter(shop_id=int(shop_id))
+        # 5. Shop / Seller context filters (400 on a malformed id)
+        shop_id = id_param(request.query_params, "shop_id")
+        if shop_id:
+            qs = qs.filter(shop_id=shop_id)
 
-        seller_id = request.query_params.get("seller_id")
-        if seller_id and str(seller_id).isdigit():
-            qs = qs.filter(seller_id=int(seller_id))
+        seller_id = id_param(request.query_params, "seller_id")
+        if seller_id:
+            qs = qs.filter(seller_id=seller_id)
 
         # 6. General Search
         search = request.query_params.get("search", "").strip()
@@ -1575,14 +1580,16 @@ class AdminAuditLogListAPIView(APIView):
                 | Q(actor__email__icontains=search)
             )
 
-        # 7. Date range filters
-        start_date = request.query_params.get("start_date", "").strip()
+        # 7. Date range filters: whole days in the business time zone, so an
+        # event at 02:00 in Dhaka falls on that day, not the UTC day before
+        # (BUG-066). A malformed date is a 400.
+        start_date = date_param(request.query_params, "start_date")
         if start_date:
-            qs = qs.filter(created_at__date__gte=start_date)
+            qs = qs.filter(created_at__gte=business_day_start(start_date))
 
-        end_date = request.query_params.get("end_date", "").strip()
+        end_date = date_param(request.query_params, "end_date")
         if end_date:
-            qs = qs.filter(created_at__date__lte=end_date)
+            qs = qs.filter(created_at__lt=business_day_start(end_date + timedelta(days=1)))
 
         paginator = AdminPagination()
         page = paginator.paginate_queryset(qs, request)

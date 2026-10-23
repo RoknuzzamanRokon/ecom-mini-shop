@@ -1,6 +1,7 @@
 from decimal import Decimal
 from rest_framework import serializers
 
+from config.validators import validate_avatar, validate_date_of_birth, validate_phone
 from shop.models import Product
 from shop.serializers import ProductListSerializer
 from shops.models import Shop
@@ -43,9 +44,11 @@ class CustomerProfileUpdateSerializer(serializers.ModelSerializer):
     """
     first_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
     last_name = serializers.CharField(max_length=150, required=False, allow_blank=True)
+    # Phone, photo and date of birth follow the admin profile form's rules
+    # (config/validators.py, BUG-060).
     phone = serializers.CharField(max_length=20, required=False, allow_blank=True)
-    avatar = serializers.ImageField(required=False, allow_null=True)
-    date_of_birth = serializers.DateField(required=False, allow_null=True)
+    avatar = serializers.ImageField(required=False, allow_null=True, validators=[validate_avatar])
+    date_of_birth = serializers.DateField(required=False, allow_null=True, validators=[validate_date_of_birth])
     gender = serializers.ChoiceField(
         choices=CustomerProfile.GENDER_CHOICES,
         required=False,
@@ -63,6 +66,11 @@ class CustomerProfileUpdateSerializer(serializers.ModelSerializer):
             "date_of_birth",
             "gender",
         ]
+
+    def validate_phone(self, value):
+        phone = " ".join(value.split())
+        validate_phone(phone)
+        return phone
 
 
 class AddressSerializer(serializers.ModelSerializer):

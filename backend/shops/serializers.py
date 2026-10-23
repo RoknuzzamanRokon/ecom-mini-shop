@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from config.validators import validate_catalog_image
 from customers.services import rating_breakdown
 from shop.models import Product
 from .models import Shop
@@ -178,6 +179,11 @@ class SellerShopUpdateSerializer(serializers.ModelSerializer):
             "logo",
             "cover_image",
         ]
+        # JPEG, PNG or WebP of at most 5 MB (BUG-060).
+        extra_kwargs = {
+            "logo": {"validators": [validate_catalog_image]},
+            "cover_image": {"validators": [validate_catalog_image]},
+        }
 
     def validate(self, attrs):
         lat = attrs.get("latitude")

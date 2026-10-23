@@ -13,6 +13,7 @@ from rest_framework.exceptions import NotFound, PermissionDenied
 
 from audit.services import AuditService
 from cart.models import Cart, CartItem
+from config.params import is_whole_number
 from customers.models import Address
 from notifications import events
 from notifications.publisher import publish
@@ -596,7 +597,7 @@ class ProductService:
         Raises Http404 if the product does not exist or fails public visibility rules.
         """
         qs = cls.get_public_products_queryset()
-        if isinstance(identifier, int) or (isinstance(identifier, str) and identifier.isdigit()):
+        if isinstance(identifier, int) or (isinstance(identifier, str) and is_whole_number(identifier)):
             return get_object_or_404(qs, pk=int(identifier))
         return get_object_or_404(qs, slug=identifier)
 
@@ -1146,7 +1147,7 @@ class OrderService:
         qs = Order.objects.prefetch_related(seller_items_prefetch).annotate(
             has_other_merchant_items=cls._other_merchant_items(seller)
         )
-        if lookup_str.isdigit():
+        if is_whole_number(lookup_str):
             order = qs.filter(id=int(lookup_str)).first()
         else:
             order = qs.filter(order_number=lookup_str).first()

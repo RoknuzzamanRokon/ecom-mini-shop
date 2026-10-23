@@ -3,6 +3,11 @@ from .models import PointExpiryPolicy, PointTransaction, SellerWallet, StaffPoin
 from .services import PointService, seller_points_expire
 
 
+# The most points one adjustment or transfer may move. Wallet balances are
+# 32-bit columns; an unbounded amount overflowed them as a 500 (BUG-066).
+MAX_POINTS_PER_MOVE = 1_000_000
+
+
 class UpcomingExpirySerializer(serializers.Serializer):
     points = serializers.IntegerField()
     expires_at = serializers.DateTimeField()
@@ -155,6 +160,7 @@ class PointAdjustmentRequestSerializer(serializers.Serializer):
     )
     amount = serializers.IntegerField(
         min_value=1,
+        max_value=MAX_POINTS_PER_MOVE,
         required=True,
         help_text="Positive integer amount of points to adjust.",
     )
@@ -200,6 +206,7 @@ class StaffPointTransferRequestSerializer(serializers.Serializer):
     )
     amount = serializers.IntegerField(
         min_value=1,
+        max_value=MAX_POINTS_PER_MOVE,
         required=True,
         help_text="Positive integer amount of points to move.",
     )

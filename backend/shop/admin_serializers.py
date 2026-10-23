@@ -9,6 +9,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 
 from rbac.models import Role, Permission, UserRole
+from rbac.serializers import USERNAME_TAKEN, username_field
 from rbac.services import PROTECTED_ROLE_CODES, get_user_permissions, get_user_role_codes
 from sellers.models import SellerProfile
 from shops.models import Shop
@@ -148,7 +149,7 @@ class AdminAccountFieldsSerializer(serializers.Serializer):
     extended by AdminUserCreateSerializer with the privileged fields.
     """
 
-    username = serializers.CharField(max_length=150, required=True)
+    username = username_field()
     email = serializers.EmailField(max_length=254, required=True)
     password = serializers.CharField(
         write_only=True, required=True, style={"input_type": "password"}
@@ -168,7 +169,7 @@ class AdminAccountFieldsSerializer(serializers.Serializer):
         if not username:
             raise serializers.ValidationError("Username cannot be empty.")
         if User.objects.filter(username__iexact=username).exists():
-            raise serializers.ValidationError("A user with that username already exists.")
+            raise serializers.ValidationError(USERNAME_TAKEN)
         return username
 
     def validate_email(self, value):

@@ -5,6 +5,7 @@ from django.db.models import Count, Q
 from django.utils.html import format_html
 
 from audit.admin_mixins import ChangeFormAuditMixin, ReasonRequiredActionMixin, StatusBadgeMixin
+from config.params import is_whole_number
 from sellers.models import SellerProfile
 from sellers.services import count_seller_products, get_product_limit
 from .models import Shop
@@ -95,7 +96,7 @@ class ShopAdmin(ChangeFormAuditMixin, ReasonRequiredActionMixin, StatusBadgeMixi
         """The seller the list is filtered to, with shop and product totals for
         the header; None when unfiltered or the id matches no seller."""
         raw = request.GET.get(OWNER_FILTER, '')
-        if not raw.isdigit():
+        if not is_whole_number(raw):
             return None
         return (
             SellerProfile.objects.select_related('user')

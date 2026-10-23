@@ -1,9 +1,15 @@
 from decimal import Decimal
 from django.db.models import OuterRef, Subquery
 from rest_framework import serializers
+from config.validators import validate_catalog_image
 from customers.services import rating_breakdown
 from shops.models import Shop
 from .models import Category, Product, ProductImage, Order, OrderItem, ProductInventory, InventoryTransaction, Payment, Refund
+
+
+# Stock figures a seller may enter. The columns overflow far above this, as a
+# 500; a bound turns a typo of extra zeros into a 400 (BUG-066).
+MAX_STOCK_QUANTITY = 1_000_000
 
 
 class ShopSummarySerializer(serializers.ModelSerializer):
@@ -252,9 +258,9 @@ class SellerProductCreateSerializer(serializers.Serializer):
     description = serializers.CharField()
     price = serializers.DecimalField(max_digits=10, decimal_places=2)
     old_price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
-    stock = serializers.IntegerField(min_value=0, default=0, required=False)
+    stock = serializers.IntegerField(min_value=0, max_value=MAX_STOCK_QUANTITY, default=0, required=False)
     badge = serializers.CharField(max_length=20, required=False, allow_blank=True, default="")
-    image = serializers.ImageField(required=False, allow_null=True)
+    image = serializers.ImageField(required=False, allow_null=True, validators=[validate_catalog_image])
     is_active = serializers.BooleanField(default=True, required=False)
 
     def validate_name(self, value):
@@ -312,14 +318,15 @@ class SellerProductUpdateSerializer(serializers.Serializer):
     description = serializers.CharField(required=False)
     price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
     old_price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
-    stock = serializers.IntegerField(min_value=0, required=False)
+    stock = serializers.IntegerField(min_value=0, max_value=MAX_STOCK_QUANTITY, required=False)
     expected_stock = serializers.IntegerField(
         min_value=0,
+        max_value=MAX_STOCK_QUANTITY,
         required=False,
         help_text="The available stock the new `stock` was edited from. Required with `stock`; 409 if it has changed.",
     )
     badge = serializers.CharField(max_length=20, required=False, allow_blank=True)
-    image = serializers.ImageField(required=False, allow_null=True)
+    image = serializers.ImageField(required=False, allow_null=True, validators=[validate_catalog_image])
     is_active = serializers.BooleanField(required=False)
 
     def validate(self, attrs):
@@ -751,6 +758,8 @@ class InventoryAdjustmentSerializer(serializers.Serializer):
     """
     quantity = serializers.IntegerField(
         required=True,
+        min_value=-MAX_STOCK_QUANTITY,
+        max_value=MAX_STOCK_QUANTITY,
         help_text="Signed stock quantity change (positive to increment, negative to decrement). Cannot be 0.",
     )
     reason = serializers.CharField(

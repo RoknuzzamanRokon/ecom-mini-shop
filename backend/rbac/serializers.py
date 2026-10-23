@@ -1,4 +1,6 @@
 from django.contrib.auth import get_user_model
+from django.contrib.auth.validators import UnicodeUsernameValidator
+from django.db import IntegrityError, transaction
 from rest_framework import serializers
 from rest_framework_simplejwt.exceptions import InvalidToken
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
@@ -8,6 +10,30 @@ from rest_framework_simplejwt.utils import get_md5_hash_password
 from .services import get_user_role_codes, get_user_permissions
 
 User = get_user_model()
+
+USERNAME_TAKEN = "A user with that username already exists."
+
+
+def username_field():
+    """
+    The username input of every API path that creates an account: Django's
+    own character rules, so the account stays editable in the Django admin
+    (BUG-040). "john doe" used to be accepted, then refused by every save.
+    """
+    return serializers.CharField(max_length=150, required=True, validators=[UnicodeUsernameValidator()])
+
+
+def create_login_account(**fields):
+    """
+    User.objects.create_user(), reporting a username taken by a concurrent
+    request after the serializer's duplicate check as a 400 on `username`
+    rather than a 500 (BUG-040).
+    """
+    try:
+        with transaction.atomic():
+            return User.objects.create_user(**fields)
+    except IntegrityError:
+        raise serializers.ValidationError({"username": [USERNAME_TAKEN]})
 
 
 class RevocationCheckingTokenRefreshSerializer(TokenRefreshSerializer):
@@ -73,7 +99,7 @@ class CustomerRegistrationSerializer(serializers.Serializer):
         "is_active",
     }
 
-    username = serializers.CharField(max_length=150, required=True)
+    username = username_field()
     email = serializers.EmailField(max_length=254, required=True)
     password = serializers.CharField(
         write_only=True,
@@ -101,7 +127,7 @@ class CustomerRegistrationSerializer(serializers.Serializer):
         if not username:
             raise serializers.ValidationError({"username": "Username cannot be empty."})
         if User.objects.filter(username__iexact=username).exists():
-            raise serializers.ValidationError({"username": "A user with that username already exists."})
+            raise serializers.ValidationError({"username": USERNAME_TAKEN})
         attrs["username"] = username
 
         # 3. Email validation & uniqueness (case-insensitive)
@@ -131,12 +157,11 @@ class CustomerRegistrationSerializer(serializers.Serializer):
         return attrs
 
     def create(self, validated_data):
-        from django.db import transaction
         from .models import Role
         from .services import assign_user_role
 
         with transaction.atomic():
-            user = User.objects.create_user(
+            user = create_login_account(
                 username=validated_data["username"],
                 email=validated_data["email"],
                 password=validated_data["password"],

@@ -1,4 +1,5 @@
 import uuid
+from datetime import timedelta
 from decimal import Decimal
 
 from django.db import transaction
@@ -12,8 +13,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.utils.dateparse import parse_date
 from audit.utils import get_client_ip
+from config.params import business_day_start, date_param, id_param, is_whole_number
 from customers.models import Review
 from customers.serializers import ReviewSerializer
 from customers.services import review_ordering
@@ -124,7 +125,7 @@ class ProductListAPIView(generics.ListAPIView):
         shop_param = self.request.query_params.get("shop")
         if shop_param:
             shop_str = str(shop_param).strip()
-            if shop_str.isdigit():
+            if is_whole_number(shop_str):
                 queryset = queryset.filter(shop_id=int(shop_str))
             else:
                 queryset = queryset.filter(shop__slug=shop_str)
@@ -386,7 +387,7 @@ class OrderDetailAPIView(APIView):
             "payments",
         )
 
-        if lookup_str.isdigit():
+        if is_whole_number(lookup_str):
             order = qs.filter(id=int(lookup_str)).first()
         else:
             order = qs.filter(order_number=lookup_str).first()
@@ -442,7 +443,7 @@ class OrderCancelAPIView(APIView):
             "items__seller",
         )
 
-        if lookup_str.isdigit():
+        if is_whole_number(lookup_str):
             order = qs.filter(id=int(lookup_str)).first()
         else:
             order = qs.filter(order_number=lookup_str).first()
@@ -509,7 +510,7 @@ class SellerProductListCreateAPIView(APIView):
         )
 
         # Optional filters
-        shop_id = request.query_params.get("shop_id") or request.query_params.get("shop")
+        shop_id = id_param(request.query_params, "shop_id", "shop")  # 400 if malformed (BUG-066)
         if shop_id:
             queryset = queryset.filter(shop_id=shop_id)
 
@@ -519,7 +520,7 @@ class SellerProductListCreateAPIView(APIView):
 
         category_param = request.query_params.get("category")
         if category_param:
-            if category_param.isdigit():
+            if is_whole_number(category_param):
                 queryset = queryset.filter(category_id=int(category_param))
             else:
                 queryset = queryset.filter(category__slug=category_param)
@@ -1030,7 +1031,7 @@ def _get_customer_order_or_404(request, kwargs, view=None):
 
     lookup_str = str(lookup).strip()
     qs = Order.objects.all()
-    if lookup_str.isdigit():
+    if is_whole_number(lookup_str):
         order = qs.filter(id=int(lookup_str)).first()
     else:
         order = qs.filter(order_number=lookup_str).first()
@@ -1267,28 +1268,23 @@ class StaffOrderListAPIView(generics.ListAPIView):
         if search:
             qs = qs.filter(order_number__icontains=search.strip())
 
-        # Filter by Seller
-        seller_id = params.get("seller_id")
-        if seller_id and str(seller_id).isdigit():
-            qs = qs.filter(items__seller_id=int(seller_id)).distinct()
+        # Filter by Seller / Shop (400 on a malformed id, BUG-066)
+        seller_id = id_param(params, "seller_id")
+        if seller_id:
+            qs = qs.filter(items__seller_id=seller_id).distinct()
 
-        # Filter by Shop
-        shop_id = params.get("shop_id")
-        if shop_id and str(shop_id).isdigit():
-            qs = qs.filter(items__shop_id=int(shop_id)).distinct()
+        shop_id = id_param(params, "shop_id")
+        if shop_id:
+            qs = qs.filter(items__shop_id=shop_id).distinct()
 
-        # Date range filtering
-        start_date = params.get("start_date") or params.get("created_after")
+        # Date range: whole business days (Asia/Dhaka), 400 on a bad date.
+        start_date = date_param(params, "start_date", "created_after")
         if start_date:
-            parsed_start = parse_date(start_date.strip())
-            if parsed_start:
-                qs = qs.filter(created_at__date__gte=parsed_start)
+            qs = qs.filter(created_at__gte=business_day_start(start_date))
 
-        end_date = params.get("end_date") or params.get("created_before")
+        end_date = date_param(params, "end_date", "created_before")
         if end_date:
-            parsed_end = parse_date(end_date.strip())
-            if parsed_end:
-                qs = qs.filter(created_at__date__lte=parsed_end)
+            qs = qs.filter(created_at__lt=business_day_start(end_date + timedelta(days=1)))
 
         return qs
 
@@ -1326,7 +1322,7 @@ class StaffOrderDetailAPIView(APIView):
             )
         )
 
-        if lookup_str.isdigit():
+        if is_whole_number(lookup_str):
             order = qs.filter(id=int(lookup_str)).first()
         else:
             order = qs.filter(order_number=lookup_str).first()
@@ -1370,7 +1366,7 @@ class StaffOrderStatusAPIView(APIView):
             raise NotFound("Order reference missing.")
 
         lookup_str = str(lookup).strip()
-        if lookup_str.isdigit():
+        if is_whole_number(lookup_str):
             order = Order.objects.filter(id=int(lookup_str)).first()
         else:
             order = Order.objects.filter(order_number=lookup_str).first()

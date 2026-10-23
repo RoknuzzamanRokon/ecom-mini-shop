@@ -203,6 +203,10 @@ LANGUAGE_CODE = 'en-us'
 
 TIME_ZONE = 'UTC'
 
+# The time zone the business's days run in. Date filters such as the audit
+# log's start_date/end_date select whole days here, not UTC days (BUG-066).
+BUSINESS_TIME_ZONE = 'Asia/Dhaka'
+
 USE_I18N = True
 
 USE_TZ = True

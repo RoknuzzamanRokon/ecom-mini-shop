@@ -20,7 +20,7 @@ from django.utils import timezone
 from PIL import Image
 
 from audit.models import AuditLog
-from config import admin_profile
+from config import admin_profile, validators
 from config.admin_profile import action_style, humanize_action
 from customers.models import CustomerProfile
 from points.models import StaffPointTransaction, StaffWallet
@@ -228,7 +228,7 @@ class AdminProfileEditTests(TestCase):
         self.assertFalse(CustomerProfile.objects.get(user=self.staff).avatar)
 
     def test_oversized_photo_is_rejected(self):
-        with mock.patch.object(admin_profile, "AVATAR_MAX_BYTES", 10):
+        with mock.patch.object(validators, "AVATAR_MAX_BYTES", 10):
             response = self.client.post(PROFILE_URL, {"avatar": image_upload()})
         self.assertIn("avatar", response.context["form"].errors)
         self.assertFalse(CustomerProfile.objects.filter(user=self.staff).exists())

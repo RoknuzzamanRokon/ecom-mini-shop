@@ -27,6 +27,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from audit.utils import get_client_ip
+from config.params import is_whole_number
 
 from .exceptions import SupportTicketError
 from .models import SupportTicket, TicketAttachment, TicketMessage
@@ -415,7 +416,7 @@ class StaffTicketListView(APIView):
             queryset = queryset.filter(assigned_to=request.user)
         elif assigned == "unassigned":
             queryset = queryset.filter(assigned_to__isnull=True)
-        elif assigned.isdigit():
+        elif is_whole_number(assigned):
             queryset = queryset.filter(assigned_to_id=int(assigned))
         elif assigned:
             return _bad_request("assigned must be me, unassigned or a user id.")

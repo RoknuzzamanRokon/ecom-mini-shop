@@ -35,6 +35,7 @@ from django.utils.translation import gettext_lazy as _
 
 from audit.models import AuditLog
 from audit.utils import get_client_ip
+from config.validators import validate_avatar, validate_date_of_birth, validate_phone
 from customers.models import Address, CustomerProfile
 from customers.services import CustomerService
 from notifications.models import Audience, Notification
@@ -59,14 +60,6 @@ TIMELINE_VISIBLE = 8
 OPEN_TICKET_LIMIT = 5
 #: Newest wallet movements listed beside the points balance.
 POINTS_RECENT_LIMIT = 5
-
-AVATAR_MAX_BYTES = 2 * 1024 * 1024
-AVATAR_FORMATS = {"JPEG", "PNG", "WEBP"}
-
-#: Digits plus the usual separators. Deliberately loose: numbers are written
-#: many ways, and this only exists to stop obvious junk in the field.
-PHONE_PATTERN = re.compile(r"[0-9+()\-\s]+")
-PHONE_MIN_DIGITS = 6
 
 #: SECTION_META (rbac/widgets.py) predates these two apps; they get real icons
 #: here instead of falling back to a folder.
@@ -160,33 +153,22 @@ class AdminProfileForm(forms.Form):
             if name in self.fields:
                 self.fields[name].widget.attrs["aria-invalid"] = "true"
 
+    # The rules are shared with /api/profile/me/ (config/validators.py).
     def clean_phone(self):
         phone = " ".join(self.cleaned_data["phone"].split())
-        if phone and (
-            not PHONE_PATTERN.fullmatch(phone) or sum(char.isdigit() for char in phone) < PHONE_MIN_DIGITS
-        ):
-            raise forms.ValidationError(_("Enter a phone number using digits, spaces, +, - or brackets."))
+        validate_phone(phone)
         return phone
 
     def clean_date_of_birth(self):
         value = self.cleaned_data["date_of_birth"]
-        if value is not None:
-            if value > timezone.localdate():
-                raise forms.ValidationError(_("Date of birth can't be in the future."))
-            if value.year < 1900:
-                raise forms.ValidationError(_("Enter a date after 1900."))
+        validate_date_of_birth(value)
         return value
 
     def clean_avatar(self):
         avatar = self.cleaned_data.get("avatar")
         if not avatar:
             return None
-        if avatar.size > AVATAR_MAX_BYTES:
-            raise forms.ValidationError(_("That photo is larger than 2 MB."))
-        # forms.ImageField has already opened the file with Pillow.
-        image_format = getattr(getattr(avatar, "image", None), "format", None)
-        if image_format not in AVATAR_FORMATS:
-            raise forms.ValidationError(_("Upload a JPEG, PNG or WebP image."))
+        validate_avatar(avatar)
         return avatar
 
     def profile_data(self):
