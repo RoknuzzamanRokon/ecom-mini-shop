@@ -1,10 +1,24 @@
+import math
 import re
 import struct
 from dataclasses import dataclass
 from typing import Any, Optional, Tuple, Union
 
+from django import forms
 from django.core.exceptions import ValidationError
 from django.db import models
+
+# One WKT number: optional sign, digits with an optional fraction, optional exponent.
+_WKT_NUMBER = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?"
+_WKT_POINT = re.compile(rf"POINT\s*\(\s*({_WKT_NUMBER})\s+({_WKT_NUMBER})\s*\)", re.IGNORECASE)
+
+
+class InvalidPointError(ValidationError, ValueError):
+    """
+    A point that cannot be read or lies off the globe. A ValidationError, so
+    forms and full_clean() report it as a field error (BUG-016), and still a
+    ValueError for callers that caught the old error.
+    """
 
 
 @dataclass(frozen=True)
@@ -21,6 +35,20 @@ class Point:
     def __post_init__(self):
         object.__setattr__(self, 'longitude', float(self.longitude))
         object.__setattr__(self, 'latitude', float(self.latitude))
+
+    def __str__(self) -> str:
+        # WKT, so a form or the admin shows text it can read back.
+        return self.to_wkt()
+
+    def validate_range(self) -> "Point":
+        """Raise InvalidPointError unless this is a finite coordinate on the globe."""
+        if not (math.isfinite(self.longitude) and math.isfinite(self.latitude)):
+            raise InvalidPointError("Coordinates must be finite numbers.")
+        if not -180.0 <= self.longitude <= 180.0:
+            raise InvalidPointError(f"Longitude must be between -180 and 180 (got {self.longitude}).")
+        if not -90.0 <= self.latitude <= 90.0:
+            raise InvalidPointError(f"Latitude must be between -90 and 90 (got {self.latitude}).")
+        return self
 
     @property
     def x(self) -> float:
@@ -76,15 +104,36 @@ class Point:
 
     @classmethod
     def from_wkt(cls, text: str) -> "Point":
-        """Parses OpenGIS WKT string: POINT(lng lat)."""
+        """Parses OpenGIS WKT string: POINT(lng lat). Anything else is InvalidPointError."""
         if not text:
             return cls(0.0, 0.0)
-        match = re.search(r'POINT\s*\(\s*([-\d\.]+)\s+([-\d\.]+)\s*\)', text, re.IGNORECASE)
-        if match:
-            lng = float(match.group(1))
-            lat = float(match.group(2))
-            return cls(longitude=lng, latitude=lat)
-        raise ValueError(f"Invalid WKT point format: {text}")
+        match = _WKT_POINT.fullmatch(text.strip())
+        if not match:
+            raise InvalidPointError(
+                f"Enter the location as POINT(longitude latitude), for example POINT(90.4125 23.8103); got {text!r}."
+            )
+        return cls(longitude=float(match.group(1)), latitude=float(match.group(2)))
+
+
+class PointFormField(forms.CharField):
+    """
+    Edits a Point as WKT text, POINT(longitude latitude), e.g. in the Django
+    admin. It renders the stored point as WKT and reads it back, so opening
+    and re-saving a shop round-trips (BUG-016).
+    """
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("help_text", "POINT(longitude latitude), for example POINT(90.4125 23.8103).")
+        super().__init__(*args, **kwargs)
+
+    def prepare_value(self, value):
+        return value.to_wkt() if isinstance(value, Point) else value
+
+    def to_python(self, value):
+        text = super().to_python(value)
+        if text in self.empty_values:
+            return None
+        return Point.from_wkt(text).validate_range()
 
 
 class MySQLPointField(models.Field):
@@ -106,6 +155,18 @@ class MySQLPointField(models.Field):
         if self.srid != 4326:
             kwargs['srid'] = self.srid
         return name, path, args, kwargs
+
+    def formfield(self, **kwargs):
+        return super().formfield(**{"form_class": PointFormField, **kwargs})
+
+    def validate(self, value, model_instance):
+        super().validate(value, model_instance)
+        if isinstance(value, Point):
+            value.validate_range()
+
+    def value_to_string(self, obj) -> str:
+        value = self.value_from_object(obj)
+        return value.to_wkt() if isinstance(value, Point) else str(value)
 
     def db_type(self, connection) -> str:
         if connection.vendor == 'mysql':

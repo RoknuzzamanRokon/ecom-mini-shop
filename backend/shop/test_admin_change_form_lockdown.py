@@ -330,10 +330,10 @@ class ShopAndSellerAdminLockdownTests(LockdownTestCase):
         )
         self.assertEqual(response.status_code, 302)
         row = self.audit_rows("ADMIN_SHOP_EDITED", shop).get()
-        # Only the owner is compared: until TASK-019 the location field reads
-        # as changed on every save (BUG-016).
-        self.assertEqual(row.metadata["previous_state"]["owner"], old_owner.pk)
-        self.assertEqual(row.metadata["new_state"]["owner"], new_owner.pk)
+        # Only the owner changed; the re-posted location no longer reads as an
+        # edit (BUG-016, TASK-019).
+        self.assertEqual(row.metadata["previous_state"], {"owner": old_owner.pk})
+        self.assertEqual(row.metadata["new_state"], {"owner": new_owner.pk})
 
     def test_seller_account_is_read_only_and_edits_are_audited(self):
         seller = self.make_seller("lockdown6_profile")
