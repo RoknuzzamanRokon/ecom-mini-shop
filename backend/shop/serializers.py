@@ -280,9 +280,26 @@ class SellerProductUpdateSerializer(serializers.Serializer):
     price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False)
     old_price = serializers.DecimalField(max_digits=10, decimal_places=2, required=False, allow_null=True)
     stock = serializers.IntegerField(min_value=0, required=False)
+    expected_stock = serializers.IntegerField(
+        min_value=0,
+        required=False,
+        help_text="The available stock the new `stock` was edited from. Required with `stock`; 409 if it has changed.",
+    )
     badge = serializers.CharField(max_length=20, required=False, allow_blank=True)
     image = serializers.ImageField(required=False, allow_null=True)
     is_active = serializers.BooleanField(required=False)
+
+    def validate(self, attrs):
+        # An absolute stock is only safe against the figure it was edited
+        # from (BUG-008); without one, use the inventory adjust endpoint.
+        if "stock" in attrs:
+            if "expected_stock" not in attrs:
+                raise serializers.ValidationError(
+                    {"expected_stock": "Send the stock figure this edit was made against."}
+                )
+        else:
+            attrs.pop("expected_stock", None)
+        return attrs
 
     def validate_name(self, value):
         name = value.strip()

@@ -13,6 +13,7 @@ import {
   getSellerWallet,
   getSellerDashboard,
   InsufficientPointsError,
+  StockConflictError,
   formatImageUrl,
 } from "@/lib/api";
 import { Product, SellerShop, Category } from "@/lib/types";
@@ -64,6 +65,8 @@ export default function SellerProductsPage() {
   // Feedback notifications
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Shown in the edit modal when its stock figure went stale (BUG-008).
+  const [stockNotice, setStockNotice] = useState<string | null>(null);
 
   // Shops are admin-assigned. A Full Shop Owner may own several and picks one
   // when adding a product; the choice is limited to the seller's own Shops.
@@ -188,6 +191,7 @@ export default function SellerProductsPage() {
     setImagePreview(p.image_url || (p.image ? formatImageUrl(p.image) : null));
     setActionError(null);
     setActionSuccess(null);
+    setStockNotice(null);
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -208,6 +212,7 @@ export default function SellerProductsPage() {
     setImagePreview(null);
     setIsAddOpen(false);
     setEditingProduct(null);
+    setStockNotice(null);
   };
 
   const handleCreateSubmit = async (e: React.FormEvent) => {
@@ -271,13 +276,19 @@ export default function SellerProductsPage() {
 
     setSubmittingModal(true);
     setActionError(null);
+    setStockNotice(null);
+
+    // Stock is sent only when the seller changed it, together with the figure
+    // they changed it from, so a save never undoes units reserved meanwhile.
+    const seenStock = editingProduct.stock ?? 0;
+    const newStock = parseInt(formData.stock) || 0;
 
     try {
       await updateSellerProduct(token, editingProduct.id, {
         name: formData.name,
         price: parseFloat(formData.price),
         old_price: formData.old_price ? parseFloat(formData.old_price) : null,
-        stock: parseInt(formData.stock) || 0,
+        ...(newStock !== seenStock ? { stock: newStock, expected_stock: seenStock } : {}),
         badge: formData.badge,
         description: formData.description,
         is_active: formData.is_active,
@@ -288,7 +299,16 @@ export default function SellerProductsPage() {
       closeProductModal();
       await fetchProductsList();
     } catch (err: any) {
-      setActionError(err.message || "Failed to update product.");
+      if (err instanceof StockConflictError) {
+        // Re-base on the live figure; the seller's entry stays for review.
+        setEditingProduct({ ...editingProduct, stock: err.currentStock });
+        setStockNotice(
+          `Stock changed while you were editing: ${err.currentStock} available now ` +
+            `(you started from ${seenStock}). Nothing was saved. Check the stock and save again.`
+        );
+      } else {
+        setActionError(err.message || "Failed to update product.");
+      }
     } finally {
       setSubmittingModal(false);
     }
@@ -756,7 +776,7 @@ export default function SellerProductsPage() {
 
                 <div>
                   <label className="block text-xs font-semibold text-ink mb-1.5">
-                    Initial Stock <span className="text-accent">*</span>
+                    {isAddOpen ? "Initial Stock" : "Available Stock"} <span className="text-accent">*</span>
                   </label>
                   <input
                     type="number"
@@ -769,6 +789,20 @@ export default function SellerProductsPage() {
                   />
                 </div>
               </div>
+
+              {!isAddOpen && (
+                <p className="-mt-2 text-[11px] text-ink-muted">
+                  Units reserved by open orders are not counted. Leave the stock as it is to keep
+                  the live figure.
+                </p>
+              )}
+
+              {stockNotice && (
+                <div className="p-3 rounded-xl bg-accent/10 border border-accent/30 text-accent text-xs font-semibold flex items-start gap-2">
+                  <span className="material-symbols-outlined text-[18px] shrink-0">sync_problem</span>
+                  <span>{stockNotice}</span>
+                </div>
+              )}
 
               <div>
                 <label className="block text-xs font-semibold text-ink mb-1.5">

@@ -842,10 +842,65 @@ class InventoryTests(APITestCase):
     def test_api_seller_product_update_stock_stays_synced_with_inventory(self):
         """PATCH /api/products/mine/<id>/ with a stock field must sync ProductInventory too."""
         self.client.force_authenticate(user=self.user_seller_a)
-        res = self.client.patch(f"/api/products/mine/{self.product_a.id}/", {"stock": 7})
+        res = self.client.patch(
+            f"/api/products/mine/{self.product_a.id}/", {"stock": 7, "expected_stock": 20}
+        )
         self.assertEqual(res.status_code, status.HTTP_200_OK)
 
         self.product_a.refresh_from_db()
         self.product_a.inventory.refresh_from_db()
         self.assertEqual(self.product_a.stock, 7)
         self.assertEqual(self.product_a.inventory.available_quantity, 7)
+
+    # --- 10. A seller save never undoes a reservation made meanwhile (BUG-008) ---
+
+    def _reserve_four(self):
+        cart, _ = Cart.objects.get_or_create(user=self.customer_user)
+        CartItem.objects.create(cart=cart, product=self.product_a, quantity=4)
+        OrderService.create_order_from_cart(user=self.customer_user, address_id=self.address.id)
+
+    def _patch_product_a(self, data):
+        self.client.force_authenticate(user=self.user_seller_a)
+        return self.client.patch(f"/api/products/mine/{self.product_a.id}/", data, format="json")
+
+    def _assert_available_reserved(self, available, reserved):
+        self.product_a.refresh_from_db()
+        self.product_a.inventory.refresh_from_db()
+        self.assertEqual(self.product_a.inventory.available_quantity, available)
+        self.assertEqual(self.product_a.inventory.reserved_quantity, reserved)
+        self.assertEqual(self.product_a.stock, available)
+
+    def test_stale_stock_patch_after_a_reservation_is_refused(self):
+        # The seller opened the form at 20; a checkout then reserved 4.
+        self._reserve_four()
+        res = self._patch_product_a({"description": "Typo fixed", "stock": 20, "expected_stock": 20})
+
+        self.assertEqual(res.status_code, status.HTTP_409_CONFLICT, res.data)
+        self.assertEqual(res.data["current_stock"], 16)
+        self._assert_available_reserved(16, 4)
+        # Nothing else in the request was saved either.
+        self.assertNotEqual(self.product_a.description, "Typo fixed")
+
+    def test_editing_the_description_never_changes_availability(self):
+        self._reserve_four()
+        ledger_before = InventoryTransaction.objects.filter(product=self.product_a).count()
+
+        res = self._patch_product_a({"description": "Typo fixed"})
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK, res.data)
+        self._assert_available_reserved(16, 4)
+        self.assertEqual(InventoryTransaction.objects.filter(product=self.product_a).count(), ledger_before)
+
+    def test_stock_without_the_figure_it_was_edited_from_is_rejected(self):
+        res = self._patch_product_a({"stock": 30})
+
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("expected_stock", res.data)
+        self._assert_available_reserved(20, 0)
+
+    def test_stock_edited_from_the_current_figure_is_applied(self):
+        self._reserve_four()
+        res = self._patch_product_a({"stock": 25, "expected_stock": 16})
+
+        self.assertEqual(res.status_code, status.HTTP_200_OK, res.data)
+        self._assert_available_reserved(25, 4)

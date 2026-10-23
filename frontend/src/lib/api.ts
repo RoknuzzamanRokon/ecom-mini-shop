@@ -1533,6 +1533,25 @@ export async function getSellerProductDetail(token: string, id: number): Promise
   return await res.json();
 }
 
+/**
+ * A product edit's `stock` was made against a figure that has since changed
+ * (units were reserved or adjusted meanwhile). Nothing was saved.
+ */
+export class StockConflictError extends Error {
+  currentStock: number;
+
+  constructor(message: string, currentStock: number) {
+    super(message);
+    this.name = "StockConflictError";
+    this.currentStock = currentStock;
+  }
+}
+
+/**
+ * PATCH a seller's product. Send `stock` only when the seller changed it,
+ * together with `expected_stock` (the figure they edited); a stale figure
+ * raises StockConflictError instead of undoing reservations.
+ */
 export async function updateSellerProduct(
   token: string,
   id: number,
@@ -1563,6 +1582,9 @@ export async function updateSellerProduct(
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
+    if (res.status === 409 && typeof err.current_stock === "number") {
+      throw new StockConflictError(err.error || "Stock changed since you opened this product.", err.current_stock);
+    }
     throw new Error(err.error || err.detail || "Failed to update product");
   }
   return await res.json();

@@ -73,6 +73,7 @@ from .services import (
     ProductLimitExceededError,
     ProductOwnershipError,
     ProductService,
+    StockConflictError,
 )
 
 
@@ -593,6 +594,7 @@ class SellerProductDetailAPIView(APIView):
     Seller self-service product detail endpoint:
       GET: Retrieve product details.
       PATCH/PUT: Update product attributes (an operational owner needs no RBAC code).
+                 A `stock` must come with `expected_stock`; 409 if stock has moved since.
       DELETE: Delete product (requires products.delete, which sellers do not hold).
     Strictly verifies ownership: product must belong to a shop owned by the authenticated seller.
     """
@@ -628,6 +630,11 @@ class SellerProductDetailAPIView(APIView):
             )
         except (IneligibleSellerError, ProductOwnershipError, PermissionDenied) as e:
             return Response({"error": str(e)}, status=status.HTTP_403_FORBIDDEN)
+        except StockConflictError as e:
+            return Response(
+                {"error": str(e), "current_stock": e.current_stock},
+                status=status.HTTP_409_CONFLICT,
+            )
         except DjangoValidationError as e:
             err_detail = e.message_dict if hasattr(e, "message_dict") else str(e)
             return Response({"error": err_detail}, status=status.HTTP_400_BAD_REQUEST)

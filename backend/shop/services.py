@@ -56,6 +56,17 @@ class ProductModerationError(ProductServiceError):
     pass
 
 
+class StockConflictError(ProductServiceError):
+    """Raised when a stock edit was made against a figure that has since changed."""
+
+    def __init__(self, current_stock: int):
+        super().__init__(
+            f"Stock changed since you opened this product: {current_stock} available now. "
+            "Nothing was saved. Check the stock and save again."
+        )
+        self.current_stock = current_stock
+
+
 # Past tense of each moderation action, for the default audit reason.
 MODERATION_ACTION_VERBS = {
     "approve": "approved",
@@ -299,6 +310,10 @@ class ProductService:
         """
         Updates an existing product with strict ownership verification.
         Disallows reassigning the product to another seller's shop.
+
+        An absolute ``stock`` is applied only if ``expected_stock`` (the figure
+        the seller edited) still matches; otherwise StockConflictError, and
+        nothing is saved.
         """
         if not product.shop or product.shop.owner != seller:
             raise ProductOwnershipError("You do not own the shop associated with this product.")
@@ -308,6 +323,20 @@ class ProductService:
 
         with transaction.atomic():
             changed_fields = []
+
+            # A stale absolute stock would put units reserved since the form
+            # was opened back on sale (BUG-008). Lock and compare before
+            # anything is written.
+            locked_inventory = None
+            if "stock" in data:
+                from shop.inventory_service import InventoryService
+                from shop.models import ProductInventory
+
+                InventoryService.get_or_create_inventory(product)
+                locked_inventory = ProductInventory.objects.select_for_update().get(product=product)
+                expected_stock = data.get("expected_stock")
+                if expected_stock is not None and expected_stock != locked_inventory.available_quantity:
+                    raise StockConflictError(locked_inventory.available_quantity)
 
             # If shop reassignment is requested, ensure target shop belongs to same seller
             if "shop" in data:
@@ -340,12 +369,7 @@ class ProductService:
             # absolute stock value through InventoryService as a locked delta adjustment
             # so Product.stock and ProductInventory.available_quantity cannot desync
             # (see Known Issues #2 in docs/MINISHOP_REVIEW_STATE.md).
-            if "stock" in data:
-                from shop.inventory_service import InventoryService
-                from shop.models import ProductInventory
-
-                InventoryService.get_or_create_inventory(product)
-                locked_inventory = ProductInventory.objects.select_for_update().get(product=product)
+            if locked_inventory is not None:
                 stock_delta = data["stock"] - locked_inventory.available_quantity
                 if stock_delta != 0:
                     InventoryService.adjust_stock(
