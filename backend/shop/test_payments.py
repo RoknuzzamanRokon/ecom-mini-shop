@@ -146,10 +146,10 @@ class PaymentAndRefundManagementTests(APITestCase):
 
         self.client.force_authenticate(user=self.customer_a)
         res = self.client.post(f"/api/orders/{order.order_number}/payment/", {
-            "payment_method": "BKASH"
+            "payment_method": "CASH_ON_DELIVERY"
         })
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(res.data["payment_method"], "BKASH")
+        self.assertEqual(res.data["payment_method"], "CASH_ON_DELIVERY")
         self.assertEqual(res.data["status"], "PENDING")
         self.assertEqual(Decimal(res.data["amount"]), Decimal("5000.00"))
         self.assertEqual(res.data["currency"], "BDT")
@@ -163,7 +163,7 @@ class PaymentAndRefundManagementTests(APITestCase):
         self.client.force_authenticate(user=self.customer_a)
         # Attempt to pass 1.00 BDT and status PAID
         res = self.client.post(f"/api/orders/{order.order_number}/payment/", {
-            "payment_method": "NAGAD",
+            "payment_method": "CASH_ON_DELIVERY",
             "amount": "1.00",
             "status": "PAID",
         })
@@ -523,3 +523,83 @@ class PaymentAndRefundManagementTests(APITestCase):
         self.assertEqual(order.subtotal, initial_subtotal)
         self.assertEqual(order.total_amount, initial_total)
         self.assertEqual(order.shipping_address_line_1, initial_address)
+
+    # --- Cash on delivery lifecycle (TASK-015: BUG-012, BUG-052) ---
+
+    def _deliver(self, order):
+        for step in (Order.STATUS_CONFIRMED, Order.STATUS_PROCESSING, Order.STATUS_SHIPPED, Order.STATUS_DELIVERED):
+            OrderService.transition_order_status(order, step, actor=self.admin_user)
+        order.refresh_from_db()
+        return order
+
+    def test_checkout_opens_one_pending_cod_payment_for_the_total(self):
+        order = self._create_order(self.customer_a, self.address_a, quantity=2)
+
+        payment = order.payments.get()
+        self.assertEqual(payment.status, Payment.STATUS_PENDING)
+        self.assertEqual(payment.payment_method, Payment.METHOD_CASH_ON_DELIVERY)
+        self.assertEqual(payment.amount, order.total_amount)
+        self.assertTrue(AuditLog.objects.filter(action="PAYMENT_CREATED", target_id=str(payment.pk)).exists())
+
+    def test_checkout_through_the_api_opens_the_cod_payment(self):
+        cart, _ = Cart.objects.get_or_create(user=self.customer_a)
+        CartItem.objects.filter(cart=cart).delete()
+        CartItem.objects.create(cart=cart, product=self.product, quantity=1)
+        self.client.force_authenticate(user=self.customer_a)
+        res = self.client.post("/api/orders/", {"address_id": self.address_a.id}, format="json")
+        self.assertEqual(res.status_code, status.HTTP_201_CREATED, res.data)
+
+        res = self.client.get(f"/api/orders/{res.data['order_number']}/payment/")
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
+        self.assertEqual(res.data["payment_method"], Payment.METHOD_CASH_ON_DELIVERY)
+        self.assertEqual(res.data["status"], Payment.STATUS_PENDING)
+
+    def test_delivery_marks_the_cod_payment_paid(self):
+        order = self._deliver(self._create_order(self.customer_a, self.address_a))
+
+        payment = order.payments.get()
+        self.assertEqual(payment.status, Payment.STATUS_PAID)
+        self.assertTrue(order.is_paid)
+        self.assertEqual(order.total_paid_amount, order.total_amount)
+        self.assertEqual(
+            AuditLog.objects.get(action="PAYMENT_SUCCESS", target_id=str(payment.pk)).actor, self.admin_user
+        )
+
+    def test_delivering_an_order_placed_without_a_payment_records_one(self):
+        order = self._create_order(self.customer_a, self.address_a)
+        order.payments.all().delete()  # as orders placed before TASK-015
+
+        order = self._deliver(order)
+
+        payment = order.payments.get()
+        self.assertEqual(payment.payment_method, Payment.METHOD_CASH_ON_DELIVERY)
+        self.assertEqual(payment.status, Payment.STATUS_PAID)
+        self.assertEqual(payment.amount, order.total_amount)
+
+    def test_cancelling_cancels_the_cod_payment(self):
+        order = self._create_order(self.customer_a, self.address_a)
+        OrderService.transition_order_status(order, Order.STATUS_CANCELLED, actor=self.admin_user)
+        self.assertEqual(order.payments.get().status, Payment.STATUS_CANCELLED)
+
+    def test_no_second_payment_after_a_refund(self):
+        for refund_amount in (Decimal("500.00"), Decimal("2500.00")):
+            with self.subTest(refund=refund_amount):
+                order = self._create_order(self.customer_a, self.address_a)
+                payment = PaymentService.create_or_get_payment(order=order)
+                PaymentService.process_payment_success(payment, actor=self.admin_user)
+                PaymentService.process_refund(
+                    payment=payment, amount=refund_amount, reason="Returned", actor=self.admin_user
+                )
+
+                self.client.force_authenticate(user=self.customer_a)
+                res = self.client.post(f"/api/orders/{order.order_number}/payment/", {})
+                self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+                self.assertEqual(order.payments.count(), 1)
+
+    def test_customers_can_only_choose_cash_on_delivery_for_now(self):
+        order = self._create_order(self.customer_a, self.address_a)
+        self.client.force_authenticate(user=self.customer_a)
+        res = self.client.post(f"/api/orders/{order.order_number}/payment/", {"payment_method": "BKASH"})
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(order.payments.get().payment_method, Payment.METHOD_CASH_ON_DELIVERY)
+

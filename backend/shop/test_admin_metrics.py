@@ -617,7 +617,7 @@ class CustomerOrderStaffOverrideTests(APITestCase):
 
     def test_owner_can_reach_own_order_payment(self):
         self.client.force_authenticate(user=self.owner)
-        res = self.client.post(self._payment_url(), {"payment_method": "BKASH"})
+        res = self.client.post(self._payment_url(), {"payment_method": "CASH_ON_DELIVERY"})
         self.assertEqual(res.status_code, status.HTTP_201_CREATED)
 
     def test_unrelated_customer_gets_safe_404(self):

@@ -614,6 +614,20 @@ are recorded here as they are made.
      actions.
    - The Console offers no action on a DRAFT. The staff status endpoint still
      has no from-state guard, so staff could act on one through the API.
+3. **COD payment lifecycle** — decided 2026-10-23, implemented in TASK-015.
+   - Cash on delivery is the only payment method for now. Online and
+     mobile-banking methods (bKash, Nagad, card) come later, together with a
+     gateway.
+   - Checkout opens one PENDING `CASH_ON_DELIVERY` payment for the order
+     total, inside the order transaction.
+   - Delivering the order marks that payment PAID, because the cash is
+     collected at the door. Cancelling cancels it. A refund never reopens an
+     order for a second payment.
+   - The customer payment endpoint accepts only `CASH_ON_DELIVERY` until
+     the gateway exists.
+   - Historical orders are not backfilled now. An order placed before this
+     change gets its payment when it is delivered, and TASK-047 reports any
+     remaining gaps.
 
 ## Not in this roadmap
 

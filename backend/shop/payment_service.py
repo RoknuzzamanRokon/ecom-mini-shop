@@ -24,6 +24,9 @@ class PaymentService:
     status transitions, concurrency protection, idempotency guards, and refunds.
     """
 
+    # Statuses that mean the money was taken (whether or not some went back).
+    SETTLED_STATUSES = (Payment.STATUS_PAID, Payment.STATUS_PARTIALLY_REFUNDED, Payment.STATUS_REFUNDED)
+
     @classmethod
     def generate_payment_number(cls) -> str:
         """Generates unique payment identifier: PAY-YYYYMMDD-XXXXXXXX."""
@@ -52,7 +55,8 @@ class PaymentService:
           - Server-authoritative payable amount derived directly from order.total_amount.
           - Row-level locking on Order to avoid concurrent double creation.
           - Rejects payment initiation for cancelled orders.
-          - Idempotency guard: rejects if order is already PAID.
+          - Idempotency guard: rejects if the order was already paid, including
+            a payment since refunded in part or in full (BUG-052).
           - Reuses pending/processing payment if available.
         """
         with transaction.atomic():
@@ -63,9 +67,9 @@ class PaymentService:
             if locked_order.status == Order.STATUS_CANCELLED:
                 raise ValidationError({"order": "Cannot initiate payment for a cancelled order."})
 
-            # Check if order already has a successful PAID payment
-            paid_payment = locked_order.payments.filter(status=Payment.STATUS_PAID).first()
-            if paid_payment:
+            # A refund settles part of a payment; it does not reopen the order
+            # for a second full-amount payment.
+            if locked_order.payments.filter(status__in=cls.SETTLED_STATUSES).exists():
                 raise ValidationError({"payment": "Order is already paid."})
 
             # Check for existing PENDING or PROCESSING payment
@@ -386,6 +390,40 @@ class PaymentService:
                 locked_payment.status,
             )
             return refund
+
+    @classmethod
+    def handle_order_delivery(
+        cls,
+        order: Order,
+        actor: Optional[Any] = None,
+        ip_address: Optional[str] = None,
+    ) -> Optional[Payment]:
+        """
+        Cash on delivery is collected at the door, so delivering an order marks
+        its open COD payment PAID (TASK-048 decision 3: COD is the only method
+        for now). An order placed before checkout created payments gets its
+        COD payment here. A paid order, or an open payment by another method,
+        is left alone. Runs inside the delivery transition's transaction.
+        """
+        with transaction.atomic():
+            payments = order.payments.select_for_update()
+            if payments.filter(status__in=cls.SETTLED_STATUSES).exists():
+                return None
+            open_payment = (
+                payments.filter(status__in=[Payment.STATUS_PENDING, Payment.STATUS_PROCESSING])
+                .order_by("-created_at")
+                .first()
+            )
+            if open_payment is None:
+                open_payment = cls.create_or_get_payment(
+                    order=order,
+                    payment_method=Payment.METHOD_CASH_ON_DELIVERY,
+                    actor=actor,
+                    ip_address=ip_address,
+                )
+            if open_payment.payment_method != Payment.METHOD_CASH_ON_DELIVERY:
+                return None
+            return cls.process_payment_success(open_payment, actor=actor, ip_address=ip_address)
 
     @classmethod
     def handle_order_cancellation(

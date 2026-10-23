@@ -23,7 +23,7 @@ from rbac.services import get_user_role_codes, has_user_permission
 from sellers.models import SellerProfile
 from sellers.services import count_seller_products, get_product_limit
 from shops.models import Shop
-from .models import Category, Order, OrderItem, Product
+from .models import Category, Order, OrderItem, Payment, Product
 
 logger = logging.getLogger(__name__)
 
@@ -851,7 +851,17 @@ class OrderService:
                 ip_address=ip_address,
             )
 
-            # 10. Clear user's Cart items atomically
+            # 10. Open the order's cash-on-delivery payment (TASK-048 decision 3:
+            # COD is the only method for now). Delivery marks it PAID.
+            from shop.payment_service import PaymentService
+            PaymentService.create_or_get_payment(
+                order=order,
+                payment_method=Payment.METHOD_CASH_ON_DELIVERY,
+                actor=actor or user,
+                ip_address=ip_address,
+            )
+
+            # 10b. Clear user's Cart items atomically
             CartItem.objects.filter(cart=cart).delete()
 
             # 11. Record immutable AuditLog entry
@@ -962,7 +972,8 @@ class OrderService:
 
         - CANCELLED releases the stock reservation, then cancels pending
           payments and refunds paid ones (PaymentService.handle_order_cancellation);
-        - DELIVERED turns the reservation into a sale.
+        - DELIVERED turns the reservation into a sale, and marks the cash on
+          delivery payment PAID (PaymentService.handle_order_delivery).
 
         Shared by the staff/customer and the seller transitions, so the
         seller path can no longer cancel an order and keep its money (BUG-005).
@@ -979,6 +990,7 @@ class OrderService:
             InventoryService.finalize_order_delivery(
                 order=order, actor=actor, note=note, ip_address=ip_address
             )
+            PaymentService.handle_order_delivery(order=order, actor=actor, ip_address=ip_address)
 
     @staticmethod
     def _publish_status_change(order: Order, old_status: str, actor, changed_by: str):

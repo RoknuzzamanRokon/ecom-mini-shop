@@ -805,10 +805,15 @@ class PaymentInitiateSerializer(serializers.Serializer):
     Server calculates amount strictly from the Order.
     Client amount or status is strictly forbidden/ignored.
     """
+    # Cash on delivery is the only method until an online gateway is added
+    # (TASK-048 decision 3); widen this list together with that gateway.
     payment_method = serializers.ChoiceField(
-        choices=Payment.METHOD_CHOICES,
+        choices=[
+            (method, label) for method, label in Payment.METHOD_CHOICES
+            if method == Payment.METHOD_CASH_ON_DELIVERY
+        ],
         default=Payment.METHOD_CASH_ON_DELIVERY,
-        help_text="Chosen payment method for the order.",
+        help_text="Chosen payment method for the order. Only CASH_ON_DELIVERY for now.",
     )
 
 
