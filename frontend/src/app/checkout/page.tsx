@@ -28,6 +28,7 @@ export default function CheckoutPage() {
     refreshCart,
     error: cartError,
     clearError: clearCartError,
+    hasUnavailableItems,
   } = useCart();
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
 
@@ -42,6 +43,14 @@ export default function CheckoutPage() {
     refreshCart().finally(() => setCartVerified(true));
   }, [isAuthenticated, cartLoading, refreshCart]);
   const cartReady = !authLoading && (!isAuthenticated || (cartVerified && !cartLoading));
+
+  // Orders need an account (guest checkout was retired on 2026-09-18), so a
+  // guest is sent to sign in and comes back here; the guest cart merges into
+  // the account on login (BUG-034).
+  const needsSignIn = !authLoading && !isAuthenticated;
+  useEffect(() => {
+    if (needsSignIn) router.replace("/login?next=/checkout");
+  }, [needsSignIn, router]);
 
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [loadingAddresses, setLoadingAddresses] = useState(false);
@@ -120,6 +129,10 @@ export default function CheckoutPage() {
       setError("Your cart is empty.");
       return;
     }
+    if (hasUnavailableItems) {
+      setError("Remove the unavailable items from your cart first.");
+      return;
+    }
 
     setSubmitting(true);
     setError(null);
@@ -129,8 +142,11 @@ export default function CheckoutPage() {
 
       let orderPayload: Parameters<typeof createOrder>[0];
 
+      // A typed address the customer asked to keep; saved only after the order.
+      let addressToSave: Parameters<typeof createCustomerAddress>[0] | null = null;
+
       // If user chose a saved address
-      if (isAuthenticated && !useManualAddress && selectedAddressId) {
+      if (!useManualAddress && selectedAddressId) {
         const chosen = addresses.find((a) => a.id === selectedAddressId);
         const userFullName = user
           ? [user.first_name, user.last_name].filter(Boolean).join(" ") ||
@@ -176,25 +192,17 @@ export default function CheckoutPage() {
           return;
         }
 
-        // If authenticated and user opted into saving to profile
-        if (isAuthenticated && token && saveToProfile) {
-          try {
-            await createCustomerAddress(
-              {
-                label: "Home",
-                recipient_name: formData.fullName,
-                phone: formData.phone,
-                address_line_1: formData.address,
-                city: formData.city,
-                postal_code: formData.postalCode || "1000",
-                country: "Bangladesh",
-                is_default: addresses.length === 0,
-              },
-              token
-            );
-          } catch (addrErr) {
-            console.warn("Could not save address to profile:", addrErr);
-          }
+        if (saveToProfile) {
+          addressToSave = {
+            label: "Home",
+            recipient_name: formData.fullName,
+            phone: formData.phone,
+            address_line_1: formData.address,
+            city: formData.city,
+            postal_code: formData.postalCode || "1000",
+            country: "Bangladesh",
+            is_default: addresses.length === 0,
+          };
         }
 
         orderPayload = {
@@ -217,6 +225,15 @@ export default function CheckoutPage() {
 
       const order = await createOrder(orderPayload, token);
 
+      // Only now, so a failed attempt or its retry never adds a copy (BUG-088).
+      if (addressToSave && token) {
+        try {
+          await createCustomerAddress(addressToSave, token);
+        } catch (addrErr) {
+          console.warn("Could not save address to profile:", addrErr);
+        }
+      }
+
       clearCart();
       router.push(`/order-success/${order.order_number}`);
     } catch (err: any) {
@@ -229,6 +246,33 @@ export default function CheckoutPage() {
       setSubmitting(false);
     }
   };
+
+  if (needsSignIn) {
+    return (
+      <div className="min-h-screen flex flex-col bg-page">
+        <div className="sticky top-0 z-40 w-full shadow-sm">
+          <Header />
+          <Navbar />
+        </div>
+        <main className="max-w-[1360px] mx-auto px-4 sm:px-6 py-12 flex-1 flex flex-col items-center justify-center text-center">
+          <span className="material-symbols-outlined text-[64px] text-ink-muted/40 mb-3">
+            account_circle
+          </span>
+          <h2 className="text-xl font-bold text-ink">Sign in to check out</h2>
+          <p className="text-sm text-ink-body mt-1">
+            Orders are placed from your account. Your cart comes with you when you sign in.
+          </p>
+          <Link
+            href="/login?next=/checkout"
+            className="mt-4 bg-primary hover:bg-primary-hover text-on-primary px-6 py-2.5 rounded font-bold text-xs uppercase"
+          >
+            Sign in
+          </Link>
+        </main>
+        <Footer />
+      </div>
+    );
+  }
 
   if (!cartReady) {
     return (
@@ -311,51 +355,30 @@ export default function CheckoutPage() {
               Shipping &amp; Delivery Details
             </h2>
 
-            {/* Guest / Auth awareness banner */}
-            {!isAuthenticated ? (
-              <div className="mb-5 p-3.5 rounded-lg bg-surface-alt border border-line flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                <div className="flex items-center gap-2 text-ink-body">
-                  <span className="material-symbols-outlined text-[18px] text-accent">
-                    account_circle
-                  </span>
-                  <span>
-                    Already have an account?{" "}
-                    <Link
-                      href="/login?next=/checkout"
-                      className="text-primary font-semibold hover:underline"
-                    >
-                      Sign in
-                    </Link>{" "}
-                    for saved addresses and faster checkout.
-                  </span>
-                </div>
-                <span className="text-[11px] text-ink-muted">Guest checkout below</span>
+            {/* Signed-in account banner */}
+            <div className="mb-5 flex items-center justify-between p-3 rounded-lg bg-surface-alt border border-line text-xs">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-[18px] text-success">
+                  verified_user
+                </span>
+                <span className="text-ink-muted">
+                  Logged in as <strong className="text-ink">{user?.email || user?.username}</strong>
+                </span>
               </div>
-            ) : (
-              <div className="mb-5 flex items-center justify-between p-3 rounded-lg bg-surface-alt border border-line text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[18px] text-success">
-                    verified_user
-                  </span>
-                  <span className="text-ink-muted">
-                    Logged in as <strong className="text-ink">{user?.email || user?.username}</strong>
-                  </span>
-                </div>
-                <Link
-                  href="/profile/addresses"
-                  className="text-primary hover:underline font-semibold flex items-center gap-1"
-                >
-                  <span>Manage Address Book</span>
-                  <span className="material-symbols-outlined text-[14px]">
-                    arrow_forward
-                  </span>
-                </Link>
-              </div>
-            )}
+              <Link
+                href="/profile/addresses"
+                className="text-primary hover:underline font-semibold flex items-center gap-1"
+              >
+                <span>Manage Address Book</span>
+                <span className="material-symbols-outlined text-[14px]">
+                  arrow_forward
+                </span>
+              </Link>
+            </div>
 
             <form onSubmit={handleSubmit} className="space-y-4">
-              {/* Authenticated User Saved Address Selector */}
-              {isAuthenticated && addresses.length > 0 && (
+              {/* Saved Address Selector */}
+              {addresses.length > 0 && (
                 <div className="mb-6 pb-6 border-b border-line">
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-xs font-bold uppercase tracking-wider text-ink">
@@ -431,9 +454,9 @@ export default function CheckoutPage() {
               )}
 
               {/* Manual Shipping Fields */}
-              {(!isAuthenticated || useManualAddress || addresses.length === 0) && (
+              {(useManualAddress || addresses.length === 0) && (
                 <div className="space-y-4">
-                  {isAuthenticated && addresses.length === 0 && !loadingAddresses && (
+                  {addresses.length === 0 && !loadingAddresses && (
                     <p className="text-xs text-ink-muted italic">
                       No saved addresses found. Enter your delivery details below:
                     </p>
@@ -514,23 +537,21 @@ export default function CheckoutPage() {
                     />
                   </div>
 
-                  {isAuthenticated && (
-                    <div className="flex items-center gap-2 pt-1">
-                      <input
-                        type="checkbox"
-                        id="saveToProfile"
-                        checked={saveToProfile}
-                        onChange={(e) => setSaveToProfile(e.target.checked)}
-                        className="rounded text-primary focus:ring-primary h-4 w-4"
-                      />
-                      <label
-                        htmlFor="saveToProfile"
-                        className="text-xs text-ink-body cursor-pointer select-none"
-                      >
-                        Save this address to my profile address book
-                      </label>
-                    </div>
-                  )}
+                  <div className="flex items-center gap-2 pt-1">
+                    <input
+                      type="checkbox"
+                      id="saveToProfile"
+                      checked={saveToProfile}
+                      onChange={(e) => setSaveToProfile(e.target.checked)}
+                      className="rounded text-primary focus:ring-primary h-4 w-4"
+                    />
+                    <label
+                      htmlFor="saveToProfile"
+                      className="text-xs text-ink-body cursor-pointer select-none"
+                    >
+                      Save this address to my profile address book
+                    </label>
+                  </div>
                 </div>
               )}
 
@@ -558,9 +579,16 @@ export default function CheckoutPage() {
                 </div>
               </div>
 
+              {hasUnavailableItems && (
+                <p role="alert" className="mt-6 text-xs font-semibold text-danger">
+                  Some items in your cart are no longer available. Remove them from your cart to place
+                  the order.
+                </p>
+              )}
+
               <button
                 type="submit"
-                disabled={submitting || cartLoading}
+                disabled={submitting || cartLoading || hasUnavailableItems}
                 className="w-full mt-6 bg-primary hover:bg-primary-hover disabled:opacity-50 text-on-primary font-bold text-sm uppercase tracking-wider py-3.5 rounded-lg shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 {submitting ? (

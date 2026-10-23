@@ -642,6 +642,17 @@ class OrderService:
                 return candidate
         return f"{prefix}{uuid.uuid4().hex[:10].upper()}"
 
+    # Order fields that make up a typed delivery address (the legacy
+    # customer_name/phone/address/city ones included).
+    TYPED_ADDRESS_KEYS = (
+        "shipping_recipient_name", "customer_name", "recipient_name",
+        "shipping_phone", "phone",
+        "shipping_address_line_1", "address", "shipping_address_line_2",
+        "shipping_area", "area", "shipping_city", "city",
+        "shipping_state", "state", "shipping_postal_code", "postal_code",
+        "shipping_country", "country",
+    )
+
     @classmethod
     def create_order_from_cart(
         cls,
@@ -659,6 +670,8 @@ class OrderService:
           2. Re-validation of all cart products against authoritative public visibility.
           3. Rejection of empty or stale carts without clearing the cart.
           4. Historical snapshots of shipping address, products, shops, and sellers.
+             The address is address_id, a typed one with a non-blank recipient,
+             phone, line 1 and city, or else the customer's default; never invented.
           5. Server-authoritative Decimal price calculation ignoring any client inputs.
           6. Atomic cart clearing upon successful order creation.
           7. AuditLog entry for ORDER_CREATED.
@@ -726,22 +739,36 @@ class OrderService:
                 state = shipping_address.state
                 postal = shipping_address.postal_code
                 country = shipping_address.country
-            elif address_data:
-                recipient_name = (
-                    address_data.get("shipping_recipient_name")
-                    or address_data.get("customer_name")
-                    or address_data.get("recipient_name")
-                    or user.get_full_name()
-                    or user.username
-                )
-                phone = address_data.get("shipping_phone") or address_data.get("phone") or ""
-                line_1 = address_data.get("shipping_address_line_1") or address_data.get("address") or ""
-                line_2 = address_data.get("shipping_address_line_2") or ""
-                area = address_data.get("shipping_area") or address_data.get("area") or ""
-                city = address_data.get("shipping_city") or address_data.get("city") or ""
-                state = address_data.get("shipping_state") or address_data.get("state") or ""
-                postal = address_data.get("shipping_postal_code") or address_data.get("postal_code") or ""
-                country = address_data.get("shipping_country") or address_data.get("country") or "Bangladesh"
+            elif address_data and any(key in address_data for key in cls.TYPED_ADDRESS_KEYS):
+                def typed(*keys):
+                    for key in keys:
+                        value = (address_data.get(key) or "").strip()
+                        if value:
+                            return value
+                    return ""
+
+                recipient_name = typed("shipping_recipient_name", "customer_name", "recipient_name")
+                phone = typed("shipping_phone", "phone")
+                line_1 = typed("shipping_address_line_1", "address")
+                line_2 = typed("shipping_address_line_2")
+                area = typed("shipping_area", "area")
+                city = typed("shipping_city", "city")
+                state = typed("shipping_state", "state")
+                postal = typed("shipping_postal_code", "postal_code")
+                country = typed("shipping_country", "country") or "Bangladesh"
+                # A typed address must be deliverable (BUG-053).
+                missing = {
+                    field: "This field is required."
+                    for field, value in (
+                        ("shipping_recipient_name", recipient_name),
+                        ("shipping_phone", phone),
+                        ("shipping_address_line_1", line_1),
+                        ("shipping_city", city),
+                    )
+                    if not value
+                }
+                if missing:
+                    raise ValidationError(missing)
             else:
                 default_addr = Address.objects.filter(user=user, is_default=True).first()
                 if default_addr:
@@ -756,16 +783,10 @@ class OrderService:
                     postal = default_addr.postal_code
                     country = default_addr.country
                 else:
-                    profile = getattr(user, "customer_profile", None)
-                    recipient_name = (profile.display_name if profile else None) or user.get_full_name() or user.username
-                    phone = (profile.phone if profile else "")
-                    line_1 = "Standard Delivery Address"
-                    line_2 = ""
-                    area = ""
-                    city = "Dhaka"
-                    state = ""
-                    postal = ""
-                    country = "Bangladesh"
+                    # No invented placeholder address (BUG-053).
+                    raise ValidationError(
+                        {"address_id": "Choose a saved address or enter a delivery address."}
+                    )
 
             # 5. Calculate authoritative Decimal totals and prepare OrderItem snapshots
             subtotal = Decimal("0.00")
