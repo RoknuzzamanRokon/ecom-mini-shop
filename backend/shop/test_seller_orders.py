@@ -12,7 +12,10 @@ from rbac.models import Role
 from rbac.services import assign_user_role
 from sellers.models import SellerProfile
 from shops.models import Shop
-from shop.models import Category, Order, OrderItem, Product
+from notifications import events
+from notifications.models import NotificationEvent
+from shop.models import Category, Order, OrderItem, Payment, Product, Refund
+from shop.payment_service import PaymentService
 from shop.services import OrderService
 
 User = get_user_model()
@@ -511,3 +514,41 @@ class SellerOrderTests(APITestCase):
         self.assertEqual(self.order_a.order_number, "ORD-SELLER-A-ONLY")
         self.assertEqual(self.order_a.total_amount, Decimal("220.00"))
         self.assertEqual(self.order_a.shipping_recipient_name, "John Doe")
+
+    # -------------------------------------------------------------------------
+    # BUG-005: a seller's cancellation settles the payment like staff's does
+    # -------------------------------------------------------------------------
+
+    def _cancel_as_seller_a(self):
+        self.client.force_authenticate(user=self.user_seller_a)
+        return self.client.patch(
+            f"/api/seller/orders/{self.order_a.order_number}/status/",
+            {"status": "CANCELLED", "note": "Out of stock"},
+            format="json",
+        )
+
+    def test_seller_cancelling_a_paid_order_refunds_it(self):
+        payment = PaymentService.create_or_get_payment(order=self.order_a, payment_method="CARD")
+        PaymentService.process_payment_success(payment, transaction_id="TXN-SELLER-CANCEL")
+
+        resp = self._cancel_as_seller_a()
+        self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.data)
+
+        payment.refresh_from_db()
+        self.assertEqual(payment.status, Payment.STATUS_REFUNDED)
+        refund = Refund.objects.get(payment=payment)
+        self.assertEqual(refund.status, Refund.STATUS_COMPLETED)
+        self.assertEqual(refund.amount, payment.amount)
+        self.assertEqual(
+            NotificationEvent.objects.filter(event_type=events.REFUND_PROCESSED).count(), 1
+        )
+
+    def test_seller_cancelling_an_unpaid_order_cancels_the_payment(self):
+        payment = PaymentService.create_or_get_payment(order=self.order_a, payment_method="CARD")
+
+        resp = self._cancel_as_seller_a()
+        self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.data)
+
+        payment.refresh_from_db()
+        self.assertEqual(payment.status, Payment.STATUS_CANCELLED)
+        self.assertFalse(Refund.objects.filter(payment=payment).exists())

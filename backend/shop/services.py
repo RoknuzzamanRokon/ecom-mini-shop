@@ -846,28 +846,7 @@ class OrderService:
             order.status = locked_order.status
             order.updated_at = locked_order.updated_at
 
-            # Apply atomic inventory lifecycle transitions
-            from shop.inventory_service import InventoryService
-            if locked_order.status == Order.STATUS_CANCELLED:
-                InventoryService.release_order_reservation(
-                    order=locked_order,
-                    actor=actor,
-                    note=note,
-                    ip_address=ip_address,
-                )
-                from shop.payment_service import PaymentService
-                PaymentService.handle_order_cancellation(
-                    order=locked_order,
-                    actor=actor,
-                    ip_address=ip_address,
-                )
-            elif locked_order.status == Order.STATUS_DELIVERED:
-                InventoryService.finalize_order_delivery(
-                    order=locked_order,
-                    actor=actor,
-                    note=note,
-                    ip_address=ip_address,
-                )
+            cls._apply_transition_effects(locked_order, actor=actor, note=note, ip_address=ip_address)
 
             AuditService.log(
                 action="ORDER_STATUS_UPDATED",
@@ -900,6 +879,32 @@ class OrderService:
                 getattr(actor, "username", "system"),
             )
             return locked_order
+
+    @staticmethod
+    def _apply_transition_effects(order: Order, actor=None, note: str = "", ip_address: Optional[str] = None):
+        """
+        What every path that moves an order's status must do next, inside
+        its transaction and with the order row locked:
+
+        - CANCELLED releases the stock reservation, then cancels pending
+          payments and refunds paid ones (PaymentService.handle_order_cancellation);
+        - DELIVERED turns the reservation into a sale.
+
+        Shared by the staff/customer and the seller transitions, so the
+        seller path can no longer cancel an order and keep its money (BUG-005).
+        """
+        from shop.inventory_service import InventoryService
+        from shop.payment_service import PaymentService
+
+        if order.status == Order.STATUS_CANCELLED:
+            InventoryService.release_order_reservation(
+                order=order, actor=actor, note=note, ip_address=ip_address
+            )
+            PaymentService.handle_order_cancellation(order=order, actor=actor, ip_address=ip_address)
+        elif order.status == Order.STATUS_DELIVERED:
+            InventoryService.finalize_order_delivery(
+                order=order, actor=actor, note=note, ip_address=ip_address
+            )
 
     @staticmethod
     def _publish_status_change(order: Order, old_status: str, actor, changed_by: str):
@@ -1052,7 +1057,9 @@ class OrderService:
           3. Multi-seller safety: If order contains items from other sellers,
              rejects unilateral status change by single seller (unless actor has staff override).
           4. Valid state machine transition via order.transition_to().
-          5. Immutable audit logging via AuditService.
+          5. The same stock and payment effects as the staff path
+             (_apply_transition_effects): a cancellation refunds or cancels the payment.
+          6. Immutable audit logging via AuditService.
         """
         with transaction.atomic():
             locked_order = Order.objects.select_for_update().filter(pk=order.pk).first()
@@ -1091,22 +1098,7 @@ class OrderService:
             order.status = locked_order.status
             order.updated_at = locked_order.updated_at
 
-            # Apply atomic inventory lifecycle transitions
-            from shop.inventory_service import InventoryService
-            if locked_order.status == Order.STATUS_CANCELLED:
-                InventoryService.release_order_reservation(
-                    order=locked_order,
-                    actor=actor,
-                    note=note,
-                    ip_address=ip_address,
-                )
-            elif locked_order.status == Order.STATUS_DELIVERED:
-                InventoryService.finalize_order_delivery(
-                    order=locked_order,
-                    actor=actor,
-                    note=note,
-                    ip_address=ip_address,
-                )
+            cls._apply_transition_effects(locked_order, actor=actor, note=note, ip_address=ip_address)
 
             AuditService.log(
                 action="ORDER_STATUS_UPDATED",
