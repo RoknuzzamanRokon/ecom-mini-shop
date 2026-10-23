@@ -6,7 +6,7 @@ import { useParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { getAuthToken } from "@/lib/auth";
 import { AdminApiError, AdminPayment, AdminRefund, getAdminPaymentDetail } from "@/lib/admin-api";
-import { formatDateTime, formatTaka } from "@/lib/admin-format";
+import { formatDateTime, formatTaka, toNumber } from "@/lib/admin-format";
 import { AdminConfirmModal, AdminDataTable, AdminStatusBadge, type AdminTableColumn } from "@/components/admin/shared";
 import {
   PAYMENT_METHOD_LABELS,
@@ -14,6 +14,7 @@ import {
   canRefundAdminPayments,
   getAvailableVerifyActions,
   isRefundEligible,
+  parseRefundAmount,
   useRefundPaymentAction,
   useVerifyPaymentAction,
 } from "../paymentGovernance";
@@ -107,11 +108,29 @@ export default function AdminPaymentDetailPage() {
     confirm: confirmVerify,
   } = useVerifyPaymentAction(handleVerifySuccess);
 
-  const handleRefundSuccess = useCallback((refreshed: AdminPayment) => {
-    setPayment(refreshed);
-    setRefundAmountDraft("");
-  }, []);
+  // Full refund unless the operator explicitly picks "Partial" and types a
+  // valid amount (BUG-076).
+  const [refundFull, setRefundFull] = useState(true);
   const [refundAmountDraft, setRefundAmountDraft] = useState("");
+  const [refundNotice, setRefundNotice] = useState<{ tone: "success" | "warning"; text: string } | null>(null);
+  const handleRefunded = useCallback(
+    ({ refund, refreshed }: { refund: AdminRefund; refreshed: AdminPayment | null }) => {
+      const issued = `Refund ${refund.refund_number} of ${formatTaka(refund.amount)} issued.`;
+      if (refreshed) {
+        setPayment(refreshed);
+        setRefundNotice({ tone: "success", text: issued });
+      } else {
+        // The refund went through; only the reload failed (BUG-036).
+        setRefundNotice({
+          tone: "warning",
+          text: `${issued} This page could not refresh; reload it to see the new balance.`,
+        });
+      }
+      setRefundFull(true);
+      setRefundAmountDraft("");
+    },
+    []
+  );
   const {
     targetPayment: refundTarget,
     previewAmount,
@@ -119,7 +138,7 @@ export default function AdminPaymentDetailPage() {
     open: openRefund,
     cancel: cancelRefund,
     confirm: confirmRefund,
-  } = useRefundPaymentAction(handleRefundSuccess);
+  } = useRefundPaymentAction(handleRefunded);
 
   const backLink = (
     <Link
@@ -182,6 +201,10 @@ export default function AdminPaymentDetailPage() {
 
   const availableVerifyActions = getAvailableVerifyActions(payment, user);
   const canRefund = canRefundAdminPayments(user) && isRefundEligible(payment);
+  // Why a partial amount cannot be sent yet; a full refund needs no amount.
+  const refundAmountProblem = refundFull
+    ? null
+    : parseRefundAmount(refundAmountDraft, toNumber(payment.refundable_amount)).error;
   const hasMetadata = payment.metadata && Object.keys(payment.metadata).length > 0;
 
   const refundColumns: AdminTableColumn<AdminRefund>[] = [
@@ -315,29 +338,57 @@ export default function AdminPaymentDetailPage() {
 
           {canRefund && (
             <div className="flex flex-col sm:flex-row sm:items-end gap-2">
-              <div className="w-full sm:w-44">
-                <label
-                  htmlFor="refund-amount"
-                  className="block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1.5"
-                >
+              <fieldset className="w-full sm:w-auto">
+                <legend className="block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1.5">
                   Refund Amount
-                </label>
-                <input
-                  id="refund-amount"
-                  type="number"
-                  min="0.01"
-                  max={payment.refundable_amount}
-                  step="0.01"
-                  placeholder={`Full (${formatTaka(payment.refundable_amount)})`}
-                  value={refundAmountDraft}
-                  onChange={(e) => setRefundAmountDraft(e.target.value)}
-                  className="w-full bg-surface border border-line rounded-lg px-2.5 py-2 text-xs text-ink placeholder:text-ink-faint transition-colors focus:outline-none focus:border-primary focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
-                />
-              </div>
+                </legend>
+                <div className="flex flex-wrap items-center gap-3 text-xs text-ink">
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="refund-mode"
+                      checked={refundFull}
+                      onChange={() => setRefundFull(true)}
+                      className="h-3.5 w-3.5 text-primary"
+                    />
+                    Full ({formatTaka(payment.refundable_amount)})
+                  </label>
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="refund-mode"
+                      checked={!refundFull}
+                      onChange={() => setRefundFull(false)}
+                      className="h-3.5 w-3.5 text-primary"
+                    />
+                    Partial
+                  </label>
+                  <input
+                    id="refund-amount"
+                    type="text"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    aria-label="Partial refund amount"
+                    aria-invalid={Boolean(refundAmountProblem)}
+                    disabled={refundFull}
+                    placeholder="e.g. 1500.00"
+                    value={refundAmountDraft}
+                    onChange={(e) => setRefundAmountDraft(e.target.value)}
+                    className="w-32 bg-surface border border-line rounded-lg px-2.5 py-2 text-xs text-ink placeholder:text-ink-faint transition-colors disabled:opacity-50 focus:outline-none focus:border-primary focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
+                  />
+                </div>
+                {refundAmountProblem && refundAmountDraft.trim() && (
+                  <p className="mt-1 text-[11px] font-semibold text-red-600">{refundAmountProblem}</p>
+                )}
+              </fieldset>
               <button
                 type="button"
-                onClick={() => openRefund(payment, refundAmountDraft)}
-                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold uppercase tracking-wide transition-colors shadow-xs cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
+                onClick={() => {
+                  setRefundNotice(null);
+                  openRefund(payment, { full: refundFull, amountInput: refundAmountDraft });
+                }}
+                disabled={Boolean(refundAmountProblem)}
+                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold uppercase tracking-wide transition-colors shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-600"
               >
                 <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
                   undo
@@ -347,6 +398,19 @@ export default function AdminPaymentDetailPage() {
             </div>
           )}
         </div>
+
+        {refundNotice && (
+          <p
+            role="status"
+            className={`p-3 rounded-lg border text-xs font-semibold ${
+              refundNotice.tone === "success"
+                ? "bg-success/10 border-success/30 text-success"
+                : "bg-accent/10 border-accent/30 text-accent"
+            }`}
+          >
+            {refundNotice.text}
+          </p>
+        )}
 
         <AdminDataTable<AdminRefund>
           caption={`Refunds for payment ${payment.payment_number}`}

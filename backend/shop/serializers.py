@@ -859,6 +859,16 @@ class RefundCreateSerializer(serializers.Serializer):
         max_length=500,
         help_text="Justification for this refund.",
     )
+    idempotency_key = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        max_length=64,
+        help_text=(
+            "Client-chosen key for one refund attempt. Re-sending the same key for the same "
+            "payment returns the refund it already created instead of issuing another."
+        ),
+    )
 
 
 # -------------------------------------------------------------------------

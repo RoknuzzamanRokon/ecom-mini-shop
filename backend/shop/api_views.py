@@ -1155,7 +1155,8 @@ class StaffPaymentVerifyAPIView(APIView):
 class StaffPaymentRefundAPIView(APIView):
     """
     Staff Refund Processing:
-      POST: Processes full or partial refund against a paid payment.
+      POST: Processes full or partial refund against a paid payment. An optional
+      idempotency_key makes a retried request return the first refund (200).
     Requires 'payments.refund' permission.
     """
     permission_classes = [permissions.IsAuthenticated, CanRefundPayment]
@@ -1177,13 +1178,16 @@ class StaffPaymentRefundAPIView(APIView):
                 reason=reason,
                 actor=request.user,
                 ip_address=ip_address,
+                idempotency_key=serializer.validated_data.get("idempotency_key", ""),
             )
         except DjangoValidationError as exc:
             detail = exc.message_dict if hasattr(exc, "message_dict") else {"detail": exc.messages}
             raise DRFValidationError(detail)
 
         output = RefundSerializer(refund, context={"request": request})
-        return Response(output.data, status=status.HTTP_201_CREATED)
+        # 200 when the key replayed an earlier refund: nothing new was issued.
+        replayed = getattr(refund, "replayed", False)
+        return Response(output.data, status=status.HTTP_200_OK if replayed else status.HTTP_201_CREATED)
 
 
 class StaffRefundListAPIView(generics.ListAPIView):

@@ -2211,6 +2211,11 @@ export interface AdminRefundCreatePayload {
   /** Omit for a full refund of the remaining refundable amount — RefundCreateSerializer / PaymentService.process_refund default to that when absent. */
   amount?: number;
   reason?: string;
+  /**
+   * One key per refund attempt. Re-sending it (a retry after an unclear
+   * failure) returns the refund already made (200) instead of refunding again.
+   */
+  idempotency_key?: string;
 }
 
 /**

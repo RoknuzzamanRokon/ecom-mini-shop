@@ -280,9 +280,13 @@ class PaymentService:
         actor: Optional[Any] = None,
         ip_address: Optional[str] = None,
         transaction_id: str = "",
+        idempotency_key: str = "",
     ) -> Refund:
         """
         Issues a server-authoritative full or partial refund for a paid order.
+        With an idempotency_key, a repeat of the same request (a retry after a
+        lost response) returns the refund already made for that key, marked
+        `replayed = True`, instead of refunding again (BUG-036).
         Enforces:
           - Row-level locking on Payment and Order to prevent race conditions.
           - Payment must be in PAID or PARTIALLY_REFUNDED status.
@@ -297,6 +301,17 @@ class PaymentService:
             locked_payment = Payment.objects.select_for_update().filter(pk=payment_id).first()
             if not locked_payment:
                 raise ValidationError({"payment": "Payment record not found."})
+
+            # Checked under the payment lock, and before the eligibility check:
+            # after a full refund the payment is no longer refundable, but the
+            # retry must still get its refund back rather than an error.
+            if idempotency_key:
+                existing = Refund.objects.filter(
+                    payment=locked_payment, metadata__idempotency_key=idempotency_key
+                ).first()
+                if existing:
+                    existing.replayed = True
+                    return existing
 
             if locked_payment.status not in (Payment.STATUS_PAID, Payment.STATUS_PARTIALLY_REFUNDED):
                 raise ValidationError({
@@ -344,6 +359,7 @@ class PaymentService:
                 status=Refund.STATUS_COMPLETED,
                 processed_by=actor if getattr(actor, "is_authenticated", False) else None,
                 transaction_id=transaction_id,
+                metadata={"idempotency_key": idempotency_key} if idempotency_key else {},
             )
 
             # Update Payment status

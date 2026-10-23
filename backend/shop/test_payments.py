@@ -603,3 +603,45 @@ class PaymentAndRefundManagementTests(APITestCase):
         self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(order.payments.get().payment_method, Payment.METHOD_CASH_ON_DELIVERY)
 
+    # --- Refund retries (TASK-018: BUG-036) ---
+
+    def _paid_payment(self, quantity=1):
+        order = self._create_order(self.customer_a, self.address_a, quantity=quantity)
+        payment = PaymentService.create_or_get_payment(order=order)
+        return PaymentService.process_payment_success(payment=payment, transaction_id=f"TX-{order.pk}")
+
+    def _refund(self, payment, **data):
+        self.client.force_authenticate(user=self.finance_user)
+        return self.client.post(f"/api/staff/payments/{payment.id}/refund/", data, format="json")
+
+    def test_a_retried_refund_with_the_same_key_refunds_once(self):
+        payment = self._paid_payment(quantity=2)  # 5000.00
+
+        first = self._refund(payment, amount="1000.00", reason="Damaged item", idempotency_key="attempt-1")
+        retry = self._refund(payment, amount="1000.00", reason="Damaged item", idempotency_key="attempt-1")
+
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED, first.data)
+        self.assertEqual(retry.status_code, status.HTTP_200_OK, retry.data)
+        self.assertEqual(retry.data["refund_number"], first.data["refund_number"])
+        self.assertEqual(Refund.objects.filter(payment=payment).count(), 1)
+        self.assertEqual(AuditLog.objects.filter(action="REFUND_PROCESSED", target_id=str(first.data["id"])).count(), 1)
+        payment.refresh_from_db()
+        self.assertEqual(payment.order.refundable_amount, Decimal("4000.00"))
+
+    def test_a_retried_full_refund_returns_it_instead_of_an_error(self):
+        payment = self._paid_payment()
+
+        first = self._refund(payment, reason="Cancelled", idempotency_key="attempt-full")
+        retry = self._refund(payment, reason="Cancelled", idempotency_key="attempt-full")
+
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED, first.data)
+        self.assertEqual(retry.status_code, status.HTTP_200_OK, retry.data)
+        self.assertEqual(Refund.objects.filter(payment=payment).count(), 1)
+
+    def test_a_new_key_is_a_new_refund(self):
+        payment = self._paid_payment(quantity=2)
+        self.assertEqual(self._refund(payment, amount="100.00", idempotency_key="a").status_code, status.HTTP_201_CREATED)
+        # A different key is a different request: the rest is refunded too.
+        self.assertEqual(self._refund(payment, idempotency_key="b").status_code, status.HTTP_201_CREATED)
+        self.assertEqual(Refund.objects.filter(payment=payment).count(), 2)
+

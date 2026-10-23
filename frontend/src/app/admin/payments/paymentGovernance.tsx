@@ -27,6 +27,7 @@ import {
   AdminApiError,
   AdminPayment,
   AdminPaymentVerifyStatus,
+  AdminRefund,
   getAdminPaymentDetail,
   refundAdminPayment,
   verifyAdminPayment,
@@ -215,36 +216,84 @@ export function useVerifyPaymentAction(onSuccess: (updated: AdminPayment) => voi
   return { pendingAction, targetPayment, submitError, requestAction, cancel, confirm };
 }
 
+// A typed refund amount: digits, optionally with up to two decimals. Nothing
+// else (no grouping commas, no second point) is guessed at.
+const REFUND_AMOUNT_PATTERN = /^\d+(\.\d{1,2})?$/;
+
+/**
+ * Reads a partial refund amount. Anything that is not a plain positive number
+ * within the refundable balance is an error, never a silent full refund
+ * (BUG-076).
+ */
+export function parseRefundAmount(
+  input: string,
+  refundable: number
+): { amount: number; error: null } | { amount: null; error: string } {
+  const text = input.trim();
+  if (!text) return { amount: null, error: "Enter the amount to refund." };
+  if (!REFUND_AMOUNT_PATTERN.test(text)) {
+    return { amount: null, error: "Use digits only, with up to two decimals (for example 1500 or 1500.50)." };
+  }
+  const amount = Number(text);
+  if (amount <= 0) return { amount: null, error: "The amount must be greater than zero." };
+  if (amount > refundable) {
+    return { amount: null, error: `At most ${refundable.toFixed(2)} can be refunded.` };
+  }
+  return { amount, error: null };
+}
+
+/** What the operator asked for: the full refundable balance, or a typed amount. */
+export interface RefundRequest {
+  full: boolean;
+  amountInput: string;
+}
+
+function newRefundAttemptKey(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+}
+
 /**
  * Shared refund flow. Unlike verify, the refund endpoint returns only the
- * created Refund — not the updated Payment — so on success this re-fetches
+ * created Refund — not the updated Payment — so after a refund this re-fetches
  * the full payment (getAdminPaymentDetail) rather than guessing the new
- * status/refundable_amount client-side, and hands the caller that fresh,
- * fully server-computed object.
+ * status/refundable_amount client-side.
+ *
+ * The refund and the re-fetch are separate steps (BUG-036): once the refund
+ * POST succeeds the modal closes, and the caller hears about the refund even
+ * if the re-fetch fails (`refreshed` is then null). Each opened refund carries
+ * one idempotency key, so retrying after an unclear failure can never refund
+ * twice.
  */
-export function useRefundPaymentAction(onSuccess: (refreshed: AdminPayment) => void) {
+export function useRefundPaymentAction(
+  onRefunded: (result: { refund: AdminRefund; refreshed: AdminPayment | null }) => void
+) {
   const [targetPayment, setTargetPayment] = React.useState<AdminPayment | null>(null);
-  const [amountInput, setAmountInput] = React.useState("");
+  const [request, setRequest] = React.useState<RefundRequest>({ full: true, amountInput: "" });
   const [submitError, setSubmitError] = React.useState<string | null>(null);
+  const attemptKey = React.useRef("");
 
-  const open = React.useCallback((payment: AdminPayment, initialAmount: string = "") => {
+  const open = React.useCallback((payment: AdminPayment, refundRequest: RefundRequest) => {
     setTargetPayment(payment);
-    setAmountInput(initialAmount);
+    setRequest(refundRequest);
     setSubmitError(null);
+    attemptKey.current = newRefundAttemptKey();
   }, []);
 
   const cancel = React.useCallback(() => {
     setTargetPayment(null);
-    setAmountInput("");
+    setRequest({ full: true, amountInput: "" });
     setSubmitError(null);
+    attemptKey.current = "";
   }, []);
 
   /** Display-only preview of what will be refunded; the backend computes the real amount. */
   const previewAmount = React.useMemo(() => {
     if (!targetPayment) return 0;
-    const parsed = Number.parseFloat(amountInput);
-    return amountInput.trim() && Number.isFinite(parsed) ? parsed : toNumber(targetPayment.refundable_amount);
-  }, [amountInput, targetPayment]);
+    const refundable = toNumber(targetPayment.refundable_amount);
+    if (request.full) return refundable;
+    return parseRefundAmount(request.amountInput, refundable).amount ?? 0;
+  }, [request, targetPayment]);
 
   const confirm = React.useCallback(
     async (reason: string) => {
@@ -256,37 +305,48 @@ export function useRefundPaymentAction(onSuccess: (refreshed: AdminPayment) => v
         return;
       }
 
-      const trimmedAmount = amountInput.trim();
       let amount: number | undefined;
-      if (trimmedAmount) {
-        const parsed = Number.parseFloat(trimmedAmount);
-        if (!Number.isFinite(parsed) || parsed <= 0) {
-          setSubmitError("Enter a valid refund amount greater than zero, or leave it blank for the full amount.");
+      if (!request.full) {
+        const parsed = parseRefundAmount(request.amountInput, toNumber(targetPayment.refundable_amount));
+        if (parsed.amount === null) {
+          setSubmitError(parsed.error);
           return;
         }
-        amount = parsed;
+        amount = parsed.amount;
       }
 
+      let refund: AdminRefund;
       try {
         setSubmitError(null);
-        await refundAdminPayment(token, targetPayment.id, {
+        refund = await refundAdminPayment(token, targetPayment.id, {
           amount,
           reason: reason || undefined,
+          idempotency_key: attemptKey.current,
         });
-        // The refund response carries no updated Payment — re-fetch the
-        // authoritative state rather than reconstructing it locally.
-        const refreshed = await getAdminPaymentDetail(token, targetPayment.id);
-        onSuccess(refreshed);
-        setTargetPayment(null);
-        setAmountInput("");
       } catch (err) {
+        // The modal stays open with the same key, so a retry is safe.
         setSubmitError(err instanceof AdminApiError ? err.message : "Failed to process refund.");
+        return;
       }
+
+      // The money has moved: close the modal before anything else can fail.
+      const paymentId = targetPayment.id;
+      setTargetPayment(null);
+      setRequest({ full: true, amountInput: "" });
+      attemptKey.current = "";
+
+      let refreshed: AdminPayment | null = null;
+      try {
+        refreshed = await getAdminPaymentDetail(token, paymentId);
+      } catch {
+        refreshed = null;
+      }
+      onRefunded({ refund, refreshed });
     },
-    [targetPayment, amountInput, onSuccess]
+    [targetPayment, request, onRefunded]
   );
 
-  return { targetPayment, amountInput, setAmountInput, previewAmount, submitError, open, cancel, confirm };
+  return { targetPayment, previewAmount, submitError, open, cancel, confirm };
 }
 
 /**
