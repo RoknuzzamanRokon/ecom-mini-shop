@@ -404,6 +404,16 @@ class InventoryService:
         """
         Atomically finalizes reserved stock into sold stock when an order transitions to DELIVERED.
         Enforces idempotency: does not record duplicate sales if already delivered.
+
+        Sells only what this order itself reserved (BUG-007), the same bound
+        release_order_reservation applies. `reserved_quantity` is shared by
+        every open order for the product, so without it delivering an order
+        with no reservation of its own consumed other customers' reservations.
+
+        Shortfall: units an order delivers without having reserved them (old
+        orders from before the reservation flow) are not taken from anyone's
+        stock. They are logged and counted in the INVENTORY_DELIVERED audit
+        row (unreserved_units) for reconciliation (TASK-047).
         """
         # Idempotency check: did we already record a SALE transaction for this order?
         already_finalized = InventoryTransaction.objects.filter(
@@ -417,6 +427,7 @@ class InventoryService:
 
         order_items = list(order.items.select_for_update().select_related("product"))
         finalized_count = 0
+        unreserved_units = 0
 
         for item in order_items:
             product = item.product
@@ -426,8 +437,22 @@ class InventoryService:
             cls.get_or_create_inventory(product)
             inventory = ProductInventory.objects.select_for_update().get(product=product)
 
-            # Move up to item.quantity or remaining reserved_quantity into sold
-            qty = min(inventory.reserved_quantity, item.quantity)
+            # Move up to item.quantity, this order's own reservation, or the
+            # remaining reserved_quantity into sold.
+            owned_reserved = cls._order_reserved_quantity(order, product)
+            qty = min(inventory.reserved_quantity, item.quantity, owned_reserved)
+            shortfall = item.quantity - max(qty, 0)
+            if shortfall > 0:
+                unreserved_units += shortfall
+                logger.warning(
+                    "Order %s delivers %d unit(s) of product %s (id=%d) it never reserved; "
+                    "selling %d from its own reservation and leaving other orders' reservations untouched.",
+                    order.order_number,
+                    shortfall,
+                    product.name,
+                    product.id,
+                    max(qty, 0),
+                )
             if qty <= 0:
                 continue
 
@@ -464,6 +489,7 @@ class InventoryService:
             metadata={
                 "order_number": order.order_number,
                 "finalized_items_count": finalized_count,
+                "unreserved_units": unreserved_units,
                 "note": note,
             },
             ip_address=ip_address,

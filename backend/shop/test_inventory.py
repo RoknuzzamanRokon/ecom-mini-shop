@@ -606,6 +606,39 @@ class InventoryTests(APITestCase):
         self.assertIsNotNone(release_tx)
         self.assertEqual(release_tx.quantity, 2)
 
+    def test_reservation_less_order_delivery_cannot_consume_another_orders_reservation(self):
+        """
+        BUG-007: delivering an order with no reservation of its own must not
+        move a different order's reserved units into sold.
+        """
+        cart, _ = Cart.objects.get_or_create(user=self.customer_user)
+        CartItem.objects.create(cart=cart, product=self.product_a, quantity=5)
+        order_a = OrderService.create_order_from_cart(
+            user=self.customer_user,
+            address_id=self.address.id,
+        )
+        order_b = self._create_reservation_less_order(self.product_a, quantity=4)
+
+        InventoryService.finalize_order_delivery(order_b, actor=self.admin_user)
+
+        self.product_a.inventory.refresh_from_db()
+        self.assertEqual(self.product_a.inventory.available_quantity, 15)
+        self.assertEqual(self.product_a.inventory.reserved_quantity, 5)
+        self.assertEqual(self.product_a.inventory.sold_quantity, 0)
+        self.assertFalse(
+            InventoryTransaction.objects.filter(
+                order=order_b, transaction_type=InventoryTransaction.TYPE_SALE
+            ).exists()
+        )
+        audit = AuditLog.objects.get(action="INVENTORY_DELIVERED", target_id=str(order_b.pk))
+        self.assertEqual(audit.metadata["unreserved_units"], 4)
+
+        # Order A still sells exactly its own reservation.
+        InventoryService.finalize_order_delivery(order_a, actor=self.admin_user)
+        self.product_a.inventory.refresh_from_db()
+        self.assertEqual(self.product_a.inventory.reserved_quantity, 0)
+        self.assertEqual(self.product_a.inventory.sold_quantity, 5)
+
     # --- 6. Order Delivery & Sale Finalization ---
 
     def test_order_delivery_finalizes_sale(self):
