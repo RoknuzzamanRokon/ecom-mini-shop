@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import transaction
 from django.db.models import F, Q
 from django.shortcuts import get_object_or_404
 from rest_framework import generics, permissions, status
@@ -6,6 +7,8 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from audit.services import AuditService
+from audit.utils import get_client_ip
 from customers.models import ShopReview
 from customers.serializers import ShopReviewSerializer
 from customers.services import review_ordering
@@ -347,6 +350,37 @@ class StaffShopDetailView(generics.RetrieveAPIView):
     queryset = Shop.objects.select_related("owner", "owner__user", "reviewed_by")
 
 
+def _staff_shop_transition(request, pk, action, perform, reason=""):
+    """
+    One shop lifecycle change for the /api/shops/staff/ routes, done the way
+    the Console's AdminShopStatusAPIView does it (BUG-049): the row is locked
+    for the read-check-write, and the change commits together with one
+    ADMIN_SHOP_<ACTION> audit row. Returns the updated shop, or a 400 Response
+    for a refused transition.
+    """
+    with transaction.atomic():
+        shop = get_object_or_404(Shop.objects.select_for_update(), pk=pk)
+        old_status = shop.status
+        try:
+            shop = perform(shop) or shop
+        except InvalidShopTransitionError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        except DjangoValidationError as e:
+            return Response({"error": " ".join(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
+        AuditService.log(
+            action=f"ADMIN_SHOP_{action.upper()}",
+            target=shop,
+            actor=request.user,
+            shop=shop,
+            seller=shop.owner,
+            reason=reason or f"Shop {action}d by staff",
+            previous_state={"status": old_status},
+            new_state={"status": shop.status},
+            ip_address=get_client_ip(request),
+        )
+    return shop
+
+
 class StaffShopApproveView(APIView):
     """
     Approves and activates a pending shop.
@@ -355,11 +389,11 @@ class StaffShopApproveView(APIView):
     permission_classes = [CanApproveShops]
 
     def post(self, request, pk):
-        shop = get_object_or_404(Shop, pk=pk)
-        try:
-            ShopService.approve_shop(shop, request.user)
-        except InvalidShopTransitionError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        shop = _staff_shop_transition(
+            request, pk, "approve", lambda shop: ShopService.approve_shop(shop, request.user)
+        )
+        if isinstance(shop, Response):
+            return shop
 
         return Response(
             {"message": f"Shop '{shop.name}' approved and activated successfully.", "shop": StaffShopSerializer(shop).data},
@@ -375,15 +409,15 @@ class StaffShopRejectView(APIView):
     permission_classes = [CanApproveShops]
 
     def post(self, request, pk):
-        shop = get_object_or_404(Shop, pk=pk)
         serializer = ShopActionReasonSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         reason = serializer.validated_data["reason"]
 
-        try:
-            ShopService.reject_shop(shop, request.user, reason)
-        except InvalidShopTransitionError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        shop = _staff_shop_transition(
+            request, pk, "reject", lambda shop: ShopService.reject_shop(shop, request.user, reason), reason
+        )
+        if isinstance(shop, Response):
+            return shop
 
         return Response(
             {"message": f"Shop '{shop.name}' rejected.", "shop": StaffShopSerializer(shop).data},
@@ -399,15 +433,15 @@ class StaffShopSuspendView(APIView):
     permission_classes = [CanApproveShops]
 
     def post(self, request, pk):
-        shop = get_object_or_404(Shop, pk=pk)
         serializer = ShopActionReasonSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         reason = serializer.validated_data["reason"]
 
-        try:
-            ShopService.suspend_shop(shop, request.user, reason)
-        except InvalidShopTransitionError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        shop = _staff_shop_transition(
+            request, pk, "suspend", lambda shop: ShopService.suspend_shop(shop, request.user, reason), reason
+        )
+        if isinstance(shop, Response):
+            return shop
 
         return Response(
             {"message": f"Shop '{shop.name}' suspended.", "shop": StaffShopSerializer(shop).data},
@@ -423,11 +457,11 @@ class StaffShopReactivateView(APIView):
     permission_classes = [CanApproveShops]
 
     def post(self, request, pk):
-        shop = get_object_or_404(Shop, pk=pk)
-        try:
-            ShopService.reactivate_shop(shop, request.user)
-        except InvalidShopTransitionError as e:
-            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+        shop = _staff_shop_transition(
+            request, pk, "reactivate", lambda shop: ShopService.reactivate_shop(shop, request.user)
+        )
+        if isinstance(shop, Response):
+            return shop
 
         return Response(
             {"message": f"Shop '{shop.name}' reactivated.", "shop": StaffShopSerializer(shop).data},

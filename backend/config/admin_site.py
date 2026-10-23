@@ -16,6 +16,8 @@ from django.db.models import Count, Q
 from django.http import HttpResponse
 from django.urls import path
 
+from audit.utils import get_client_ip
+
 
 class MiniShopAdminSite(admin.AdminSite):
     site_header = "MiniShop Administration"
@@ -67,7 +69,7 @@ class MiniShopAdminSite(admin.AdminSite):
         if request.method != "POST":
             return super().login(request, extra_context)
 
-        key = f"admin-login-failures:{request.META.get('REMOTE_ADDR', '')}"
+        key = f"admin-login-failures:{get_client_ip(request) or ''}"
         if cache.get(key, 0) >= settings.ADMIN_LOGIN_FAILURE_LIMIT:
             response = HttpResponse(
                 "Too many failed sign-in attempts. Try again later.",

@@ -13,6 +13,7 @@ from rest_framework.views import APIView
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.utils.dateparse import parse_date
+from audit.utils import get_client_ip
 from customers.models import Review
 from customers.serializers import ReviewSerializer
 from customers.services import review_ordering
@@ -320,8 +321,7 @@ class OrderListCreateAPIView(APIView):
         validated_data = serializer.validated_data
 
         # Extract client IP for audit recording
-        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-        ip_address = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else request.META.get("REMOTE_ADDR")
+        ip_address = get_client_ip(request)
 
         try:
             order = OrderService.create_order_from_cart(
@@ -444,8 +444,7 @@ class OrderCancelAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         reason = serializer.validated_data.get("reason", "")
 
-        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-        ip_address = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else request.META.get("REMOTE_ADDR")
+        ip_address = get_client_ip(request)
 
         try:
             cancelled_order = OrderService.cancel_customer_order(
@@ -562,7 +561,7 @@ class SellerProductListCreateAPIView(APIView):
                 image=request.FILES.get("image") or data.get("image"),
                 is_active=data.get("is_active", True),
                 actor=request.user,
-                ip_address=request.META.get("REMOTE_ADDR"),
+                ip_address=get_client_ip(request),
             )
         except InsufficientPointsError as e:
             cost = PointService.get_product_creation_cost()
@@ -625,7 +624,7 @@ class SellerProductDetailAPIView(APIView):
                 seller=request.user.seller_profile,
                 data=data,
                 actor=request.user,
-                ip_address=request.META.get("REMOTE_ADDR"),
+                ip_address=get_client_ip(request),
             )
         except (IneligibleSellerError, ProductOwnershipError, PermissionDenied) as e:
             return Response({"error": str(e)}, status=status.HTTP_403_FORBIDDEN)
@@ -651,7 +650,7 @@ class SellerProductDetailAPIView(APIView):
                 product=product,
                 seller=request.user.seller_profile,
                 actor=request.user,
-                ip_address=request.META.get("REMOTE_ADDR"),
+                ip_address=get_client_ip(request),
             )
         except (IneligibleSellerError, ProductOwnershipError, PermissionDenied) as e:
             return Response({"error": str(e)}, status=status.HTTP_403_FORBIDDEN)
@@ -738,7 +737,7 @@ class SellerOrderStatusUpdateAPIView(APIView):
 
         new_status = serializer.validated_data["status"]
         note = serializer.validated_data.get("note", "")
-        ip_address = request.META.get("REMOTE_ADDR")
+        ip_address = get_client_ip(request)
 
         try:
             updated_order = OrderService.transition_seller_order_status(
@@ -849,7 +848,7 @@ class SellerInventoryAdjustAPIView(APIView):
 
         quantity_delta = serializer.validated_data["quantity"]
         reason = serializer.validated_data.get("reason", "")
-        ip_address = request.META.get("REMOTE_ADDR")
+        ip_address = get_client_ip(request)
 
         try:
             inventory = InventoryService.adjust_stock(
@@ -1008,8 +1007,7 @@ class CustomerOrderPaymentAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         payment_method = serializer.validated_data.get("payment_method")
 
-        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-        ip_address = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else request.META.get("REMOTE_ADDR")
+        ip_address = get_client_ip(request)
 
         try:
             payment = PaymentService.create_or_get_payment(
@@ -1078,8 +1076,7 @@ class StaffPaymentVerifyAPIView(APIView):
         transaction_id = serializer.validated_data.get("transaction_id", "")
         reason = serializer.validated_data.get("reason", "")
 
-        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-        ip_address = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else request.META.get("REMOTE_ADDR")
+        ip_address = get_client_ip(request)
 
         try:
             if target_status == Payment.STATUS_PAID:
@@ -1121,8 +1118,7 @@ class StaffPaymentRefundAPIView(APIView):
         amount = serializer.validated_data.get("amount")
         reason = serializer.validated_data.get("reason", "")
 
-        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-        ip_address = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else request.META.get("REMOTE_ADDR")
+        ip_address = get_client_ip(request)
 
         try:
             refund = PaymentService.process_refund(
@@ -1327,8 +1323,7 @@ class StaffOrderStatusAPIView(APIView):
                 "status": f"Invalid order status transition from '{order.status}' to '{target_status}'."
             })
 
-        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-        ip_address = x_forwarded_for.split(",")[0].strip() if x_forwarded_for else request.META.get("REMOTE_ADDR")
+        ip_address = get_client_ip(request)
 
         try:
             updated_order = OrderService.transition_order_status(

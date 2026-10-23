@@ -34,6 +34,7 @@ from django.utils.timesince import timesince
 from django.utils.translation import gettext_lazy as _
 
 from audit.models import AuditLog
+from audit.utils import get_client_ip
 from customers.models import Address, CustomerProfile
 from customers.services import CustomerService
 from notifications.models import Audience, Notification
@@ -218,7 +219,7 @@ def profile_view(site, request):
                         user=user,
                         data=form.profile_data(),
                         actor=user,
-                        ip_address=request.META.get("REMOTE_ADDR"),
+                        ip_address=get_client_ip(request),
                     )
                 messages.success(request, _("Your profile was updated."))
             else:

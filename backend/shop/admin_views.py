@@ -21,6 +21,7 @@ from rest_framework.views import APIView
 from .metrics import get_console_metrics
 from audit.models import AuditLog
 from audit.services import AuditService
+from audit.utils import get_client_ip
 from customers.models import CustomerProfile, Review, ShopReview
 from customers.services import ReviewModerationError, ReviewModerationService
 from rbac.models import Permission, Role, RolePermission, UserRole
@@ -117,13 +118,6 @@ class AdminPagination(PageNumberPagination):
     page_size = 20
     page_size_query_param = "page_size"
     max_page_size = 100
-
-
-def get_client_ip(request):
-    x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
-    if x_forwarded_for:
-        return x_forwarded_for.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR")
 
 
 # ==============================================================================
@@ -1524,10 +1518,11 @@ class AdminAuditLogListAPIView(APIView):
         actor_param = request.query_params.get("actor", "").strip()
         if actor_param:
             if actor_param.isdigit():
-                qs = qs.filter(actor_id=int(actor_param))
+                qs = qs.filter(actor_user_id=int(actor_param))
             else:
+                # The snapshot also finds the rows of deleted accounts.
                 qs = qs.filter(
-                    Q(actor__username__icontains=actor_param)
+                    Q(actor_username__icontains=actor_param)
                     | Q(actor__email__icontains=actor_param)
                 )
 
@@ -1547,7 +1542,7 @@ class AdminAuditLogListAPIView(APIView):
                 Q(action__icontains=search)
                 | Q(target_type__icontains=search)
                 | Q(target_repr__icontains=search)
-                | Q(actor__username__icontains=search)
+                | Q(actor_username__icontains=search)
                 | Q(actor__email__icontains=search)
             )
 

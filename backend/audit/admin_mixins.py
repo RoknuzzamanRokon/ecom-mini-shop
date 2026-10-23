@@ -10,6 +10,7 @@ from django.contrib import messages
 from django.contrib.admin import helpers
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.core.files import File
+from django.db import transaction
 from django.template.response import TemplateResponse
 from django.utils.html import format_html
 
@@ -167,22 +168,26 @@ class ReasonRequiredActionMixin:
         for obj in queryset:
             previous_state = {'status': obj.status}
             try:
-                perform(obj, request.user)
+                # The change and its audit row commit together or not at all
+                # (BUG-015): a service that commits on its own must not leave
+                # a status change behind if the audit write then fails.
+                with transaction.atomic():
+                    perform(obj, request.user)
+                    AuditService.log(
+                        action=audit_action,
+                        target=obj,
+                        actor=request.user,
+                        previous_state=previous_state,
+                        new_state={'status': obj.status},
+                        ip_address=get_client_ip(request),
+                        **self.audit_context(obj),
+                    )
             except catch as exc:
                 self.message_user(
                     request, f'{verb} failed for {obj}: {exc}', messages.ERROR
                 )
                 continue
             done += 1
-            AuditService.log(
-                action=audit_action,
-                target=obj,
-                actor=request.user,
-                previous_state=previous_state,
-                new_state={'status': obj.status},
-                ip_address=get_client_ip(request),
-                **self.audit_context(obj),
-            )
         if done:
             self.message_user(request, f'{verb} {done} record(s).', messages.SUCCESS)
 
@@ -203,23 +208,25 @@ class ReasonRequiredActionMixin:
                 for obj in queryset:
                     previous_state = {'status': obj.status}
                     try:
-                        perform(obj, request.user, reason)
+                        # Change and audit row commit together (see run_simple_action).
+                        with transaction.atomic():
+                            perform(obj, request.user, reason)
+                            AuditService.log(
+                                action=audit_action,
+                                target=obj,
+                                actor=request.user,
+                                reason=reason,
+                                previous_state=previous_state,
+                                new_state={'status': obj.status},
+                                ip_address=get_client_ip(request),
+                                **self.audit_context(obj),
+                            )
                     except catch as exc:
                         self.message_user(
                             request, f'{verb} failed for {obj}: {exc}', messages.ERROR
                         )
                         continue
                     done += 1
-                    AuditService.log(
-                        action=audit_action,
-                        target=obj,
-                        actor=request.user,
-                        reason=reason,
-                        previous_state=previous_state,
-                        new_state={'status': obj.status},
-                        ip_address=get_client_ip(request),
-                        **self.audit_context(obj),
-                    )
                 if done:
                     self.message_user(
                         request, f'{verb} {done} record(s).', messages.SUCCESS

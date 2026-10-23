@@ -240,6 +240,13 @@ CORS_ALLOWED_ORIGINS = [
 ]
 CORS_ALLOW_CREDENTIALS = True
 
+# Proxies in front of Django that append to X-Forwarded-For. 0 (the default)
+# means the client address is REMOTE_ADDR and X-Forwarded-For is ignored, since
+# any client can send one. Behind N trusted proxies, set DJANGO_NUM_PROXIES=N.
+# Read by DRF throttling and by audit.utils.get_client_ip (audit rows, the
+# admin sign-in lockout).
+TRUSTED_PROXY_COUNT = int(os.environ.get("DJANGO_NUM_PROXIES") or 0)
+
 # Django REST Framework settings
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
@@ -250,9 +257,8 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 12,
     # Throttles identify an anonymous client by address. Left unset, DRF takes
     # the whole X-Forwarded-For header as that address, so a client could dodge
-    # every limit by sending a new one each time. 0 means REMOTE_ADDR; behind N
-    # trusted proxies, set DJANGO_NUM_PROXIES=N.
-    "NUM_PROXIES": int(os.environ.get("DJANGO_NUM_PROXIES") or 0),
+    # every limit by sending a new one each time. See TRUSTED_PROXY_COUNT.
+    "NUM_PROXIES": TRUSTED_PROXY_COUNT,
 }
 
 # Request limits on the authentication endpoints, per client address (per user

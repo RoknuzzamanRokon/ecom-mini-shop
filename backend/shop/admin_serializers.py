@@ -932,6 +932,9 @@ class AdminAuditLogSerializer(serializers.ModelSerializer):
     Sanitizes and redacts any sensitive credential keys within payload metadata.
     """
     actor = AuditActorSerializer(read_only=True)
+    # Kept when the actor's account is deleted and `actor` becomes null.
+    actor_username = serializers.CharField(read_only=True)
+    actor_user_id = serializers.IntegerField(read_only=True, allow_null=True)
     resource_type = serializers.CharField(source="target_type", read_only=True)
     resource_id = serializers.CharField(source="target_id", read_only=True)
     changes = serializers.SerializerMethodField()
@@ -941,6 +944,8 @@ class AdminAuditLogSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "actor",
+            "actor_username",
+            "actor_user_id",
             "action",
             "target_type",
             "resource_type",

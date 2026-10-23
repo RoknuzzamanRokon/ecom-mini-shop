@@ -62,6 +62,8 @@ class AuditService:
 
         audit_entry = AuditLog.objects.create(
             actor=user_actor,
+            actor_username=user_actor.get_username() if user_actor else "",
+            actor_user_id=user_actor.pk if user_actor else None,
             action=action.upper().strip(),
             target_type=target_type,
             target_id=target_id,

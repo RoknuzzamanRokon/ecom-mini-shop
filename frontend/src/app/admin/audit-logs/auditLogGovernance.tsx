@@ -90,7 +90,10 @@ export function auditTargetTypeLabel(targetType: string): string {
  * survives the user, which is why this never renders an empty cell.
  */
 export function auditActorName(log: AdminAuditLog): string {
-  if (!log.actor) return "System";
+  if (!log.actor) {
+    // A deleted account still has the username it acted under.
+    return log.actor_username ? `${log.actor_username} (deleted)` : "System";
+  }
   return log.actor.full_name || log.actor.username || log.actor.email || "System";
 }
 

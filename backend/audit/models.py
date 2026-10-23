@@ -15,6 +15,21 @@ class AuditLog(models.Model):
         related_name="audit_logs",
         help_text="User who initiated or performed this action.",
     )
+    # Snapshots of the actor at write time. `actor` is SET_NULL, so without
+    # these, deleting a staff account turned their whole audit history into
+    # "System" (BUG-041).
+    actor_username = models.CharField(
+        max_length=150,
+        blank=True,
+        default="",
+        help_text="The actor's username when the row was written; kept if the account is deleted.",
+    )
+    actor_user_id = models.BigIntegerField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="The actor's user id when the row was written; kept if the account is deleted.",
+    )
     action = models.CharField(
         max_length=100,
         db_index=True,
@@ -80,6 +95,15 @@ class AuditLog(models.Model):
             models.Index(fields=["action", "created_at"], name="audit_action_created_idx"),
         ]
 
+    @property
+    def actor_name(self) -> str:
+        """The actor's username, from the snapshot once the account is gone."""
+        if self.actor is not None:
+            return self.actor.username
+        if self.actor_username:
+            return f"{self.actor_username} (deleted)"
+        return "System"
+
     def __str__(self):
-        actor_name = self.actor.username if self.actor else "System"
+        actor_name = self.actor_name
         return f"[{self.created_at:%Y-%m-%d %H:%M:%S}] {actor_name} -> {self.action} on {self.target_type}:{self.target_id}"

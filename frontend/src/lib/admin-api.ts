@@ -32,7 +32,11 @@ export interface AuditActor {
 
 export interface AdminAuditLog {
   id: number;
+  /** Null once the actor's account is deleted (or for system actions). */
   actor: AuditActor | null;
+  /** Snapshots taken when the row was written; they outlive the account. */
+  actor_username: string;
+  actor_user_id: number | null;
   action: string;
   target_type: string;
   resource_type: string;

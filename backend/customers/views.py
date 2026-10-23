@@ -4,6 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from audit.utils import get_client_ip
 from .models import Address, Favorite, Review, ShopReview
 from .permissions import (
     CanCreateAddress,
@@ -66,7 +67,7 @@ class CustomerProfileView(APIView):
             user=request.user,
             data=serializer.validated_data,
             actor=request.user,
-            ip_address=request.META.get("REMOTE_ADDR"),
+            ip_address=get_client_ip(request),
         )
         return Response(
             CustomerProfileSerializer(updated_profile, context={"request": request}).data
@@ -102,7 +103,7 @@ class AddressListCreateView(APIView):
             user=request.user,
             data=serializer.validated_data,
             actor=request.user,
-            ip_address=request.META.get("REMOTE_ADDR"),
+            ip_address=get_client_ip(request),
         )
         return Response(AddressSerializer(address).data, status=status.HTTP_201_CREATED)
 
@@ -139,7 +140,7 @@ class AddressDetailView(APIView):
             address=address,
             data=serializer.validated_data,
             actor=request.user,
-            ip_address=request.META.get("REMOTE_ADDR"),
+            ip_address=get_client_ip(request),
         )
         return Response(AddressSerializer(updated_address).data)
 
@@ -151,7 +152,7 @@ class AddressDetailView(APIView):
         AddressService.delete_address(
             address=address,
             actor=request.user,
-            ip_address=request.META.get("REMOTE_ADDR"),
+            ip_address=get_client_ip(request),
         )
         return Response(
             {"detail": "Address deleted successfully."},
@@ -172,7 +173,7 @@ class AddressSetDefaultView(APIView):
         updated_address = AddressService.set_default_address(
             address=address,
             actor=request.user,
-            ip_address=request.META.get("REMOTE_ADDR"),
+            ip_address=get_client_ip(request),
         )
         return Response(AddressSerializer(updated_address).data, status=status.HTTP_200_OK)
 
@@ -243,7 +244,7 @@ class ReviewListCreateView(APIView):
                 product_id=data["product_id"],
                 rating=data["rating"],
                 comment=data.get("comment", ""),
-                ip_address=request.META.get("REMOTE_ADDR"),
+                ip_address=get_client_ip(request),
             )
         except SelfReviewError as e:
             return Response({"detail": str(e)}, status=status.HTTP_403_FORBIDDEN)
@@ -274,7 +275,7 @@ class ReviewDetailView(APIView):
             review,
             serializer.validated_data,
             actor=request.user,
-            ip_address=request.META.get("REMOTE_ADDR"),
+            ip_address=get_client_ip(request),
         )
         return Response(ReviewSerializer(updated_review).data)
 
@@ -286,7 +287,7 @@ class ReviewDetailView(APIView):
         ReviewService.delete_review(
             review,
             actor=request.user,
-            ip_address=request.META.get("REMOTE_ADDR"),
+            ip_address=get_client_ip(request),
         )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
@@ -336,7 +337,7 @@ class ShopReviewCreateView(APIView):
                 shop_id=data["shop_id"],
                 rating=data["rating"],
                 comment=data.get("comment", ""),
-                ip_address=request.META.get("REMOTE_ADDR"),
+                ip_address=get_client_ip(request),
             )
         except SelfReviewError as e:
             return Response({"detail": str(e)}, status=status.HTTP_403_FORBIDDEN)
@@ -367,7 +368,7 @@ class ShopReviewDetailView(APIView):
             review,
             serializer.validated_data,
             actor=request.user,
-            ip_address=request.META.get("REMOTE_ADDR"),
+            ip_address=get_client_ip(request),
         )
         return Response(ShopReviewSerializer(updated_review).data)
 
@@ -379,7 +380,7 @@ class ShopReviewDetailView(APIView):
         ShopReviewService.delete_review(
             review,
             actor=request.user,
-            ip_address=request.META.get("REMOTE_ADDR"),
+            ip_address=get_client_ip(request),
         )
         return Response(status=status.HTTP_204_NO_CONTENT)
 
