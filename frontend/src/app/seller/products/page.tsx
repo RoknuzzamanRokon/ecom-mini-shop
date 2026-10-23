@@ -759,6 +759,7 @@ export default function SellerProductsPage() {
                 <input
                   type="text"
                   required
+                  maxLength={200}
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="e.g. Wireless Noise-Cancelling Headphones"
@@ -831,6 +832,7 @@ export default function SellerProductsPage() {
                   <input
                     type="number"
                     step="0.01"
+                    min="0.01"
                     required
                     value={formData.price}
                     onChange={(e) => setFormData({ ...formData, price: e.target.value })}
@@ -846,6 +848,7 @@ export default function SellerProductsPage() {
                   <input
                     type="number"
                     step="0.01"
+                    min="0.01"
                     value={formData.old_price}
                     onChange={(e) => setFormData({ ...formData, old_price: e.target.value })}
                     placeholder="1299.00"
@@ -889,6 +892,7 @@ export default function SellerProductsPage() {
                 </label>
                 <input
                   type="text"
+                  maxLength={20}
                   value={formData.badge}
                   onChange={(e) => setFormData({ ...formData, badge: e.target.value })}
                   placeholder="e.g. HOT DEAL, 20% OFF, NEW"

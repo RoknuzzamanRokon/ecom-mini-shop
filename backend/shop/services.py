@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional, Union
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Avg, Count, Prefetch, Q
+from django.db.models import Avg, Count, Exists, OuterRef, Prefetch, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.text import slugify
@@ -1087,6 +1087,17 @@ class OrderService:
 
 
     @classmethod
+    def _other_merchant_items(cls, seller: SellerProfile) -> Exists:
+        """
+        Whether the order also holds another merchant's items. Such an order
+        is not the seller's alone to move (transition_seller_order_status), so
+        the seller APIs offer it no transitions (BUG-029).
+        """
+        return Exists(
+            OrderItem.objects.filter(order=OuterRef("pk")).exclude(Q(seller=seller) | Q(shop__owner=seller))
+        )
+
+    @classmethod
     def get_seller_orders_queryset(cls, seller: SellerProfile):
         """
         Returns authoritative queryset of orders containing items belonging to the seller.
@@ -1106,6 +1117,7 @@ class OrderService:
             )
             .distinct()
             .prefetch_related(seller_items_prefetch)
+            .annotate(has_other_merchant_items=cls._other_merchant_items(seller))
             .order_by("-created_at")
         )
 
@@ -1125,7 +1137,9 @@ class OrderService:
         )
 
         lookup_str = str(order_identifier).strip()
-        qs = Order.objects.prefetch_related(seller_items_prefetch)
+        qs = Order.objects.prefetch_related(seller_items_prefetch).annotate(
+            has_other_merchant_items=cls._other_merchant_items(seller)
+        )
         if lookup_str.isdigit():
             order = qs.filter(id=int(lookup_str)).first()
         else:

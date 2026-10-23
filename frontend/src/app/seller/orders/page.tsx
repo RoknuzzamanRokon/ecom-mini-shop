@@ -130,9 +130,11 @@ export default function SellerOrdersPage() {
     setDetailLoading(false);
   };
 
+  // Starts on the first allowed next status, never on the current one, which
+  // the server would refuse (BUG-029).
   const handleOpenStatusModal = (order: SellerOrder) => {
     setUpdatingOrder(order);
-    setNewStatus(order.status);
+    setNewStatus(order.allowed_transitions[0] ?? "");
     setStatusNote("");
     setActionError(null);
   };
@@ -277,7 +279,7 @@ export default function SellerOrdersPage() {
                     >
                       View Details
                     </button>
-                    {!isCancelled && !isDelivered && (
+                    {order.allowed_transitions.length > 0 ? (
                       <button
                         type="button"
                         onClick={() => handleOpenStatusModal(order)}
@@ -285,6 +287,17 @@ export default function SellerOrdersPage() {
                       >
                         Update Status
                       </button>
+                    ) : (
+                      order.is_multi_merchant &&
+                      !isCancelled &&
+                      !isDelivered && (
+                        <span
+                          className="text-[11px] text-ink-muted max-w-[180px] text-right"
+                          title="This order also has another merchant's items, so platform operations update its status."
+                        >
+                          Shared order: status set by platform operations
+                        </span>
+                      )
                     )}
                   </div>
                 </div>
@@ -472,12 +485,15 @@ export default function SellerOrdersPage() {
                   onChange={(e) => setNewStatus(e.target.value)}
                   className="w-full px-3.5 py-2 rounded-lg border border-line bg-surface text-ink text-xs focus:outline-none focus:border-primary"
                 >
-                  <option value="CONFIRMED">CONFIRMED</option>
-                  <option value="PROCESSING">PROCESSING</option>
-                  <option value="SHIPPED">SHIPPED</option>
-                  <option value="DELIVERED">DELIVERED</option>
-                  <option value="CANCELLED">CANCELLED</option>
+                  {updatingOrder.allowed_transitions.map((next) => (
+                    <option key={next} value={next}>
+                      {next}
+                    </option>
+                  ))}
                 </select>
+                <p className="mt-1 text-[11px] text-ink-muted">
+                  Currently {updatingOrder.status}. Only the next allowed steps are listed.
+                </p>
               </div>
 
               <div>
@@ -503,7 +519,7 @@ export default function SellerOrdersPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={updatingLoading}
+                  disabled={updatingLoading || !newStatus}
                   className="px-5 py-2 rounded-lg bg-primary hover:bg-primary-hover disabled:opacity-50 text-on-primary font-bold text-xs uppercase tracking-wider shadow-sm transition-all cursor-pointer"
                 >
                   {updatingLoading ? "Updating..." : "Confirm Update"}

@@ -532,6 +532,10 @@ export interface SellerOrder {
   status: string;
   seller_subtotal: string;
   seller_item_count: number;
+  /** Another merchant also has items in this order; only staff can move it. */
+  is_multi_merchant: boolean;
+  /** The statuses this seller may move the order to next (empty: none). */
+  allowed_transitions: string[];
   created_at: string;
   updated_at?: string;
   items: SellerOrderItem[];

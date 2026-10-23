@@ -6,6 +6,47 @@ const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
 
 /**
+ * One readable message from a failed API response body (BUG-028). DRF sends
+ * {"detail": "..."}, our views send {"error": "..."} or {"error": {field:
+ * [...]}}, and serializers send {field: ["..."]} or a bare list. Takes
+ * detail, then error, then message, then the first field's messages (lists
+ * joined), and never shows raw JSON.
+ */
+export function extractApiError(body: unknown, fallback: string): string {
+  if (typeof body === "string") return body.trim() || fallback;
+  if (Array.isArray(body)) {
+    const messages = body.map((item) => extractApiError(item, "")).filter(Boolean);
+    return messages.length > 0 ? messages.join(" ") : fallback;
+  }
+  if (body && typeof body === "object") {
+    const record = body as Record<string, unknown>;
+    for (const key of ["detail", "error", "message"]) {
+      if (key in record) {
+        const text = extractApiError(record[key], "");
+        if (text) return text;
+      }
+    }
+    for (const [field, value] of Object.entries(record)) {
+      const text = extractApiError(value, "");
+      if (!text) continue;
+      return field === "non_field_errors" ? text : `${humanizeApiField(field)}: ${text}`;
+    }
+  }
+  return fallback;
+}
+
+function humanizeApiField(field: string): string {
+  const words = field.replace(/_id$/, "").replace(/_/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/** The Error to throw for a failed response, with its body read by extractApiError. */
+async function responseError(res: Response, fallback: string): Promise<Error> {
+  const body = await res.json().catch(() => ({}));
+  return new Error(extractApiError(body, fallback));
+}
+
+/**
  * ==========================================================================
  * AUTHENTICATED CUSTOMER REQUEST WRAPPER (Phase 2J)
  * ==========================================================================
@@ -499,8 +540,7 @@ export async function createOrder(
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({ detail: "Error creating order" }));
-    const msg = errorData.detail || errorData.cart || "Failed to submit order";
-    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+    throw new Error(extractApiError(errorData, "Failed to submit order"));
   }
 
   return await res.json();
@@ -525,7 +565,7 @@ export async function getUserOrders(
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || "Failed to fetch orders");
+    throw new Error(extractApiError(errorData, "Failed to fetch orders"));
   }
 
   return await res.json();
@@ -573,7 +613,7 @@ export async function getSellerProducts(
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.error || "Failed to fetch seller products");
+    throw new Error(extractApiError(errorData, "Failed to fetch seller products"));
   }
 
   return await res.json();
@@ -641,7 +681,7 @@ export async function createSellerProduct(
         errorData.available_points
       );
     }
-    throw new Error(errorData.error || "Failed to create product");
+    throw new Error(extractApiError(errorData, "Failed to create product"));
   }
 
   return await res.json();
@@ -654,7 +694,7 @@ export async function getCustomerProfile(token: string): Promise<CustomerProfile
   const res = await customerRequest(`/api/profile/me/`, token);
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || "Failed to fetch customer profile");
+    throw new Error(extractApiError(errorData, "Failed to fetch customer profile"));
   }
   return await res.json();
 }
@@ -672,7 +712,7 @@ export async function updateCustomerProfile(
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || "Failed to update customer profile");
+    throw new Error(extractApiError(errorData, "Failed to update customer profile"));
   }
   return await res.json();
 }
@@ -681,7 +721,7 @@ export async function getCustomerAddresses(token: string): Promise<Address[]> {
   const res = await customerRequest(`/api/addresses/`, token);
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || "Failed to fetch addresses");
+    throw new Error(extractApiError(errorData, "Failed to fetch addresses"));
   }
   return await res.json();
 }
@@ -699,7 +739,7 @@ export async function createCustomerAddress(
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || "Failed to create address");
+    throw new Error(extractApiError(errorData, "Failed to create address"));
   }
   return await res.json();
 }
@@ -718,7 +758,7 @@ export async function updateCustomerAddress(
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || "Failed to update address");
+    throw new Error(extractApiError(errorData, "Failed to update address"));
   }
   return await res.json();
 }
@@ -729,7 +769,7 @@ export async function deleteCustomerAddress(id: number, token: string): Promise<
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || "Failed to delete address");
+    throw new Error(extractApiError(errorData, "Failed to delete address"));
   }
 }
 
@@ -739,7 +779,7 @@ export async function setDefaultCustomerAddress(id: number, token: string): Prom
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || "Failed to set default address");
+    throw new Error(extractApiError(errorData, "Failed to set default address"));
   }
   return await res.json();
 }
@@ -841,7 +881,7 @@ export async function getSellerOrders(
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || "Failed to fetch seller orders");
+    throw new Error(extractApiError(errorData, "Failed to fetch seller orders"));
   }
 
   return await res.json();
@@ -857,7 +897,7 @@ export async function getSellerOrderDetail(
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || errorData.error || "Failed to load the order details");
+    throw new Error(extractApiError(errorData, "Failed to load the order details"));
   }
 
   return await res.json();
@@ -879,8 +919,7 @@ export async function updateSellerOrderStatus(
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    const msg = errorData.detail || errorData.order || errorData.status || "Failed to update order status";
-    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+    throw new Error(extractApiError(errorData, "Failed to update order status"));
   }
 
   return await res.json();
@@ -896,7 +935,7 @@ export async function getSellerProductInventory(
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || "Failed to fetch inventory record");
+    throw new Error(extractApiError(errorData, "Failed to fetch inventory record"));
   }
 
   return await res.json();
@@ -917,8 +956,7 @@ export async function adjustSellerProductStock(
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    const msg = errorData.detail || errorData.quantity || "Failed to adjust inventory stock";
-    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+    throw new Error(extractApiError(errorData, "Failed to adjust inventory stock"));
   }
 
   return await res.json();
@@ -939,8 +977,7 @@ export async function cancelCustomerOrder(
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    const msg = errorData.detail || errorData.order || "Failed to cancel order";
-    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+    throw new Error(extractApiError(errorData, "Failed to cancel order"));
   }
 
   return await res.json();
@@ -950,7 +987,7 @@ export async function getOrderPayment(orderNumber: string, token: string): Promi
   const res = await customerRequest(`/api/orders/${orderNumber}/payment/`, token);
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || "Failed to fetch order payment");
+    throw new Error(extractApiError(errorData, "Failed to fetch order payment"));
   }
   return await res.json();
 }
@@ -969,8 +1006,7 @@ export async function initiateOrderPayment(
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    const msg = errorData.detail || errorData.payment || "Failed to initiate payment";
-    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+    throw new Error(extractApiError(errorData, "Failed to initiate payment"));
   }
   return await res.json();
 }
@@ -1003,7 +1039,7 @@ export async function verifyStaffPayment(
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || "Failed to verify payment");
+    throw new Error(extractApiError(errorData, "Failed to verify payment"));
   }
   return await res.json();
 }
@@ -1022,8 +1058,7 @@ export async function refundStaffPayment(
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    const msg = errorData.detail || errorData.amount || errorData.refund || "Failed to process refund";
-    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+    throw new Error(extractApiError(errorData, "Failed to process refund"));
   }
   return await res.json();
 }
@@ -1049,7 +1084,7 @@ export async function getStaffOrders(
   const res = await customerRequest(`/api/staff/orders/?${query.toString()}`, token);
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || "Failed to fetch staff orders");
+    throw new Error(extractApiError(errorData, "Failed to fetch staff orders"));
   }
   return await res.json();
 }
@@ -1061,7 +1096,7 @@ export async function getStaffOrderDetail(
   const res = await customerRequest(`/api/staff/orders/${orderNumberOrId}/`, token);
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(errorData.detail || "Failed to fetch staff order details");
+    throw new Error(extractApiError(errorData, "Failed to fetch staff order details"));
   }
   return await res.json();
 }
@@ -1080,8 +1115,7 @@ export async function updateStaffOrderStatus(
   });
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    const msg = errorData.detail || errorData.status || errorData.order || "Failed to update order status";
-    throw new Error(typeof msg === "string" ? msg : JSON.stringify(msg));
+    throw new Error(extractApiError(errorData, "Failed to update order status"));
   }
   return await res.json();
 }
@@ -1104,9 +1138,7 @@ export async function loginUser(
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(
-      errorData.detail || "Invalid credentials. Please try again."
-    );
+    throw new Error(extractApiError(errorData, "Invalid credentials. Please try again."));
   }
 
   return await res.json();
@@ -1159,9 +1191,7 @@ export async function getCurrentUser(token: string): Promise<AuthUser> {
 
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
-    throw new Error(
-      errorData.detail || "Failed to fetch current user"
-    );
+    throw new Error(extractApiError(errorData, "Failed to fetch current user"));
   }
 
   return await res.json();
@@ -1221,7 +1251,7 @@ export async function addFavorite(productId: number, token: string): Promise<Fav
     },
     body: JSON.stringify({ product_id: productId }),
   });
-  if (!res.ok) throw new Error("Failed to add favorite");
+  if (!res.ok) throw await responseError(res, "Failed to add favorite");
   return await res.json();
 }
 
@@ -1229,7 +1259,7 @@ export async function removeFavorite(productId: number, token: string): Promise<
   const res = await customerRequest(`/api/favorites/${productId}/`, token, {
     method: "DELETE",
   });
-  if (!res.ok && res.status !== 404) throw new Error("Failed to remove favorite");
+  if (!res.ok && res.status !== 404) throw await responseError(res, "Failed to remove favorite");
 }
 
 /**
@@ -1274,9 +1304,7 @@ export async function createReview(
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     if (res.status === 409 && data.detail) throw new Error(data.detail);
-    const firstError =
-      data.rating?.[0] || data.comment?.[0] || data.product_id?.[0] || data.detail;
-    throw new Error(firstError || "Failed to submit review");
+    throw new Error(extractApiError(data, "Failed to submit review"));
   }
   return await res.json();
 }
@@ -1295,8 +1323,7 @@ export async function updateReview(
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    const firstError = data.rating?.[0] || data.comment?.[0] || data.detail;
-    throw new Error(firstError || "Failed to update review");
+    throw new Error(extractApiError(data, "Failed to update review"));
   }
   return await res.json();
 }
@@ -1305,7 +1332,7 @@ export async function deleteReview(reviewId: number, token: string): Promise<voi
   const res = await customerRequest(`/api/reviews/${reviewId}/`, token, {
     method: "DELETE",
   });
-  if (!res.ok && res.status !== 404) throw new Error("Failed to delete review");
+  if (!res.ok && res.status !== 404) throw await responseError(res, "Failed to delete review");
 }
 
 /**
@@ -1351,9 +1378,7 @@ export async function createShopReview(
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     if (res.status === 409 && data.detail) throw new Error(data.detail);
-    const firstError =
-      data.rating?.[0] || data.comment?.[0] || data.shop_id?.[0] || data.detail;
-    throw new Error(firstError || "Failed to submit review");
+    throw new Error(extractApiError(data, "Failed to submit review"));
   }
   return await res.json();
 }
@@ -1372,8 +1397,7 @@ export async function updateShopReview(
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    const firstError = data.rating?.[0] || data.comment?.[0] || data.detail;
-    throw new Error(firstError || "Failed to update review");
+    throw new Error(extractApiError(data, "Failed to update review"));
   }
   return await res.json();
 }
@@ -1382,7 +1406,7 @@ export async function deleteShopReview(reviewId: number, token: string): Promise
   const res = await customerRequest(`/api/shop-reviews/${reviewId}/`, token, {
     method: "DELETE",
   });
-  if (!res.ok && res.status !== 404) throw new Error("Failed to delete review");
+  if (!res.ok && res.status !== 404) throw await responseError(res, "Failed to delete review");
 }
 
 /** Every product and shop review the logged-in user has written. */
@@ -1410,12 +1434,7 @@ export async function changePassword(
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    const firstError =
-      data.current_password?.[0] ||
-      data.new_password?.[0] ||
-      data.new_password_confirm?.[0] ||
-      data.detail;
-    throw new Error(firstError || "Failed to change password");
+    throw new Error(extractApiError(data, "Failed to change password"));
   }
   const data = await res.json();
   return { access: data.access, refresh: data.refresh };
@@ -1435,7 +1454,7 @@ export async function uploadAvatar(
     method: "PATCH",
     body: formData,
   });
-  if (!res.ok) throw new Error("Failed to upload avatar");
+  if (!res.ok) throw await responseError(res, "Failed to upload avatar");
   return await res.json();
 }
 
@@ -1449,7 +1468,7 @@ export async function getSellerProfile(token: string): Promise<SellerProfile> {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Failed to load seller profile");
+    throw new Error(extractApiError(err, "Failed to load seller profile"));
   }
   return await res.json();
 }
@@ -1460,7 +1479,7 @@ export async function getSellerDashboard(token: string): Promise<SellerDashboard
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Failed to load seller dashboard");
+    throw new Error(extractApiError(err, "Failed to load seller dashboard"));
   }
   return await res.json();
 }
@@ -1484,7 +1503,7 @@ export async function updateSellerProfile(
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || Object.values(err)[0] as string || "Failed to update seller profile");
+    throw new Error(extractApiError(err, "Failed to update seller profile"));
   }
   return await res.json();
 }
@@ -1495,7 +1514,7 @@ export async function getSellerShops(token: string): Promise<SellerShop[]> {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Failed to load shops");
+    throw new Error(extractApiError(err, "Failed to load shops"));
   }
   const data = await res.json();
   return Array.isArray(data) ? data : data.results || [];
@@ -1507,7 +1526,7 @@ export async function getSellerShopDetail(token: string, id: number): Promise<Se
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Failed to load shop details");
+    throw new Error(extractApiError(err, "Failed to load shop details"));
   }
   return await res.json();
 }
@@ -1532,7 +1551,7 @@ export async function updateSellerShop(
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || err.detail || Object.values(err)[0] as string || "Failed to update shop");
+    throw new Error(extractApiError(err, "Failed to update shop"));
   }
   return await res.json();
 }
@@ -1546,7 +1565,7 @@ export async function submitSellerShopForReview(
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || err.detail || "Failed to submit shop for review");
+    throw new Error(extractApiError(err, "Failed to submit shop for review"));
   }
   return await res.json();
 }
@@ -1557,7 +1576,7 @@ export async function getSellerProductDetail(token: string, id: number): Promise
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || err.detail || "Failed to load product");
+    throw new Error(extractApiError(err, "Failed to load product"));
   }
   return await res.json();
 }
@@ -1614,7 +1633,7 @@ export async function updateSellerProduct(
     if (res.status === 409 && typeof err.current_stock === "number") {
       throw new StockConflictError(err.error || "Stock changed since you opened this product.", err.current_stock);
     }
-    throw new Error(err.error || err.detail || "Failed to update product");
+    throw new Error(extractApiError(err, "Failed to update product"));
   }
   return await res.json();
 }
@@ -1629,7 +1648,7 @@ export async function submitSellerProductForReview(token: string, id: number): P
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || err.detail || "Failed to submit the product for review");
+    throw new Error(extractApiError(err, "Failed to submit the product for review"));
   }
   return await res.json();
 }
@@ -1640,7 +1659,7 @@ export async function deleteSellerProduct(token: string, id: number): Promise<vo
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.error || err.detail || "Failed to delete product");
+    throw new Error(extractApiError(err, "Failed to delete product"));
   }
 }
 
@@ -1650,7 +1669,7 @@ export async function getSellerWallet(token: string): Promise<SellerWallet> {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Failed to load seller wallet");
+    throw new Error(extractApiError(err, "Failed to load seller wallet"));
   }
   return await res.json();
 }
@@ -1671,7 +1690,7 @@ export async function getSellerPointHistory(
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || "Failed to load point transaction history");
+    throw new Error(extractApiError(err, "Failed to load point transaction history"));
   }
   const data = await res.json();
   if (Array.isArray(data)) return { count: data.length, next: null, previous: null, results: data };

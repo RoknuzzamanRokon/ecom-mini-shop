@@ -614,3 +614,29 @@ class SellerOrderTests(APITestCase):
     def test_staff_ledger_shows_the_customer_name(self):
         self._ledger_row(self.customer_user, order=self.order_a)
         self.assertEqual(self._ledger_names(self.admin_user), ["regular_customer"])
+
+    # -------------------------------------------------------------------------
+    # 10. The next statuses a seller may choose (BUG-029)
+    # -------------------------------------------------------------------------
+
+    def test_list_and_detail_offer_only_the_allowed_next_statuses(self):
+        self.client.force_authenticate(user=self.user_seller_a)
+        rows = {o["order_number"]: o for o in self.client.get("/api/seller/orders/").data["results"]}
+
+        own = rows["ORD-SELLER-A-ONLY"]
+        self.assertFalse(own["is_multi_merchant"])
+        self.assertEqual(own["allowed_transitions"], ["CONFIRMED", "CANCELLED"])
+
+        shared = rows["ORD-MULTI-SELLER"]
+        self.assertTrue(shared["is_multi_merchant"])
+        self.assertEqual(shared["allowed_transitions"], [])
+
+        detail = self.client.get(f"/api/seller/orders/{self.order_a.order_number}/").data
+        self.assertEqual(detail["allowed_transitions"], ["CONFIRMED", "CANCELLED"])
+
+    def test_a_finished_order_offers_nothing(self):
+        Order.objects.filter(pk=self.order_a.pk).update(status=Order.STATUS_DELIVERED)
+        self.client.force_authenticate(user=self.user_seller_a)
+        detail = self.client.get(f"/api/seller/orders/{self.order_a.order_number}/").data
+        self.assertEqual(detail["allowed_transitions"], [])
+

@@ -510,6 +510,25 @@ class SellerOrderItemSerializer(serializers.ModelSerializer):
         ]
 
 
+def _seller_order_is_multi_merchant(order) -> bool:
+    """True when the order also holds another merchant's items."""
+    flag = getattr(order, "has_other_merchant_items", None)
+    if flag is None:  # not annotated by OrderService's seller querysets
+        flag = order.items.count() > len(getattr(order, "seller_items", order.items.all()))
+    return bool(flag)
+
+
+def _seller_order_allowed_transitions(order) -> list:
+    """
+    The statuses this seller may move the order to next: the order state
+    machine's next steps, and none on a multi-merchant order, which only staff
+    may move (BUG-029).
+    """
+    if _seller_order_is_multi_merchant(order):
+        return []
+    return [str(target).upper() for target in Order.VALID_TRANSITIONS.get(order.status, [])]
+
+
 class SellerOrderListSerializer(serializers.ModelSerializer):
     """
     Summary serializer for seller order listing.
@@ -520,6 +539,8 @@ class SellerOrderListSerializer(serializers.ModelSerializer):
     items = serializers.SerializerMethodField()
     seller_subtotal = serializers.SerializerMethodField()
     seller_item_count = serializers.SerializerMethodField()
+    is_multi_merchant = serializers.SerializerMethodField()
+    allowed_transitions = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -529,6 +550,8 @@ class SellerOrderListSerializer(serializers.ModelSerializer):
             "status",
             "seller_subtotal",
             "seller_item_count",
+            "is_multi_merchant",
+            "allowed_transitions",
             "created_at",
             "updated_at",
             "items",
@@ -558,6 +581,12 @@ class SellerOrderListSerializer(serializers.ModelSerializer):
         items = self._get_seller_items(obj)
         return sum(item.quantity for item in items)
 
+    def get_is_multi_merchant(self, obj):
+        return _seller_order_is_multi_merchant(obj)
+
+    def get_allowed_transitions(self, obj):
+        return _seller_order_allowed_transitions(obj)
+
 
 class SellerOrderDetailSerializer(serializers.ModelSerializer):
     """
@@ -568,6 +597,8 @@ class SellerOrderDetailSerializer(serializers.ModelSerializer):
     items = serializers.SerializerMethodField()
     seller_subtotal = serializers.SerializerMethodField()
     seller_item_count = serializers.SerializerMethodField()
+    is_multi_merchant = serializers.SerializerMethodField()
+    allowed_transitions = serializers.SerializerMethodField()
 
     class Meta:
         model = Order
@@ -590,6 +621,8 @@ class SellerOrderDetailSerializer(serializers.ModelSerializer):
             "city",
             "seller_subtotal",
             "seller_item_count",
+            "is_multi_merchant",
+            "allowed_transitions",
             "created_at",
             "updated_at",
             "items",
@@ -618,6 +651,12 @@ class SellerOrderDetailSerializer(serializers.ModelSerializer):
     def get_seller_item_count(self, obj):
         items = self._get_seller_items(obj)
         return sum(item.quantity for item in items)
+
+    def get_is_multi_merchant(self, obj):
+        return _seller_order_is_multi_merchant(obj)
+
+    def get_allowed_transitions(self, obj):
+        return _seller_order_allowed_transitions(obj)
 
 
 class SellerOrderStatusUpdateSerializer(serializers.Serializer):
