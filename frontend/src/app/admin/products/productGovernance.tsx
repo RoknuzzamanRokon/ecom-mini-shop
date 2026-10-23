@@ -124,10 +124,10 @@ const ACTION_DESCRIPTORS: Record<AdminProductStatusAction, ProductActionDescript
  * a UX filter rather than a correctness requirement — it keeps the console from
  * advertising transitions that are meaningless for the current state.
  *
- * DRAFT is deliberately empty: a draft is the seller's own unsubmitted work, so
- * there is nothing for a moderator to decide yet. Everything from SUBMITTED
- * onward is a moderation state and offers the transitions that advance or
- * reverse it.
+ * DRAFT is deliberately empty: a draft is the seller's own unsubmitted work.
+ * The seller sends it to review from the Seller Center (DRAFT or REJECTED ->
+ * SUBMITTED, TASK-048 decision 2), and everything from SUBMITTED onward is a
+ * moderation state that offers the transitions that advance or reverse it.
  */
 function getStatusRelevantActions(status: string): AdminProductStatusAction[] {
   switch (status) {

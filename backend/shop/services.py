@@ -428,6 +428,56 @@ class ProductService:
             product.delete()
             logger.info("Product deleted: id=%s by seller=%s", product.id, seller.business_name)
 
+    # Statuses a seller may send to review: their own draft, or a listing
+    # staff rejected and the seller has since corrected.
+    SUBMITTABLE_STATUSES = (Product.STATUS_DRAFT, Product.STATUS_REJECTED)
+
+    @classmethod
+    def submit_for_review(
+        cls,
+        product: Product,
+        seller: SellerProfile,
+        actor=None,
+        ip_address: Optional[str] = None,
+    ) -> Product:
+        """
+        The seller's half of publication (TASK-048 decision 2): DRAFT or
+        REJECTED -> SUBMITTED. Staff then approve or reject, and publish, in
+        the Console. Writes one PRODUCT_SUBMITTED audit row.
+        """
+        if not product.shop or product.shop.owner != seller:
+            raise ProductOwnershipError("You do not own the shop associated with this product.")
+
+        if not seller.is_operational:
+            raise IneligibleSellerError("Suspended or unapproved sellers cannot submit products for review.")
+
+        with transaction.atomic():
+            product = Product.objects.select_for_update().select_related("shop").get(pk=product.pk)
+            if product.status not in cls.SUBMITTABLE_STATUSES:
+                raise ProductModerationError(
+                    f"Only a draft or rejected product can be submitted for review; this one is {product.status}."
+                )
+            previous_status = product.status
+            previous_reason = product.rejection_reason
+            product.status = Product.STATUS_SUBMITTED
+            product.submitted_at = timezone.now()
+            # The old reason answered the previous version; it stays in the audit row.
+            product.rejection_reason = ""
+            product.save(update_fields=["status", "submitted_at", "rejection_reason", "updated_at"])
+
+            AuditService.log(
+                action="PRODUCT_SUBMITTED",
+                target=product,
+                actor=actor,
+                shop=product.shop,
+                seller=seller,
+                previous_state={"status": previous_status, "rejection_reason": previous_reason},
+                new_state={"status": product.status},
+                ip_address=ip_address,
+            )
+            logger.info("Product submitted for review: id=%s by seller=%s", product.id, seller.business_name)
+            return product
+
     # --- Staff moderation --------------------------------------------------
     # Each action applies from any status; only publish has preconditions.
     # The caller authorizes the actor and locks the row. Each action writes

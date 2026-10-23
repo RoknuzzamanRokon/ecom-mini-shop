@@ -217,8 +217,8 @@ export default function AdminProductDetailPage() {
 
         {product.status === "DRAFT" && (
           <p className="text-xs text-ink-muted leading-relaxed mt-4 pt-4 border-t border-line">
-            This listing is still a seller draft and has not been submitted for review, so there is
-            no moderation decision to make yet.
+            This listing is still a seller draft. The seller submits it for review from the Seller
+            Center when it is ready; it then appears here as SUBMITTED for approval.
           </p>
         )}
 

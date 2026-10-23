@@ -1598,6 +1598,21 @@ export async function updateSellerProduct(
   return await res.json();
 }
 
+/**
+ * Sends a DRAFT (or a corrected REJECTED) product to staff review; it becomes
+ * SUBMITTED. Staff approve or reject, then publish, in the Console.
+ */
+export async function submitSellerProductForReview(token: string, id: number): Promise<Product> {
+  const res = await customerRequest(`/api/products/mine/${id}/submit/`, token, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || err.detail || "Failed to submit the product for review");
+  }
+  return await res.json();
+}
+
 export async function deleteSellerProduct(token: string, id: number): Promise<void> {
   const res = await customerRequest(`/api/products/mine/${id}/`, token, {
     method: "DELETE",

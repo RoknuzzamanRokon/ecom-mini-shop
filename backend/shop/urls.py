@@ -14,6 +14,7 @@ urlpatterns = [
     path("api/categories/", api_views.CategoryListView.as_view(), name="api_categories"),
     path("api/products/mine/", api_views.SellerProductListCreateAPIView.as_view(), name="api_seller_products"),
     path("api/products/mine/<int:pk>/", api_views.SellerProductDetailAPIView.as_view(), name="api_seller_product_detail"),
+    path("api/products/mine/<int:pk>/submit/", api_views.SellerProductSubmitAPIView.as_view(), name="api_seller_product_submit"),
     path("api/products/", api_views.ProductListAPIView.as_view(), name="api_products"),
     path("api/products/<int:product_id>/reviews/", api_views.ProductReviewListAPIView.as_view(), name="api_product_reviews"),
     path("api/products/<int:pk>/", api_views.ProductDetailAPIView.as_view(), name="api_product_detail_pk"),

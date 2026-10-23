@@ -603,6 +603,17 @@ are recorded here as they are made.
    - Staff access is unchanged. Known #27 (the inventory role-code override) is
      still open: staff who hold `inventory.*` outside the override list are
      still scoped as sellers.
+2. **Product publication flow** — decided 2026-10-23, implemented in TASK-014
+   (resolves Known #8).
+   - The seller submits: "Submit for review" in the Seller Center calls
+     `POST /api/products/mine/<id>/submit/`, which moves a DRAFT, or a
+     REJECTED product the seller has corrected, to SUBMITTED. It is
+     owner-only, and writes a `PRODUCT_SUBMITTED` audit row.
+   - Staff review in the Console: approve or reject a SUBMITTED product, then
+     publish an approved one. These are the existing audited moderation
+     actions.
+   - The Console offers no action on a DRAFT. The staff status endpoint still
+     has no from-state guard, so staff could act on one through the API.
 
 ## Not in this roadmap
 

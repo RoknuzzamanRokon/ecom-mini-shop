@@ -71,6 +71,7 @@ from .services import (
     IneligibleSellerError,
     OrderService,
     ProductLimitExceededError,
+    ProductModerationError,
     ProductOwnershipError,
     ProductService,
     StockConflictError,
@@ -663,6 +664,37 @@ class SellerProductDetailAPIView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_403_FORBIDDEN)
 
         return Response({"message": "Product successfully deleted."}, status=status.HTTP_204_NO_CONTENT)
+
+
+class SellerProductSubmitAPIView(APIView):
+    """
+    POST /api/products/mine/<pk>/submit/
+    The seller sends a DRAFT (or a corrected REJECTED) product to staff
+    review: it becomes SUBMITTED, and staff approve, reject and publish it in
+    the Console. 400 from any other status.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsEligibleProductSeller, IsProductOwner]
+
+    def post(self, request, pk):
+        product = get_object_or_404(Product.objects.select_related("shop", "shop__owner"), pk=pk)
+        self.check_object_permissions(request, product)
+
+        try:
+            product = ProductService.submit_for_review(
+                product=product,
+                seller=request.user.seller_profile,
+                actor=request.user,
+                ip_address=get_client_ip(request),
+            )
+        except (IneligibleSellerError, ProductOwnershipError) as e:
+            return Response({"error": str(e)}, status=status.HTTP_403_FORBIDDEN)
+        except ProductModerationError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(
+            SellerProductSerializer(product, context={"request": request}).data,
+            status=status.HTTP_200_OK,
+        )
 
 
 # ---------------------------------------------------------------------------

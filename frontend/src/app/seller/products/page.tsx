@@ -10,6 +10,7 @@ import {
   createSellerProduct,
   updateSellerProduct,
   deleteSellerProduct,
+  submitSellerProductForReview,
   getSellerWallet,
   getSellerDashboard,
   InsufficientPointsError,
@@ -65,6 +66,8 @@ export default function SellerProductsPage() {
   // Feedback notifications
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // The product whose "Submit for review" call is in flight.
+  const [submittingId, setSubmittingId] = useState<number | null>(null);
   // Shown in the edit modal when its stock figure went stale (BUG-008).
   const [stockNotice, setStockNotice] = useState<string | null>(null);
 
@@ -247,7 +250,9 @@ export default function SellerProductsPage() {
         image: imageFile,
       });
 
-      setActionSuccess(`Product "${formData.name}" created successfully.`);
+      setActionSuccess(
+        `Product "${formData.name}" created as a draft. Submit it for review when it is ready to sell.`
+      );
       closeProductModal();
       await fetchProductsList();
       refreshWalletBalance();
@@ -311,6 +316,27 @@ export default function SellerProductsPage() {
       }
     } finally {
       setSubmittingModal(false);
+    }
+  };
+
+  // DRAFT/REJECTED -> SUBMITTED. Staff then approve and publish it (TASK-014).
+  const handleSubmitForReview = async (p: Product) => {
+    const token = getAuthToken();
+    if (!token || submittingId !== null) return;
+
+    setSubmittingId(p.id);
+    setActionError(null);
+    setActionSuccess(null);
+    try {
+      await submitSellerProductForReview(token, p.id);
+      setActionSuccess(
+        `"${p.name}" was sent for review. Staff will approve or reject it, and approved products are published.`
+      );
+      await fetchProductsList();
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : "Failed to submit the product for review.");
+    } finally {
+      setSubmittingId(null);
     }
   };
 
@@ -555,6 +581,26 @@ export default function SellerProductsPage() {
 
                       <td className="py-3 px-4 text-right">
                         <div className="inline-flex items-center gap-1.5">
+                          {(!p.status || p.status === "DRAFT" || p.status === "REJECTED") && (
+                            <button
+                              type="button"
+                              onClick={() => handleSubmitForReview(p)}
+                              disabled={submittingId !== null}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 text-[11px] font-bold whitespace-nowrap disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
+                              title={
+                                p.status === "REJECTED"
+                                  ? "Fix what was rejected, then send it for review again"
+                                  : "Send this draft to staff for review"
+                              }
+                            >
+                              <span className="material-symbols-outlined text-[16px]">send</span>
+                              {submittingId === p.id
+                                ? "Submitting..."
+                                : p.status === "REJECTED"
+                                ? "Resubmit"
+                                : "Submit for review"}
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => handleOpenEdit(p)}
