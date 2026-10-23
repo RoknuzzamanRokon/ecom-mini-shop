@@ -1,6 +1,8 @@
 from decimal import Decimal
 import io
+import shutil
 import urllib.request
+from pathlib import Path
 
 from django.conf import settings
 from django.core.files.base import ContentFile
@@ -13,6 +15,23 @@ from shop.models import Category, Product, ProductImage
 from shops.models import Shop
 
 DEMO_PHOTO_URL = "https://picsum.photos/seed/{seed}/{size}/{size}"
+
+# Category images ship in the repository here, not in media/, which holds
+# runtime uploads and is gitignored (BUG-043). Seeding copies them into
+# MEDIA_ROOT.
+SEED_IMAGE_DIR = Path(__file__).resolve().parents[2] / "fixtures" / "seed_images"
+
+
+def seed_category_image(filename):
+    """Copies a bundled category image into MEDIA_ROOT; returns its media name, or None."""
+    target = Path(settings.MEDIA_ROOT) / "categories" / filename
+    if not target.exists():
+        source = SEED_IMAGE_DIR / "categories" / filename
+        if not source.exists():
+            return None
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source, target)
+    return f"categories/{filename}"
 
 CATEGORIES = [
     {
@@ -247,10 +266,9 @@ class Command(BaseCommand):
             if not category.description or force:
                 category.description = entry["description"]
 
-            # Set category demo image from media directory
-            cat_img_path = settings.MEDIA_ROOT / "categories" / entry["image"]
-            if cat_img_path.exists() and (force or not category.image):
-                category.image = f"categories/{entry['image']}"
+            # Set category demo image from the bundled seed images
+            if force or not category.image:
+                category.image = seed_category_image(entry["image"]) or category.image
 
             category.save()
             categories_by_name[entry["name"]] = category
@@ -262,9 +280,7 @@ class Command(BaseCommand):
         no_image_cats = Category.objects.filter(Q(image__isnull=True) | Q(image=""))
         for idx, cat in enumerate(no_image_cats):
             assigned_img = available_images[idx % len(available_images)]
-            cat_img_path = settings.MEDIA_ROOT / "categories" / assigned_img
-            if cat_img_path.exists():
-                cat.image = f"categories/{assigned_img}"
+            cat.image = seed_category_image(assigned_img) or cat.image
             if not cat.description:
                 cat.description = "Explore our curated collection of quality products."
             cat.save()

@@ -16,4 +16,8 @@ staticfiles/
 
 # Private uploads (support ticket attachments) — never commit
 private_media/
-utils/add_points.py  
+
+# Runtime uploads (customer photos, product and shop images) and server logs —
+# never commit (BUG-043). Seed images live in shop/fixtures/seed_images/.
+media/
+*.log

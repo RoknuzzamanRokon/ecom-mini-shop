@@ -37,6 +37,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: No runtime uploads or logs are tracked
+        # backend/media/ holds runtime uploads, customers' photos among them,
+        # and logs hold request data. Both are gitignored (BUG-043); this
+        # catches a file added with `git add -f` or before the ignore rule.
+        run: |
+          tracked=$(git ls-files backend/media '*.log')
+          if [ -n "$tracked" ]; then
+            echo "These runtime files are tracked; git rm --cached them:"
+            echo "$tracked"
+            exit 1
+          fi
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'

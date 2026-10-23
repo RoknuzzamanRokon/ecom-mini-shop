@@ -171,6 +171,7 @@ they would report green there while testing nothing.
 config/                Django project settings, root URLs
 shop/                  Main app: models, views, urls, services, API views, admin
   management/commands/  seed_demo_data, seed_showcase commands
+  fixtures/seed_images/ Category images seed_demo_data copies into media/
   migrations/
 templates/
   base.html            Base layout (header, footer, messages)
@@ -178,7 +179,7 @@ templates/
   shop/partials/       Reusable partials (navbar, category sidebar, hot deal, product card, footer)
 static/
   css/style.css        Minimal custom CSS (Tailwind utility classes handle most styling)
-media/products/        Uploaded/generated product images (created at runtime, gitignored)
+media/                 Runtime uploads: customer photos, product and shop images (gitignored)
 main_ui.html           Original static HTML design reference
 ```
 
@@ -186,5 +187,8 @@ main_ui.html           Original static HTML design reference
 
 - Demo product images are generated placeholder graphics (solid color + label), not real
   product photos. Replace them anytime via the admin panel.
-- `db.sqlite3` and `media/` are gitignored — re-run migrations and the seed command after
-  a fresh clone.
+- `media/` and `*.log` are gitignored: uploads (including customers' photos) and server
+  logs never belong in git, and CI fails if a file under `backend/media/` or a log is
+  tracked. After a fresh clone, re-run migrations and the seed commands: `seed_demo_data`
+  copies the category images from `shop/fixtures/seed_images/`, and `seed_showcase`
+  downloads the product and shop photos.
