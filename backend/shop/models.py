@@ -3,7 +3,7 @@ from decimal import Decimal
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
-from django.db.models import Q
+from django.db.models import Avg, Count, Q
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.text import slugify
@@ -65,6 +65,17 @@ class ProductQuerySet(models.QuerySet):
             shop__isnull=False,
             shop__status__in=["APPROVED", "ACTIVE"],
             shop__owner__status__in=["APPROVED", "ACTIVE"],
+        )
+
+    def with_ratings(self):
+        """
+        average_rating and review_count, from reviews a moderator has not
+        hidden, as ProductListSerializer reads them.
+        """
+        visible = Q(customer_reviews__is_hidden=False)
+        return self.annotate(
+            average_rating=Avg("customer_reviews__rating", filter=visible),
+            review_count=Count("customer_reviews", filter=visible, distinct=True),
         )
 
 

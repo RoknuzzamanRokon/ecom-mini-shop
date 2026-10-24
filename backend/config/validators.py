@@ -9,7 +9,8 @@ from django.core.exceptions import ValidationError
 from django.utils import timezone
 
 #: Formats every browser renders. Pillow opens many more (GIF, TIFF, BMP...).
-IMAGE_FORMATS = {"JPEG", "PNG", "WEBP"}
+#: MPO is a JPEG with extra pictures embedded, as many phone cameras save.
+IMAGE_FORMATS = {"JPEG", "MPO", "PNG", "WEBP"}
 AVATAR_MAX_BYTES = 2 * 1024 * 1024
 #: Product images and shop logos and covers.
 CATALOG_IMAGE_MAX_BYTES = 5 * 1024 * 1024

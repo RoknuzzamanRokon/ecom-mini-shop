@@ -23,6 +23,9 @@ ALLOWED_TYPES_LABEL = "JPG, PNG, WebP or PDF"
 
 _IMAGE_TYPES = {
     "JPEG": ("image/jpeg", "jpg"),
+    # A JPEG carrying extra pictures (depth or gain maps from many phone
+    # cameras); Pillow names it MPO, but it is a .jpg (BUG-063).
+    "MPO": ("image/jpeg", "jpg"),
     "PNG": ("image/png", "png"),
     "WEBP": ("image/webp", "webp"),
 }

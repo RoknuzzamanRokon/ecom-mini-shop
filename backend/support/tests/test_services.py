@@ -285,7 +285,8 @@ class StaffMessageTests(SupportServiceTestCase):
         self.assertEqual(ticket.status, WAITING)
         staff, system = self.messages(ticket)[1:]
         self.assertEqual(staff.body, "Can you send a photo?")
-        self.assertEqual(system.body, "Status changed to Waiting on customer.")
+        # The requester reads this note, so it uses their wording (BUG-062).
+        self.assertEqual(system.body, "Status changed to Waiting on you.")
 
     def test_a_reply_with_a_forbidden_status_changes_nothing(self):
         ticket = self.open_ticket()

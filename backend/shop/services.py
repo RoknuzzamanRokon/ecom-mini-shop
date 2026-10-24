@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional, Union
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
-from django.db.models import Avg, Count, Exists, OuterRef, Prefetch, Q
+from django.db.models import Count, Exists, OuterRef, Prefetch, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.utils.text import slugify
@@ -27,10 +27,6 @@ from shops.models import Shop
 from .models import Category, Order, OrderItem, Payment, Product
 
 logger = logging.getLogger(__name__)
-
-# Reviews that count publicly: everything a moderator has not hidden.
-VISIBLE_REVIEWS = Q(customer_reviews__is_hidden=False)
-
 
 class ProductServiceError(Exception):
     """Base exception for product domain services."""
@@ -583,11 +579,8 @@ class ProductService:
             Product.objects.public()
             .select_related("category", "shop", "shop__owner")
             .prefetch_related("images")
-            .annotate(
-                # Hidden (moderated) reviews never count toward public ratings.
-                average_rating=Avg("customer_reviews__rating", filter=VISIBLE_REVIEWS),
-                review_count=Count("customer_reviews", filter=VISIBLE_REVIEWS, distinct=True),
-            )
+            # Hidden (moderated) reviews never count toward public ratings.
+            .with_ratings()
         )
 
     @classmethod

@@ -1,3 +1,4 @@
+from django.db.models import Prefetch
 from rest_framework import status
 from rest_framework.generics import get_object_or_404
 from rest_framework.permissions import IsAuthenticated
@@ -5,6 +6,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from audit.utils import get_client_ip
+from shop.models import Product
 from .models import Address, Favorite, Review, ShopReview
 from .permissions import (
     CanCreateAddress,
@@ -186,13 +188,19 @@ class FavoriteListCreateView(APIView):
     """
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
-        favorites = (
-            Favorite.objects.filter(user=request.user)
-            .select_related("product", "product__category", "product__shop")
+    @staticmethod
+    def favorites(user):
+        # Products with their visible-review rating, which the product card
+        # shows; without it every favourite read 0.0 from 0 reviews (BUG-061).
+        products = Product.objects.select_related("category", "shop").with_ratings()
+        return (
+            Favorite.objects.filter(user=user)
+            .prefetch_related(Prefetch("product", queryset=products))
             .order_by("-created_at")
         )
-        serializer = FavoriteSerializer(favorites, many=True, context={"request": request})
+
+    def get(self, request):
+        serializer = FavoriteSerializer(self.favorites(request.user), many=True, context={"request": request})
         return Response(serializer.data)
 
     def post(self, request):
@@ -202,6 +210,7 @@ class FavoriteListCreateView(APIView):
             user=request.user,
             product_id=serializer.validated_data["product_id"],
         )
+        favorite = self.favorites(request.user).get(pk=favorite.pk)
         return Response(
             FavoriteSerializer(favorite, context={"request": request}).data,
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,

@@ -103,7 +103,8 @@ def parse_preference_changes(data, audiences):
         if not isinstance(item, dict) or not isinstance(item.get("channels"), dict):
             raise PreferenceError("Each entry needs a category and its channels.")
         code = item.get("category")
-        if code not in allowed:
+        # A list or dict here is unhashable: checked first, it is a 400, not a 500 (BUG-064).
+        if not isinstance(code, str) or code not in allowed:
             raise PreferenceError(f"'{code}' isn't a category you receive.")
         category = CATEGORIES[code]
         for key, toggle in item["channels"].items():
@@ -142,6 +143,10 @@ def apply_preference_changes(user, changes):
             row.enabled = False
             row.save(update_fields=["enabled", "updated_at"])
         else:
-            NotificationPreference.objects.create(user=user, category=code, channel=channel, enabled=False)
+            # A concurrent PUT may have just stored the same row; update it
+            # instead of failing on the unique constraint (BUG-064).
+            NotificationPreference.objects.update_or_create(
+                user=user, category=code, channel=channel, defaults={"enabled": False}
+            )
         changed[(code, channel)] = (before, enabled)
     return changed

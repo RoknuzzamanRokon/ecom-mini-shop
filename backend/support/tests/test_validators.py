@@ -29,6 +29,18 @@ class AttachmentValidatorTests(SimpleTestCase):
                 self.assertEqual(checked.size, f.size)
                 self.assertIs(checked.file, f)
 
+    def test_a_multi_picture_jpeg_is_a_jpeg(self):
+        """BUG-063: phones save JPEGs with depth or gain maps, which Pillow names MPO."""
+        import io
+
+        from PIL import Image
+
+        buffer = io.BytesIO()
+        first, second = Image.new("RGB", (4, 4), (200, 30, 30)), Image.new("RGB", (4, 4), (30, 30, 200))
+        first.save(buffer, "MPO", save_all=True, append_images=[second])
+        checked = validate_attachments([upload("portrait.jpg", buffer.getvalue(), "image/jpeg")])[0]
+        self.assertEqual((checked.content_type, checked.extension), ("image/jpeg", "jpg"))
+
     def test_file_is_rewound_after_checking(self):
         f = png()
         validate_attachments([f])

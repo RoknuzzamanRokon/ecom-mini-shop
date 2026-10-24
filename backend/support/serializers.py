@@ -3,6 +3,7 @@ from rest_framework import serializers
 
 from .models import SupportTicket, TicketMessage
 from .services import (
+    CUSTOMER_STATUS_LABELS,
     DESCRIPTION_MIN_LENGTH,
     MESSAGE_MAX_LENGTH,
     SUBJECT_MAX_LENGTH,
@@ -10,15 +11,6 @@ from .services import (
 )
 
 SUPPORT_TEAM_NAME = "MiniShop Support"
-
-# Status names as the customer reads them; staff see STATUS_CHOICES.
-CUSTOMER_STATUS_LABELS = {
-    SupportTicket.STATUS_OPEN: "Open",
-    SupportTicket.STATUS_IN_PROGRESS: "In progress",
-    SupportTicket.STATUS_WAITING_ON_CUSTOMER: "Waiting on you",
-    SupportTicket.STATUS_RESOLVED: "Resolved",
-    SupportTicket.STATUS_CLOSED: "Closed",
-}
 
 
 def _text_errors(label, min_length=None, max_length=None):

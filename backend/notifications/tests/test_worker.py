@@ -370,3 +370,39 @@ class ConcurrentClaimTests(TransactionTestCase):
         owners = dict(NotificationEvent.objects.values_list("pk", "locked_by"))
         for worker_id, claimed in results.items():
             self.assertTrue(all(owners[pk] == worker_id for pk in claimed))
+
+
+class SlowSendLeaseTests(TestCase):
+    """
+    TASK-036 / BUG-065: while an email is being sent, its lease outlasts the
+    slowest send the SMTP timeouts allow, so a second worker cannot reclaim
+    it after the generic 60 s lease and send it again.
+    """
+
+    def test_a_send_slower_than_the_generic_lease_is_not_reclaimed(self):
+        user = User.objects.create_user(username="wk_slow", email="slow@example.com", password="pw")
+        notification = Notification.objects.create(
+            recipient=user, event=make_event(), event_type=TEST_EVENT, category="ORDERS",
+            audience=Audience.CUSTOMER, title="T", body="B", occurred_at=timezone.now(),
+        )
+        delivery = NotificationDelivery.objects.create(
+            notification=notification, channel=Channel.EMAIL, destination="slow@example.com"
+        )
+        reclaimed = []
+
+        class SlowAdapter(FakeAdapter):
+            def send(self, row):
+                # Two minutes into the send, well past the 60 s lease...
+                later = timezone.now() + timedelta(seconds=120)
+                with mock.patch("notifications.worker.timezone.now", return_value=later):
+                    reclaimed.extend(DatabaseTransport().claim_deliveries("w2", 10, [Channel.EMAIL]))
+                return super().send(row)
+
+        adapter = SlowAdapter()
+        with mock.patch.dict(ADAPTERS, {Channel.EMAIL: adapter}), override_settings(EMAIL_TIMEOUT=10):
+            NotificationWorker(worker_id="w1").run_once("deliveries")
+
+        self.assertEqual(reclaimed, [])
+        self.assertEqual(adapter.sent, [delivery.pk])
+        delivery.refresh_from_db()
+        self.assertEqual(delivery.status, NotificationDelivery.Status.SENT)

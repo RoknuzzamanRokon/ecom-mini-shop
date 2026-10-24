@@ -56,6 +56,15 @@ MAX_UNRESOLVED_TICKETS = 5
 AUTO_CLOSE_AFTER_DAYS = 7
 
 STATUS_LABELS = dict(SupportTicket.STATUS_CHOICES)
+# Status names as the requester reads them; staff see STATUS_LABELS. Public
+# status notes are read by the requester, so they use these (BUG-062).
+CUSTOMER_STATUS_LABELS = {
+    SupportTicket.STATUS_OPEN: "Open",
+    SupportTicket.STATUS_IN_PROGRESS: "In progress",
+    SupportTicket.STATUS_WAITING_ON_CUSTOMER: "Waiting on you",
+    SupportTicket.STATUS_RESOLVED: "Resolved",
+    SupportTicket.STATUS_CLOSED: "Closed",
+}
 CATEGORY_LABELS = dict(SupportTicket.CATEGORY_CHOICES)
 CHANNEL_LABELS = dict(SupportTicket.CHANNEL_CHOICES)
 _CUSTOMER = SupportTicket.CHANNEL_CUSTOMER
@@ -462,7 +471,7 @@ class SupportTicketService:
                 if target:
                     cls._set_status(
                         ticket, target, staff, now,
-                        note=f"Status changed to {STATUS_LABELS[target]}.",
+                        note=f"Status changed to {CUSTOMER_STATUS_LABELS[target]}.",
                         changed_by="staff",
                         ip_address=ip_address,
                     )
@@ -492,7 +501,7 @@ class SupportTicketService:
                 )
             cls._set_status(
                 ticket, new_status, staff, timezone.now(),
-                note=f"Status changed to {STATUS_LABELS[new_status]}.",
+                note=f"Status changed to {CUSTOMER_STATUS_LABELS[new_status]}.",
                 changed_by="staff",
                 reason=reason,
                 ip_address=ip_address,

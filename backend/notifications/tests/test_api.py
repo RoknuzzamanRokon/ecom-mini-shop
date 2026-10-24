@@ -281,3 +281,32 @@ class PreferenceApiTests(ApiFixtures, TestCase):
 
     def test_audience_parameter_is_checked_on_preferences_too(self):
         self.assertEqual(self.client_for(self.customer).get(PREFERENCES, {"audience": "STAFF"}).status_code, 403)
+
+
+class PreferenceInputTests(ApiFixtures, TestCase):
+    """TASK-036 / BUG-064: malformed or concurrent preference PUTs are not 500s."""
+
+    def test_a_category_that_is_not_text_is_a_400(self):
+        for bad in (["ORDERS"], {"code": "ORDERS"}, 7):
+            with self.subTest(category=bad):
+                response = self.client_for(self.customer).put(
+                    PREFERENCES, [{"category": bad, "channels": {}}], format="json"
+                )
+                self.assertEqual(response.status_code, 400)
+
+    def test_an_opt_out_another_request_just_stored_is_updated_not_duplicated(self):
+        from unittest import mock
+
+        from notifications.preferences import apply_preference_changes
+
+        # The other PUT committed its row after this one read the stored rows.
+        NotificationPreference.objects.create(
+            user=self.customer, category=c.ORDERS, channel=Channel.EMAIL, enabled=False
+        )
+        real_filter = NotificationPreference.objects.filter
+        with mock.patch.object(
+            NotificationPreference.objects, "filter", side_effect=lambda *a, **k: real_filter(*a, **k).none()
+        ):
+            apply_preference_changes(self.customer, {(c.ORDERS, Channel.EMAIL): False})
+        rows = NotificationPreference.objects.filter(user=self.customer, category=c.ORDERS, channel=Channel.EMAIL)
+        self.assertEqual([row.enabled for row in rows], [False])

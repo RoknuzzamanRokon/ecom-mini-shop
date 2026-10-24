@@ -26,6 +26,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import timedelta
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import F, Q
 from django.utils import timezone
@@ -44,6 +45,27 @@ IDLE_SLEEP_SECONDS = 10.0
 # Sends per second per channel (§4.5 Backpressure). A channel not listed
 # isn't limited.
 RATE_SETTINGS = {Channel.EMAIL: "EMAIL_RATE_PER_SECOND"}
+
+#: Blocking steps in one SMTP send, each bounded by EMAIL_TIMEOUT: connect and
+#: banner, EHLO, STARTTLS, EHLO again, AUTH (two steps), MAIL, RCPT, DATA, the
+#: message, QUIT -- rounded up.
+SMTP_ROUND_TRIPS = 12
+LEASE_MARGIN_SECONDS = 30
+
+
+def delivery_lease_seconds(channel):
+    """
+    How long a worker holds a delivery while it sends. An email's lease
+    outlasts the slowest send the SMTP timeouts allow: at 60 s, a slow relay
+    let another worker reclaim the row mid-send and the email went out twice
+    (BUG-065). A server that keeps answering just inside each timeout can
+    still outlast it; docs/NOTIFICATION_SYSTEM.md D4 records that case.
+    """
+    lease = notification_setting("LEASE_SECONDS")
+    if channel == Channel.EMAIL:
+        step = getattr(settings, "EMAIL_TIMEOUT", None) or lease
+        lease = max(lease, step * SMTP_ROUND_TRIPS + LEASE_MARGIN_SECONDS)
+    return lease
 
 
 def backoff_delay(attempts, *, base=None, cap=None, rand=random.uniform):
@@ -153,14 +175,15 @@ def _claim(model, worker_id, limit, max_attempts, extra=Q()):
     return claimed
 
 
-def _renew(model, pk, worker_id):
+def _renew(model, pk, worker_id, seconds=None):
     """
     Extends this worker's lease on a row just before handling it, so the
     lease only has to outlast one row, not a whole batch. False means the lease
     already expired and another worker took the row; it's then left to them.
     """
+    seconds = seconds or notification_setting("LEASE_SECONDS")
     renewed = model.objects.filter(pk=pk, status=model.Status.PROCESSING, locked_by=worker_id).update(
-        locked_until=timezone.now() + timedelta(seconds=notification_setting("LEASE_SECONDS"))
+        locked_until=timezone.now() + timedelta(seconds=seconds)
     )
     if not renewed:
         logger.warning("%s %s: lease lost before it was handled; skipped", model.__name__, pk)
@@ -280,6 +303,10 @@ class NotificationWorker:
             return
         adapter = get_adapter(delivery.channel)
         self._bucket(delivery.channel).acquire()
+        # Held for the channel's worst-case send, counted from now: the rate
+        # limit above may have waited (BUG-065).
+        if not _renew(NotificationDelivery, delivery.pk, self.worker_id, delivery_lease_seconds(delivery.channel)):
+            return
         try:
             result = adapter.send(delivery)
         except PermanentSendError as exc:
