@@ -637,6 +637,22 @@ Built from [`BUG_AUDIT_REPORT.md`](BUG_AUDIT_REPORT.md), which audited commit `e
   9. Whether the CUSTOMER role is protected from deactivation and edits.
 - **Outcome:** a short decision record per item; unblocks TASK-005, 014, 015, 026 and 034.
 
+
+### TASK-049 — Fix the TASK-046 findings
+- **Bugs:** BUG-101 to BUG-131 · **Priority:** P2 for BUG-101, P3 for the rest · **Effort:** M
+- **Scope:**
+  - BUG-101 first: the Console role API must refuse to (re)activate or deactivate a role whose permissions the actor cannot delegate, as the Django admin already does; lock the Active checkbox to match.
+  - Support ticket page: status-dialog lifecycle, customer wording, assignee load error, write ordering (BUG-102 to 104, 109).
+  - Categories: slug auto-fill, deactivation confirm on the detail page, audit fields, delete race (BUG-105 to 108).
+  - Theme: `dark:` variant and `color-scheme` (BUG-110, 111).
+  - Console profile and customers: profile load error, expired points, captions, directory scope (needs a decision), name search, search resync, page clamp (BUG-112 to 118).
+  - Django admin access boards and templates (BUG-120 to 131).
+  - Demo counts (BUG-119) go with the demo-data removal (TASK-048 decision 4).
+- **Files:** see each BUG entry in the report (§3.5).
+- **Acceptance criteria:** each bug's expected behaviour holds; BUG-101 has an API escalation test mirroring `rbac/test_admin_escalation.py`.
+- **Tests:** API tests for BUG-101, 107, 108; component tests for the Console fixes; template/JS tests where practical.
+- **Dependencies / order:** BUG-115 needs a decision (should staff accounts appear in the customer directory?).
+
 ---
 
 ## Bug → task cross-reference
@@ -687,3 +703,4 @@ Built from [`BUG_AUDIT_REPORT.md`](BUG_AUDIT_REPORT.md), which audited commit `e
 | TASK-042 … TASK-044 | prevention (no bug owned) |
 | TASK-045 | 093 (investigation) |
 | TASK-046 … TASK-048 | investigations / decisions |
+| TASK-049 | 101–131 (found by TASK-046) |

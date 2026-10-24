@@ -201,6 +201,37 @@ All 651 tracked files were in scope except 92 media uploads and the npm lockfile
 | BUG-098 | Date-only values (customer DOB) shift a day for viewers west of UTC | P3 | Low | Probable | Console UI | C | TASK-039 |
 | BUG-099 | Header/Navbar sticky rule broken on product/shop loading, error and 404 states | P3 | High | Confirmed | Storefront UI | A | TASK-028 |
 | BUG-100 | Console orders list merges only `{id,status}` after an action (Known #17) | P3 | High | Confirmed | Console UI | C | TASK-039 |
+| BUG-101 | Console role API can reactivate a role whose permissions the actor does not hold | P2 | High | Confirmed | Security | C | TASK-049 |
+| BUG-102 | Support status confirm dialog closes on a refresh and reopens on its own later | P3 | High | Confirmed | Console UI | C | TASK-049 |
+| BUG-103 | Support status dialog quotes the staff label, not the customer's wording | P3 | High | Confirmed | Console UI | C | TASK-049 |
+| BUG-104 | Support assignee list: a failed load looks empty and “Assign to me” announces “Unassigned” | P3 | Medium | Confirmed | Console UI | C | TASK-049 |
+| BUG-105 | New category: every name edit overwrites a slug the operator typed | P3 | High | Confirmed | Console UI | C | TASK-049 |
+| BUG-106 | Category detail edit deactivates without the confirmation the list requires | P3 | High | Confirmed | Console UI | C | TASK-049 |
+| BUG-107 | Category PATCH audit rows do not record slug, icon or description changes | P3 | High | Confirmed | Backend audit | C | TASK-049 |
+| BUG-108 | Category delete counts products outside a lock, then deletes with CASCADE | P3 | Medium | Confirmed | Backend | C | TASK-049 |
+| BUG-109 | Support ticket writes can be applied out of order | P3 | Low | Probable | Console UI | A | TASK-049 |
+| BUG-110 | `dark:` utilities follow the OS preference, not the app's dark mode | P3 | High | Confirmed | Storefront UI | C | TASK-049 |
+| BUG-111 | Dark themes do not set `color-scheme: dark` | P3 | Medium | Confirmed | Storefront UI | C | TASK-049 |
+| BUG-112 | Console profile hides a failed profile load and offers an edit link that cannot work | P3 | High | Confirmed | Console UI | C | TASK-049 |
+| BUG-113 | Console profile wallet figures omit expired points | P3 | High | Confirmed | Console UI | C | TASK-049 |
+| BUG-114 | “No points yet” shown for any zero balance, even after activity | P3 | Medium | Confirmed | Console UI | C | TASK-049 |
+| BUG-115 | Console customer directory lists staff and superuser accounts | P3 | Medium | Confirmed | Backend/Console | C | TASK-049 |
+| BUG-116 | Customer search placeholder promises name search the backend does not do | P3 | Medium | Confirmed | Console UI | C | TASK-049 |
+| BUG-117 | Debounced Console search can drop a keystroke typed while the URL updates | P3 | Low | Probable | Console UI | A | TASK-049 |
+| BUG-118 | A negative or fractional ?page= leaves the Console customers list stuck on an error | P3 | High | Confirmed | Console UI | A | TASK-049 |
+| BUG-119 | Demo category counts contradict the demo products | P3 | High | Confirmed | Storefront (demo only) | A | TASK-049 |
+| BUG-120 | Django admin direct-grant board: the filter blanks every section until reload | P3 | High | Confirmed | Django admin UI | C | TASK-049 |
+| BUG-121 | Django admin direct-grant board: counters rewritten to direct grants only on load | P3 | High | Confirmed | Django admin UI | C | TASK-049 |
+| BUG-122 | Django admin direct-grant board: Enter in the filter saves the form for full-access accounts | P3 | High | Confirmed | Django admin UI | C | TASK-049 |
+| BUG-123 | Role permission board: section and Select-all boxes cannot clear when locked rows are unticked | P3 | High | Confirmed | Django admin UI | A | TASK-049 |
+| BUG-124 | Locked grants show as not granted after a validation error re-render | P3 | High | Confirmed | Django admin UI | A | TASK-049 |
+| BUG-125 | User change form hero gauge shows 0 / 0 to non-superuser operators | P3 | High | Confirmed | Django admin UI | A | TASK-049 |
+| BUG-126 | Deactivated roles shown as active on the user change form | P3 | High | Confirmed | Django admin UI | C | TASK-049 |
+| BUG-127 | Access-board copy contradicts what the boards do | P3 | High | Confirmed | Django admin UI | A | TASK-049 |
+| BUG-128 | Saved role cards keep a hidden but focusable role select | P3 | Medium | Confirmed | Django admin UI | A | TASK-049 |
+| BUG-129 | Wide permission-matrix checkboxes have no readable accessible name | P3 | Low | Probable | Django admin UI | A | TASK-049 |
+| BUG-130 | Django admin dashboard shows create links without add permission | P3 | High | Confirmed | Django admin UI | A | TASK-049 |
+| BUG-131 | Admin templates: external-link hint on a non-link; panes unreachable without JavaScript | P3 | High | Confirmed | Django admin UI | A | TASK-049 |
 
 Counts: P1 11 · P2 26 · P3 63. Confirmed 88 · Probable 11 · Unverified 1.
 
@@ -1627,6 +1658,198 @@ Each P3 entry keeps every required field on one line.
    fix: "Merge the full response or refetch the row.", regression_test: "Row shows the new updated_at.", effort: XS, release_blocking: no, dependencies: none, related: ["Known #17"]}
 ```
 
+### 3.5 TASK-046 follow-up pass (2026-10-25)
+
+The files §7 listed as only grep-scanned were read line by line against the current code (after TASK-001 to TASK-045). Each finding below was checked against the source: `verified: C` by the coordinator, `A` as reported by the slice reader with the quoted code. BUG-101 is the only P2. No XSS, CSRF gap, `$` sign or 500 was found in these files, and the frontend types in `lib/types.ts` 506-964 match their serializers.
+
+```yaml
+- {id: BUG-101, title: "Console role API can reactivate a role whose permissions the actor does not hold", severity: P2, confidence: High, status: Confirmed, category: "Security", verified: C,
+   location: ["backend/shop/admin_views.py:525-533 (AdminRoleDetailAPIView.patch sets is_active without a delegation check)", "frontend/src/app/admin/roles/roleGovernance.tsx:548-566 (Active checkbox editable under the permission lock)", "frontend/src/app/admin/roles/[id]/page.tsx:198-204 (always sends is_active)"],
+   explanation: "The delegation check runs only when `permissions` is sent. The Django admin refuses the same reactivation (rbac/admin.py:226-235, test_admin_escalation.py:152); the API has no such check.",
+   repro: "An operator with roles.admin.manage but not payments.staff.refund holds a deactivated FINANCE role; they tick Active on it in the Console and save.", expected: "403, as in the Django admin.", actual: "200; every FINANCE holder, the actor included, regains payments.staff.refund.", impact: "Privilege escalation for role managers; the reverse (deactivating a role above the actor) silently locks its holders out.",
+   fix: "Refuse an is_active change for actors without the wildcard when the role grants codes they cannot delegate; disable the checkbox under that lock; warn in the confirm dialog; API test.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-102, title: "Support status confirm dialog closes on a refresh and reopens on its own later", severity: P3, confidence: High, status: Confirmed, category: "Console UI", verified: C,
+   location: ["frontend/src/app/admin/support/[ticketNumber]/page.tsx:233-245, 361-386 (open = pendingStatus && allowed_transitions.includes(pendingStatus))"],
+   explanation: "pendingStatus survives a failed confirm; the dialog's visibility follows allowed_transitions, which the refresh changes.",
+   repro: "A colleague moves the ticket first; A's confirm fails and the re-read hides the dialog; when the status later allows it again, the dialog pops up and takes focus.", expected: "The refusal shown, then the dialog closed for good.", actual: "Dialog vanishes with its error and reappears minutes later.", impact: "Confusing; a reflex confirm changes the status against intent.",
+   fix: "Clear pendingStatus when it leaves allowed_transitions, or drive `open` from pendingStatus alone and show the refusal inside.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-103, title: "Support status dialog quotes the staff label, not the customer's wording", severity: P3, confidence: High, status: Confirmed, category: "Console UI", verified: C,
+   location: ["frontend/src/app/admin/support/[ticketNumber]/page.tsx:370-373 (STAFF_STATUS_LABELS)", "backend/support/services.py change_status (CUSTOMER_STATUS_LABELS, BUG-062)"],
+   explanation: "TASK-036 made the customer note use customer wording; the confirm text still promises the staff label.",
+   repro: "Choose “Wait on customer”.", expected: "“Status changed to Waiting on you”.", actual: "Dialog says the customer will see “Waiting on customer”.", impact: "Misleading copy.",
+   fix: "Mirror the customer labels in the frontend for this sentence.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-104, title: "Support assignee list: a failed load looks empty and “Assign to me” announces “Unassigned”", severity: P3, confidence: Medium, status: Confirmed, category: "Console UI", verified: C,
+   location: ["frontend/src/app/admin/support/[ticketNumber]/page.tsx:166-179 (.catch(() => undefined))", "page.tsx:704-708 (announcement built from the loaded names)"],
+   explanation: "The error is swallowed with no retry; the live-region text looks the name up in the empty list.",
+   repro: "Make GET /api/support/staff/assignees/ fail; open a ticket as a manager; click “Assign to me”.", expected: "A load error with retry; “Assigned to you.”", actual: "Only “Unassigned” in the picker; the assignment succeeds but is announced as “Unassigned.”", impact: "Wrong feedback for screen-reader users.",
+   fix: "Show the load error with a retry; announce from the chosen value.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-105, title: "New category: every name edit overwrites a slug the operator typed", severity: P3, confidence: High, status: Confirmed, category: "Console UI", verified: C,
+   location: ["frontend/src/app/admin/categories/categoryGovernance.tsx:162-166 (autoSlug rewrites slug on each name change)"],
+   explanation: "The help text invites editing the slug, but the next name keystroke replaces it; a Bangla name slugifies to empty and disables Create with no reason given.",
+   repro: "Type “Mens Wear”, set slug “men”, then edit the name.", expected: "Slug kept.", actual: "Slug reset to the name's slug.", impact: "Wrong public URL.",
+   fix: "Stop auto-filling once the slug has been edited by hand.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-106, title: "Category detail edit deactivates without the confirmation the list requires", severity: P3, confidence: High, status: Confirmed, category: "Console UI", verified: C,
+   location: ["frontend/src/app/admin/categories/categoryGovernance.tsx:234-251 (Active checkbox in edit mode)", "frontend/src/app/admin/categories/[id]/page.tsx:114-142 (submitEdit PATCHes is_active)"],
+   explanation: "BUG-077 put deactivation behind a confirm on the list page only.",
+   repro: "Untick Active on the detail page and save.", expected: "The same confirmation, with the product count.", actual: "Products leave the storefront silently.", impact: "Accidental catalogue loss.",
+   fix: "Route a true→false change through the same confirm step, or drop the checkbox from the edit form.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-107, title: "Category PATCH audit rows do not record slug, icon or description changes", severity: P3, confidence: High, status: Confirmed, category: "Backend audit", verified: C,
+   location: ["backend/shop/admin_views.py:1396-1398 (prev_state/new_state = name, is_active only)"],
+   explanation: "A slug change, which breaks public category links, is logged with identical before and after states.",
+   repro: "Change only the slug.", expected: "The audit row shows the old and new slug.", actual: "Before == after.", impact: "Untraceable URL changes.",
+   fix: "Include slug, icon and description in both states.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-108, title: "Category delete counts products outside a lock, then deletes with CASCADE", severity: P3, confidence: Medium, status: Confirmed, category: "Backend", verified: C,
+   location: ["backend/shop/admin_views.py:1418-1434", "backend/shop/models.py:104-106 (Product.category on_delete=CASCADE)"],
+   explanation: "A product created between the count and the delete is deleted with the category.",
+   repro: "A seller saves a product in the category while staff delete it.", expected: "Delete refused.", actual: "The new product is deleted.", impact: "Rare data loss.",
+   fix: "select_for_update the category and recount inside the transaction, or on_delete=PROTECT.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-109, title: "Support ticket writes can be applied out of order", severity: P3, confidence: Low, status: Probable, category: "Console UI", verified: A,
+   location: ["frontend/src/app/admin/support/[ticketNumber]/page.tsx:186-199 (every write sets the ticket unconditionally)"],
+   explanation: "Reads are sequenced (generation counter); writes are not.",
+   repro: "Change priority, then reassign at once; the responses arrive reversed.", expected: "The newest state shown.", actual: "The assignee card reverts until the 60 s poll.", impact: "Brief stale view.",
+   fix: "Sequence writes and ignore older responses.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-110, title: "`dark:` utilities follow the OS preference, not the app's dark mode", severity: P3, confidence: High, status: Confirmed, category: "Storefront UI", verified: C,
+   location: ["frontend/src/app/globals.css (no @custom-variant dark)", "frontend/src/components/cart/CartDrawer.tsx:86", "frontend/src/app/register/page.tsx:175"],
+   explanation: "Tailwind v4's default `dark:` uses prefers-color-scheme; the app toggles a .dark class (ThemeContext).",
+   repro: "OS dark, app light; open the cart with an unavailable item, or fail registration.", expected: "Readable warning colours.", actual: "amber-400 / red-300 text on light tints (≈1.3–1.5:1).", impact: "Unreadable warnings.",
+   fix: "Add `@custom-variant dark (&:where(.dark, .dark *));` or use the design tokens.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-111, title: "Dark themes do not set `color-scheme: dark`", severity: P3, confidence: Medium, status: Confirmed, category: "Storefront UI", verified: C,
+   location: ["frontend/src/app/globals.css dark blocks (no color-scheme anywhere)"],
+   explanation: "Native controls keep their light rendering in dark mode.",
+   repro: "Dark mode; open a date input.", expected: "Dark native controls.", actual: "Light calendar icon and popup, light scrollbars.", impact: "Poor contrast on native controls.",
+   fix: "color-scheme: dark in the .dark blocks, light in the others.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-112, title: "Console profile hides a failed profile load and offers an edit link that cannot work", severity: P3, confidence: High, status: Confirmed, category: "Console UI", verified: C,
+   location: ["frontend/src/app/admin/profile/page.tsx:49 (ignores useProfile().error), :114, :193, :199-204, :360-361", "backend seed: OPERATION_MANAGER, SALES_MANAGER, SALES_TEAM, FINANCE lack profile.view"],
+   explanation: "GET /api/profile/me/ is 403 for those roles; the page shows “Not set”.",
+   repro: "Sign in as a FINANCE-only staff member and open /admin/profile.", expected: "A note that profile details are unavailable.", actual: "“Display name: Not set”; Edit details leads to an error page.", impact: "Misleading.",
+   fix: "Read error/isLoading; hide Edit details when the profile is unavailable.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-113, title: "Console profile wallet figures omit expired points", severity: P3, confidence: High, status: Confirmed, category: "Console UI", verified: C,
+   location: ["frontend/src/app/admin/profile/page.tsx:288-305 (no wallet.expired figure)"],
+   explanation: "The backend sends `expired`; other screens show it.",
+   repro: "Staff with expiry: received 500, gave 100, 400 expired.", expected: "Figures that add up to the balance.", actual: "400 points unexplained.", impact: "Confusing ledger.",
+   fix: "Add an Expired figure.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-114, title: "“No points yet” shown for any zero balance, even after activity", severity: P3, confidence: Medium, status: Confirmed, category: "Console UI", verified: C,
+   location: ["frontend/src/app/admin/profile/page.tsx:124-127"],
+   explanation: "The caption keys on balance === 0, not on there being no history.",
+   repro: "Receive 200 and give all 200 to sellers.", expected: "“No points left to give.”", actual: "“No points yet.”", impact: "Contradicts the list below.",
+   fix: "Use “No points yet” only when there are no transactions.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-115, title: "Console customer directory lists staff and superuser accounts", severity: P3, confidence: Medium, status: Confirmed, category: "Backend/Console", verified: C,
+   location: ["backend/customers/views.py:60-61 (GET /api/profile/me/ creates a CustomerProfile)", "frontend/src/context/ProfileContext.tsx (fetched for every signed-in user, Console included)", "backend/shop/admin_views.py:1452-1456 (no role/staff filter)"],
+   explanation: "Reading one's profile creates a CustomerProfile, and the directory lists every profile.",
+   repro: "A superuser signs in to the Console and opens /admin/customers.", expected: "Customers only (needs a decision).", actual: "The superuser appears as a customer with 0 orders.", impact: "Polluted directory and counts.",
+   fix: "Decide: exclude staff/non-CUSTOMER accounts from the list, or stop the GET from creating rows.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-116, title: "Customer search placeholder promises name search the backend does not do", severity: P3, confidence: Medium, status: Confirmed, category: "Console UI", verified: C,
+   location: ["frontend/src/app/admin/customers/page.tsx:229", "backend/shop/admin_views.py:1459-1465 (no first_name/last_name)"],
+   explanation: "The detail page shows the real name, but search cannot find it.",
+   repro: "Search a customer's last name.", expected: "Found.", actual: "“No customers match.”", impact: "Customers hard to find.",
+   fix: "Search first/last name too, or change the placeholder.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-117, title: "Debounced Console search can drop a keystroke typed while the URL updates", severity: P3, confidence: Low, status: Probable, category: "Console UI", verified: A,
+   location: ["frontend/src/app/admin/customers/page.tsx:58-63, 78-88 (resync during render); the same pattern in 11 admin pages"],
+   explanation: "The render-time resync treats the page's own committed URL as an external change.",
+   repro: "Type “abc”, pause, type “d” before the navigation lands.", expected: "“abcd”.", actual: "Input reset to “abc”.", impact: "Lost input (not reproduced).",
+   fix: "Skip the resync when the URL equals the value this page committed.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-118, title: "A negative or fractional ?page= leaves the Console customers list stuck on an error", severity: P3, confidence: High, status: Confirmed, category: "Console UI", verified: A,
+   location: ["frontend/src/app/admin/customers/page.tsx:52"],
+   explanation: "Number('-1') is passed through; the backend answers 404 “Invalid page.” and the table's auto-reset only covers page > 1.",
+   repro: "Open /admin/customers?page=-1.", expected: "Page 1.", actual: "“Invalid page.” with a Retry that fails the same way.", impact: "Edge case.",
+   fix: "Clamp to a whole number ≥ 1.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-119, title: "Demo category counts contradict the demo products", severity: P3, confidence: High, status: Confirmed, category: "Storefront (demo only)", verified: A,
+   location: ["frontend/src/lib/api.ts:141-151 vs 153-288"],
+   explanation: "Only visible while the demo fallback is active (decision 4 keeps it until production).",
+   repro: "API down; pick “Watches • 2 Items”.", expected: "2 products.", actual: "None.", impact: "Demo looks broken.",
+   fix: "Derive the counts from DEMO_PRODUCTS, or remove the fallback as planned.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-120, title: "Django admin direct-grant board: the filter blanks every section until reload", severity: P3, confidence: High, status: Confirmed, category: "Django admin UI", verified: C,
+   location: ["backend/templates/admin/widgets/minishop_permission_matrix.html:115 (li.ms-perm has no data-pm-row)", "backend/static/js/admin_user_permission.js:270-285 (section hidden when no rows match)"],
+   explanation: "With no data-pm-row elements, every section counts 0 matches, including for an empty filter.",
+   repro: "Superuser → user → Roles & groups → type in “Filter MiniShop permissions”, then clear it.", expected: "Matching rows shown; all back when cleared.", actual: "Board blank, and stays blank.", impact: "Direct grants cannot be filtered.",
+   fix: "Add data-pm-row to each li.ms-perm.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-121, title: "Django admin direct-grant board: counters rewritten to direct grants only on load", severity: P3, confidence: High, status: Confirmed, category: "Django admin UI", verified: C,
+   location: ["minishop_permission_matrix.html:124 (data-pm-perm only on unlocked inputs)", "admin_user_permission.js:155-176"],
+   explanation: "Inherited (locked) inputs are left out of every count the script recomputes.",
+   repro: "An account with 30 inherited permissions and no direct grants.", expected: "“30 / 85 granted”.", actual: "“0 / 85 granted”, chips 0/n, rail badges 0.", impact: "Wrong summary.",
+   fix: "Mark locked inputs data-pm-perm too (apply() already skips disabled ones).", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-122, title: "Django admin direct-grant board: Enter in the filter saves the form for full-access accounts", severity: P3, confidence: High, status: Confirmed, category: "Django admin UI", verified: C,
+   location: ["admin_user_permission.js:102-103 (returns before binding search and the Enter guard when nothing is unlocked)", "rbac/widgets.py:446"],
+   explanation: "For a superuser target every input is locked, so initBoard exits early.",
+   repro: "Edit another superuser, type in the MiniShop filter, press Enter.", expected: "Filter applied; no submit.", actual: "The user form is saved (_save).", impact: "Unintended saves.",
+   fix: "Same fix as BUG-121.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-123, title: "Role permission board: section and Select-all boxes cannot clear when locked rows are unticked", severity: P3, confidence: High, status: Confirmed, category: "Django admin UI", verified: A,
+   location: ["admin_user_permission.js:134-139, 185-225", "role_permission_matrix.html:40, 93, 113-115"],
+   explanation: "The roll-up counts locked inputs, so the box stays indeterminate and each click re-applies “check”.",
+   repro: "Restricted operator; a section with locked unticked codes; tick then untick the section box.", expected: "Editable codes cleared.", actual: "Nothing clears.", impact: "Tedious editing.",
+   fix: "Roll up over enabled inputs only.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-124, title: "Locked grants show as not granted after a validation error re-render", severity: P3, confidence: High, status: Confirmed, category: "Django admin UI", verified: A,
+   location: ["backend/rbac/widgets.py:495-502, 568-570 (role form), 426-436 (user form)"],
+   explanation: "On a bound form the value is the POST list, and disabled boxes post nothing (save_related keeps the rows).",
+   repro: "Restricted operator edits a role holding a locked code and submits an invalid name.", expected: "Locked code still ticked.", actual: "Shown unticked; counts drop.", impact: "Display only.",
+   fix: "Use the saved state for locked rows.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-125, title: "User change form hero gauge shows 0 / 0 to non-superuser operators", severity: P3, confidence: High, status: Confirmed, category: "Django admin UI", verified: A,
+   location: ["backend/templates/admin/auth/user/change_form.html:81-85", "rbac/admin.py:557-561"],
+   explanation: "The gauge is filled by the board script, which has no board when the field is read-only.",
+   repro: "Staff (not superuser) opens a user with 40 admin permissions.", expected: "40 / n.", actual: "0 / 0.", impact: "Wrong summary.",
+   fix: "Render the counts server-side, or hide the gauge without a board.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-126, title: "Deactivated roles shown as active on the user change form", severity: P3, confidence: High, status: Confirmed, category: "Django admin UI", verified: C,
+   location: ["backend/templates/admin/auth/user/change_form.html:66-67", "backend/templates/admin/edit_inline/mp_role.html:57-68"],
+   explanation: "Only UserRole.is_active is checked; get_user_role_codes also requires role.is_active.",
+   repro: "Switch a role off in RoleAdmin; open a holder's account.", expected: "Chip and card marked inactive.", actual: "Shown active while granting nothing.", impact: "Misleading access view.",
+   fix: "Use assignment.is_active and assignment.role.is_active; add a “role disabled” state.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-127, title: "Access-board copy contradicts what the boards do", severity: P3, confidence: High, status: Confirmed, category: "Django admin UI", verified: A,
+   location: ["backend/rbac/admin.py:528-536, 598-609 (“Read-only” description kept for superusers)", "minishop_permission_board.html:155-158, 171-176, 234-239 (direct grants shown with no source)"],
+   explanation: "Superusers see “Read-only” above an editable board; direct grants look role-derived.",
+   repro: "Open a user with a direct grant.", expected: "Accurate labels.", actual: "Contradictory copy.", impact: "Confusion.",
+   fix: "Swap the description with the field; tag direct grants.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-128, title: "Saved role cards keep a hidden but focusable role select", severity: P3, confidence: Medium, status: Confirmed, category: "Django admin UI", verified: A,
+   location: ["backend/templates/admin/edit_inline/mp_role.html:110-116", "admin_user_permission.css:1290-1299 (clip, not display:none or inert)"],
+   explanation: "Keyboard users can tab into the invisible select2 and change which role a saved UserRole points to.",
+   repro: "Tab past the status pill, ArrowDown, pick another role, save.", expected: "A saved assignment is removed and re-added, not edited.", actual: "The row's role is rewritten while the card shows the old name.", impact: "Hidden change of access.",
+   fix: "Render the field as hidden for saved rows.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-129, title: "Wide permission-matrix checkboxes have no readable accessible name", severity: P3, confidence: Low, status: Probable, category: "Django admin UI", verified: A,
+   location: ["backend/templates/admin/widgets/permission_matrix.html:116-127", "admin_user_permission.css:931-932"],
+   explanation: "The visible label span is display:none; headers are buttons.",
+   repro: "Screen reader on the wide matrix.", expected: "“Product: change”.", actual: "A codename title or nothing.", impact: "Accessibility.",
+   fix: "aria-label from the row and action labels.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-130, title: "Django admin dashboard shows create links without add permission", severity: P3, confidence: High, status: Confirmed, category: "Django admin UI", verified: A,
+   location: ["backend/templates/admin/index.html:47, 365-384 (New product, quick-create links)", "index.html:110-337 (counts shown to any is_staff; test_admin_dashboard_access keeps them visible on purpose)"],
+   explanation: "The links lead to 403 for staff without add permission; the counts are probably an intended policy (confirm).",
+   repro: "Staff without shop.add_product opens /admin/.", expected: "No such link.", actual: "Link leading to 403.", impact: "Minor.",
+   fix: "Wrap each link in a has-add-permission check; confirm the metrics policy.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+
+- {id: BUG-131, title: "Admin templates: external-link hint on a non-link; panes unreachable without JavaScript", severity: P3, confidence: High, status: Confirmed, category: "Django admin UI", verified: A,
+   location: ["backend/templates/admin/profile.html:156", "backend/templates/admin/auth/user/change_form.html:177, 220 (panes hidden in markup)"],
+   explanation: "“(opens in a new tab)” is rendered when the KPI has no URL; the Roles and Account panes are hidden server-side, contradicting the no-JS promise in admin_user_permission.js:12-13.",
+   repro: "Notifications KPI with no URL; or JS disabled.", expected: "No hint; panes reachable.", actual: "Hint on a <div>; username/email/roles unreachable.", impact: "Minor.",
+   fix: "Check kpi.url too; hide panes from JS.", effort: XS, release_blocking: no, found_by: TASK-046, task: TASK-049}
+```
+
 ---
 
 ## 4. Prioritized implementation task list (summary)
@@ -1818,7 +2041,7 @@ Every command below was run for this audit, read-only, with `PYTHONDONTWRITEBYTE
   - `app/admin/support/[ticketNumber]/page.tsx` lines 420-880; `roleGovernance.tsx` lines 200-657; `roles/[id]` lines 260-614; `categoryGovernance.tsx` lines 140-322.
   - `customerDirectory.tsx`; `customers/page.tsx` lines 130-259; `profile/page.tsx` lines 140-609; `adminProfile.ts`.
   - `lib/types.ts` lines 520-946; `globals.css` (token blocks only); `lib/api.ts` lines 100-245 (demo data).
-- TASK-046 is the follow-up pass for these areas.
+- TASK-046 was the follow-up pass for these areas (2026-10-25): see §3.5, BUG-101 to BUG-131.
 
 **Assumptions**
 - No production deployment exists yet (project decision of 2026-09-18). Severity for configuration findings states the effect on a deployment.
