@@ -2009,7 +2009,7 @@ Every command below was run for this audit, read-only, with `PYTHONDONTWRITEBYTE
 - **`npm run build`.** It writes `.next/`, which would break a running `next dev`.
 - **Servers, browsers, HTTP requests, `npm audit` / `pip-audit`.** These need the network or are forbidden by the brief.
 - **Token forging, throttling probes and concurrency reproduction.** These are runtime attacks and tests; their findings are static.
-- **Database contents.** Historical inventory drift (#30) and real seller role assignments (BUG-004) were not checked.
+- **Database contents.** Historical inventory drift (#30) and real seller role assignments (BUG-004) were not checked. Checked since by TASK-047 on a dev snapshot: see audit/DATA_RECONCILIATION.md (no active SALES_TEAM seller; ledger gaps and payment-less orders only in seed and smoke-test rows).
 
 ---
 
