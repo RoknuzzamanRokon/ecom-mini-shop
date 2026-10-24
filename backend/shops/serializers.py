@@ -164,8 +164,8 @@ class SellerShopUpdateSerializer(serializers.ModelSerializer):
     """
     Validates seller updates to existing shops. Prohibits altering owner or status directly.
     """
-    latitude = serializers.FloatField(required=False, allow_null=True, default=None)
-    longitude = serializers.FloatField(required=False, allow_null=True, default=None)
+    latitude = serializers.FloatField(required=False, allow_null=True)
+    longitude = serializers.FloatField(required=False, allow_null=True)
 
     class Meta:
         model = Shop
@@ -190,7 +190,12 @@ class SellerShopUpdateSerializer(serializers.ModelSerializer):
         lng = attrs.get("longitude")
         if (lat is not None and lng is None) or (lat is None and lng is not None):
             raise serializers.ValidationError("Both latitude and longitude must be provided together.")
-        if lat is not None and lng is not None:
+        if lat is None and lng is None:
+            # Absent, or both null: the location is left as it is. Passing
+            # nulls on made the service's coordinate check a 500 (BUG-044).
+            attrs.pop("latitude", None)
+            attrs.pop("longitude", None)
+        else:
             valid_lat, valid_lng = validate_coordinates(lat, lng)
             attrs["latitude"] = valid_lat
             attrs["longitude"] = valid_lng

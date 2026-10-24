@@ -1177,3 +1177,77 @@ class ShopAdminOwnerCapTests(TestCase):
         self.assertEqual(response.status_code, 302)
         self.limited_shop.refresh_from_db()
         self.assertEqual(self.limited_shop.name, "Limited Renamed")
+
+
+class SellerShopUpdateTests(TestCase):
+    """
+    TASK-033: PUT/PATCH /api/shops/mine/<pk>/update/.
+
+    BUG-044: absent or null coordinates leave the location alone instead of
+    a 500, and the response shows what was saved. BUG-045: staff are not
+    owners here (403), however much they may do through the staff APIs.
+    """
+
+    HERE = Point(90.4125, 23.8103)
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_rbac", verbosity=0)
+        cls.owner = User.objects.create_user(username="upd_owner", password="Upd-Owner-123")
+        seller = SellerProfile.objects.create(
+            user=cls.owner, business_name="Upd Seller", status=SellerProfile.STATUS_ACTIVE,
+            seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+        )
+        cls.shop = Shop.objects.create(
+            owner=seller, name="Upd Shop", slug="upd-shop", status=Shop.STATUS_ACTIVE, location=cls.HERE,
+        )
+        cls.op_manager = User.objects.create_user(username="upd_staff", password="Upd-Staff-123", is_staff=True)
+        assign_user_role(cls.op_manager, Role.ROLE_OPERATION_MANAGER)
+        cls.superuser = User.objects.create_superuser(username="upd_super", email="upd@example.com", password="Upd-Super-123")
+
+    def setUp(self):
+        self.client = APIClient()
+        self.url = f"/api/shops/mine/{self.shop.pk}/update/"
+
+    def send(self, method, data, user=None):
+        self.client.force_authenticate(user=user or self.owner)
+        return getattr(self.client, method)(self.url, data, format="json")
+
+    def test_put_without_coordinates_keeps_the_location(self):
+        response = self.send("put", {"name": "Upd Shop Put"})
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["name"], "Upd Shop Put")
+        self.shop.refresh_from_db()
+        self.assertEqual((self.shop.name, self.shop.location), ("Upd Shop Put", self.HERE))
+
+    def test_null_coordinates_keep_the_location(self):
+        response = self.send("patch", {"name": "Upd Shop Null", "latitude": None, "longitude": None})
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.shop.refresh_from_db()
+        self.assertEqual(self.shop.location, self.HERE)
+
+    def test_one_coordinate_alone_is_a_400(self):
+        response = self.send("patch", {"latitude": 23.9, "longitude": None})
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_the_response_shows_the_saved_values(self):
+        response = self.send("patch", {"name": "Upd Shop Renamed", "latitude": 24.8949, "longitude": 91.8687})
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual(response.data["name"], "Upd Shop Renamed")
+        self.assertAlmostEqual(response.data["latitude"], 24.8949, places=4)
+        self.assertAlmostEqual(response.data["longitude"], 91.8687, places=4)
+
+    def test_staff_are_not_owners_here(self):
+        for user in (self.op_manager, self.superuser):
+            with self.subTest(user=user.username):
+                self.client.force_authenticate(user=user)
+                for method, path, data in (
+                    ("patch", self.url, {"name": "Staff Edit"}),
+                    ("get", f"/api/shops/mine/{self.shop.pk}/", None),
+                    ("post", f"/api/shops/mine/{self.shop.pk}/submit/", None),
+                    ("patch", f"/api/shops/mine/{self.shop.pk}/location/", {"latitude": 1, "longitude": 1}),
+                ):
+                    response = getattr(self.client, method)(path, data, format="json")
+                    self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN, (method, path))
+        self.shop.refresh_from_db()
+        self.assertEqual(self.shop.name, "Upd Shop")

@@ -236,12 +236,15 @@ class SellerShopUpdateView(generics.UpdateAPIView):
         return obj
 
     def perform_update(self, serializer):
-        shop = self.get_object()
         seller = self.request.user.seller_profile
         try:
-            ShopService.update_shop(shop, seller, **serializer.validated_data)
+            # The response is built from serializer.instance, so it must be
+            # the shop the service saved, not a stale copy (BUG-044).
+            serializer.instance = ShopService.update_shop(serializer.instance, seller, **serializer.validated_data)
         except IneligibleSellerError as e:
             raise PermissionDenied(str(e))
+        except DjangoValidationError as e:
+            raise ValidationError(e.message_dict if hasattr(e, "message_dict") else {"detail": e.messages})
 
 
 class SellerShopSubmitView(APIView):
@@ -298,9 +301,8 @@ class SellerShopLocationUpdateView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_403_FORBIDDEN)
         except PermissionDenied as e:
             return Response({"error": str(e)}, status=status.HTTP_403_FORBIDDEN)
-        except ValidationError as e:
-            msg = e.message if hasattr(e, "message") else str(e)
-            return Response({"error": msg}, status=status.HTTP_400_BAD_REQUEST)
+        except DjangoValidationError as e:
+            return Response({"error": " ".join(e.messages)}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(
             {

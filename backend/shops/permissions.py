@@ -1,8 +1,7 @@
 from rest_framework.permissions import BasePermission
 from rest_framework.exceptions import PermissionDenied
 
-from rbac.models import Role
-from rbac.services import get_user_role_codes, has_user_permission
+from rbac.services import has_user_permission
 
 
 class CanViewStaffShops(BasePermission):
@@ -55,7 +54,11 @@ class IsEligibleShopSeller(BasePermission):
 class IsShopOwner(BasePermission):
     """
     Object-level permission ensuring a seller can only access or modify shops they own.
-    Allows staff with 'shops.update' or SUPER_ADMINISTRATOR to bypass.
+
+    Only for the seller-only /api/shops/mine/ views, which act as the user's
+    own seller profile. Staff have no bypass here: they manage shops through
+    the staff and Console endpoints. A bypass let staff without a seller
+    profile reach request.user.seller_profile and get a 500 (BUG-045).
     """
     message = "You do not own this shop."
 
@@ -66,12 +69,6 @@ class IsShopOwner(BasePermission):
         user = request.user
         if not user or not user.is_authenticated:
             return False
-
-        if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
-            return True
-
-        if has_user_permission(user, "shops.update"):
-            return True
 
         if not hasattr(user, "seller_profile"):
             return False

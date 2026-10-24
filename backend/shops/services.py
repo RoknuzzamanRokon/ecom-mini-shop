@@ -218,8 +218,10 @@ class ShopService:
         if not seller.is_operational:
             raise IneligibleSellerError("Suspended or inactive sellers cannot modify shop details.")
 
-        if "latitude" in fields and "longitude" in fields:
-            lat, lng = validate_coordinates(fields.pop("latitude"), fields.pop("longitude"))
+        # No coordinates, or both null, leave the location as it is (BUG-044).
+        latitude, longitude = fields.pop("latitude", None), fields.pop("longitude", None)
+        if latitude is not None or longitude is not None:
+            lat, lng = validate_coordinates(latitude, longitude)
             shop.location = Point(longitude=lng, latitude=lat)
 
         allowed_fields = {
