@@ -5,16 +5,33 @@ import urllib.request
 from pathlib import Path
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.files.base import ContentFile
-from django.core.management.base import BaseCommand
-from django.db.models import Q
+from django.core.management.base import BaseCommand, CommandError
+from django.utils import timezone
 from django.utils.text import slugify
 from PIL import Image, ImageDraw, ImageFont
 
+from sellers.models import SellerProfile
+from shop.inventory_service import InventoryService
+from shop.management.seeding import (
+    SEED_EMAIL_DOMAIN,
+    add_dev_db_argument,
+    is_seed_account,
+    is_seed_product,
+    is_seed_shop,
+    require_dev_database,
+)
 from shop.models import Category, Product, ProductImage
 from shops.models import Shop
 
 DEMO_PHOTO_URL = "https://picsum.photos/seed/{seed}/{size}/{size}"
+
+# The seeder's own store: its demo products go here, never into a real shop.
+DEMO_STORE_NAME = "MiniShop Demo Store"
+DEMO_STORE_SLUG = "minishop-demo-store"
+DEMO_SELLER_USERNAME = "minishop_demo_seller"
+DEMO_SELLER_EMAIL = f"demo{SEED_EMAIL_DOMAIN}"
 
 # Category images ship in the repository here, not in media/, which holds
 # runtime uploads and is gitignored (BUG-043). Seeding copies them into
@@ -233,8 +250,9 @@ class Command(BaseCommand):
         parser.add_argument(
             "--force",
             action="store_true",
-            help="Replace images for products/gallery that already exist.",
+            help="Replace images for the seeder's own products that already exist.",
         )
+        add_dev_db_argument(parser)
 
     def set_cover_image(self, product, name, color, slug):
         photo, ext = build_product_photo(name, color, slug)
@@ -247,60 +265,82 @@ class Command(BaseCommand):
         gallery_image.image.save(f"{slug}-{index}.{ext}", photo, save=False)
         gallery_image.save()
 
+    def seed_store(self):
+        """
+        The seeder's own seller account and shop, which its products go into.
+        Products used to land in whatever approved shop came first, a real
+        seller's included (BUG-068).
+        """
+        User = get_user_model()
+        user, created = User.objects.get_or_create(
+            username=DEMO_SELLER_USERNAME,
+            defaults={"email": DEMO_SELLER_EMAIL, "first_name": DEMO_STORE_NAME},
+        )
+        if not is_seed_account(user):
+            raise CommandError(f"Account {user.username} exists and is not a seed account; nothing was seeded.")
+        if created:
+            user.set_unusable_password()
+            user.save()
+        seller, _ = SellerProfile.objects.get_or_create(
+            user=user,
+            defaults={
+                "business_name": DEMO_STORE_NAME,
+                "business_email": DEMO_SELLER_EMAIL,
+                "seller_type": SellerProfile.TYPE_FULL_SHOP_OWNER,
+            },
+        )
+        if seller.status != SellerProfile.STATUS_ACTIVE:
+            seller.status = SellerProfile.STATUS_ACTIVE
+            seller.approved_at = seller.approved_at or timezone.now()
+            seller.save()
+        shop, _ = Shop.objects.get_or_create(
+            slug=DEMO_STORE_SLUG,
+            defaults={"owner": seller, "name": DEMO_STORE_NAME, "status": Shop.STATUS_ACTIVE},
+        )
+        if not is_seed_shop(shop):
+            raise CommandError(f"Shop {shop.slug} belongs to a real seller; nothing was seeded.")
+        if shop.status != Shop.STATUS_ACTIVE:
+            shop.status = Shop.STATUS_ACTIVE
+            shop.approved_at = shop.approved_at or timezone.now()
+            shop.save()
+        return shop
+
     def handle(self, *args, **options):
+        require_dev_database(options)
         force = options["force"]
+
+        # Missing categories are created; an existing one is shared, so it is
+        # used as it is.
         categories_by_name = {}
         for entry in CATEGORIES:
-            slug = slugify(entry["name"])
             category, created = Category.objects.get_or_create(
-                slug=slug,
+                slug=slugify(entry["name"]),
                 defaults={
                     "name": entry["name"],
                     "icon": entry["icon"],
                     "description": entry["description"],
+                    "image": seed_category_image(entry["image"]) or "",
                 },
             )
-            # Ensure icon and description are updated
-            if not category.icon:
-                category.icon = entry["icon"]
-            if not category.description or force:
-                category.description = entry["description"]
-
-            # Set category demo image from the bundled seed images
-            if force or not category.image:
-                category.image = seed_category_image(entry["image"]) or category.image
-
-            category.save()
             categories_by_name[entry["name"]] = category
-            img_status = category.image.name if category.image else "none"
-            self.stdout.write(f"{'Created' if created else 'Updated'} category: {category.name} (image: {img_status})")
+            self.stdout.write(f"{'Created' if created else 'Using existing'} category: {category.name}")
 
-        # Fallback for ANY other existing categories in the database lacking an image
-        available_images = [entry["image"] for entry in CATEGORIES]
-        no_image_cats = Category.objects.filter(Q(image__isnull=True) | Q(image=""))
-        for idx, cat in enumerate(no_image_cats):
-            assigned_img = available_images[idx % len(available_images)]
-            cat.image = seed_category_image(assigned_img) or cat.image
-            if not cat.description:
-                cat.description = "Explore our curated collection of quality products."
-            cat.save()
-            self.stdout.write(f"Assigned demo image to existing category: {cat.name} -> {cat.image.name}")
-
-        active_shop = Shop.objects.filter(
-            status__in=["ACTIVE", "APPROVED"],
-            owner__status__in=["ACTIVE", "APPROVED"],
-        ).first()
+        store = self.seed_store()
 
         for name, cat_name, price, old_price, badge, stock, description, color in PRODUCTS:
             slug = slugify(name)
             product = Product.objects.filter(slug=slug).first()
+
+            if product is not None and not is_seed_product(product):
+                self.stdout.write(self.style.WARNING(f"Skipped product: {name} belongs to a real shop"))
+                continue
 
             if product is None:
                 product = Product(
                     name=name,
                     slug=slug,
                     category=categories_by_name[cat_name],
-                    shop=active_shop,
+                    shop=store,
                     status=Product.STATUS_PUBLISHED,
                     is_active=True,
                     description=description,
@@ -311,11 +351,12 @@ class Command(BaseCommand):
                 )
                 self.set_cover_image(product, name, color, slug)
                 product.save()
+                # The initial stock is a ledger entry like any other.
+                InventoryService.get_or_create_inventory(product)
                 self.stdout.write(f"Created product: {name}")
             else:
                 self.stdout.write(f"Exists product: {name}")
-                if active_shop and (not product.shop or product.status != Product.STATUS_PUBLISHED):
-                    product.shop = active_shop
+                if product.status != Product.STATUS_PUBLISHED or not product.is_active:
                     product.status = Product.STATUS_PUBLISHED
                     product.is_active = True
                     product.save()

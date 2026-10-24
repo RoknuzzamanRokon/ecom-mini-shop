@@ -44,13 +44,18 @@ pip install -r requirements.txt
 # 3. Apply database migrations
 python manage.py migrate
 
-# 4. Seed demo categories and products (with placeholder images)
-python manage.py seed_demo_data
+# 4. Seed demo categories and products (with placeholder images) into the
+#    seeder's own "MiniShop Demo Store". Seed commands run only with DEBUG on
+#    and --i-know-this-is-a-dev-db, and change only their own rows (accounts
+#    @minishop.demo, their shops and products); a real row that shares a slug
+#    or username is reported and left alone.
+python manage.py seed_demo_data --i-know-this-is-a-dev-db
 
 # 4b. Or seed the full showcase storefront: 4 demo shops, 9 categories and
 #     24 products with real product photography downloaded from Unsplash.
-#     Add --force to re-download images, --password to enable demo seller login.
-python manage.py seed_showcase
+#     Add --force to re-download images, --password to give the demo seller
+#     accounts this run creates a login (existing accounts keep theirs).
+python manage.py seed_showcase --i-know-this-is-a-dev-db
 
 # 5. Create an admin user
 python manage.py createsuperuser

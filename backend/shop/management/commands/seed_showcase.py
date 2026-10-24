@@ -8,8 +8,16 @@ from django.utils import timezone
 from django.utils.text import slugify
 
 from sellers.models import SellerProfile
+from shop.inventory_service import InventoryService
 from shop.management.commands.seed_demo_data import generate_placeholder_image
-from shop.models import Category, Product, ProductImage, ProductInventory
+from shop.management.seeding import (
+    add_dev_db_argument,
+    is_seed_account,
+    is_seed_product,
+    is_seed_shop,
+    require_dev_database,
+)
+from shop.models import Category, Product, ProductImage
 from shops.fields import Point
 from shops.models import Shop
 
@@ -226,8 +234,12 @@ class Command(BaseCommand):
         parser.add_argument(
             "--password",
             default="",
-            help="Optional login password for the demo seller accounts (local development only).",
+            help=(
+                "Optional login password for demo seller accounts this run creates "
+                "(local development only). Existing accounts keep theirs."
+            ),
         )
+        add_dev_db_argument(parser)
 
     def assign_image(self, field, filename, photo_id, keyword, force, **photo_kwargs):
         if not (force or file_missing(field)):
@@ -239,22 +251,22 @@ class Command(BaseCommand):
         return True
 
     def seed_categories(self, force):
+        """Creates missing categories. An existing one is shared, so it is used as it is."""
         categories = {}
         for name, icon, photo_id, keyword, description in CATEGORIES:
             category, created = Category.objects.get_or_create(
                 slug=slugify(name),
                 defaults={"name": name, "icon": icon, "description": description},
             )
-            category.icon = category.icon or icon
-            category.description = category.description or description
-            category.is_active = True
-            downloaded = self.assign_image(
-                category.image, slugify(name), photo_id, keyword, force, width=1200, height=800,
-            )
-            category.save()
+            downloaded = False
+            if created:
+                downloaded = self.assign_image(
+                    category.image, slugify(name), photo_id, keyword, force, width=1200, height=800,
+                )
+                category.save()
             categories[name] = category
             self.stdout.write(
-                f"  {'created' if created else 'updated'} category {name}"
+                f"  {'created' if created else 'using existing'} category {name}"
                 f"{' (photo downloaded)' if downloaded else ''}"
             )
         return categories
@@ -271,14 +283,15 @@ class Command(BaseCommand):
                 username=entry["username"],
                 defaults={"email": entry["email"], "first_name": entry["name"]},
             )
+            if not is_seed_account(user):
+                self.skip(f"account {user.username} is not a seed account, so shop {entry['slug']}")
+                continue
+            # Only a new account gets the password; an existing one keeps its own.
             if user_created:
                 if password:
                     user.set_password(password)
                 else:
                     user.set_unusable_password()
-                user.save()
-            elif password:
-                user.set_password(password)
                 user.save()
 
             seller, _ = SellerProfile.objects.get_or_create(
@@ -299,6 +312,9 @@ class Command(BaseCommand):
                 slug=entry["slug"],
                 defaults={"owner": seller, "name": entry["name"]},
             )
+            if not shop_created and not is_seed_shop(shop):
+                self.skip(f"shop {shop.slug} belongs to a real seller, so it")
+                continue
             shop.owner = seller
             shop.name = entry["name"]
             shop.description = entry["description"]
@@ -346,8 +362,16 @@ class Command(BaseCommand):
     def seed_products(self, categories, shops, force):
         for (name, shop_slug, category_name, price, old_price, badge, stock,
              description, photo_id, keyword) in PRODUCTS:
+            if shop_slug not in shops:
+                continue  # its shop was skipped
             slug = slugify(name)
-            product = Product.objects.filter(slug=slug).first() or Product(name=name, slug=slug)
+            product = Product.objects.filter(slug=slug).first()
+            if product is not None and not is_seed_product(product):
+                self.skip(f"product {slug} belongs to a real shop, so it")
+                continue
+            created = product is None
+            if created:
+                product = Product(name=name, slug=slug, stock=stock)
 
             product.name = name
             product.category = categories[category_name]
@@ -355,7 +379,6 @@ class Command(BaseCommand):
             product.description = description
             product.price = Decimal(price)
             product.old_price = Decimal(old_price) if old_price else None
-            product.stock = stock
             product.badge = badge
             product.is_active = True
             product.status = Product.STATUS_PUBLISHED
@@ -365,17 +388,23 @@ class Command(BaseCommand):
 
             self.seed_gallery(product, photo_id, keyword, force)
 
-            inventory, _ = ProductInventory.objects.get_or_create(product=product)
+            # Stock moves through InventoryService, so each change has a ledger row.
+            inventory = InventoryService.get_or_create_inventory(product)
             if inventory.available_quantity != stock:
-                inventory.available_quantity = stock
-                inventory.save()
+                InventoryService.adjust_stock(
+                    product, stock - inventory.available_quantity, reason="Showcase seed: demo stock level."
+                )
 
             self.stdout.write(
                 f"  {name} -> {shops[shop_slug].name} (BDT {price})"
                 f"{' (photo downloaded)' if downloaded else ''}"
             )
 
+    def skip(self, what):
+        self.stdout.write(self.style.WARNING(f"  skipped: {what} is left untouched"))
+
     def handle(self, *args, **options):
+        require_dev_database(options)
         force = options["force"]
         password = options["password"]
 
