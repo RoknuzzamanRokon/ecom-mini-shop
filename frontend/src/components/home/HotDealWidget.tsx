@@ -3,13 +3,48 @@
 import React, { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { Product } from "@/lib/types";
+import { HotDeal } from "@/lib/types";
 import { useCart } from "@/context/CartContext";
 import { formatImageUrl } from "@/lib/api";
 import StarRating from "@/components/reviews/StarRating";
 
 interface HotDealWidgetProps {
-  deal: Product | null;
+  deal: HotDeal | null;
+}
+
+/**
+ * The deal's real discount: the API's figure, else one worked out from the
+ * prices, else 0. Never an invented one (BUG-085).
+ */
+export function dealDiscountPercent(deal: HotDeal): number {
+  if (typeof deal.discount_percent === "number") return Math.max(0, deal.discount_percent);
+  const price = parseFloat(String(deal.price));
+  const oldPrice = deal.old_price != null ? parseFloat(String(deal.old_price)) : NaN;
+  if (!(oldPrice > price) || !(price >= 0)) return 0;
+  return Math.round(((oldPrice - price) / oldPrice) * 100);
+}
+
+/** Days, hours, minutes and seconds left until `endsAt`, or null once it has passed. */
+export function timeLeftUntil(endsAt: number, now: number) {
+  const totalSeconds = Math.floor((endsAt - now) / 1000);
+  if (!(totalSeconds > 0)) return null;
+  return {
+    days: Math.floor(totalSeconds / 86400),
+    hours: Math.floor((totalSeconds % 86400) / 3600),
+    minutes: Math.floor((totalSeconds % 3600) / 60),
+    seconds: totalSeconds % 60,
+  };
+}
+
+/** The current time, ticking each second while `active`. */
+function useNow(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [active]);
+  return now;
 }
 
 export default function HotDealWidget({ deal }: HotDealWidgetProps) {
@@ -27,64 +62,22 @@ export default function HotDealWidget({ deal }: HotDealWidgetProps) {
     }
   }, [deal]);
 
-  // Countdown timer state (seconds remaining)
-  const [timeLeft, setTimeLeft] = useState({
-    days: 120,
-    hours: 20,
-    minutes: 36,
-    seconds: 48,
-  });
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setTimeLeft((prev) => {
-        if (prev.seconds > 0) {
-          return { ...prev, seconds: prev.seconds - 1 };
-        } else if (prev.minutes > 0) {
-          return { ...prev, minutes: prev.minutes - 1, seconds: 59 };
-        } else if (prev.hours > 0) {
-          return { ...prev, hours: prev.hours - 1, minutes: 59, seconds: 59 };
-        } else if (prev.days > 0) {
-          return { ...prev, days: prev.days - 1, hours: 23, minutes: 59, seconds: 59 };
-        }
-        return prev;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, []);
+  // The countdown runs only to a real end time from the API (BUG-085).
+  const endsAt = deal?.deal_ends_at ? Date.parse(deal.deal_ends_at) : NaN;
+  const hasDeadline = Number.isFinite(endsAt);
+  const now = useNow(hasDeadline);
 
   if (!deal) return null;
 
-  const discountPercent =
-    deal.discount_percent ||
-    (deal.old_price && parseFloat(deal.old_price.toString()) > parseFloat(deal.price.toString())
-      ? Math.round(
-          ((parseFloat(deal.old_price.toString()) - parseFloat(deal.price.toString())) /
-            parseFloat(deal.old_price.toString())) *
-            100
-        )
-      : 49);
+  const discountPercent = dealDiscountPercent(deal);
+  const timeLeft = hasDeadline ? timeLeftUntil(endsAt, now) : null;
 
   return (
     <div id="hot-deals" className="bg-surface rounded-lg border border-line p-4 shadow-sm transition-colors duration-200">
       {/* Widget Header */}
-      <div className="flex items-center justify-between border-b border-line pb-2.5 mb-3">
+      {/* One deal at a time, so there is nothing to page through. */}
+      <div className="border-b border-line pb-2.5 mb-3">
         <h3 className="font-bold text-xs uppercase tracking-wider text-ink">HOT DEALS</h3>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            className="w-5 h-5 bg-surface-alt hover:bg-surface-sunken text-ink-muted rounded flex items-center justify-center transition-colors"
-          >
-            <span className="material-symbols-outlined text-[14px]">chevron_left</span>
-          </button>
-          <button
-            type="button"
-            className="w-5 h-5 bg-surface-alt hover:bg-surface-sunken text-ink-muted rounded flex items-center justify-center transition-colors"
-          >
-            <span className="material-symbols-outlined text-[14px]">chevron_right</span>
-          </button>
-        </div>
       </div>
 
       {/* Deal Image Container with Discount Badge */}
@@ -108,25 +101,27 @@ export default function HotDealWidget({ deal }: HotDealWidgetProps) {
         )}
       </Link>
 
-      {/* Countdown Timer Display */}
-      <div className="grid grid-cols-4 gap-1.5 mb-3 text-center">
-        <div className="bg-surface-alt/90 rounded py-1 border border-line">
-          <div className="font-bold text-xs text-ink">{timeLeft.days}</div>
-          <div className="text-[9px] uppercase tracking-wider text-ink-muted font-medium">Days</div>
+      {/* Countdown to the deal's real end time, when the API gives one */}
+      {timeLeft && (
+        <div role="timer" aria-label="Time left in this deal" className="grid grid-cols-4 gap-1.5 mb-3 text-center">
+          <div className="bg-surface-alt/90 rounded py-1 border border-line">
+            <div className="font-bold text-xs text-ink">{timeLeft.days}</div>
+            <div className="text-[9px] uppercase tracking-wider text-ink-muted font-medium">Days</div>
+          </div>
+          <div className="bg-surface-alt/90 rounded py-1 border border-line">
+            <div className="font-bold text-xs text-ink">{String(timeLeft.hours).padStart(2, "0")}</div>
+            <div className="text-[9px] uppercase tracking-wider text-ink-muted font-medium">Hrs</div>
+          </div>
+          <div className="bg-surface-alt/90 rounded py-1 border border-line">
+            <div className="font-bold text-xs text-ink">{String(timeLeft.minutes).padStart(2, "0")}</div>
+            <div className="text-[9px] uppercase tracking-wider text-ink-muted font-medium">Mins</div>
+          </div>
+          <div className="bg-surface-alt/90 rounded py-1 border border-line">
+            <div className="font-bold text-xs text-ink">{String(timeLeft.seconds).padStart(2, "0")}</div>
+            <div className="text-[9px] uppercase tracking-wider text-ink-muted font-medium">Secs</div>
+          </div>
         </div>
-        <div className="bg-surface-alt/90 rounded py-1 border border-line">
-          <div className="font-bold text-xs text-ink">{String(timeLeft.hours).padStart(2, "0")}</div>
-          <div className="text-[9px] uppercase tracking-wider text-ink-muted font-medium">Hrs</div>
-        </div>
-        <div className="bg-surface-alt/90 rounded py-1 border border-line">
-          <div className="font-bold text-xs text-ink">{String(timeLeft.minutes).padStart(2, "0")}</div>
-          <div className="text-[9px] uppercase tracking-wider text-ink-muted font-medium">Mins</div>
-        </div>
-        <div className="bg-surface-alt/90 rounded py-1 border border-line">
-          <div className="font-bold text-xs text-ink">{String(timeLeft.seconds).padStart(2, "0")}</div>
-          <div className="text-[9px] uppercase tracking-wider text-ink-muted font-medium">Secs</div>
-        </div>
-      </div>
+      )}
 
       {/* Deal Details */}
       <div className="text-center">
@@ -144,7 +139,7 @@ export default function HotDealWidget({ deal }: HotDealWidgetProps) {
         </div>
         <div className="flex items-center justify-center gap-2 mb-3">
           <span className="text-base font-bold text-primary">৳{deal.price}</span>
-          {deal.old_price && (
+          {discountPercent > 0 && (
             <span className="text-xs text-price-old line-through">৳{deal.old_price}</span>
           )}
         </div>

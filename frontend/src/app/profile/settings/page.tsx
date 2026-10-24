@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import Image from "next/image";
 import { useProfile } from "@/context/ProfileContext";
 import {
@@ -10,8 +10,56 @@ import {
   uploadAvatar,
 } from "@/lib/api";
 import { getAuthToken, setTokens } from "@/lib/auth";
+import { CustomerProfile } from "@/lib/types";
 
 type Banner = { type: "success" | "error"; text: string } | null;
+
+type DetailsForm = {
+  first_name: string;
+  last_name: string;
+  display_name: string;
+  phone: string;
+  date_of_birth: string;
+  gender: string;
+};
+
+const EMPTY_DETAILS: DetailsForm = {
+  first_name: "",
+  last_name: "",
+  display_name: "",
+  phone: "",
+  date_of_birth: "",
+  gender: "",
+};
+
+function detailsFrom(profile: CustomerProfile): DetailsForm {
+  return {
+    first_name: profile.first_name || "",
+    last_name: profile.last_name || "",
+    display_name: profile.display_name || "",
+    phone: profile.phone || "",
+    date_of_birth: profile.date_of_birth || "",
+    gender: profile.gender || "",
+  };
+}
+
+/**
+ * Only the fields the customer changed, so a save can never write the blank
+ * form over details it did not show (BUG-086). The API takes null, not "",
+ * for a cleared date of birth.
+ */
+function changedDetails(
+  details: DetailsForm,
+  profile: CustomerProfile
+): Record<string, string | null> {
+  const saved = detailsFrom(profile);
+  const changes: Record<string, string | null> = {};
+  (Object.keys(details) as (keyof DetailsForm)[]).forEach((field) => {
+    if (details[field] !== saved[field]) changes[field] = details[field];
+  });
+  if (changes.date_of_birth === "") changes.date_of_birth = null;
+  return changes;
+}
 
 const GENDERS = [
   { value: "", label: "Not specified" },
@@ -22,17 +70,18 @@ const GENDERS = [
 ];
 
 export default function ProfileSettingsPage() {
-  const { profile, setProfile, refreshProfile } = useProfile();
+  const { profile, error: profileError, isLoading: profileLoading, setProfile, refreshProfile } =
+    useProfile();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [details, setDetails] = useState({
-    first_name: "",
-    last_name: "",
-    display_name: "",
-    phone: "",
-    date_of_birth: "",
-    gender: "",
-  });
+  const [details, setDetails] = useState<DetailsForm>(EMPTY_DETAILS);
+  // The form is filled from the profile once per profile, during render. A
+  // later profile update (a new photo) must not wipe unsaved edits (BUG-086).
+  const [filledFromProfileId, setFilledFromProfileId] = useState<number | null>(null);
+  if (profile && profile.id !== filledFromProfileId) {
+    setFilledFromProfileId(profile.id);
+    setDetails(detailsFrom(profile));
+  }
   const [detailsBanner, setDetailsBanner] = useState<Banner>(null);
   const [savingDetails, setSavingDetails] = useState(false);
 
@@ -47,35 +96,32 @@ export default function ProfileSettingsPage() {
   const [passwordBanner, setPasswordBanner] = useState<Banner>(null);
   const [savingPassword, setSavingPassword] = useState(false);
 
-  useEffect(() => {
-    if (profile) {
-      setDetails({
-        first_name: profile.first_name || "",
-        last_name: profile.last_name || "",
-        display_name: profile.display_name || "",
-        phone: profile.phone || "",
-        date_of_birth: profile.date_of_birth || "",
-        gender: profile.gender || "",
-      });
-    }
-  }, [profile]);
+  // Nothing can be edited until the real details are on screen.
+  const detailsLocked = !profile || savingDetails;
 
   const handleDetailsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const token = getAuthToken();
-    if (!token) return;
+    if (!token || !profile) return;
+
+    const changes = changedDetails(details, profile);
+    if (Object.keys(changes).length === 0) {
+      setDetailsBanner({ type: "success", text: "No changes to save." });
+      return;
+    }
 
     setSavingDetails(true);
     setDetailsBanner(null);
     try {
-      const payload: Record<string, string | null> = { ...details };
-      // The API rejects an empty string for an optional date.
-      if (!payload.date_of_birth) payload.date_of_birth = null;
-      const updated = await updateCustomerProfile(payload, token);
+      const updated = await updateCustomerProfile(changes, token);
       setProfile(updated);
+      setDetails(detailsFrom(updated));
       setDetailsBanner({ type: "success", text: "Profile details saved." });
-    } catch {
-      setDetailsBanner({ type: "error", text: "Could not save your details." });
+    } catch (err) {
+      setDetailsBanner({
+        type: "error",
+        text: err instanceof Error && err.message ? err.message : "Could not save your details.",
+      });
     } finally {
       setSavingDetails(false);
     }
@@ -169,7 +215,7 @@ export default function ProfileSettingsPage() {
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              disabled={uploadingAvatar}
+              disabled={uploadingAvatar || !profile}
               className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-on-primary font-bold text-xs uppercase tracking-wider px-5 py-2.5 rounded-lg shadow-sm transition-colors disabled:opacity-60 cursor-pointer"
             >
               <span className="material-symbols-outlined text-[16px]">upload</span>
@@ -197,6 +243,29 @@ export default function ProfileSettingsPage() {
           This information is used on your orders and deliveries.
         </p>
 
+        {!profile &&
+          (profileError && !profileLoading ? (
+            <div
+              role="alert"
+              className="mb-4 flex items-center justify-between gap-3 flex-wrap rounded-lg border border-accent/30 bg-accent/10 px-4 py-3"
+            >
+              <p className="text-xs font-medium text-accent">
+                We could not load your details, so they can&apos;t be edited yet. {profileError}
+              </p>
+              <button
+                type="button"
+                onClick={() => refreshProfile()}
+                className="text-xs font-bold uppercase tracking-wider text-primary hover:underline cursor-pointer"
+              >
+                Try again
+              </button>
+            </div>
+          ) : (
+            <p role="status" className="mb-4 text-xs text-ink-muted">
+              Loading your details…
+            </p>
+          ))}
+
         <form onSubmit={handleDetailsSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className={labelClass} htmlFor="first_name">First Name</label>
@@ -205,7 +274,7 @@ export default function ProfileSettingsPage() {
               className={inputClass}
               value={details.first_name}
               onChange={(e) => setDetails({ ...details, first_name: e.target.value })}
-              disabled={savingDetails}
+              disabled={detailsLocked}
             />
           </div>
           <div>
@@ -215,7 +284,7 @@ export default function ProfileSettingsPage() {
               className={inputClass}
               value={details.last_name}
               onChange={(e) => setDetails({ ...details, last_name: e.target.value })}
-              disabled={savingDetails}
+              disabled={detailsLocked}
             />
           </div>
           <div>
@@ -225,7 +294,7 @@ export default function ProfileSettingsPage() {
               className={inputClass}
               value={details.display_name}
               onChange={(e) => setDetails({ ...details, display_name: e.target.value })}
-              disabled={savingDetails}
+              disabled={detailsLocked}
             />
           </div>
           <div>
@@ -236,7 +305,7 @@ export default function ProfileSettingsPage() {
               value={details.phone}
               onChange={(e) => setDetails({ ...details, phone: e.target.value })}
               placeholder="+880 17xx-xxxxxx"
-              disabled={savingDetails}
+              disabled={detailsLocked}
             />
           </div>
           <div>
@@ -247,7 +316,7 @@ export default function ProfileSettingsPage() {
               className={inputClass}
               value={details.date_of_birth}
               onChange={(e) => setDetails({ ...details, date_of_birth: e.target.value })}
-              disabled={savingDetails}
+              disabled={detailsLocked}
             />
           </div>
           <div>
@@ -257,7 +326,7 @@ export default function ProfileSettingsPage() {
               className={inputClass}
               value={details.gender}
               onChange={(e) => setDetails({ ...details, gender: e.target.value })}
-              disabled={savingDetails}
+              disabled={detailsLocked}
             >
               {GENDERS.map((g) => (
                 <option key={g.value} value={g.value}>
@@ -270,7 +339,7 @@ export default function ProfileSettingsPage() {
           <div className="sm:col-span-2 flex items-center gap-4 flex-wrap">
             <button
               type="submit"
-              disabled={savingDetails}
+              disabled={detailsLocked}
               className="inline-flex items-center gap-2 bg-primary hover:bg-primary-hover text-on-primary font-bold text-xs uppercase tracking-wider px-6 py-2.5 rounded-lg shadow-sm transition-colors disabled:opacity-60 cursor-pointer"
             >
               {savingDetails ? "Saving…" : "Save Changes"}

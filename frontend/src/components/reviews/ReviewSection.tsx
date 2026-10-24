@@ -9,6 +9,7 @@ import HiddenReviewNotice from "@/components/reviews/HiddenReviewNotice";
 import RatingSummary from "@/components/reviews/RatingSummary";
 import StarPicker from "@/components/reviews/StarPicker";
 import StarRating from "@/components/reviews/StarRating";
+import { InlineConfirm } from "@/components/feedback";
 
 export interface ReviewInput {
   rating: number;
@@ -100,6 +101,8 @@ export default function ReviewSection({
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  // Deleting asks first, in place of the Edit/Delete buttons (BUG-091).
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const listKey = `${page}|${ordering}|${reloadToken}`;
 
@@ -162,6 +165,7 @@ export default function ReviewSection({
     setFormRating(review.rating);
     setFormComment(review.comment);
     setFormError(null);
+    setConfirmingDelete(false);
     setEditing(true);
   };
 
@@ -196,16 +200,18 @@ export default function ReviewSection({
     const token = getAuthToken();
     if (!token || !myReview || userId === null) return;
     setSubmitting(true);
+    setFormError(null);
     try {
       await adapter.remove(myReview.id, token);
       setMine({ userId, review: null });
       setFormRating(0);
       setFormComment("");
       setEditing(false);
+      setConfirmingDelete(false);
       reloadFirstPage();
       onReviewsChanged?.();
-    } catch {
-      setFormError("Failed to delete review.");
+    } catch (err) {
+      setFormError(err instanceof Error && err.message ? err.message : "Failed to delete your review.");
     } finally {
       setSubmitting(false);
     }
@@ -247,28 +253,47 @@ export default function ReviewSection({
               <StarRating rating={myReview.rating} size={16} />
               <span className="text-xs font-semibold text-ink-muted">Your review</span>
             </div>
-            <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={() => startEditing(myReview)}
-                className="text-xs font-bold uppercase tracking-wider text-primary hover:underline cursor-pointer"
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={submitting}
-                className="text-xs font-bold uppercase tracking-wider text-accent hover:underline cursor-pointer disabled:opacity-50"
-              >
-                Delete
-              </button>
-            </div>
+            {confirmingDelete ? (
+              <InlineConfirm
+                question="Delete your review?"
+                confirmLabel="Delete"
+                busyLabel="Deleting…"
+                busy={submitting}
+                onConfirm={handleDelete}
+                onCancel={() => {
+                  setConfirmingDelete(false);
+                  setFormError(null);
+                }}
+              />
+            ) : (
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => startEditing(myReview)}
+                  className="text-xs font-bold uppercase tracking-wider text-primary hover:underline cursor-pointer"
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDelete(true)}
+                  className="text-xs font-bold uppercase tracking-wider text-accent hover:underline cursor-pointer"
+                >
+                  Delete
+                </button>
+              </div>
+            )}
           </div>
           {myReview.comment && (
             <p className="text-sm text-ink-body mt-2">{myReview.comment}</p>
           )}
           {myReview.is_hidden && <HiddenReviewNotice reason={myReview.hidden_reason} />}
+          {/* The form, where errors otherwise show, is not on screen here. */}
+          {formError && (
+            <p role="alert" className="text-xs text-accent font-semibold mt-2">
+              {formError}
+            </p>
+          )}
         </div>
       ) : (
         <form

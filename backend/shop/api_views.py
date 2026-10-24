@@ -264,9 +264,10 @@ class HotDealAPIView(APIView):
 
     def get(self, request):
         public_qs = ProductService.get_public_products_queryset()
+        # A deal is a real markdown: an old price above the current one. An
+        # old price at or below it is no discount at all (BUG-085).
         deal_product = (
-            public_qs.filter(old_price__isnull=False)
-            .exclude(old_price__lte=0)
+            public_qs.filter(old_price__gt=F("price"))
             .order_by("-created_at")
             .first()
         )
@@ -279,7 +280,10 @@ class HotDealAPIView(APIView):
 
         serializer = ProductListSerializer(deal_product, context={"request": request})
         data = serializer.data
-        data["deal_ends_in_hours"] = 72  # Countdown reference anchor
+        # When the deal ends. No product records an end date yet, so this is
+        # always null and the storefront shows no countdown: the fixed
+        # 72 hours sent before restarted on every visit (BUG-085).
+        data["deal_ends_at"] = None
 
         return Response(data)
 

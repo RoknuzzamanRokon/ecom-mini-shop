@@ -1,3 +1,4 @@
+from datetime import timedelta
 from decimal import Decimal
 
 from django.contrib.auth import get_user_model
@@ -131,7 +132,20 @@ class APITests(ShopTestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["name"], "Custom Mechanical Keyboard")
-        self.assertIn("deal_ends_in_hours", data)
+        self.assertEqual(data["discount_percent"], 18)
+        # No product has a deal end date, so there is nothing to count down to.
+        self.assertIsNone(data["deal_ends_at"])
+        self.assertNotIn("deal_ends_in_hours", data)
+
+    def test_api_hot_deal_skips_an_old_price_that_is_no_discount(self):
+        # BUG-085: a newer product whose "old" price is below its price.
+        self.tee.old_price = self.tee.price - Decimal("1.00")
+        self.tee.save()
+        Product.objects.filter(pk=self.tee.pk).update(created_at=self.keyboard.created_at + timedelta(days=1))
+
+        response = self.client.get(reverse("shop:api_hot_deal"))
+
+        self.assertEqual(response.json()["name"], "Custom Mechanical Keyboard")
 
     def test_api_order_create_and_retrieve(self):
         customer = User.objects.create_user(username="alice_test", password="password123")

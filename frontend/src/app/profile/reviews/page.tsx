@@ -13,6 +13,7 @@ import {
   updateShopReview,
 } from "@/lib/api";
 import { MyReviews, Review } from "@/lib/types";
+import { InlineConfirm } from "@/components/feedback";
 import { PRODUCT_REVIEWS_ANCHOR } from "@/components/product/ProductReviews";
 import HiddenReviewNotice from "@/components/reviews/HiddenReviewNotice";
 import { ReviewInput } from "@/components/reviews/ReviewSection";
@@ -248,11 +249,14 @@ function MyReviewRow({ review, title, href, imageUrl, fallbackIcon, onSave, onDe
   const [comment, setComment] = useState(review.comment);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Deleting asks first (BUG-091).
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
 
   const startEditing = () => {
     setRating(review.rating);
     setComment(review.comment);
     setError(null);
+    setConfirmingDelete(false);
     setEditing(true);
   };
 
@@ -280,8 +284,8 @@ function MyReviewRow({ review, title, href, imageUrl, fallbackIcon, onSave, onDe
     try {
       // On success the row is removed from the list, so there is no state to reset.
       await onDelete();
-    } catch {
-      setError("Failed to delete review.");
+    } catch (err) {
+      setError(err instanceof Error && err.message ? err.message : "Failed to delete your review.");
       setBusy(false);
     }
   };
@@ -354,27 +358,46 @@ function MyReviewRow({ review, title, href, imageUrl, fallbackIcon, onSave, onDe
             </div>
             {review.comment && <p className="text-sm text-ink-body mt-1.5">{review.comment}</p>}
             {review.is_hidden && <HiddenReviewNotice reason={review.hidden_reason} />}
-            <div className="flex items-center gap-3 mt-2">
-              <button
-                type="button"
-                onClick={startEditing}
-                className="text-xs font-bold uppercase tracking-wider text-primary hover:underline cursor-pointer"
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                onClick={handleDelete}
-                disabled={busy}
-                className="text-xs font-bold uppercase tracking-wider text-accent hover:underline cursor-pointer disabled:opacity-50"
-              >
-                Delete
-              </button>
-            </div>
+            {confirmingDelete ? (
+              <div className="mt-2">
+                <InlineConfirm
+                  question="Delete this review?"
+                  confirmLabel="Delete"
+                  busyLabel="Deleting…"
+                  busy={busy}
+                  onConfirm={handleDelete}
+                  onCancel={() => {
+                    setConfirmingDelete(false);
+                    setError(null);
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="flex items-center gap-3 mt-2">
+                <button
+                  type="button"
+                  onClick={startEditing}
+                  className="text-xs font-bold uppercase tracking-wider text-primary hover:underline cursor-pointer"
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmingDelete(true)}
+                  className="text-xs font-bold uppercase tracking-wider text-accent hover:underline cursor-pointer"
+                >
+                  Delete
+                </button>
+              </div>
+            )}
           </>
         )}
 
-        {error && <p className="text-xs text-accent font-semibold mt-2">{error}</p>}
+        {error && (
+          <p role="alert" className="text-xs text-accent font-semibold mt-2">
+            {error}
+          </p>
+        )}
       </div>
     </div>
   );

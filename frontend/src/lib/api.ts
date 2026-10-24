@@ -1,4 +1,4 @@
-import { Category, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, SellerOrderDetail, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse, Favorite, PasswordChangePayload, SellerProfile, SellerDashboardData, SellerShop, SellerWallet, NearbyShopsResponse, PointTransaction, Review, ReviewCreatePayload, ReviewOrdering, ReviewUpdatePayload, ShopReview, ShopReviewCreatePayload, MyReviews, SupportChannel, SupportTicket, SupportTicketCreateInput, SupportTicketListStatus, SupportTicketSummary } from "./types";
+import { Category, HotDeal, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, SellerOrderDetail, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse, Favorite, PasswordChangePayload, SellerProfile, SellerDashboardData, SellerShop, SellerWallet, NearbyShopsResponse, PointTransaction, Review, ReviewCreatePayload, ReviewOrdering, ReviewUpdatePayload, ShopReview, ShopReviewCreatePayload, MyReviews, SupportChannel, SupportTicket, SupportTicketCreateInput, SupportTicketListStatus, SupportTicketSummary } from "./types";
 
 import { AuthUnavailableError, isTransientStatus, refreshTokenOnce } from "./auth";
 
@@ -507,7 +507,7 @@ export async function getNearbyShops(
   return res.json();
 }
 
-export async function getHotDeal(): Promise<Product | null> {
+export async function getHotDeal(): Promise<HotDeal | null> {
   try {
     const res = await fetch(`${API_BASE_URL}/api/hot-deals/`, {
       cache: "no-store",

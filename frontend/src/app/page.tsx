@@ -9,7 +9,7 @@ import HotDealWidget from "@/components/home/HotDealWidget";
 import HeroBanner from "@/components/home/HeroBanner";
 import ProductGrid from "@/components/home/ProductGrid";
 import Pagination from "@/components/home/Pagination";
-import { Category, Product } from "@/lib/types";
+import { Category, HotDeal, Product } from "@/lib/types";
 import { getCategories, getHotDeal, getProducts } from "@/lib/api";
 
 /**
@@ -43,7 +43,7 @@ function HomeContent() {
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
-  const [hotDeal, setHotDeal] = useState<Product | null>(null);
+  const [hotDeal, setHotDeal] = useState<HotDeal | null>(null);
   const [totalPages, setTotalPages] = useState<number>(1);
   const [loading, setLoading] = useState<boolean>(true);
   const [isPending, startTransition] = useTransition();

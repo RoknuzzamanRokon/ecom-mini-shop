@@ -10,6 +10,7 @@ import {
   updateCustomerAddress,
 } from "@/lib/api";
 import { getAuthToken } from "@/lib/auth";
+import { InlineConfirm } from "@/components/feedback";
 
 const LABELS = ["Home", "Work", "Office", "Other"];
 
@@ -38,6 +39,8 @@ export default function AddressesPage() {
   const [form, setForm] = useState<AddressInput>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<number | null>(null);
+  // The address whose Delete is waiting for a yes (BUG-091).
+  const [confirmingDeleteId, setConfirmingDeleteId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     const token = getAuthToken();
@@ -112,11 +115,13 @@ export default function AddressesPage() {
     if (!token) return;
 
     setBusyId(id);
+    setError(null);
     try {
       await deleteCustomerAddress(id, token);
       setAddresses((prev) => prev.filter((a) => a.id !== id));
-    } catch {
-      setError("Could not delete that address.");
+      setConfirmingDeleteId(null);
+    } catch (err) {
+      setError(err instanceof Error && err.message ? err.message : "Could not delete that address.");
     } finally {
       setBusyId(null);
     }
@@ -163,7 +168,7 @@ export default function AddressesPage() {
       </div>
 
       {error && (
-        <div className="bg-accent/10 border border-accent/30 rounded-xl px-4 py-3">
+        <div role="alert" className="bg-accent/10 border border-accent/30 rounded-xl px-4 py-3">
           <p className="text-sm text-accent font-medium">{error}</p>
         </div>
       )}
@@ -396,36 +401,49 @@ export default function AddressesPage() {
               </p>
               <p className="text-xs text-ink-muted">{address.phone}</p>
 
-              <div className="flex items-center gap-1 pt-2 mt-auto border-t border-line flex-wrap">
-                <button
-                  type="button"
-                  onClick={() => openEdit(address)}
-                  className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-primary hover:bg-surface-alt px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[14px]">edit</span>
-                  Edit
-                </button>
-                {!address.is_default && (
+              {confirmingDeleteId === address.id ? (
+                <div className="pt-2 mt-auto border-t border-line">
+                  <InlineConfirm
+                    question="Delete this address?"
+                    confirmLabel="Delete"
+                    busyLabel="Deleting…"
+                    busy={busyId === address.id}
+                    onConfirm={() => handleDelete(address.id)}
+                    onCancel={() => setConfirmingDeleteId(null)}
+                  />
+                </div>
+              ) : (
+                <div className="flex items-center gap-1 pt-2 mt-auto border-t border-line flex-wrap">
                   <button
                     type="button"
-                    onClick={() => handleSetDefault(address.id)}
-                    disabled={busyId === address.id}
-                    className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-ink-body hover:bg-surface-alt px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
+                    onClick={() => openEdit(address)}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-primary hover:bg-surface-alt px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer"
                   >
-                    <span className="material-symbols-outlined text-[14px]">star</span>
-                    Set Default
+                    <span className="material-symbols-outlined text-[14px]">edit</span>
+                    Edit
                   </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => handleDelete(address.id)}
-                  disabled={busyId === address.id}
-                  className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-accent hover:bg-accent/10 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
-                >
-                  <span className="material-symbols-outlined text-[14px]">delete</span>
-                  Delete
-                </button>
-              </div>
+                  {!address.is_default && (
+                    <button
+                      type="button"
+                      onClick={() => handleSetDefault(address.id)}
+                      disabled={busyId === address.id}
+                      className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-ink-body hover:bg-surface-alt px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
+                    >
+                      <span className="material-symbols-outlined text-[14px]">star</span>
+                      Set Default
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setConfirmingDeleteId(address.id)}
+                    disabled={busyId === address.id}
+                    className="inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-accent hover:bg-accent/10 px-2.5 py-1.5 rounded-lg transition-colors disabled:opacity-50 cursor-pointer"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">delete</span>
+                    Delete
+                  </button>
+                </div>
+              )}
             </div>
           ))}
         </div>

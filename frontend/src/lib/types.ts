@@ -150,6 +150,12 @@ export interface Product {
   related_products?: Product[];
 }
 
+/** GET /api/hot-deals/: a product plus when its deal ends. */
+export interface HotDeal extends Product {
+  /** ISO 8601 end of the deal; null while products have no deal end date. */
+  deal_ends_at?: string | null;
+}
+
 /** Review count per star level; the API always sends all five keys. */
 export type RatingBreakdown = Record<"5" | "4" | "3" | "2" | "1", number>;
 
