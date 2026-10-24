@@ -399,6 +399,15 @@ class SellerPointLot(PointLot):
         related_name="lot",
         help_text="The credit that brought these points in.",
     )
+    origin_expires_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text=(
+            "When the staff points this credit came from would have expired. A take-back "
+            "returns the points with this date, not a fresh one. Empty when the giver's "
+            "points never expire."
+        ),
+    )
 
     class Meta(PointLot.Meta):
         verbose_name = "Seller Point Lot"

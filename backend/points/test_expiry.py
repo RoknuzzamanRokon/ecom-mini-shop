@@ -341,6 +341,69 @@ class SellerTypeChangeRestartsClockTests(PointExpiryTestCase):
         self.assertGreater(wallet.lots.get().expires_at, timezone.now() + timedelta(days=55))
 
 
+class TakeBackKeepsExpiryTests(PointExpiryTestCase):
+    """
+    TASK-034 / BUG-048 (TASK-048 decision 5: points taken back keep their old
+    expiry). Giving still starts the seller on a full period.
+    """
+
+    def returned_lot(self, txn):
+        return StaffPointTransaction.objects.get(seller_transaction=txn).lot
+
+    def test_giving_and_taking_back_does_not_renew_expiry(self):
+        self.fund_admin(50)
+        staff_lot = PointService.get_or_create_staff_wallet(self.admin).lots.get()
+        tomorrow = timezone.now() + timedelta(days=1)
+        staff_lot.expires_at = tomorrow
+        staff_lot.save()
+
+        given = PointService.adjust_points(self.limited, 10, "CREDIT", "Give", actor=self.admin)
+        self.assertGreater(given.lot.expires_at, timezone.now() + timedelta(days=55))
+        self.assertEqual(given.lot.origin_expires_at, tomorrow)
+
+        taken = PointService.adjust_points(self.limited, 10, "DEBIT", "Take back", actor=self.admin)
+        self.assertEqual(self.returned_lot(taken).expires_at, tomorrow)
+        self.assertEqual(PointService.get_staff_balance(self.admin), 50)
+
+    def test_points_from_a_wallet_that_never_expires_come_back_with_a_full_period(self):
+        PointService.mint_points(self.root, 10, "Mint")
+        given = PointService.adjust_points(self.limited, 10, "CREDIT", "Give", actor=self.root)
+        self.assertIsNone(given.lot.origin_expires_at)
+
+        taken = PointService.adjust_points(self.limited, 10, "DEBIT", "Take back", actor=self.admin)
+        self.assertGreater(self.returned_lot(taken).expires_at, timezone.now() + timedelta(days=55))
+
+
+class SuperuserRemovalKeepsPointsTests(PointExpiryTestCase):
+    """TASK-034 / BUG-047: unticking is_superuser restarts the clock instead of expiring everything."""
+
+    def test_old_points_survive_with_a_full_period_and_an_audit_entry(self):
+        from types import SimpleNamespace
+
+        from django.contrib import admin as django_admin
+        from django.test import RequestFactory
+
+        former = User.objects.create_superuser(username="exp_former", email="former@minishop.com", password="Former-123!")
+        PointService.mint_points(former, 100, "Mint")
+        age_lots(PointService.get_or_create_staff_wallet(former), days=90)
+
+        request = RequestFactory().post("/admin/auth/user/")
+        request.user = self.root
+        former.is_superuser = False
+        django_admin.site._registry[User].save_model(
+            request, former, SimpleNamespace(changed_data=["is_superuser"]), change=True
+        )
+
+        # The read that applies due expiry (old code: every lot was due, balance 0).
+        wallet = PointService.expire_due_staff_points(PointService.get_or_create_staff_wallet(former))
+        self.assertEqual(wallet.balance, 100)
+        lot = wallet.lots.get()
+        self.assertGreater(lot.expires_at, timezone.now() + timedelta(days=55))
+        self.assertTrue(
+            AuditLog.objects.filter(action="STAFF_POINTS_EXPIRY_RESTARTED", actor=self.root, target_id=str(former.pk)).exists()
+        )
+
+
 class ProductCreationCostFloorTests(TestCase):
     def test_cost_cannot_be_set_to_zero(self):
         with self.assertRaises(ValidationError):

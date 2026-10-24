@@ -640,6 +640,22 @@ are recorded here as they are made.
    - Outages unrelated to demo data now show as errors, not as "not found" or
      "empty": the order page, the shop page (its `error.tsx`), favorites and
      addresses. Seller forms never use demo categories (TASK-023).
+5. **Point expiry on a take-back** — decided 2026-10-24, implemented in
+   TASK-034.
+   - Points a staff member takes back from a seller keep the expiry they had
+     in the staff wallet; they do not start a fresh period. Crediting a
+     seller and debiting the points straight back can no longer renew them.
+   - Giving is unchanged: a seller's credit always starts a full expiry
+     period. The seller's lot records when the staff points it came from
+     would have expired (`SellerPointLot.origin_expires_at`), and a
+     take-back returns the points with the earliest such date among the
+     lots it takes from.
+   - Points from a wallet whose points never expire (a superuser's, or a
+     staff member with expiry switched off) carry no date, and come back
+     with a full period, as before.
+   - Unticking `is_superuser` in the Django admin restarts the expiry clock
+     on what the user holds, with a `STAFF_POINTS_EXPIRY_RESTARTED` audit
+     row, instead of letting every dated lot expire at once (BUG-047).
 
 ## Not in this roadmap
 

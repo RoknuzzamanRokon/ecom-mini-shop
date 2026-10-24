@@ -142,10 +142,15 @@ class PointService:
         actor=None,
         reference_type: str = "",
         reference_id: str = "",
+        origin_expires_at=None,
     ) -> PointTransaction:
         """
         Atomically credits points to a seller's wallet and records an auditable ledger transaction.
         Uses select_for_update() to guarantee concurrency safety.
+
+        The seller's lot always gets a full expiry period. `origin_expires_at`,
+        when the points came from a staff wallet whose points expire, is when
+        they would have expired there; a take-back returns them with it.
         """
         if not isinstance(amount, int) or amount <= 0:
             raise InvalidAmountError(f"Credit amount must be a positive integer, got: {amount}")
@@ -174,7 +179,7 @@ class PointService:
                 reference_id=str(reference_id or "").strip(),
                 actor=actor,
             )
-            cls._add_lot(SellerPointLot, wallet, amount, txn)
+            cls._add_lot(SellerPointLot, wallet, amount, txn, origin_expires_at=origin_expires_at)
 
             logger.info(
                 f"[POINTS] Credited {amount} pts to seller {seller.id} ({seller.business_name}). "
@@ -197,6 +202,10 @@ class PointService:
         Atomically debits points from a seller's wallet and records an auditable ledger transaction.
         Validates sufficient balance before applying and raises InsufficientPointsError if balance is too low.
         Uses select_for_update() to guarantee concurrency safety.
+
+        The returned transaction also carries `origin_expires_at`: the
+        earliest staff expiry among the lots it took from (None when none
+        had one), which adjust_points gives the points it takes back.
         """
         if not isinstance(amount, int) or amount <= 0:
             raise InvalidAmountError(f"Debit amount must be a positive integer, got: {amount}")
@@ -230,7 +239,9 @@ class PointService:
                 reference_id=str(reference_id or "").strip(),
                 actor=actor,
             )
-            cls._consume_lots(wallet.lots, amount)
+            consumed = cls._consume_lots(wallet.lots, amount)
+            origins = [lot.origin_expires_at for lot in consumed if lot.origin_expires_at is not None]
+            txn.origin_expires_at = min(origins, default=None)
 
             logger.info(
                 f"[POINTS] Debited {amount} pts from seller {seller.id} ({seller.business_name}). "
@@ -279,8 +290,12 @@ class PointService:
             # Staff wallet first, seller wallet second, in both directions, so
             # two concurrent adjustments always lock in the same order.
             staff_wallet = cls._lock_staff_wallet(actor)
+            extra = {}
             if from_staff:
                 cls._require_staff_balance(staff_wallet, amount)
+                # The seller gets a full period, but a take-back returns the
+                # points with the date they had here (TASK-048 decision 5).
+                extra["origin_expires_at"] = cls._soonest_expiry(staff_wallet)
 
             txn = move(
                 seller=seller,
@@ -290,6 +305,7 @@ class PointService:
                 actor=actor,
                 reference_type=reference_type,
                 reference_id=reference_id,
+                **extra,
             )
             cls._move_staff_points(
                 staff_wallet,
@@ -299,6 +315,9 @@ class PointService:
                 actor=actor,
                 outgoing=from_staff,
                 seller_transaction=txn,
+                # Points taken back keep their old date, so giving and taking
+                # back cannot renew it (BUG-048).
+                expires_at=None if from_staff else txn.origin_expires_at,
             )
             # Only staff adjustments notify; the credits and debits the
             # platform makes itself (e.g. a product's creation cost) don't.
@@ -515,8 +534,12 @@ class PointService:
         outgoing: bool,
         counterparty=None,
         seller_transaction=None,
+        expires_at=None,
     ) -> StaffPointTransaction:
-        """Applies one movement to a wallet the caller has locked, and records it."""
+        """
+        Applies one movement to a wallet the caller has locked, and records it.
+        Incoming points expire a full period from now unless `expires_at` says otherwise.
+        """
         if outgoing:
             cls._require_staff_balance(wallet, amount)
 
@@ -538,7 +561,7 @@ class PointService:
         if outgoing:
             cls._consume_lots(wallet.lots, amount)
         else:
-            cls._add_lot(StaffPointLot, wallet, amount, txn)
+            cls._add_lot(StaffPointLot, wallet, amount, txn, expires_at=expires_at)
         return txn
 
     # ------------------------------------------------------------------
@@ -559,24 +582,27 @@ class PointService:
         return wallet
 
     @staticmethod
-    def _add_lot(lot_model, wallet, amount: int, source):
+    def _add_lot(lot_model, wallet, amount: int, source, expires_at=None, **fields):
         now = timezone.now()
         return lot_model.objects.create(
             wallet=wallet,
             amount=amount,
             remaining=amount,
             received_at=now,
-            expires_at=PointExpiryPolicy.expiry_for(now),
+            expires_at=expires_at or PointExpiryPolicy.expiry_for(now),
             source=source,
+            **fields,
         )
 
     @staticmethod
-    def _consume_lots(lots, amount: int) -> None:
+    def _consume_lots(lots, amount: int) -> list:
         """
-        Takes `amount` from a locked wallet's lots, soonest-expiring first. The
-        balance is authoritative: if the lots hold less (a balance edited
-        outside PointService), the rest is simply not tracked.
+        Takes `amount` from a locked wallet's lots, soonest-expiring first, and
+        returns the lots it took from. The balance is authoritative: if the
+        lots hold less (a balance edited outside PointService), the rest is
+        simply not tracked.
         """
+        consumed = []
         for lot in lots.filter(remaining__gt=0).order_by("expires_at", "id"):
             if amount <= 0:
                 break
@@ -584,6 +610,23 @@ class PointService:
             lot.remaining -= taken
             lot.save(update_fields=["remaining"])
             amount -= taken
+            consumed.append(lot)
+        return consumed
+
+    @staticmethod
+    def _soonest_expiry(staff_wallet):
+        """
+        When the first points a locked staff wallet would give away expire;
+        None when its points never expire (a superuser's, or expiry off).
+        """
+        if not staff_points_expire(staff_wallet):
+            return None
+        return (
+            staff_wallet.lots.filter(remaining__gt=0)
+            .order_by("expires_at", "id")
+            .values_list("expires_at", flat=True)
+            .first()
+        )
 
     @staticmethod
     def _due_lots(wallet):
@@ -719,6 +762,31 @@ class PointService:
         """
         fresh = PointExpiryPolicy.expiry_for(timezone.now())
         return wallet.lots.filter(remaining__gt=0, expires_at__lt=fresh).update(expires_at=fresh)
+
+    @classmethod
+    def keep_points_after_superuser_removed(cls, user, actor=None, ip_address=None) -> int:
+        """
+        A superuser's points never expire, though every lot is dated. Once the
+        user is no longer one, every lot older than the policy would be due at
+        once, so the clock restarts on what they hold instead (BUG-047), as
+        when a Full Shop Owner is made Limited. Call it in the transaction
+        that saves the change. Returns how many lots moved; audited.
+        """
+        from audit.services import AuditService
+
+        wallet = StaffWallet.objects.select_for_update().filter(user=user).first()
+        if wallet is None:
+            return 0
+        moved = cls.restart_expiry_clock(wallet)
+        AuditService.log(
+            action="STAFF_POINTS_EXPIRY_RESTARTED",
+            target=user,
+            actor=actor,
+            reason="Superuser status removed; held points get a full expiry period from now.",
+            metadata={"lots_restarted": moved, "balance": wallet.balance},
+            ip_address=ip_address,
+        )
+        return moved
 
     @classmethod
     def set_staff_points_expire(cls, user, enabled: bool) -> StaffWallet:

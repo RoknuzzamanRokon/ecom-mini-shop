@@ -6,6 +6,7 @@ from django.contrib.auth.models import Group, Permission as AuthPermission, User
 from django.contrib.auth.admin import GroupAdmin as BaseGroupAdmin, UserAdmin as BaseUserAdmin
 from django.contrib.auth.forms import UserChangeForm as BaseUserChangeForm
 from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from .models import Permission, Role, RolePermission, UserPermission, UserRole
 from .services import (
@@ -607,6 +608,23 @@ class UserAdmin(BaseUserAdmin):
                 }
             swapped.append((name, options))
         return swapped
+
+    def save_model(self, request, obj, form, change):
+        """
+        Unticking is_superuser would make the user's points expire at once:
+        a superuser's never do, but every lot is dated at receipt. The clock
+        restarts on what they hold, in the same transaction (BUG-047).
+        """
+        from points.services import PointService
+        from audit.utils import get_client_ip
+
+        demoted = change and "is_superuser" in form.changed_data and not obj.is_superuser
+        with transaction.atomic():
+            super().save_model(request, obj, form, change)
+            if demoted:
+                PointService.keep_points_after_superuser_removed(
+                    obj, actor=request.user, ip_address=get_client_ip(request)
+                )
 
     def save_formset(self, request, form, formset, change):
         """
