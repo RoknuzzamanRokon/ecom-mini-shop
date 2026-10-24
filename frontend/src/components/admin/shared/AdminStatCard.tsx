@@ -34,7 +34,8 @@ export interface AdminStatCardProps {
   title: string;
   /**
    * Raw value. Numbers are formatted automatically — as ৳ when `currency` is
-   * set, otherwise with thousands separators. Strings render verbatim.
+   * set, otherwise with thousands separators. Strings render verbatim, and
+   * null or undefined (not known) as "—", never as a zero.
    */
   value: string | number | null | undefined;
   /** Formats the value as Bangladeshi Taka (৳). Never $, USD, or BDT. */
@@ -80,7 +81,8 @@ export default function AdminStatCard({
 }: AdminStatCardProps) {
   const displayValue = React.useMemo(() => {
     if (typeof value === "string") return value;
-    if (value === null || value === undefined) return currency ? formatTaka(0) : "0";
+    // Missing is not zero: a figure the API did not send shows as a dash (BUG-083).
+    if (value === null || value === undefined) return "—";
     return currency ? formatTaka(value) : formatCount(value);
   }, [value, currency]);
 

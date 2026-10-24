@@ -21,11 +21,15 @@ function NeedsActionBadge({ count }: { count: number }) {
 
 export default function AdminDashboardPage() {
   const { user } = useAuth();
+  // The metrics endpoint needs reports.view. Without it nothing is requested
+  // and no KPI is drawn: no 403 banner, no zeros standing in (BUG-083).
+  const canViewMetrics = hasAnyPermission(user, ADMIN_PERMISSIONS.metrics);
   const [metrics, setMetrics] = useState<AdminMetrics | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchMetrics = useCallback(async () => {
+    if (!canViewMetrics) return;
     const token = getAuthToken();
 
     if (!token) {
@@ -51,7 +55,7 @@ export default function AdminDashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [canViewMetrics]);
 
   useEffect(() => {
     fetchMetrics();
@@ -66,15 +70,17 @@ export default function AdminDashboardPage() {
    * hardcoded role branch. Access to /admin alone reveals no financial data:
    * revenue requires payments.view or reports.view.
    *
-   * The metrics endpoint returns the full aggregate payload to any management
-   * user, so this gating is a UI-surface decision. Restricting the payload
-   * per-permission would be a backend change, which is out of scope here.
+   * Every card needs reports.view, which the metrics endpoint requires, plus
+   * the permission behind its own figure. Revenue needs payments.view: the
+   * endpoint leaves the figure out for anyone without it.
    */
-  const showRevenue = hasAnyPermission(user, ADMIN_PERMISSIONS.metricRevenue);
-  const showOrders = hasAnyPermission(user, ADMIN_PERMISSIONS.metricOrders);
-  const showShops = hasAnyPermission(user, ADMIN_PERMISSIONS.metricShops);
-  const showSellers = hasAnyPermission(user, ADMIN_PERMISSIONS.metricSellers);
-  const showProducts = hasAnyPermission(user, ADMIN_PERMISSIONS.metricProducts);
+  const showMetric = (permissions: string[]) =>
+    canViewMetrics && hasAnyPermission(user, permissions);
+  const showRevenue = showMetric(ADMIN_PERMISSIONS.metricRevenue);
+  const showOrders = showMetric(ADMIN_PERMISSIONS.metricOrders);
+  const showShops = showMetric(ADMIN_PERMISSIONS.metricShops);
+  const showSellers = showMetric(ADMIN_PERMISSIONS.metricSellers);
+  const showProducts = showMetric(ADMIN_PERMISSIONS.metricProducts);
 
   const showCatalogPanel = showShops || showSellers || showProducts;
   const visibleKpiCount = [
@@ -105,20 +111,22 @@ export default function AdminDashboardPage() {
             High-level operational metrics and system monitoring for MiniShop administrators.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={fetchMetrics}
-          disabled={loading}
-          className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-line hover:bg-surface-alt text-xs font-semibold text-ink transition-colors cursor-pointer disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-        >
-          <span
-            aria-hidden="true"
-            className={`material-symbols-outlined text-[16px] ${loading ? "animate-spin" : ""}`}
+        {canViewMetrics && (
+          <button
+            type="button"
+            onClick={fetchMetrics}
+            disabled={loading}
+            className="self-start sm:self-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-line hover:bg-surface-alt text-xs font-semibold text-ink transition-colors cursor-pointer disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           >
-            refresh
-          </span>
-          <span>Refresh Data</span>
-        </button>
+            <span
+              aria-hidden="true"
+              className={`material-symbols-outlined text-[16px] ${loading ? "animate-spin" : ""}`}
+            >
+              refresh
+            </span>
+            <span>Refresh Data</span>
+          </button>
+        )}
       </div>
 
       {error && (

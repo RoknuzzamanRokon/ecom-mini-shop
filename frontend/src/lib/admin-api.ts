@@ -13,7 +13,8 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
 
 export interface AdminMetrics {
   total_orders: number;
-  total_revenue: number;
+  /** Left out unless the caller holds payments.view (AdminMetricsAPIView). */
+  total_revenue?: number;
   pending_shops: number;
   pending_sellers: number;
   total_shops: number;
@@ -300,6 +301,8 @@ export interface AdminShopListParams {
   search?: string;
   /** Exact Shop.STATUS_CHOICES value (DRAFT/PENDING/APPROVED/ACTIVE/SUSPENDED/REJECTED). */
   status?: string;
+  /** Only the shops this SellerProfile owns (BUG-081). */
+  owner?: number;
 }
 
 /** Exactly the `action` choices accepted by AdminShopStatusUpdateSerializer. */
@@ -325,6 +328,7 @@ export async function getAdminShops(
     if (params.page_size) searchParams.set("page_size", String(params.page_size));
     if (params.search) searchParams.set("search", params.search);
     if (params.status) searchParams.set("status", params.status);
+    if (params.owner) searchParams.set("owner", String(params.owner));
   }
   const queryString = searchParams.toString();
   return adminRequest<PaginatedResponse<AdminShop>>(

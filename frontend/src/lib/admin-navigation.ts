@@ -157,8 +157,16 @@ export const ADMIN_PERMISSIONS = {
   // legitimately read an aggregate without holding the module's management
   // permission. Each set below still names only seeded permission codes.
 
-  /** Platform revenue is financial data — never shown on /admin access alone. */
-  metricRevenue: ["payments.view", "reports.view"],
+  /**
+   * GET /api/admin/metrics/ (CanViewPlatformMetrics). Every KPI below comes
+   * from it, so each card needs this as well as its own code (BUG-083).
+   */
+  metrics: ["reports.view"],
+  /**
+   * Platform revenue is financial data — never shown on /admin access alone.
+   * The metrics endpoint includes it only for payments.view (CanViewPayment).
+   */
+  metricRevenue: ["payments.view"],
   /** Order volume aggregate. */
   metricOrders: ["orders.staff.view", "orders.view"],
   /** Shop counts and pending-approval backlog. */

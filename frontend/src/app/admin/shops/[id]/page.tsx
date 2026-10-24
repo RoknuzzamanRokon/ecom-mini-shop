@@ -446,11 +446,16 @@ export default function AdminShopDetailPage() {
             <div className="-mt-2 flex flex-wrap items-start justify-between gap-2">
               <UseCurrentLocationButton
                 onLocated={(position) =>
-                  setEditValues({
-                    ...editValues,
-                    latitude: String(position.latitude),
-                    longitude: String(position.longitude),
-                  })
+                  // From the latest values, not this render's: the operator
+                  // may keep editing while the location prompt is open, and
+                  // may even close the form (BUG-078).
+                  setEditValues((current) =>
+                    current && {
+                      ...current,
+                      latitude: String(position.latitude),
+                      longitude: String(position.longitude),
+                    }
+                  )
                 }
               />
               <CoordinateMapLink latitude={editValues.latitude} longitude={editValues.longitude} />

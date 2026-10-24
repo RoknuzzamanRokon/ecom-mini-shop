@@ -93,6 +93,19 @@ export function formValuesToPayload(values: CategoryFormValues): AdminCategoryWr
   };
 }
 
+/**
+ * The deactivation confirmation's summary. `products_count` counts every
+ * product filed under the category, whatever its status.
+ */
+export function deactivationSummary(category: AdminCategory): string {
+  const count = category.products_count;
+  const products =
+    count === 0
+      ? "It has no products, so no listing changes."
+      : `The ${count.toLocaleString("en-US")} product${count === 1 ? "" : "s"} filed under it will not be shown on the storefront while it is inactive.`;
+  return `Shoppers will no longer see "${category.name}". ${products}`;
+}
+
 const FIELD_LABEL_CLASS =
   "block text-[10px] font-extrabold uppercase tracking-wider text-ink-muted mb-1.5";
 

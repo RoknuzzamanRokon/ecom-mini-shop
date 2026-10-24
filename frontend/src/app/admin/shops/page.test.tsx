@@ -1,56 +1,15 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { getAdminShops, type AdminShop } from "@/lib/admin-api";
 import { setTokens } from "@/lib/auth";
 import type { PaginatedResponse } from "@/lib/types";
+import { currentParams, setLocation } from "@/test/navigation";
 
 import AdminShopsPage from "./page";
 
-// A stand-in for the App Router: replace() changes the query string the page
-// reads back through useSearchParams, the way a client navigation does.
-const nav = vi.hoisted(() => {
-  let query = "";
-  const listeners = new Set<() => void>();
-  return {
-    query: () => query,
-    reset() {
-      query = "";
-    },
-    subscribe(listener: () => void) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    router: {
-      replace(url: string) {
-        query = url.split("?")[1] ?? "";
-        listeners.forEach((listener) => listener());
-      },
-      push() {},
-      prefetch() {},
-    },
-  };
-});
-
-vi.mock("next/navigation", async () => {
-  const { useMemo, useSyncExternalStore } = await import("react");
-  return {
-    usePathname: () => "/admin/shops",
-    useRouter: () => nav.router,
-    useSearchParams: () => {
-      const query = useSyncExternalStore(nav.subscribe, nav.query);
-      return useMemo(() => new URLSearchParams(query), [query]);
-    },
-  };
-});
-vi.mock("next/link", () => ({
-  default: ({ href, children, ...rest }: { href: string; children: ReactNode }) => (
-    <a href={href} {...rest}>
-      {children}
-    </a>
-  ),
-}));
+vi.mock("next/navigation", () => import("@/test/navigation"));
+vi.mock("next/link", () => import("@/test/next-link"));
 vi.mock("@/context/AuthContext", () => ({ useAuth: () => ({ user: null }) }));
 vi.mock("@/lib/admin-api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/admin-api")>()),
@@ -69,7 +28,8 @@ function page(...names: string[]): PaginatedResponse<AdminShop> {
           name,
           slug: name.toLowerCase().replace(/ /g, "-"),
           status: "ACTIVE",
-          owner_business_name: "Owner",
+          owner_id: 7,
+          owner_business_name: "Rahim",
           products_count: 0,
           created_at: "2026-01-01T00:00:00Z",
         }) as AdminShop
@@ -77,10 +37,8 @@ function page(...names: string[]): PaginatedResponse<AdminShop> {
   };
 }
 
-const params = () => Object.fromEntries(new URLSearchParams(nav.query()));
-
 beforeEach(() => {
-  nav.reset();
+  setLocation("/admin/shops");
   setTokens("access", "refresh");
   vi.mocked(getAdminShops).mockReset();
 });
@@ -97,16 +55,16 @@ describe("Console shops list", () => {
       vi.advanceTimersByTime(200);
     });
     fireEvent.change(screen.getByLabelText("Status"), { target: { value: "SUSPENDED" } });
-    expect(params()).toEqual({ status: "SUSPENDED" });
+    expect(currentParams()).toEqual({ status: "SUSPENDED" });
 
     await act(async () => {
       vi.advanceTimersByTime(349);
     });
-    expect(params()).toEqual({ status: "SUSPENDED" });
+    expect(currentParams()).toEqual({ status: "SUSPENDED" });
     await act(async () => {
       vi.advanceTimersByTime(1);
     });
-    expect(params()).toEqual({ status: "SUSPENDED", search: "kettle" });
+    expect(currentParams()).toEqual({ status: "SUSPENDED", search: "kettle" });
     expect(screen.getByLabelText("Search")).toHaveValue("kettle");
   });
 
@@ -122,12 +80,12 @@ describe("Console shops list", () => {
         vi.advanceTimersByTime(100);
       });
     }
-    expect(params()).toEqual({});
+    expect(currentParams()).toEqual({});
     await act(async () => {
       vi.advanceTimersByTime(350);
     });
 
-    expect(params()).toEqual({ search: "ket" });
+    expect(currentParams()).toEqual({ search: "ket" });
     expect(vi.mocked(getAdminShops).mock.calls.map(([, filters]) => filters?.search)).toEqual([undefined, "ket"]);
   });
 
@@ -146,5 +104,20 @@ describe("Console shops list", () => {
 
     expect(screen.queryByText("Every Shop")).not.toBeInTheDocument();
     expect(screen.getByText("Suspended Shop")).toBeInTheDocument();
+  });
+
+  it("lists one seller's shops by owner id and names them (BUG-081)", async () => {
+    setLocation("/admin/shops?owner=7");
+    vi.mocked(getAdminShops).mockResolvedValue(page("Corner Shop"));
+    render(<AdminShopsPage />);
+
+    expect(await screen.findByText("Corner Shop")).toBeInTheDocument();
+    expect(getAdminShops).toHaveBeenCalledWith("access", expect.objectContaining({ owner: 7 }));
+    expect(screen.getByRole("link", { name: "Rahim" })).toHaveAttribute("href", "/admin/sellers/7");
+
+    fireEvent.click(screen.getByRole("button", { name: /Show all owners/ }));
+    expect(currentParams()).toEqual({});
+    await act(async () => {});
+    expect(vi.mocked(getAdminShops).mock.lastCall?.[1]).toMatchObject({ owner: undefined });
   });
 });

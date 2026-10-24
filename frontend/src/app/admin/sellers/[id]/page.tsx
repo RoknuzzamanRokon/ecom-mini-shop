@@ -521,8 +521,8 @@ export default function AdminSellerDetailPage() {
 
   const availableActions = getAvailableSellerActions(seller, user);
   const sellerTypeLabel = SELLER_TYPE_LABELS[seller.seller_type] ?? seller.seller_type;
-  // The admin shop list searches owner business name, so this deep link resolves
-  // to exactly this seller's storefronts without inventing a new endpoint.
+  // "View this seller's shops" filters the shop list by owner id: a business
+  // name search would also list sellers whose names contain this one's (BUG-081).
   const canSeeShops = hasAnyPermission(user, ADMIN_PERMISSIONS.shopsView);
   const canAddShop = canCreateAdminShops(user);
   // Why this seller can't own another shop right now, if they can't.
@@ -781,7 +781,7 @@ export default function AdminSellerDetailPage() {
                 ))}
               {canSeeShops && seller.shops_count > 0 && (
                 <Link
-                  href={`/admin/shops?search=${encodeURIComponent(seller.business_name)}`}
+                  href={`/admin/shops?owner=${seller.id}`}
                   className="inline-flex items-center gap-1.5 text-xs font-bold text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary rounded-sm"
                 >
                   <span aria-hidden="true" className="material-symbols-outlined text-[16px]">
@@ -971,8 +971,12 @@ export default function AdminSellerDetailPage() {
               loading={historyLoading}
               error={historyError ? historyError.message : null}
               onRetry={fetchHistory}
-              emptyTitle="No transactions yet"
-              emptyMessage="এই seller-এর কোনো points transaction এখনো নেই।"
+              emptyTitle={historyType ? "No matching transactions" : "No transactions yet"}
+              emptyMessage={
+                historyType
+                  ? "This seller has no point transactions of this type."
+                  : "No point transactions for this seller yet."
+              }
               page={historyPage}
               pageSize={POINT_HISTORY_PAGE_SIZE}
               totalCount={historyCount}

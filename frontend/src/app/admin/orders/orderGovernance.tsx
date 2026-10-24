@@ -189,6 +189,32 @@ export function getAllowedOrderActions(
 }
 
 /**
+ * A list row brought up to date from the full order a status action returned
+ * (BUG-100): the status, and everything that can move with it — the payment
+ * (delivery marks a COD payment paid), the totals and updated_at. The
+ * shipping city stays the row's own: the list and the detail derive it
+ * differently, and a status change never moves it.
+ */
+export function mergeOrderIntoListRow(
+  row: AdminOrderListItem,
+  order: AdminOrderDetail
+): AdminOrderListItem {
+  return {
+    ...row,
+    status: order.status,
+    customer: order.customer,
+    subtotal: order.subtotal,
+    discount_total: order.discount_total,
+    shipping_fee: order.shipping_fee,
+    total_amount: order.total_amount,
+    total_items_count: order.total_items_count,
+    payment_status: order.payment?.status ?? null,
+    payment_method: order.payment?.payment_method ?? null,
+    updated_at: order.updated_at,
+  };
+}
+
+/**
  * Shared "confirm -> call the real endpoint -> surface the result" flow for
  * order status transitions, used by both the list and detail pages so the
  * mutation logic (and its error handling) is written once. Mirrors

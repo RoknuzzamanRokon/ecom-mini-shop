@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { getAuthToken } from "@/lib/auth";
-import { AdminApiError, AdminOrderListItem, getAdminOrders } from "@/lib/admin-api";
+import { AdminApiError, AdminOrderDetail, AdminOrderListItem, getAdminOrders } from "@/lib/admin-api";
 import { formatDateTime, formatTaka } from "@/lib/admin-format";
 import {
   AdminConfirmModal,
@@ -26,6 +26,7 @@ import {
   OrderAccessNotice,
   canViewAdminOrders,
   getAvailableOrderActions,
+  mergeOrderIntoListRow,
   useOrderStatusAction,
 } from "./orderGovernance";
 import { useLatestRequest } from "@/hooks/useLatestRequest";
@@ -159,9 +160,9 @@ function AdminOrdersPageContent() {
     });
   }, [updateParams]);
 
-  const handleActionSuccess = useCallback((updated: { id: number; status: string }) => {
+  const handleActionSuccess = useCallback((updated: AdminOrderDetail) => {
     setOrders((prev) =>
-      prev.map((order) => (order.id === updated.id ? { ...order, status: updated.status } : order))
+      prev.map((order) => (order.id === updated.id ? mergeOrderIntoListRow(order, updated) : order))
     );
   }, []);
   const { pendingAction, targetOrder, submitError, requestAction, cancel, confirm } =

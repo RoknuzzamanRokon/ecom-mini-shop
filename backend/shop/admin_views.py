@@ -960,6 +960,13 @@ class AdminShopListAPIView(APIView):
         if shop_status:
             qs = qs.filter(status=shop_status)
 
+        # Exactly one seller's shops, by SellerProfile id: the seller detail
+        # page links here, and a name search would also list other sellers
+        # whose names contain this one's (BUG-081).
+        owner_id = id_param(request.query_params, "owner")
+        if owner_id:
+            qs = qs.filter(owner_id=owner_id)
+
         paginator = AdminPagination()
         page = paginator.paginate_queryset(qs, request)
         serializer = AdminShopSerializer(page, many=True)

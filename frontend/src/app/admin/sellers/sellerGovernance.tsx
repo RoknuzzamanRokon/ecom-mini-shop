@@ -27,6 +27,7 @@ import { getAuthToken } from "@/lib/auth";
 import {
   AdminApiError,
   AdminPointTransaction,
+  AdminPointTransactionType,
   AdminSeller,
   AdminSellerStatusAction,
   updateAdminSellerStatus,
@@ -251,14 +252,19 @@ export function canDebitSellerPoints(user: AuthUser | null | undefined): boolean
   return hasAnyPermission(user, ADMIN_PERMISSIONS.pointsDebit);
 }
 
-/** Verbatim PointTransaction.TRANSACTION_TYPE_CHOICES labels from points/models.py. */
-export const POINT_TRANSACTION_TYPE_LABELS: Record<string, string> = {
+/**
+ * Verbatim PointTransaction.TRANSACTION_TYPE_CHOICES labels from
+ * points/models.py. Keyed by the full type union, so a type added there (and
+ * to AdminPointTransactionType) cannot be left out of the filter (BUG-080).
+ */
+export const POINT_TRANSACTION_TYPE_LABELS: Record<AdminPointTransactionType, string> = {
   BONUS: "Bonus / Promotional Credit",
   ADMIN_CREDIT: "Admin Staff Credit",
   ADMIN_DEBIT: "Admin Staff Debit",
   PRODUCT_CREATION: "Product Creation Fee",
   REFUND: "Point Refund",
   ADJUSTMENT: "Administrative Adjustment",
+  EXPIRY: "Points Expired",
 };
 
 export const POINT_TRANSACTION_TYPE_OPTIONS: AdminSelectOption[] = Object.entries(

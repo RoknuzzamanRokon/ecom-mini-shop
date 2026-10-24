@@ -2392,3 +2392,62 @@ class AdminUserDelegationTests(APITestCase):
         self.client.force_authenticate(user=superadmin)
         res = self._patch(self.other_admin, is_active=False)
         self.assertEqual(res.status_code, status.HTTP_200_OK, res.data)
+
+
+class AdminShopOwnerFilterTests(APITestCase):
+    """BUG-081: ?owner=<seller id> lists exactly that seller's shops."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_rbac")
+        cls.staff = User.objects.create_superuser(
+            username="owner_filter_admin", email="owner_filter_admin@minishop.com", password="SuperPassword123!"
+        )
+
+        def seller(username, business_name):
+            return SellerProfile.objects.create(
+                user=User.objects.create_user(
+                    username=username, email=f"{username}@minishop.com", password="SellerPassword123!"
+                ),
+                seller_type=SellerProfile.TYPE_FULL_SHOP_OWNER,
+                business_name=business_name,
+                status=SellerProfile.STATUS_APPROVED,
+            )
+
+        cls.rahim = seller("owner_filter_rahim", "Rahim")
+        cls.rahim_store = seller("owner_filter_rahim_store", "Rahim Store")
+        cls.rahim_shop = Shop.objects.create(
+            owner=cls.rahim, name="Corner Shop", slug="owner-filter-corner", status=Shop.STATUS_ACTIVE
+        )
+        cls.other_shop = Shop.objects.create(
+            owner=cls.rahim_store,
+            name="Main Branch",
+            slug="owner-filter-main",
+            status=Shop.STATUS_SUSPENDED,
+            suspension_reason="Unpaid fees.",
+        )
+
+    def setUp(self):
+        self.client.force_authenticate(user=self.staff)
+
+    def shop_ids(self, **params):
+        res = self.client.get("/api/admin/shops/", params)
+        self.assertEqual(res.status_code, status.HTTP_200_OK, res.data)
+        return [row["id"] for row in res.data["results"]]
+
+    def test_owner_lists_only_that_sellers_shops(self):
+        self.assertEqual(self.shop_ids(owner=self.rahim.id), [self.rahim_shop.id])
+        self.assertEqual(self.shop_ids(owner=self.rahim_store.id), [self.other_shop.id])
+        # The business-name search the seller page used to link to matches both.
+        self.assertCountEqual(self.shop_ids(search="Rahim"), [self.rahim_shop.id, self.other_shop.id])
+
+    def test_owner_combines_with_the_other_filters(self):
+        self.assertEqual(self.shop_ids(owner=self.rahim_store.id, status="SUSPENDED"), [self.other_shop.id])
+        self.assertEqual(self.shop_ids(owner=self.rahim.id, status="SUSPENDED"), [])
+
+    def test_a_malformed_owner_is_a_400(self):
+        for value in ("abc", "0", "-3"):
+            with self.subTest(value=value):
+                res = self.client.get("/api/admin/shops/", {"owner": value})
+                self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+                self.assertIn("owner", res.data)

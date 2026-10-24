@@ -5,9 +5,8 @@ import Footer from "@/components/layout/Footer";
 /**
  * 404 for URLs that match no route at all.
  *
- * Note this never fires under `/admin`: `admin/[...slug]` is a catch-all that
- * renders a module placeholder for any unknown management path, so the admin
- * console deliberately has no 404 of its own.
+ * Under `/admin` the Console shows its own, admin/not-found.tsx, inside the
+ * Console layout (`admin/[...slug]` catches unknown management paths).
  */
 export default function NotFound() {
   return (

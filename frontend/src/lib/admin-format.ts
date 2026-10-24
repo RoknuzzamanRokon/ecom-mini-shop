@@ -49,6 +49,9 @@ export function formatCount(value: number | null | undefined): string {
   return new Intl.NumberFormat("en-US").format(value);
 }
 
+/** A calendar date with no time of day, e.g. a date of birth. */
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
 /** Human-readable date, e.g. "14 Sep 2026". */
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return "—";
@@ -58,6 +61,10 @@ export function formatDate(iso: string | null | undefined): string {
     day: "2-digit",
     month: "short",
     year: "numeric",
+    // "1990-05-14" is a day, not an instant. Date parses it as UTC midnight,
+    // so it is shown in UTC too; in local time, viewers west of UTC would see
+    // 13 May (BUG-098). Timestamps still show in the viewer's time zone.
+    ...(DATE_ONLY.test(iso) ? { timeZone: "UTC" } : {}),
   }).format(date);
 }
 

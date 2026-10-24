@@ -54,6 +54,10 @@ function AdminShopsPageContent() {
   const urlSearch = searchParams.get("search") ?? "";
   const urlStatus = searchParams.get("status") ?? "";
   const urlPage = Number(searchParams.get("page") ?? "1") || 1;
+  // One seller's shops, by SellerProfile id: where "View this seller's shops"
+  // on the seller page leads (BUG-081).
+  const ownerParam = Number(searchParams.get("owner"));
+  const urlOwner = Number.isInteger(ownerParam) && ownerParam > 0 ? ownerParam : null;
 
   // Local text state so typing feels instant; committed into the URL (and
   // the actual filter) after a short debounce so we don't fire a request per
@@ -114,6 +118,7 @@ function AdminShopsPageContent() {
       const data = await getAdminShops(token, {
         search: urlSearch || undefined,
         status: urlStatus || undefined,
+        owner: urlOwner ?? undefined,
         page: urlPage,
       });
       if (!isLatest()) return;
@@ -127,17 +132,19 @@ function AdminShopsPageContent() {
     } finally {
       if (isLatest()) setLoading(false);
     }
-  }, [urlSearch, urlStatus, urlPage, beginRequest]);
+  }, [urlSearch, urlStatus, urlOwner, urlPage, beginRequest]);
 
   useEffect(() => {
     fetchShops();
   }, [fetchShops]);
 
-  const isFiltered = Boolean(urlSearch || urlStatus);
+  const isFiltered = Boolean(urlSearch || urlStatus || urlOwner);
   const clearFilters = useCallback(() => {
     setSearchInput("");
-    updateParams({ search: null, status: null, page: null });
+    updateParams({ search: null, status: null, owner: null, page: null });
   }, [updateParams]);
+  // Every row is the owner's, so any row can name them.
+  const ownerName = shops.find((shop) => shop.owner_id === urlOwner)?.owner_business_name;
 
   const handleActionSuccess = useCallback((updated: AdminShop) => {
     setShops((prev) => prev.map((shop) => (shop.id === updated.id ? updated : shop)));
@@ -277,6 +284,28 @@ function AdminShopsPageContent() {
           </Link>
         )}
       </div>
+
+      {urlOwner && (
+        <p className="flex flex-wrap items-center gap-2 text-xs text-ink-muted">
+          <span>Showing the shops owned by</span>
+          <Link
+            href={`/admin/sellers/${urlOwner}`}
+            className="font-bold text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary rounded-sm"
+          >
+            {ownerName ?? `seller #${urlOwner}`}
+          </Link>
+          <button
+            type="button"
+            onClick={() => updateParams({ owner: null, page: null })}
+            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg border border-line hover:bg-surface-alt font-bold text-ink transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          >
+            <span aria-hidden="true" className="material-symbols-outlined text-[14px]">
+              close
+            </span>
+            Show all owners
+          </button>
+        </p>
+      )}
 
       <AdminFilterBar
         isDirty={isFiltered}

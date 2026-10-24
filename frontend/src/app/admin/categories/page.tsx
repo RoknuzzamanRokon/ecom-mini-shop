@@ -14,6 +14,7 @@ import {
 } from "@/lib/admin-api";
 import { formatDate } from "@/lib/admin-format";
 import {
+  AdminConfirmModal,
   AdminDataTable,
   AdminFilterBar,
   AdminSearchField,
@@ -27,6 +28,7 @@ import {
   CategoryForm,
   EMPTY_CATEGORY_FORM,
   canManageAdminCategories,
+  deactivationSummary,
   formValuesToPayload,
   type CategoryFormValues,
 } from "./categoryGovernance";
@@ -200,32 +202,55 @@ function AdminCategoriesPageContent() {
   // a category that products still reference.
   const [togglingId, setTogglingId] = useState<number | null>(null);
   const [toggleError, setToggleError] = useState<string | null>(null);
+  // Deactivating takes every product in the category off the storefront, so
+  // it is confirmed first, like every other governance action (BUG-077).
+  // Activating only puts them back and stays one click.
+  const [pendingDeactivation, setPendingDeactivation] = useState<AdminCategory | null>(null);
 
-  const toggleActive = useCallback(async (category: AdminCategory) => {
-    const token = getAuthToken();
-    if (!token) {
-      setToggleError("No active session token was found. Please sign in again.");
-      return;
-    }
-    try {
-      setTogglingId(category.id);
-      setToggleError(null);
-      setNotice(null);
-      const updated = await updateAdminCategory(token, category.id, {
-        is_active: !category.is_active,
-      });
-      setCategories((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-      setNotice(
-        `Category "${updated.name}" is now ${updated.is_active ? "active" : "inactive"}.`
-      );
-    } catch (err) {
-      setToggleError(
-        err instanceof AdminApiError ? err.message : "Failed to update the category."
-      );
-    } finally {
-      setTogglingId(null);
-    }
+  /** Resolves true once the category has the requested state. */
+  const setCategoryActive = useCallback(
+    async (category: AdminCategory, isActive: boolean): Promise<boolean> => {
+      const token = getAuthToken();
+      if (!token) {
+        setToggleError("No active session token was found. Please sign in again.");
+        return false;
+      }
+      try {
+        setTogglingId(category.id);
+        setToggleError(null);
+        setNotice(null);
+        const updated = await updateAdminCategory(token, category.id, { is_active: isActive });
+        setCategories((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+        setNotice(
+          `Category "${updated.name}" is now ${updated.is_active ? "active" : "inactive"}.`
+        );
+        return true;
+      } catch (err) {
+        setToggleError(
+          err instanceof AdminApiError ? err.message : "Failed to update the category."
+        );
+        return false;
+      } finally {
+        setTogglingId(null);
+      }
+    },
+    []
+  );
+
+  const requestDeactivation = useCallback((category: AdminCategory) => {
+    setToggleError(null);
+    setPendingDeactivation(category);
   }, []);
+
+  const cancelDeactivation = useCallback(() => {
+    setPendingDeactivation(null);
+    setToggleError(null);
+  }, []);
+
+  const confirmDeactivation = useCallback(async () => {
+    if (!pendingDeactivation) return;
+    if (await setCategoryActive(pendingDeactivation, false)) setPendingDeactivation(null);
+  }, [pendingDeactivation, setCategoryActive]);
 
   const columns: AdminTableColumn<AdminCategory>[] = useMemo(
     () => [
@@ -289,7 +314,7 @@ function AdminCategoriesPageContent() {
         label: "Deactivate",
         icon: "visibility_off",
         tone: "danger",
-        onClick: toggleActive,
+        onClick: requestDeactivation,
         isHidden: (category) => !category.is_active,
         isDisabled: (category) => togglingId === category.id,
       },
@@ -298,12 +323,14 @@ function AdminCategoriesPageContent() {
         label: "Activate",
         icon: "visibility",
         tone: "primary",
-        onClick: toggleActive,
+        onClick: (category) => {
+          setCategoryActive(category, true);
+        },
         isHidden: (category) => category.is_active,
         isDisabled: (category) => togglingId === category.id,
       },
     ],
-    [toggleActive, togglingId]
+    [requestDeactivation, setCategoryActive, togglingId]
   );
 
   if (!canManage) {
@@ -356,7 +383,7 @@ function AdminCategoriesPageContent() {
         </div>
       )}
 
-      {toggleError && (
+      {toggleError && !pendingDeactivation && (
         <p role="alert" className="text-xs font-semibold text-red-600">
           {toggleError}
         </p>
@@ -441,6 +468,23 @@ function AdminCategoriesPageContent() {
         pageSize={PAGE_SIZE}
         totalCount={totalCount}
         onPageChange={(page) => updateParams({ page: page === 1 ? null : String(page) })}
+      />
+
+      <AdminConfirmModal
+        open={Boolean(pendingDeactivation)}
+        title="Deactivate category?"
+        message={
+          pendingDeactivation && (
+            <>
+              {deactivationSummary(pendingDeactivation)} You can activate it again later.
+              {toggleError && <p className="mt-2 font-semibold text-red-600">{toggleError}</p>}
+            </>
+          )
+        }
+        confirmLabel="Deactivate"
+        destructive
+        onConfirm={confirmDeactivation}
+        onCancel={cancelDeactivation}
       />
     </div>
   );
