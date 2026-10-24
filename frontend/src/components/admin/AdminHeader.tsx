@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 import { getManagementRoleLabel } from "@/lib/admin-auth";
 import NotificationBell from "@/components/notifications/NotificationBell";
@@ -14,9 +14,52 @@ export default function AdminHeader({
 }) {
   const { user, logout } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [openedAt, setOpenedAt] = useState(pathname);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
 
   const roleLabel = getManagementRoleLabel(user);
+  const displayName = user?.first_name
+    ? `${user.first_name} ${user.last_name || ""}`.trim()
+    : user?.username || "Admin";
+
+  // The account menu is a disclosure (BUG-094): the button says whether it
+  // is open, Escape closes it and returns focus to the button, and a click
+  // or Tab outside, or a navigation, closes it. Moving the mouse away no
+  // longer does.
+  if (showUserMenu && openedAt !== pathname) {
+    setShowUserMenu(false);
+    setOpenedAt(pathname);
+  }
+
+  useEffect(() => {
+    if (!showUserMenu) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) setShowUserMenu(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [showUserMenu]);
+
+  const toggleUserMenu = () => {
+    setOpenedAt(pathname);
+    setShowUserMenu((open) => !open);
+  };
+
+  const onMenuKeyDown = (event: React.KeyboardEvent) => {
+    if (showUserMenu && event.key === "Escape") {
+      event.preventDefault();
+      setShowUserMenu(false);
+      menuButtonRef.current?.focus();
+    }
+  };
+
+  const onMenuBlur = (event: React.FocusEvent) => {
+    if (!menuRef.current?.contains(event.relatedTarget as Node | null)) setShowUserMenu(false);
+  };
 
   const handleLogout = () => {
     logout();
@@ -32,7 +75,7 @@ export default function AdminHeader({
           className="lg:hidden text-ink p-1.5 rounded-lg hover:bg-surface-alt transition-colors cursor-pointer"
           aria-label="Open navigation menu"
         >
-          <span className="material-symbols-outlined text-[24px]">menu</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[24px]">menu</span>
         </button>
         <div className="flex items-center gap-2.5">
           <span className="text-sm font-bold text-ink">
@@ -51,41 +94,48 @@ export default function AdminHeader({
           target="_blank"
           className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-ink-muted hover:text-ink hover:bg-surface-alt border border-line transition-colors"
         >
-          <span className="material-symbols-outlined text-[16px]">visibility</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[16px]">visibility</span>
           <span>Storefront</span>
         </Link>
 
         <NotificationBell audience="STAFF" />
 
         {/* User Account Dropdown */}
-        <div className="relative">
+        <div className="relative" ref={menuRef} onKeyDown={onMenuKeyDown} onBlur={onMenuBlur}>
           <button
+            ref={menuButtonRef}
             type="button"
-            onClick={() => setShowUserMenu(!showUserMenu)}
-            className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-surface-alt transition-colors cursor-pointer"
+            onClick={toggleUserMenu}
+            aria-expanded={showUserMenu}
+            aria-controls={menuId}
+            aria-label={`Account menu for ${displayName}`}
+            className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-surface-alt transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           >
-            <div className="w-8 h-8 rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-xs uppercase border border-primary/20">
+            <div
+              aria-hidden="true"
+              className="w-8 h-8 rounded-full bg-primary/15 text-primary flex items-center justify-center font-bold text-xs uppercase border border-primary/20"
+            >
               {(user?.first_name?.[0] || user?.username?.[0] || "A").toUpperCase()}
             </div>
             <div className="hidden md:flex flex-col text-left">
               <span className="text-xs font-bold text-ink line-clamp-1 leading-tight">
-                {user?.first_name
-                  ? `${user.first_name} ${user.last_name || ""}`.trim()
-                  : user?.username || "Admin"}
+                {displayName}
               </span>
               <span className="text-[10px] text-ink-muted line-clamp-1">
                 {user?.email}
               </span>
             </div>
-            <span className="material-symbols-outlined text-[16px] text-ink-muted">
+            <span aria-hidden="true" className="material-symbols-outlined text-[16px] text-ink-muted">
               expand_more
             </span>
           </button>
 
           {showUserMenu && (
             <div
-              className="absolute right-0 mt-2 w-56 bg-surface rounded-xl shadow-lg border border-line py-1 z-50 animate-in fade-in zoom-in-95 duration-100"
-              onMouseLeave={() => setShowUserMenu(false)}
+              id={menuId}
+              // Focusable, so a click on its plain text keeps focus inside and the blur rule above leaves it open.
+              tabIndex={-1}
+              className="absolute right-0 mt-2 w-56 bg-surface rounded-xl shadow-lg border border-line py-1 z-50 animate-in fade-in zoom-in-95 duration-100 focus:outline-none"
             >
               <div className="px-4 py-2 border-b border-line md:hidden">
                 <p className="text-xs font-bold text-ink">
@@ -133,7 +183,7 @@ export default function AdminHeader({
                 onClick={handleLogout}
                 className="w-full flex items-center gap-2 px-4 py-2.5 text-xs text-red-600 hover:bg-red-500/10 transition-colors cursor-pointer"
               >
-                <span className="material-symbols-outlined text-[18px]">logout</span>
+                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">logout</span>
                 Sign Out
               </button>
             </div>

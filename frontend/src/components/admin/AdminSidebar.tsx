@@ -1,6 +1,6 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
@@ -8,6 +8,24 @@ import {
   getAccessibleNavSections,
   type AdminNavItem,
 } from "@/lib/admin-navigation";
+
+/** Tailwind's `lg`, where the sidebar is always on screen. */
+const DESKTOP_QUERY = "(min-width: 1024px)";
+
+function subscribeToDesktop(onChange: () => void) {
+  const query = window.matchMedia(DESKTOP_QUERY);
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+
+/** True from `lg` up. The server, which cannot know, assumes a desktop. */
+function useIsDesktop(): boolean {
+  return useSyncExternalStore(
+    subscribeToDesktop,
+    () => window.matchMedia(DESKTOP_QUERY).matches,
+    () => true
+  );
+}
 
 export default function AdminSidebar({
   isOpen,
@@ -18,6 +36,20 @@ export default function AdminSidebar({
 }) {
   const pathname = usePathname();
   const { user } = useAuth();
+  const isDesktop = useIsDesktop();
+  // Below `lg` a closed sidebar is only moved off screen. `inert` also takes
+  // its links out of the Tab order and the accessibility tree (BUG-094).
+  const hiddenOffScreen = !isOpen && !isDesktop;
+
+  // Escape closes the open mobile sidebar.
+  useEffect(() => {
+    if (!isOpen || isDesktop || !onClose) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [isOpen, isDesktop, onClose]);
 
   const isLinkActive = (item: AdminNavItem) => {
     if (item.exact) return pathname === item.href;
@@ -51,6 +83,7 @@ export default function AdminSidebar({
 
       <aside
         aria-label="Management navigation"
+        inert={hiddenOffScreen}
         className={`fixed top-0 bottom-0 left-0 z-40 w-64 bg-surface border-r border-line flex flex-col justify-between transition-transform duration-200 lg:translate-x-0 ${
           isOpen ? "translate-x-0" : "-translate-x-full"
         }`}

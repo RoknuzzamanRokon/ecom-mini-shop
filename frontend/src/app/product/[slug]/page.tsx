@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useCallback, useEffect, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { notFound, useParams, useRouter } from "next/navigation";
 import StorefrontChrome from "@/components/layout/StorefrontChrome";
@@ -11,6 +10,7 @@ import ProductCard from "@/components/home/ProductCard";
 import ProductImageZoom from "@/components/product/ProductImageZoom";
 import FavoriteButton from "@/components/product/FavoriteButton";
 import ProductReviews from "@/components/product/ProductReviews";
+import ProductThumbnails from "@/components/product/ProductThumbnails";
 import StarRating from "@/components/reviews/StarRating";
 import { Product } from "@/lib/types";
 import { getProductDetail, formatImageUrl } from "@/lib/api";
@@ -97,17 +97,17 @@ export default function ProductDetailPage() {
 
       <main className="max-w-[1360px] mx-auto px-4 sm:px-6 py-6 flex-1 w-full">
         {/* Breadcrumb */}
-        <nav className="flex items-center gap-2 text-xs text-ink-muted mb-6">
+        <nav aria-label="Breadcrumb" className="flex items-center gap-2 text-xs text-ink-muted mb-6">
           <Link href="/" className="hover:text-primary transition-colors">
             Home
           </Link>
-          <span className="material-symbols-outlined text-[14px]">chevron_right</span>
+          <span aria-hidden="true" className="material-symbols-outlined text-[14px]">chevron_right</span>
           {product.category && (
             <>
               <Link href={`/?category=${product.category.slug}`} className="hover:text-primary transition-colors">
                 {product.category.name}
               </Link>
-              <span className="material-symbols-outlined text-[14px]">chevron_right</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[14px]">chevron_right</span>
             </>
           )}
           <span className="text-ink font-medium truncate">{product.name}</span>
@@ -125,26 +125,7 @@ export default function ProductDetailPage() {
             />
 
             {/* Thumbnail selector */}
-            {galleryImages.length > 1 && (
-              <div className="flex gap-2.5 overflow-x-auto pb-1">
-                {galleryImages.map((img, i) => {
-                  const formattedThumb = formatImageUrl(img);
-                  return (
-                    <button
-                      key={i}
-                      onClick={() => setSelectedImage(formattedThumb)}
-                      className={`relative w-16 h-16 rounded-md overflow-hidden border-2 shrink-0 transition-all cursor-pointer ${
-                        selectedImage === formattedThumb
-                          ? "border-primary shadow-xs"
-                          : "border-line hover:border-ink-muted"
-                      }`}
-                    >
-                      <Image src={formattedThumb} alt={`Thumb ${i}`} fill className="object-cover" />
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+            <ProductThumbnails images={galleryImages} selected={selectedImage} onSelect={setSelectedImage} />
           </div>
 
           {/* Right: Info & Actions (Spacious 7 cols) */}

@@ -175,11 +175,13 @@ export default function Header({ onSearch, searchQuery = "" }: HeaderProps) {
           {/* Cart Action */}
           <button
             onClick={() => setIsCartOpen(true)}
-            className="relative flex items-center p-1.5 hover:bg-white/10 rounded-full transition-colors focus:outline-none"
+            className="relative flex items-center p-1.5 hover:bg-white/10 rounded-full transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-on-nav"
             title="Shopping Cart"
+            aria-label={totalItemsCount > 0 ? `Shopping cart, ${totalItemsCount} items` : "Shopping cart"}
+            aria-haspopup="dialog"
             type="button"
           >
-            <span className="material-symbols-outlined text-[24px]">shopping_bag</span>
+            <span aria-hidden="true" className="material-symbols-outlined text-[24px]">shopping_bag</span>
             {totalItemsCount > 0 && (
               <span className="absolute -top-1 -right-1 flex h-4 min-w-[16px] px-1 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-on-accent animate-pulse">
                 {totalItemsCount}

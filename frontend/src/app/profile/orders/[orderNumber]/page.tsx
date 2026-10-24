@@ -5,11 +5,12 @@ import Image from "next/image";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { Order } from "@/lib/types";
-import { cancelCustomerOrder, formatImageUrl, getOrderDetail } from "@/lib/api";
+import { formatImageUrl, getOrderDetail } from "@/lib/api";
 import { getAuthToken } from "@/lib/auth";
 import { canUseSupport } from "@/lib/support";
 import { useAuth } from "@/context/AuthContext";
 import { PRODUCT_REVIEWS_ANCHOR } from "@/components/product/ProductReviews";
+import CancelOrderDialog from "@/components/profile/CancelOrderDialog";
 
 const TRACK_STEPS = ["PENDING", "CONFIRMED", "PROCESSING", "SHIPPED", "DELIVERED"];
 const CANCELLABLE_STATUSES = ["PENDING", "CONFIRMED", "PROCESSING"];
@@ -46,11 +47,7 @@ export default function CustomerOrderDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
 
-  // Cancellation modal state
   const [showCancelModal, setShowCancelModal] = useState(false);
-  const [cancelReason, setCancelReason] = useState("");
-  const [isCancelling, setIsCancelling] = useState(false);
-  const [cancelError, setCancelError] = useState<string | null>(null);
 
   const loadOrder = useCallback(async () => {
     if (!orderNumber) return;
@@ -81,34 +78,6 @@ export default function CustomerOrderDetailPage() {
   useEffect(() => {
     loadOrder();
   }, [loadOrder]);
-
-  const handleConfirmCancel = async () => {
-    if (!order) return;
-    const token = getAuthToken();
-    if (!token) return;
-
-    setIsCancelling(true);
-    setCancelError(null);
-
-    try {
-      const updated = await cancelCustomerOrder(
-        order.order_number,
-        token,
-        cancelReason.trim() || undefined
-      );
-      setOrder(updated);
-      setShowCancelModal(false);
-      setCancelReason("");
-    } catch (err: any) {
-      setCancelError(
-        err instanceof Error
-          ? err.message
-          : "Failed to cancel order. Please verify that the order is still eligible for cancellation."
-      );
-    } finally {
-      setIsCancelling(false);
-    }
-  };
 
   if (loading) {
     return (
@@ -217,7 +186,7 @@ export default function CustomerOrderDetailPage() {
               onClick={() => setShowCancelModal(true)}
               className="inline-flex items-center gap-1.5 bg-accent/10 hover:bg-accent/20 text-accent font-bold text-xs uppercase tracking-wider px-4 py-2.5 rounded-lg border border-accent/20 transition-colors cursor-pointer"
             >
-              <span className="material-symbols-outlined text-[18px]">cancel</span>
+              <span aria-hidden="true" className="material-symbols-outlined text-[18px]">cancel</span>
               <span>Cancel Order</span>
             </button>
           )}
@@ -481,90 +450,16 @@ export default function CustomerOrderDetailPage() {
         </div>
       </div>
 
-      {/* Cancellation Confirmation Modal */}
-      {showCancelModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
-          <div className="bg-surface rounded-2xl border border-line shadow-2xl max-w-md w-full p-6 space-y-4 animate-in zoom-in-95 duration-200">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-accent/10 text-accent flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-[24px]">
-                  warning
-                </span>
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-ink">Cancel Order</h3>
-                <p className="text-xs text-ink-muted">
-                  Order <span className="font-mono font-semibold">{order.order_number}</span>
-                </p>
-              </div>
-            </div>
-
-            <p className="text-xs text-ink-body leading-relaxed">
-              Are you sure you want to cancel this order? Once cancelled, reserved items will be released back to the store inventory and this action cannot be undone.
-            </p>
-
-            {cancelError && (
-              <div className="p-3 rounded-lg bg-accent/10 border border-accent/30 text-accent text-xs font-medium">
-                {cancelError}
-              </div>
-            )}
-
-            <div>
-              <label
-                htmlFor="detail-cancel-reason"
-                className="block text-xs font-semibold text-ink-body mb-1"
-              >
-                Reason for cancellation (optional)
-              </label>
-              <textarea
-                id="detail-cancel-reason"
-                rows={2}
-                value={cancelReason}
-                onChange={(e) => setCancelReason(e.target.value)}
-                placeholder="e.g. Changed my mind, found better price..."
-                disabled={isCancelling}
-                className="w-full px-3 py-2 rounded-lg border border-line bg-surface text-ink placeholder-ink-muted text-xs focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary disabled:opacity-60"
-              />
-            </div>
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-line">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowCancelModal(false);
-                  setCancelReason("");
-                  setCancelError(null);
-                }}
-                disabled={isCancelling}
-                className="px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider text-ink-muted hover:text-ink transition-colors cursor-pointer"
-              >
-                Keep Order
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmCancel}
-                disabled={isCancelling}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-accent hover:bg-accent/90 text-white font-bold text-xs uppercase tracking-wider transition-colors disabled:opacity-60 cursor-pointer shadow-sm"
-              >
-                {isCancelling ? (
-                  <>
-                    <span className="material-symbols-outlined animate-spin text-[14px]">
-                      progress_activity
-                    </span>
-                    <span>Cancelling…</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="material-symbols-outlined text-[14px]">
-                      close
-                    </span>
-                    <span>Confirm Cancellation</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
+      {order && (
+        <CancelOrderDialog
+          order={order}
+          open={showCancelModal}
+          onClose={() => setShowCancelModal(false)}
+          onCancelled={(updated) => {
+            setOrder(updated);
+            setShowCancelModal(false);
+          }}
+        />
       )}
     </div>
   );
