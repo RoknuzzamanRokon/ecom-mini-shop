@@ -27,6 +27,7 @@ import {
   getAvailableVerifyActions,
   useVerifyPaymentAction,
 } from "./paymentGovernance";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
 
 /** Matches StandardResultsSetPagination.page_size in shop/api_views.py (the backend's default). */
 const PAGE_SIZE = 12;
@@ -91,15 +92,21 @@ function AdminPaymentsPageContent() {
       }
     }, 350);
     return () => clearTimeout(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchInput]);
+    // Full dependencies: the timer must commit through the current
+    // updateParams, or it rewrites the URL from an old snapshot and drops a
+    // filter changed meanwhile (BUG-074).
+  }, [searchInput, urlSearch, updateParams]);
 
   const [payments, setPayments] = useState<AdminPayment[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<AdminApiError | Error | null>(null);
 
+  // Only the newest request may set the list (BUG-073).
+  const beginRequest = useLatestRequest();
+
   const fetchPayments = useCallback(async () => {
+    const isLatest = beginRequest();
     const token = getAuthToken();
     if (!token) {
       setLoading(false);
@@ -116,16 +123,18 @@ function AdminPaymentsPageContent() {
         payment_method: urlMethod || undefined,
         page: urlPage,
       });
+      if (!isLatest()) return;
       setPayments(data.results);
       setTotalCount(data.count);
     } catch (err) {
+      if (!isLatest()) return;
       setPayments([]);
       setTotalCount(0);
       setError(err instanceof Error ? err : new Error("Failed to load payments."));
     } finally {
-      setLoading(false);
+      if (isLatest()) setLoading(false);
     }
-  }, [urlSearch, urlStatus, urlMethod, urlPage]);
+  }, [urlSearch, urlStatus, urlMethod, urlPage, beginRequest]);
 
   useEffect(() => {
     if (!canView) return;

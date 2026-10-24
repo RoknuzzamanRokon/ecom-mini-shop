@@ -28,6 +28,7 @@ import {
   getAvailableSellerActions,
   useSellerStatusAction,
 } from "./sellerGovernance";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
 
 /** Matches AdminPagination.page_size in shop/admin_views.py (the backend's default). */
 const PAGE_SIZE = 20;
@@ -93,15 +94,21 @@ function AdminSellersPageContent() {
       }
     }, 350);
     return () => clearTimeout(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchInput]);
+    // Full dependencies: the timer must commit through the current
+    // updateParams, or it rewrites the URL from an old snapshot and drops a
+    // filter changed meanwhile (BUG-074).
+  }, [searchInput, urlSearch, updateParams]);
 
   const [sellers, setSellers] = useState<AdminSeller[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<AdminApiError | Error | null>(null);
 
+  // Only the newest request may set the list (BUG-073).
+  const beginRequest = useLatestRequest();
+
   const fetchSellers = useCallback(async () => {
+    const isLatest = beginRequest();
     const token = getAuthToken();
     if (!token) {
       setLoading(false);
@@ -118,16 +125,18 @@ function AdminSellersPageContent() {
         seller_type: urlSellerType || undefined,
         page: urlPage,
       });
+      if (!isLatest()) return;
       setSellers(data.results);
       setTotalCount(data.count);
     } catch (err) {
+      if (!isLatest()) return;
       setSellers([]);
       setTotalCount(0);
       setError(err instanceof Error ? err : new Error("Failed to load sellers."));
     } finally {
-      setLoading(false);
+      if (isLatest()) setLoading(false);
     }
-  }, [urlSearch, urlStatus, urlSellerType, urlPage]);
+  }, [urlSearch, urlStatus, urlSellerType, urlPage, beginRequest]);
 
   useEffect(() => {
     if (!canView) return;

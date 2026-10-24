@@ -20,6 +20,7 @@ import {
 import { Product, SellerShop, Category } from "@/lib/types";
 import { getAuthToken } from "@/lib/auth";
 import { useSeller } from "@/components/seller/SellerGuard";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
 
 // Sent with every list request, so the page count always matches (BUG-024).
 const PRODUCTS_PAGE_SIZE = 12;
@@ -103,7 +104,11 @@ export default function SellerProductsPage() {
     is_active: true,
   });
 
+  // Only the newest request may set the list (BUG-073).
+  const beginRequest = useLatestRequest();
+
   const fetchProductsList = useCallback(async () => {
+    const isLatest = beginRequest();
     const token = getAuthToken();
     if (!token) return;
 
@@ -117,16 +122,18 @@ export default function SellerProductsPage() {
         category: selectedCategory || undefined,
       };
       const res = await getSellerProducts(token, params);
+      if (!isLatest()) return;
       setProducts(res.results);
       setTotalCount(res.count);
       setTotalPages(Math.max(1, Math.ceil(res.count / PRODUCTS_PAGE_SIZE)));
       setListError(null);
     } catch (err: any) {
+      if (!isLatest()) return;
       setListError(err.message || "Failed to load products.");
     } finally {
-      setLoading(false);
+      if (isLatest()) setLoading(false);
     }
-  }, [page, searchQuery, selectedShopId, selectedCategory]);
+  }, [page, searchQuery, selectedShopId, selectedCategory, beginRequest]);
 
   useEffect(() => {
     fetchProductsList();

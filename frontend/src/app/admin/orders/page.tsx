@@ -28,6 +28,7 @@ import {
   getAvailableOrderActions,
   useOrderStatusAction,
 } from "./orderGovernance";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
 
 /** Matches StandardResultsSetPagination.page_size in shop/api_views.py (the backend's default). */
 const PAGE_SIZE = 12;
@@ -94,15 +95,21 @@ function AdminOrdersPageContent() {
       }
     }, 350);
     return () => clearTimeout(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchInput]);
+    // Full dependencies: the timer must commit through the current
+    // updateParams, or it rewrites the URL from an old snapshot and drops a
+    // filter changed meanwhile (BUG-074).
+  }, [searchInput, urlSearch, updateParams]);
 
   const [orders, setOrders] = useState<AdminOrderListItem[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<AdminApiError | Error | null>(null);
 
+  // Only the newest request may set the list (BUG-073).
+  const beginRequest = useLatestRequest();
+
   const fetchOrders = useCallback(async () => {
+    const isLatest = beginRequest();
     const token = getAuthToken();
     if (!token) {
       setLoading(false);
@@ -121,16 +128,18 @@ function AdminOrdersPageContent() {
         end_date: urlEndDate || undefined,
         page: urlPage,
       });
+      if (!isLatest()) return;
       setOrders(data.results);
       setTotalCount(data.count);
     } catch (err) {
+      if (!isLatest()) return;
       setOrders([]);
       setTotalCount(0);
       setError(err instanceof Error ? err : new Error("Failed to load orders."));
     } finally {
-      setLoading(false);
+      if (isLatest()) setLoading(false);
     }
-  }, [urlSearch, urlStatus, urlPaymentStatus, urlStartDate, urlEndDate, urlPage]);
+  }, [urlSearch, urlStatus, urlPaymentStatus, urlStartDate, urlEndDate, urlPage, beginRequest]);
 
   useEffect(() => {
     if (!canView) return;

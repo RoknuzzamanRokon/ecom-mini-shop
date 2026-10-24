@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import { getSellerOrderDetail, getSellerOrders, updateSellerOrderStatus } from "@/lib/api";
 import { SellerOrder, SellerOrderDetail } from "@/lib/types";
 import { getAuthToken } from "@/lib/auth";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
 
 // Sent with every list request, so the page count always matches (BUG-024).
 const ORDERS_PAGE_SIZE = 10;
@@ -61,7 +62,11 @@ export default function SellerOrdersPage() {
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // Only the newest request may set the list (BUG-073).
+  const beginRequest = useLatestRequest();
+
   const fetchOrdersList = useCallback(async () => {
+    const isLatest = beginRequest();
     const token = getAuthToken();
     if (!token) return;
 
@@ -73,15 +78,17 @@ export default function SellerOrdersPage() {
         page,
         { q: searchQuery, pageSize: ORDERS_PAGE_SIZE }
       );
+      if (!isLatest()) return;
       setOrders(res.results);
       setTotalCount(res.count);
       setTotalPages(Math.max(1, Math.ceil(res.count / ORDERS_PAGE_SIZE)));
     } catch (err: any) {
+      if (!isLatest()) return;
       setActionError(err.message || "Failed to load seller orders.");
     } finally {
-      setLoading(false);
+      if (isLatest()) setLoading(false);
     }
-  }, [page, selectedStatus, searchQuery]);
+  }, [page, selectedStatus, searchQuery, beginRequest]);
 
   useEffect(() => {
     fetchOrdersList();

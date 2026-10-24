@@ -86,8 +86,10 @@ function AdminRolesPageContent() {
       }
     }, 300);
     return () => clearTimeout(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchInput]);
+    // Full dependencies: the timer must commit through the current
+    // updateParams, or it rewrites the URL from an old snapshot and drops a
+    // filter changed meanwhile (BUG-074).
+  }, [searchInput, urlSearch, updateParams]);
 
   const [roles, setRoles] = useState<AdminRole[]>([]);
   const [loading, setLoading] = useState(true);

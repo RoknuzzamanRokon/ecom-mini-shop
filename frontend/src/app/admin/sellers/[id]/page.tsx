@@ -45,6 +45,7 @@ import {
   useSellerStatusAction,
 } from "../sellerGovernance";
 import { canCreateAdminShops, shopOwnerEligibilityWarning } from "../../shops/shopGovernance";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
 
 /** Matches DRF's default PAGE_SIZE (settings.py), which the points history endpoint uses. */
 const POINT_HISTORY_PAGE_SIZE = 12;
@@ -255,7 +256,11 @@ export default function AdminSellerDetailPage() {
     }
   }, [sellerId]);
 
+  // Only the newest request may set the list (BUG-073).
+  const beginRequest = useLatestRequest();
+
   const fetchHistory = useCallback(async () => {
+    const isLatest = beginRequest();
     const token = getAuthToken();
     if (!token) {
       setHistoryLoading(false);
@@ -269,26 +274,31 @@ export default function AdminSellerDetailPage() {
         page: historyPage,
         type: historyType || undefined,
       });
+      if (!isLatest()) return;
       setHistory(data.results);
       setHistoryCount(data.count);
     } catch (err) {
+      if (!isLatest()) return;
       setHistory([]);
       setHistoryCount(0);
       setHistoryError(err instanceof Error ? err : new Error("Failed to load the transaction history."));
     } finally {
-      setHistoryLoading(false);
+      if (isLatest()) setHistoryLoading(false);
     }
-  }, [sellerId, historyPage, historyType]);
+  }, [sellerId, historyPage, historyType, beginRequest]);
 
   useEffect(() => {
     if (!canViewPoints) return;
     fetchWallet();
   }, [canViewPoints, fetchWallet]);
 
+  // Bumped to refetch the history when its page and type are unchanged.
+  const [historyReload, setHistoryReload] = useState(0);
+
   useEffect(() => {
     if (!canViewPoints) return;
     fetchHistory();
-  }, [canViewPoints, fetchHistory]);
+  }, [canViewPoints, fetchHistory, historyReload]);
 
   /** Which adjustment panel is open, if any, before the amount is confirmed. */
   const [adjustAction, setAdjustAction] = useState<AdminPointAdjustmentAction | null>(null);
@@ -344,8 +354,11 @@ export default function AdminSellerDetailPage() {
         // The backend response is authoritative — refetch rather than
         // optimistically mutate the displayed balance/ledger.
         fetchWallet();
+        // One request, for page 1: calling fetchHistory() here as well used
+        // the page still in its closure, racing the effect's page-1 fetch
+        // (BUG-075).
         setHistoryPage(1);
-        fetchHistory();
+        setHistoryReload((n) => n + 1);
       } catch (err) {
         const insufficient = getInsufficientPointsInfo(err);
         setAdjustError(
@@ -357,7 +370,7 @@ export default function AdminSellerDetailPage() {
         );
       }
     },
-    [pendingAdjustment, sellerId, fetchWallet, fetchHistory]
+    [pendingAdjustment, sellerId, fetchWallet]
   );
 
   const cancelAdjustmentConfirm = useCallback(() => {

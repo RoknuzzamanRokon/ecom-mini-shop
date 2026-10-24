@@ -25,6 +25,7 @@ import {
   getAvailableProductActions,
   useProductStatusAction,
 } from "./productGovernance";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
 
 /** Matches AdminPagination.page_size in shop/admin_views.py (the backend's default). */
 const PAGE_SIZE = 20;
@@ -96,15 +97,21 @@ function AdminProductsPageContent() {
       }
     }, 350);
     return () => clearTimeout(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchInput]);
+    // Full dependencies: the timer must commit through the current
+    // updateParams, or it rewrites the URL from an old snapshot and drops a
+    // filter changed meanwhile (BUG-074).
+  }, [searchInput, urlSearch, updateParams]);
 
   const [products, setProducts] = useState<AdminProduct[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<AdminApiError | Error | null>(null);
 
+  // Only the newest request may set the list (BUG-073).
+  const beginRequest = useLatestRequest();
+
   const fetchProducts = useCallback(async () => {
+    const isLatest = beginRequest();
     const token = getAuthToken();
     if (!token) {
       setLoading(false);
@@ -122,16 +129,18 @@ function AdminProductsPageContent() {
         shop: urlShop || undefined,
         page: urlPage,
       });
+      if (!isLatest()) return;
       setProducts(data.results);
       setTotalCount(data.count);
     } catch (err) {
+      if (!isLatest()) return;
       setProducts([]);
       setTotalCount(0);
       setError(err instanceof Error ? err : new Error("Failed to load products."));
     } finally {
-      setLoading(false);
+      if (isLatest()) setLoading(false);
     }
-  }, [urlSearch, urlStatus, urlCategory, urlShop, urlPage]);
+  }, [urlSearch, urlStatus, urlCategory, urlShop, urlPage, beginRequest]);
 
   useEffect(() => {
     if (!canView) return;

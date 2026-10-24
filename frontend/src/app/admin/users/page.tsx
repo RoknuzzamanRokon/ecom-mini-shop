@@ -30,6 +30,7 @@ import {
   canViewAdminUsers,
   userDisplayName,
 } from "./userGovernance";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
 
 /** Matches AdminPagination.page_size in shop/admin_views.py (the backend's default). */
 const PAGE_SIZE = 20;
@@ -106,8 +107,10 @@ function AdminUsersPageContent() {
       }
     }, 350);
     return () => clearTimeout(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchInput]);
+    // Full dependencies: the timer must commit through the current
+    // updateParams, or it rewrites the URL from an old snapshot and drops a
+    // filter changed meanwhile (BUG-074).
+  }, [searchInput, urlSearch, updateParams]);
 
   const [users, setUsers] = useState<AdminUserListItem[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -116,7 +119,11 @@ function AdminUsersPageContent() {
 
   const [roles, setRoles] = useState<AdminRole[]>([]);
 
+  // Only the newest request may set the list (BUG-073).
+  const beginRequest = useLatestRequest();
+
   const fetchUsers = useCallback(async () => {
+    const isLatest = beginRequest();
     const token = getAuthToken();
     if (!token) {
       setLoading(false);
@@ -133,16 +140,18 @@ function AdminUsersPageContent() {
         role: urlRole || undefined,
         page: urlPage,
       });
+      if (!isLatest()) return;
       setUsers(data.results);
       setTotalCount(data.count);
     } catch (err) {
+      if (!isLatest()) return;
       setUsers([]);
       setTotalCount(0);
       setError(err instanceof Error ? err : new Error("Failed to load users."));
     } finally {
-      setLoading(false);
+      if (isLatest()) setLoading(false);
     }
-  }, [urlSearch, urlStatus, urlRole, urlPage]);
+  }, [urlSearch, urlStatus, urlRole, urlPage, beginRequest]);
 
   useEffect(() => {
     if (!canView) return;

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { getSellerWallet, getSellerPointHistory } from "@/lib/api";
 import { SellerWallet, PointTransaction } from "@/lib/types";
 import { getAuthToken } from "@/lib/auth";
+import { useLatestRequest } from "@/hooks/useLatestRequest";
 
 const TXN_TYPES = [
   "ALL",
@@ -30,7 +31,11 @@ export default function SellerWalletPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Only the newest request may set the list (BUG-073).
+  const beginRequest = useLatestRequest();
+
   const fetchWalletData = useCallback(async () => {
+    const isLatest = beginRequest();
     const token = getAuthToken();
     if (!token) return;
 
@@ -41,17 +46,19 @@ export default function SellerWalletPage() {
         getSellerWallet(token),
         getSellerPointHistory(token, selectedType !== "ALL" ? selectedType : undefined),
       ]);
+      if (!isLatest()) return;
       setWallet(walletRes);
       setTransactions(historyRes.results);
       setHistoryPage(1);
       setHasMoreHistory(Boolean(historyRes.next));
       setTotalHistory(historyRes.count);
     } catch (err: any) {
+      if (!isLatest()) return;
       setError(err.message || "Failed to load wallet data.");
     } finally {
-      setLoading(false);
+      if (isLatest()) setLoading(false);
     }
-  }, [selectedType]);
+  }, [selectedType, beginRequest]);
 
   useEffect(() => {
     fetchWalletData();
@@ -60,15 +67,19 @@ export default function SellerWalletPage() {
   const loadMoreHistory = async () => {
     const token = getAuthToken();
     if (!token || loadingMore) return;
+    // A type change while this page loads makes it stale: dropped, not appended.
+    const isLatest = beginRequest();
     setLoadingMore(true);
     try {
       const next = historyPage + 1;
       const res = await getSellerPointHistory(token, selectedType !== "ALL" ? selectedType : undefined, next);
+      if (!isLatest()) return;
       setTransactions((prev) => [...prev, ...res.results]);
       setHistoryPage(next);
       setHasMoreHistory(Boolean(res.next));
       setTotalHistory(res.count);
     } catch (err: unknown) {
+      if (!isLatest()) return;
       setError(err instanceof Error ? err.message : "Failed to load more transactions.");
     } finally {
       setLoadingMore(false);

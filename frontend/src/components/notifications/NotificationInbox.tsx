@@ -109,12 +109,17 @@ export default function NotificationInbox({ audience }: { audience: Notification
   const loadMore = async () => {
     const token = getAuthToken();
     if (!token || !current?.next) return;
+    // The list this page continues. If the filter changed or the list reloaded
+    // meanwhile, the page belongs to an old list and is dropped (BUG-073).
+    const key = requestKey;
     setLoadingMore(true);
     setActionError(null);
     try {
       const page = await getNotifications(token, audience, { unread: filter === "unread", cursor: current.next });
       setLoaded((previous) =>
-        previous && { ...previous, items: [...previous.items, ...page.results], next: page.next_cursor }
+        previous && previous.key === key
+          ? { ...previous, items: [...previous.items, ...page.results], next: page.next_cursor }
+          : previous
       );
     } catch (err: unknown) {
       setActionError(err instanceof Error ? err.message : "More notifications couldn't be loaded.");
