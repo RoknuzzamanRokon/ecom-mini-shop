@@ -260,6 +260,9 @@ class PaymentService:
             if metadata:
                 locked_payment.metadata.update(metadata)
             locked_payment.transition_to(Payment.STATUS_FAILED)
+            # transition_to() saves only the status; keep the reason and the
+            # gateway metadata too, or they never reach the database (BUG-051).
+            locked_payment.save(update_fields=["failure_reason", "metadata", "updated_at"])
 
             AuditService.log(
                 action="PAYMENT_FAILED",

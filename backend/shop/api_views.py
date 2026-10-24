@@ -1019,7 +1019,7 @@ class SellerInventoryTransactionsAPIView(generics.ListAPIView):
 # Task 15: Payment & Refund API Views
 # ==============================================================================
 
-def _get_customer_order_or_404(request, kwargs, view=None):
+def _get_customer_order_or_404(request, kwargs, view=None, staff_permission="orders.staff.view"):
     lookup = (
         kwargs.get("order_number")
         or kwargs.get("pk")
@@ -1039,11 +1039,15 @@ def _get_customer_order_or_404(request, kwargs, view=None):
     if not order:
         raise NotFound("Order not found.")
 
-    # Staff override via the RBAC permission meant for it -- 'orders.staff.view'
-    # is defined as "view all customer orders across the platform (Staff)".
-    # Previously this re-listed role codes inline.
+    # Staff override via an RBAC permission: 'orders.staff.view' ("view all
+    # customer orders across the platform") for reads; writes pass a write
+    # permission instead (BUG-054). Previously this re-listed role codes inline.
     user = request.user
-    if order.user != user and not CanViewStaffOrders().has_permission(request, view):
+    if order.user != user and not (
+        user.is_superuser
+        or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user)
+        or has_user_permission(user, staff_permission)
+    ):
         raise NotFound("Order not found.")
 
     return order
@@ -1068,7 +1072,11 @@ class CustomerOrderPaymentAPIView(APIView):
         return Response(serializer.data, status=status.HTTP_200_OK)
 
     def post(self, request, *args, **kwargs):
-        order = _get_customer_order_or_404(request, kwargs, view=self)
+        # Creating or changing a payment is a write: a read-only staff grant
+        # such as 'orders.staff.view' no longer reaches someone else's order
+        # here (BUG-054). Every customer holds 'payments.create', so staff need
+        # 'payments.process'.
+        order = _get_customer_order_or_404(request, kwargs, view=self, staff_permission="payments.process")
 
         serializer = PaymentInitiateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

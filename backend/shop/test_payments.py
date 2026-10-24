@@ -645,3 +645,54 @@ class PaymentAndRefundManagementTests(APITestCase):
         self.assertEqual(self._refund(payment, idempotency_key="b").status_code, status.HTTP_201_CREATED)
         self.assertEqual(Refund.objects.filter(payment=payment).count(), 2)
 
+
+    # --- TASK-035 ---
+
+    def test_a_failure_reason_and_metadata_are_saved(self):
+        """BUG-051: they used to live only on the in-memory payment."""
+        order = self._create_order(self.customer_a, self.address_a)
+        payment = order.payments.get()
+        PaymentService.process_payment_failure(payment, reason="Courier could not collect", metadata={"attempt": 2})
+
+        payment.refresh_from_db()
+        self.assertEqual(payment.status, Payment.STATUS_FAILED)
+        self.assertEqual(payment.failure_reason, "Courier could not collect")
+        self.assertEqual(payment.metadata.get("attempt"), 2)
+
+    def test_a_read_only_staff_grant_cannot_write_a_customers_payment(self):
+        """BUG-054: SUPPORT_TEAM may read another customer's payment, not create or change it."""
+        order = self._create_order(self.customer_a, self.address_a)
+        url = f"/api/orders/{order.order_number}/payment/"
+
+        self.client.force_authenticate(user=self.support_user)
+        self.assertEqual(self.client.get(url).status_code, status.HTTP_200_OK)
+        res = self.client.post(url, {"payment_method": "CASH_ON_DELIVERY"})
+        self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
+
+        # 'payments.process' is the staff write grant.
+        self.client.force_authenticate(user=self.finance_user)
+        self.assertEqual(self.client.post(url, {"payment_method": "CASH_ON_DELIVERY"}).status_code, status.HTTP_201_CREATED)
+        self.assertEqual(order.payments.count(), 1)
+
+    def test_support_staff_can_cancel_a_customers_order(self):
+        """BUG-056: the view let SUPPORT_TEAM through on 'orders.staff.update'; the service refused it."""
+        order = self._create_order(self.customer_a, self.address_a)
+        self.client.force_authenticate(user=self.support_user)
+        res = self.client.post(f"/api/orders/{order.order_number}/cancel/", {"reason": "Customer called"})
+        self.assertEqual(res.status_code, status.HTTP_200_OK, res.data)
+        order.refresh_from_db()
+        self.assertEqual(order.status, Order.STATUS_CANCELLED)
+
+    def test_two_partial_refunds_in_a_row(self):
+        """BUG-057: a second partial refund that still leaves a balance."""
+        payment = self._paid_payment(quantity=2)  # 5000.00
+        for key in ("first", "second"):
+            res = self._refund(payment, amount="1000.00", reason="Staged refund", idempotency_key=key)
+            self.assertEqual(res.status_code, status.HTTP_201_CREATED, res.data)
+        payment.refresh_from_db()
+        self.assertEqual(payment.status, Payment.STATUS_PARTIALLY_REFUNDED)
+        self.assertEqual(payment.order.refundable_amount, Decimal("3000.00"))
+
+        self.assertEqual(self._refund(payment, idempotency_key="rest").status_code, status.HTTP_201_CREATED)
+        payment.refresh_from_db()
+        self.assertEqual(payment.status, Payment.STATUS_REFUNDED)

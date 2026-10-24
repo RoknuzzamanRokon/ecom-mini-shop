@@ -1063,14 +1063,14 @@ class OrderService:
             if not locked_order:
                 raise ValidationError({"order": "Order not found."})
 
-            # Check customer ownership or staff override
+            # Check customer ownership or staff override: the same RBAC rule as
+            # the view's CanUpdateStaffOrders, so staff it lets through are not
+            # refused here (BUG-056). is_staff alone no longer counts.
             role_codes = get_user_role_codes(customer) if customer and customer.is_authenticated else []
-            is_staff_override = (
+            is_staff_override = bool(customer) and (
                 getattr(customer, "is_superuser", False)
-                or getattr(customer, "is_staff", False)
                 or Role.ROLE_SUPER_ADMINISTRATOR in role_codes
-                or Role.ROLE_ADMINISTRATOR in role_codes
-                or Role.ROLE_OPERATION_MANAGER in role_codes
+                or has_user_permission(customer, "orders.staff.update")
             )
             if locked_order.user != customer and not is_staff_override:
                 raise PermissionDenied("You do not have permission to cancel this order.")
