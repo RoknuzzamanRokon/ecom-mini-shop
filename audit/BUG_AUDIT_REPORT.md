@@ -193,7 +193,7 @@ All 651 tracked files were in scope except 92 media uploads and the npm lockfile
 | BUG-090 | Profile pages show empty states when loading actually failed | P3 | High | Confirmed | Storefront | C | TASK-040 |
 | BUG-091 | Review delete: no confirmation, and a failure is invisible | P3 | High | Confirmed | Storefront | C | TASK-040 |
 | BUG-092 | Login leaves tokens stored if `/auth/me` fails (half-logged-in state) | P3 | Medium | Confirmed | Auth/Frontend | C | TASK-024 |
-| BUG-093 | Route params interpolated into API paths without encoding | P3 | Low | Unverified | Frontend/Security | C | TASK-045 |
+| BUG-093 | Route params interpolated into API paths without encoding | P3 | Low | Not reproducible (TASK-045); encoded anyway | Frontend/Security | C | TASK-045 |
 | BUG-094 | Accessibility gaps in dialogs, menus and the off-screen sidebar | P3 | High | Confirmed | Accessibility | C | TASK-041 |
 | BUG-095 | Material Symbols ignore Tailwind size classes (Known #35) | P3 | High | Confirmed | Frontend UI | A | TASK-028 |
 | BUG-096 | Seller Center minor UI defects (status dot, labels, counts) | P3 | High | Confirmed | Seller UI | C | TASK-023 |
@@ -1581,7 +1581,8 @@ Each P3 entry keeps every required field on one line.
    location: ["frontend/src/lib/api.ts:531 (`/api/orders/${orderNumber}/`)", "frontend/src/lib/admin-api.ts id interpolation (e.g. :1259, per auditor)", "callers use useParams() values"],
    symbol: "order/admin path builders", explanation: "If Next 16's useParams returns decoded segments, a crafted link (e.g. ..%2F..%2Fapi%2F…) makes the victim's browser send a bearer-authenticated GET to another backend path. Support paths already use encodeURIComponent.",
    repro: "Investigation needed — check what useParams returns for encoded slashes.", expected: "Encoded path segments.", actual: "Raw interpolation.", impact: "Low (GET only, response shown to the victim); one side effect — a ticket GET marks it read.",
-   fix: "encodeURIComponent in every path builder.", regression_test: "Unit test: builder output for '../x' is encoded.", effort: XS, release_blocking: no, dependencies: "TASK-045 investigation"}
+   fix: "encodeURIComponent in every path builder.", regression_test: "Unit test: builder output for '../x' is encoded.", effort: XS, release_blocking: no, dependencies: "TASK-045 investigation",
+   resolution: "TASK-045 (2026-10-25), checked in Next 16.3.4 dev + headless Chrome: useParams() keeps %2F (and %20) encoded, decoding only escapes like %2E, so 'a%2Fb' arrives as 'a%2Fb' and the API URL keeps the slash encoded; Django decodes it once and routes '1/../../users/' to no view (404). A param can only become a dot segment through %2E%2E, which the browser itself resolves in the page URL before the route matches ('/admin/shops/%2E%2E' opens /admin). Not reproducible. For defence in depth every API path builder now encodes its values through lib/paths.ts pathSegment(), which also refuses '', '.' and '..' (frontend/src/lib/paths.test.ts)."}
 
 - {id: BUG-094, title: "Accessibility gaps in dialogs, menus and the off-screen sidebar", severity: P3, confidence: High, status: Confirmed, category: "B Frontend (a11y)", verified: C,
    location: ["frontend/src/components/cart/CartDrawer.tsx:26 (role=dialog without label, Escape or focus management)", "frontend/src/components/profile/OrderCard.tsx:236-238 and frontend/src/app/profile/orders/[orderNumber]/page.tsx:462-464 (cancel modals)", "frontend/src/app/product/[slug]/page.tsx:125-135 (thumbnail buttons unnamed)", "frontend/src/components/admin/AdminHeader.tsx:62-66, 85-89 (no aria-expanded; dismissed only on mouse leave)", "frontend/src/components/admin/AdminSidebar.tsx:52-56 (closed sidebar still focusable)"],
@@ -1803,7 +1804,7 @@ Every command below was run for this audit, read-only, with `PYTHONDONTWRITEBYTE
 
 **Runtime-only facts not established**
 - MySQL locking and deadlocks (BUG-023, BUG-058).
-- Whether Next 16 `useParams` returns decoded values (BUG-093).
+- Whether Next 16 `useParams` returns decoded values (BUG-093). Settled by TASK-045: it does not decode %2F; see BUG-093.
 - Browser number-input parsing (BUG-076).
 - How common MPO JPEGs are (BUG-063).
 - Whether the backend accepts blank profile names (BUG-086).

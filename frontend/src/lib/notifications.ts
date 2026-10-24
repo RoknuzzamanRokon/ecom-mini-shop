@@ -8,6 +8,7 @@
  * which one to ask for.
  */
 import { customerRequest } from "./api";
+import { pathSegment } from "./paths";
 
 /** Which surface shows a notification: the storefront, the Seller Center or the Console. */
 export type NotificationAudience = "CUSTOMER" | "SELLER" | "STAFF";
@@ -158,7 +159,7 @@ export async function getUnreadNotificationCount(
 }
 
 export async function markNotificationRead(token: string, id: number): Promise<void> {
-  const res = await request(`${BASE}${id}/read/`, token, { method: "POST" });
+  const res = await request(`${BASE}${pathSegment(id)}/read/`, token, { method: "POST" });
   if (!res.ok) throw await responseError(res, "The notification couldn't be marked as read.");
 }
 

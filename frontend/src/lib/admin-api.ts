@@ -8,6 +8,7 @@ import {
   SupportStatus,
 } from "./types";
 import { refreshTokenOnce } from "./auth";
+import { pathSegment } from "./paths";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
 
@@ -342,7 +343,7 @@ export async function getAdminShops(
  * Requires 'shops.admin.manage' or 'shops.view' (CanViewAdminShops).
  */
 export async function getAdminShopDetail(token: string, id: number | string): Promise<AdminShop> {
-  return adminRequest<AdminShop>(`/api/admin/shops/${id}/`, token);
+  return adminRequest<AdminShop>(`/api/admin/shops/${pathSegment(id)}/`, token);
 }
 
 /**
@@ -356,7 +357,7 @@ export async function updateAdminShopStatus(
   id: number | string,
   payload: AdminShopStatusPayload
 ): Promise<AdminShop> {
-  return adminRequest<AdminShop>(`/api/admin/shops/${id}/status/`, token, {
+  return adminRequest<AdminShop>(`/api/admin/shops/${pathSegment(id)}/status/`, token, {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -434,7 +435,7 @@ export async function updateAdminShop(
   id: number | string,
   payload: AdminShopUpdatePayload
 ): Promise<AdminShop> {
-  return adminRequest<AdminShop>(`/api/admin/shops/${id}/`, token, {
+  return adminRequest<AdminShop>(`/api/admin/shops/${pathSegment(id)}/`, token, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
@@ -537,7 +538,7 @@ export async function getAdminSellerDetail(
   token: string,
   id: number | string
 ): Promise<AdminSeller> {
-  return adminRequest<AdminSeller>(`/api/admin/sellers/${id}/`, token);
+  return adminRequest<AdminSeller>(`/api/admin/sellers/${pathSegment(id)}/`, token);
 }
 
 /**
@@ -555,7 +556,7 @@ export async function updateAdminSellerStatus(
   id: number | string,
   payload: AdminSellerStatusPayload
 ): Promise<AdminSeller> {
-  return adminRequest<AdminSeller>(`/api/admin/sellers/${id}/status/`, token, {
+  return adminRequest<AdminSeller>(`/api/admin/sellers/${pathSegment(id)}/status/`, token, {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -644,7 +645,7 @@ export async function updateAdminSeller(
   id: number | string,
   payload: AdminSellerUpdatePayload
 ): Promise<AdminSeller> {
-  return adminRequest<AdminSeller>(`/api/admin/sellers/${id}/`, token, {
+  return adminRequest<AdminSeller>(`/api/admin/sellers/${pathSegment(id)}/`, token, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
@@ -747,7 +748,7 @@ export async function getAdminProductDetail(
   token: string,
   id: number | string
 ): Promise<AdminProduct> {
-  return adminRequest<AdminProduct>(`/api/admin/products/${id}/`, token);
+  return adminRequest<AdminProduct>(`/api/admin/products/${pathSegment(id)}/`, token);
 }
 
 /**
@@ -772,7 +773,7 @@ export async function updateAdminProductStatus(
   id: number | string,
   payload: AdminProductStatusPayload
 ): Promise<AdminProduct> {
-  return adminRequest<AdminProduct>(`/api/admin/products/${id}/status/`, token, {
+  return adminRequest<AdminProduct>(`/api/admin/products/${pathSegment(id)}/status/`, token, {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -832,7 +833,7 @@ export async function getAdminReviews(
   if (params?.search) searchParams.set("search", params.search);
   const queryString = searchParams.toString();
   return adminRequest<PaginatedResponse<AdminReview>>(
-    `/api/admin/reviews/${type}/${queryString ? `?${queryString}` : ""}`,
+    `/api/admin/reviews/${pathSegment(type)}/${queryString ? `?${queryString}` : ""}`,
     token
   );
 }
@@ -848,7 +849,7 @@ export async function hideAdminReview(
   id: number,
   reason: string
 ): Promise<AdminReview> {
-  return adminRequest<AdminReview>(`/api/admin/reviews/${type}/${id}/hide/`, token, {
+  return adminRequest<AdminReview>(`/api/admin/reviews/${pathSegment(type)}/${pathSegment(id)}/hide/`, token, {
     method: "POST",
     body: JSON.stringify({ reason }),
   });
@@ -864,7 +865,7 @@ export async function unhideAdminReview(
   id: number,
   reason?: string
 ): Promise<AdminReview> {
-  return adminRequest<AdminReview>(`/api/admin/reviews/${type}/${id}/unhide/`, token, {
+  return adminRequest<AdminReview>(`/api/admin/reviews/${pathSegment(type)}/${pathSegment(id)}/unhide/`, token, {
     method: "POST",
     body: JSON.stringify({ reason: reason ?? "" }),
   });
@@ -956,7 +957,7 @@ export async function getAdminCategoryDetail(
   token: string,
   id: number | string
 ): Promise<AdminCategory> {
-  return adminRequest<AdminCategory>(`/api/admin/categories/${id}/`, token);
+  return adminRequest<AdminCategory>(`/api/admin/categories/${pathSegment(id)}/`, token);
 }
 
 /** POST /api/admin/categories/ -> 201 with the created AdminCategorySerializer body. */
@@ -980,7 +981,7 @@ export async function updateAdminCategory(
   id: number | string,
   payload: Partial<AdminCategoryWritePayload>
 ): Promise<AdminCategory> {
-  return adminRequest<AdminCategory>(`/api/admin/categories/${id}/`, token, {
+  return adminRequest<AdminCategory>(`/api/admin/categories/${pathSegment(id)}/`, token, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
@@ -998,7 +999,7 @@ export async function deleteAdminCategory(
   token: string,
   id: number | string
 ): Promise<{ detail: string }> {
-  return adminRequest<{ detail: string }>(`/api/admin/categories/${id}/`, token, {
+  return adminRequest<{ detail: string }>(`/api/admin/categories/${pathSegment(id)}/`, token, {
     method: "DELETE",
   });
 }
@@ -1124,7 +1125,7 @@ export async function getAdminCustomerDetail(
   token: string,
   id: number | string
 ): Promise<AdminCustomerDetail> {
-  return adminRequest<AdminCustomerDetail>(`/api/admin/customers/${id}/`, token);
+  return adminRequest<AdminCustomerDetail>(`/api/admin/customers/${pathSegment(id)}/`, token);
 }
 
 // ==============================================================================
@@ -1277,7 +1278,7 @@ export async function getAdminUserDetail(
   token: string,
   id: number | string
 ): Promise<AdminUserDetail> {
-  return adminRequest<AdminUserDetail>(`/api/admin/users/${id}/`, token);
+  return adminRequest<AdminUserDetail>(`/api/admin/users/${pathSegment(id)}/`, token);
 }
 
 /**
@@ -1299,7 +1300,7 @@ export async function updateAdminUser(
   id: number | string,
   payload: AdminUserUpdatePayload
 ): Promise<AdminUserDetail> {
-  return adminRequest<AdminUserDetail>(`/api/admin/users/${id}/`, token, {
+  return adminRequest<AdminUserDetail>(`/api/admin/users/${pathSegment(id)}/`, token, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
@@ -1419,7 +1420,7 @@ export async function getAdminRoleDetail(
   token: string,
   id: number | string
 ): Promise<AdminRole> {
-  return adminRequest<AdminRole>(`/api/admin/roles/${id}/`, token);
+  return adminRequest<AdminRole>(`/api/admin/roles/${pathSegment(id)}/`, token);
 }
 
 /**
@@ -1450,7 +1451,7 @@ export async function updateAdminRole(
   id: number | string,
   payload: AdminRoleUpdatePayload
 ): Promise<AdminRole> {
-  return adminRequest<AdminRole>(`/api/admin/roles/${id}/`, token, {
+  return adminRequest<AdminRole>(`/api/admin/roles/${pathSegment(id)}/`, token, {
     method: "PATCH",
     body: JSON.stringify(payload),
   });
@@ -1468,7 +1469,7 @@ export async function deleteAdminRole(
   token: string,
   id: number | string
 ): Promise<{ detail: string }> {
-  return adminRequest<{ detail: string }>(`/api/admin/roles/${id}/`, token, {
+  return adminRequest<{ detail: string }>(`/api/admin/roles/${pathSegment(id)}/`, token, {
     method: "DELETE",
   });
 }
@@ -1598,7 +1599,7 @@ export async function getAdminSellerWallet(
   token: string,
   sellerId: number | string
 ): Promise<AdminSellerWallet> {
-  return adminRequest<AdminSellerWallet>(`/api/points/sellers/${sellerId}/`, token);
+  return adminRequest<AdminSellerWallet>(`/api/points/sellers/${pathSegment(sellerId)}/`, token);
 }
 
 export interface AdminSellerPointHistoryParams {
@@ -1626,7 +1627,7 @@ export async function getAdminSellerPointHistory(
   if (params?.type) searchParams.set("type", params.type);
   const queryString = searchParams.toString();
   return adminRequest<PaginatedResponse<AdminPointTransaction>>(
-    `/api/points/sellers/${sellerId}/history/${queryString ? `?${queryString}` : ""}`,
+    `/api/points/sellers/${pathSegment(sellerId)}/history/${queryString ? `?${queryString}` : ""}`,
     token
   );
 }
@@ -1741,7 +1742,7 @@ export async function adjustAdminSellerPoints(
   sellerId: number | string,
   payload: AdminPointAdjustmentPayload
 ): Promise<AdminPointAdjustmentResult> {
-  return adminRequest<AdminPointAdjustmentResult>(`/api/points/sellers/${sellerId}/adjust/`, token, {
+  return adminRequest<AdminPointAdjustmentResult>(`/api/points/sellers/${pathSegment(sellerId)}/adjust/`, token, {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -1801,7 +1802,7 @@ export async function getAdminStaffWallet(
   token: string,
   userId: number | string
 ): Promise<AdminStaffWallet> {
-  return adminRequest<AdminStaffWallet>(`/api/points/staff/${userId}/`, token);
+  return adminRequest<AdminStaffWallet>(`/api/points/staff/${pathSegment(userId)}/`, token);
 }
 
 /** Exactly the `action` choices accepted by StaffPointTransferRequestSerializer. */
@@ -1839,7 +1840,7 @@ export async function transferAdminStaffPoints(
   userId: number | string,
   payload: AdminStaffTransferPayload
 ): Promise<AdminStaffTransferResult> {
-  return adminRequest<AdminStaffTransferResult>(`/api/points/staff/${userId}/transfer/`, token, {
+  return adminRequest<AdminStaffTransferResult>(`/api/points/staff/${pathSegment(userId)}/transfer/`, token, {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -1863,7 +1864,7 @@ export async function setAdminStaffPointExpiry(
   userId: number | string,
   payload: { enabled: boolean; reason: string }
 ): Promise<AdminStaffExpiryResult> {
-  return adminRequest<AdminStaffExpiryResult>(`/api/points/staff/${userId}/expiry/`, token, {
+  return adminRequest<AdminStaffExpiryResult>(`/api/points/staff/${pathSegment(userId)}/expiry/`, token, {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -2050,7 +2051,7 @@ export async function getAdminOrderDetail(
   token: string,
   id: number | string
 ): Promise<AdminOrderDetail> {
-  return adminRequest<AdminOrderDetail>(`/api/staff/orders/${id}/`, token);
+  return adminRequest<AdminOrderDetail>(`/api/staff/orders/${pathSegment(id)}/`, token);
 }
 
 /** Exactly the `status` choices StaffOrderStatusUpdateSerializer accepts — never PENDING, which is create-only. */
@@ -2081,7 +2082,7 @@ export async function updateAdminOrderStatus(
   id: number | string,
   payload: AdminOrderStatusPayload
 ): Promise<AdminOrderDetail> {
-  return adminRequest<AdminOrderDetail>(`/api/staff/orders/${id}/status/`, token, {
+  return adminRequest<AdminOrderDetail>(`/api/staff/orders/${pathSegment(id)}/status/`, token, {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -2190,7 +2191,7 @@ export async function getAdminPayments(
  * Requires 'payments.view'.
  */
 export async function getAdminPaymentDetail(token: string, id: number | string): Promise<AdminPayment> {
-  return adminRequest<AdminPayment>(`/api/staff/payments/${id}/`, token);
+  return adminRequest<AdminPayment>(`/api/staff/payments/${pathSegment(id)}/`, token);
 }
 
 /** Exactly the `status` choices PaymentVerifySerializer accepts — never PENDING/PROCESSING/CANCELLED, which this endpoint cannot set. */
@@ -2218,7 +2219,7 @@ export async function verifyAdminPayment(
   id: number | string,
   payload: AdminPaymentVerifyPayload
 ): Promise<AdminPayment> {
-  return adminRequest<AdminPayment>(`/api/staff/payments/${id}/verify/`, token, {
+  return adminRequest<AdminPayment>(`/api/staff/payments/${pathSegment(id)}/verify/`, token, {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -2252,7 +2253,7 @@ export async function refundAdminPayment(
   id: number | string,
   payload: AdminRefundCreatePayload
 ): Promise<AdminRefund> {
-  return adminRequest<AdminRefund>(`/api/staff/payments/${id}/refund/`, token, {
+  return adminRequest<AdminRefund>(`/api/staff/payments/${pathSegment(id)}/refund/`, token, {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -2465,7 +2466,7 @@ export interface AdminSupportMessageInput {
 }
 
 function staffTicketPath(ticketNumber: string): string {
-  return `/api/support/staff/tickets/${encodeURIComponent(ticketNumber)}/`;
+  return `/api/support/staff/tickets/${pathSegment(ticketNumber)}/`;
 }
 
 /** GET /api/support/staff/tickets/ — 'support.staff.view'. Unknown filter values are a 400. */

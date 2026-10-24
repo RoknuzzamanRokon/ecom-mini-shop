@@ -1,6 +1,7 @@
 import { Category, HotDeal, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, SellerOrderDetail, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse, Favorite, PasswordChangePayload, SellerProfile, SellerDashboardData, SellerShop, SellerWallet, NearbyShopsResponse, PointTransaction, Review, ReviewCreatePayload, ReviewOrdering, ReviewUpdatePayload, ShopReview, ShopReviewCreatePayload, MyReviews, SupportChannel, SupportTicket, SupportTicketCreateInput, SupportTicketListStatus, SupportTicketSummary } from "./types";
 
 import { AuthUnavailableError, isTransientStatus, refreshTokenOnce } from "./auth";
+import { pathSegment } from "./paths";
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8001";
@@ -355,7 +356,7 @@ export async function getProducts(params?: ProductFilterParams): Promise<Paginat
 
 export async function getProductDetail(slug: string): Promise<Product | null> {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/products/${slug}/`, {
+    const res = await fetch(`${API_BASE_URL}/api/products/${pathSegment(slug)}/`, {
       cache: "no-store",
     });
     if (!res.ok) throw new Error("Product not found");
@@ -373,7 +374,7 @@ export async function getProductDetail(slug: string): Promise<Product | null> {
 
 export async function getProductById(id: number): Promise<Product | null> {
   try {
-    const res = await fetch(`${API_BASE_URL}/api/products/${id}/`, {
+    const res = await fetch(`${API_BASE_URL}/api/products/${pathSegment(id)}/`, {
       cache: "no-store",
     });
     if (!res.ok) throw new Error("Product not found");
@@ -394,7 +395,7 @@ export async function getProductById(id: number): Promise<Product | null> {
  * page can show its error boundary instead of "not found" (BUG-035).
  */
 export async function getShopDetail(slug: string): Promise<Shop | null> {
-  const res = await fetch(`${API_BASE_URL}/api/shops/${encodeURIComponent(slug)}/`, {
+  const res = await fetch(`${API_BASE_URL}/api/shops/${pathSegment(slug)}/`, {
     cache: "no-store",
   });
   if (res.status === 404) return null;
@@ -587,7 +588,7 @@ export async function getOrderDetail(
   token?: string | null
 ): Promise<Order | null> {
   // Optional token, as in createOrder — no token means no interception.
-  const res = await customerRequest(`/api/orders/${encodeURIComponent(orderNumber)}/`, token, {
+  const res = await customerRequest(`/api/orders/${pathSegment(orderNumber)}/`, token, {
     cache: "no-store",
   });
   if (res.status === 404) return null;
@@ -756,7 +757,7 @@ export async function updateCustomerAddress(
   data: Partial<AddressInput>,
   token: string
 ): Promise<Address> {
-  const res = await customerRequest(`/api/addresses/${id}/`, token, {
+  const res = await customerRequest(`/api/addresses/${pathSegment(id)}/`, token, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
@@ -771,7 +772,7 @@ export async function updateCustomerAddress(
 }
 
 export async function deleteCustomerAddress(id: number, token: string): Promise<void> {
-  const res = await customerRequest(`/api/addresses/${id}/`, token, {
+  const res = await customerRequest(`/api/addresses/${pathSegment(id)}/`, token, {
     method: "DELETE",
   });
   if (!res.ok) {
@@ -781,7 +782,7 @@ export async function deleteCustomerAddress(id: number, token: string): Promise<
 }
 
 export async function setDefaultCustomerAddress(id: number, token: string): Promise<Address> {
-  const res = await customerRequest(`/api/addresses/${id}/set-default/`, token, {
+  const res = await customerRequest(`/api/addresses/${pathSegment(id)}/set-default/`, token, {
     method: "POST",
   });
   if (!res.ok) {
@@ -841,7 +842,7 @@ export async function updateCartItemApi(
   quantity: number,
   token: string
 ): Promise<BackendCart> {
-  const res = await customerRequest(`/api/cart/items/${itemId}/`, token, {
+  const res = await customerRequest(`/api/cart/items/${pathSegment(itemId)}/`, token, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
@@ -856,7 +857,7 @@ export async function removeCartItemApi(
   itemId: number,
   token: string
 ): Promise<BackendCart> {
-  const res = await customerRequest(`/api/cart/items/${itemId}/`, token, {
+  const res = await customerRequest(`/api/cart/items/${pathSegment(itemId)}/`, token, {
     method: "DELETE",
   });
   if (!res.ok) throw await cartApiError(res, "Failed to remove item from cart");
@@ -898,7 +899,7 @@ export async function getSellerOrderDetail(
   orderNumber: string,
   token: string
 ): Promise<SellerOrderDetail> {
-  const res = await customerRequest(`/api/seller/orders/${encodeURIComponent(orderNumber)}/`, token, {
+  const res = await customerRequest(`/api/seller/orders/${pathSegment(orderNumber)}/`, token, {
     cache: "no-store",
   });
 
@@ -916,7 +917,7 @@ export async function updateSellerOrderStatus(
   token: string,
   note?: string
 ): Promise<SellerOrder> {
-  const res = await customerRequest(`/api/seller/orders/${orderNumber}/status/`, token, {
+  const res = await customerRequest(`/api/seller/orders/${pathSegment(orderNumber)}/status/`, token, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
@@ -936,7 +937,7 @@ export async function getSellerProductInventory(
   productId: number,
   token: string
 ): Promise<ProductInventory> {
-  const res = await customerRequest(`/api/seller/inventory/${productId}/`, token, {
+  const res = await customerRequest(`/api/seller/inventory/${pathSegment(productId)}/`, token, {
     cache: "no-store",
   });
 
@@ -953,7 +954,7 @@ export async function adjustSellerProductStock(
   payload: InventoryAdjustmentPayload,
   token: string
 ): Promise<ProductInventory> {
-  const res = await customerRequest(`/api/seller/inventory/${productId}/adjust/`, token, {
+  const res = await customerRequest(`/api/seller/inventory/${pathSegment(productId)}/adjust/`, token, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -974,7 +975,7 @@ export async function cancelCustomerOrder(
   token: string,
   reason?: string
 ): Promise<Order> {
-  const res = await customerRequest(`/api/orders/${orderNumber}/cancel/`, token, {
+  const res = await customerRequest(`/api/orders/${pathSegment(orderNumber)}/cancel/`, token, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
@@ -991,7 +992,7 @@ export async function cancelCustomerOrder(
 }
 
 export async function getOrderPayment(orderNumber: string, token: string): Promise<Payment> {
-  const res = await customerRequest(`/api/orders/${orderNumber}/payment/`, token);
+  const res = await customerRequest(`/api/orders/${pathSegment(orderNumber)}/payment/`, token);
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
     throw new Error(extractApiError(errorData, "Failed to fetch order payment"));
@@ -1004,7 +1005,7 @@ export async function initiateOrderPayment(
   payload: PaymentInitiatePayload,
   token: string
 ): Promise<Payment> {
-  const res = await customerRequest(`/api/orders/${orderNumber}/payment/`, token, {
+  const res = await customerRequest(`/api/orders/${pathSegment(orderNumber)}/payment/`, token, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -1037,7 +1038,7 @@ export async function verifyStaffPayment(
   payload: PaymentVerifyPayload,
   token: string
 ): Promise<Payment> {
-  const res = await customerRequest(`/api/staff/payments/${paymentId}/verify/`, token, {
+  const res = await customerRequest(`/api/staff/payments/${pathSegment(paymentId)}/verify/`, token, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -1056,7 +1057,7 @@ export async function refundStaffPayment(
   payload: RefundCreatePayload,
   token: string
 ): Promise<Refund> {
-  const res = await customerRequest(`/api/staff/payments/${paymentId}/refund/`, token, {
+  const res = await customerRequest(`/api/staff/payments/${pathSegment(paymentId)}/refund/`, token, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -1100,7 +1101,7 @@ export async function getStaffOrderDetail(
   orderNumberOrId: string | number,
   token: string
 ): Promise<StaffOrderDetail> {
-  const res = await customerRequest(`/api/staff/orders/${orderNumberOrId}/`, token);
+  const res = await customerRequest(`/api/staff/orders/${pathSegment(orderNumberOrId)}/`, token);
   if (!res.ok) {
     const errorData = await res.json().catch(() => ({}));
     throw new Error(extractApiError(errorData, "Failed to fetch staff order details"));
@@ -1113,7 +1114,7 @@ export async function updateStaffOrderStatus(
   payload: StaffOrderStatusUpdatePayload,
   token: string
 ): Promise<StaffOrderDetail> {
-  const res = await customerRequest(`/api/staff/orders/${orderNumberOrId}/status/`, token, {
+  const res = await customerRequest(`/api/staff/orders/${pathSegment(orderNumberOrId)}/status/`, token, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
@@ -1267,7 +1268,7 @@ export async function addFavorite(productId: number, token: string): Promise<Fav
 }
 
 export async function removeFavorite(productId: number, token: string): Promise<void> {
-  const res = await customerRequest(`/api/favorites/${productId}/`, token, {
+  const res = await customerRequest(`/api/favorites/${pathSegment(productId)}/`, token, {
     method: "DELETE",
   });
   if (!res.ok && res.status !== 404) throw await responseError(res, "Failed to remove favorite");
@@ -1282,7 +1283,7 @@ export async function getProductReviews(
   ordering: ReviewOrdering = "newest"
 ): Promise<PaginatedResponse<Review>> {
   const res = await fetch(
-    `${API_BASE_URL}/api/products/${productId}/reviews/?page=${page}&ordering=${ordering}`,
+    `${API_BASE_URL}/api/products/${pathSegment(productId)}/reviews/?page=${page}&ordering=${ordering}`,
     { cache: "no-store" }
   );
   if (!res.ok) throw new Error("Failed to fetch reviews");
@@ -1325,7 +1326,7 @@ export async function updateReview(
   payload: ReviewUpdatePayload,
   token: string
 ): Promise<Review> {
-  const res = await customerRequest(`/api/reviews/${reviewId}/`, token, {
+  const res = await customerRequest(`/api/reviews/${pathSegment(reviewId)}/`, token, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
@@ -1340,7 +1341,7 @@ export async function updateReview(
 }
 
 export async function deleteReview(reviewId: number, token: string): Promise<void> {
-  const res = await customerRequest(`/api/reviews/${reviewId}/`, token, {
+  const res = await customerRequest(`/api/reviews/${pathSegment(reviewId)}/`, token, {
     method: "DELETE",
   });
   if (!res.ok && res.status !== 404) throw await responseError(res, "Failed to delete review");
@@ -1356,7 +1357,7 @@ export async function getShopReviews(
   ordering: ReviewOrdering = "newest"
 ): Promise<PaginatedResponse<ShopReview>> {
   const res = await fetch(
-    `${API_BASE_URL}/api/shops/${shopSlug}/reviews/?page=${page}&ordering=${ordering}`,
+    `${API_BASE_URL}/api/shops/${pathSegment(shopSlug)}/reviews/?page=${page}&ordering=${ordering}`,
     { cache: "no-store" }
   );
   if (!res.ok) throw new Error("Failed to fetch shop reviews");
@@ -1399,7 +1400,7 @@ export async function updateShopReview(
   payload: ReviewUpdatePayload,
   token: string
 ): Promise<ShopReview> {
-  const res = await customerRequest(`/api/shop-reviews/${reviewId}/`, token, {
+  const res = await customerRequest(`/api/shop-reviews/${pathSegment(reviewId)}/`, token, {
     method: "PATCH",
     headers: {
       "Content-Type": "application/json",
@@ -1414,7 +1415,7 @@ export async function updateShopReview(
 }
 
 export async function deleteShopReview(reviewId: number, token: string): Promise<void> {
-  const res = await customerRequest(`/api/shop-reviews/${reviewId}/`, token, {
+  const res = await customerRequest(`/api/shop-reviews/${pathSegment(reviewId)}/`, token, {
     method: "DELETE",
   });
   if (!res.ok && res.status !== 404) throw await responseError(res, "Failed to delete review");
@@ -1542,7 +1543,7 @@ export async function getSellerShops(token: string): Promise<SellerShop[]> {
 }
 
 export async function getSellerShopDetail(token: string, id: number): Promise<SellerShop> {
-  const res = await customerRequest(`/api/shops/mine/${id}/`, token, {
+  const res = await customerRequest(`/api/shops/mine/${pathSegment(id)}/`, token, {
     cache: "no-store",
   });
   if (!res.ok) {
@@ -1565,7 +1566,7 @@ export async function updateSellerShop(
     headers["Content-Type"] = "application/json";
   }
 
-  const res = await customerRequest(`/api/shops/mine/${id}/update/`, token, {
+  const res = await customerRequest(`/api/shops/mine/${pathSegment(id)}/update/`, token, {
     method: "PATCH",
     headers,
     body: isFormData ? data : JSON.stringify(data),
@@ -1581,7 +1582,7 @@ export async function submitSellerShopForReview(
   token: string,
   id: number
 ): Promise<{ message: string; shop: SellerShop }> {
-  const res = await customerRequest(`/api/shops/mine/${id}/submit/`, token, {
+  const res = await customerRequest(`/api/shops/mine/${pathSegment(id)}/submit/`, token, {
     method: "POST",
   });
   if (!res.ok) {
@@ -1592,7 +1593,7 @@ export async function submitSellerShopForReview(
 }
 
 export async function getSellerProductDetail(token: string, id: number): Promise<Product> {
-  const res = await customerRequest(`/api/products/mine/${id}/`, token, {
+  const res = await customerRequest(`/api/products/mine/${pathSegment(id)}/`, token, {
     cache: "no-store",
   });
   if (!res.ok) {
@@ -1650,7 +1651,7 @@ export async function updateSellerProduct(
     body = JSON.stringify(data);
   }
 
-  const res = await customerRequest(`/api/products/mine/${id}/`, token, {
+  const res = await customerRequest(`/api/products/mine/${pathSegment(id)}/`, token, {
     method: "PATCH",
     headers,
     body,
@@ -1670,7 +1671,7 @@ export async function updateSellerProduct(
  * SUBMITTED. Staff approve or reject, then publish, in the Console.
  */
 export async function submitSellerProductForReview(token: string, id: number): Promise<Product> {
-  const res = await customerRequest(`/api/products/mine/${id}/submit/`, token, {
+  const res = await customerRequest(`/api/products/mine/${pathSegment(id)}/submit/`, token, {
     method: "POST",
   });
   if (!res.ok) {
@@ -1681,7 +1682,7 @@ export async function submitSellerProductForReview(token: string, id: number): P
 }
 
 export async function deleteSellerProduct(token: string, id: number): Promise<void> {
-  const res = await customerRequest(`/api/products/mine/${id}/`, token, {
+  const res = await customerRequest(`/api/products/mine/${pathSegment(id)}/`, token, {
     method: "DELETE",
   });
   if (!res.ok) {
@@ -1763,7 +1764,7 @@ const SUPPORT_TICKETS_BASE: Record<SupportChannel, string> = {
 };
 
 function ticketPath(ticketNumber: string, channel: SupportChannel): string {
-  return `${SUPPORT_TICKETS_BASE[channel]}${encodeURIComponent(ticketNumber)}/`;
+  return `${SUPPORT_TICKETS_BASE[channel]}${pathSegment(ticketNumber)}/`;
 }
 
 /** GET <base>?status=open|closed|all&page= — 10 per page, newest activity first. */
