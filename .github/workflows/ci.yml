@@ -116,7 +116,7 @@ jobs:
         run: python manage.py test --settings=config.settings.test --parallel 4 --noinput
 
   frontend:
-    name: Frontend typecheck and build
+    name: Frontend typecheck, tests and build
     runs-on: ubuntu-latest
 
     steps:
@@ -135,6 +135,12 @@ jobs:
       - name: Typecheck
         working-directory: frontend
         run: npm run typecheck
+
+      - name: Unit and component tests
+        # Vitest with jsdom and Testing Library (vitest.config.mts). No backend
+        # is needed: the tests stub fetch and the API modules.
+        working-directory: frontend
+        run: npm test
 
       - name: Build
         working-directory: frontend

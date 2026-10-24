@@ -81,11 +81,11 @@ Before marking any task complete:
    backend/venv/bin/python backend/manage.py test shop
    ```
    *(Ensure all unit and API tests pass with 0 errors).*
-2. Run frontend build verification:
+2. Run the frontend unit and component tests, then the build:
    ```bash
-   cd frontend && npm run build
+   cd frontend && npm test && npm run build
    ```
-   *(Ensure TypeScript and Turbopack compile with 0 errors).*
+   *(Vitest + Testing Library under jsdom; tests sit next to the code as `*.test.ts(x)`. Ensure TypeScript and Turbopack compile with 0 errors).*
 3. Verify both dev servers respond with HTTP 200:
    - Django: `http://127.0.0.1:8001/api/categories/`
    - Next.js: `http://localhost:3000/`
