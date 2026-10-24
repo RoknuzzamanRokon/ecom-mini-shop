@@ -9,15 +9,14 @@ drawn, and it needs no PDF text extractor.
 """
 
 from decimal import Decimal
-from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
-from reportlab.platypus import Paragraph
 
 from shop import invoice
 from shop.models import Order, OrderItem
 from shop.payment_service import PaymentService
+from utils.testing import invoice_texts
 
 User = get_user_model()
 
@@ -52,17 +51,7 @@ class InvoiceTestCase(TestCase):
 
     def build(self, order):
         """The PDF bytes, and the text each Paragraph renders."""
-        texts = []
-
-        def recording_paragraph(*args, **kwargs):
-            paragraph = Paragraph(*args, **kwargs)
-            # Read before layout, which reshapes the fragments.
-            texts.append("".join(getattr(frag, "text", "") for frag in paragraph.frags))
-            return paragraph
-
-        with mock.patch("shop.invoice.Paragraph", side_effect=recording_paragraph):
-            pdf = invoice.build_order_invoice_pdf(order)
-        return pdf, texts
+        return invoice_texts(order)
 
     def balance_text(self, texts):
         return texts[texts.index("Balance due") + 1]

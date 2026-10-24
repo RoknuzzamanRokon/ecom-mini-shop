@@ -101,6 +101,26 @@ def category_fallback_products(categories):
     return {category_id: products.get(product_id) for category_id, product_id in product_ids.items()}
 
 
+def preload_category_fallbacks(context, products):
+    """
+    Adds the category image fallbacks of `products` that `context` does not
+    hold yet, so a page of products costs two queries for them, not one per
+    row (BUG-022 class; found by the TASK-043 query budgets).
+    """
+    preloaded = context.setdefault("category_fallback_products", {})
+    missing = {product.category for product in products if product.category_id not in preloaded}
+    preloaded.update(category_fallback_products(missing))
+
+
+class ProductPageSerializer(serializers.ListSerializer):
+    """Many products at once: their category images are preloaded together."""
+
+    def to_representation(self, data):
+        rows = list(data.all() if hasattr(data, "all") else data)
+        preload_category_fallbacks(self.context, rows)
+        return super().to_representation(rows)
+
+
 class ProductImageSerializer(serializers.ModelSerializer):
     image_url = serializers.SerializerMethodField()
 
@@ -129,6 +149,7 @@ class ProductListSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Product
+        list_serializer_class = ProductPageSerializer
         fields = [
             "id",
             "name",

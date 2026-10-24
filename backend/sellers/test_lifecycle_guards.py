@@ -18,6 +18,7 @@ from rest_framework.test import APITestCase
 from audit.admin_mixins import CONFIRM_FLAG, REASON_FIELD
 from audit.models import AuditLog
 from sellers.models import SellerProfile, SellerTransitionError
+from utils.testing import TransitionTableMixin
 
 User = get_user_model()
 
@@ -39,7 +40,7 @@ RESULT = {
 REASON = "Documents could not be verified."
 
 
-class LifecycleCases:
+class LifecycleCases(TransitionTableMixin):
     """Builds one seller per (action, status) case and checks the outcome."""
 
     def make_seller(self, start):
@@ -60,22 +61,24 @@ class LifecycleCases:
 
     def check_every_case(self, attempt):
         """`attempt(seller, action)` performs the action; it returns an HTTP status or None."""
-        for action, allowed in ALLOWED.items():
-            for start in STATUSES:
-                with self.subTest(action=action, start=start):
-                    seller = self.make_seller(start)
-                    code = attempt(seller, action)
-                    seller.refresh_from_db()
-                    if start in allowed:
-                        if code is not None:
-                            self.assertEqual(code, status.HTTP_200_OK)
-                        self.assertEqual(seller.status, RESULT[action])
-                        self.assertEqual(self.audit_rows(seller, action), 1)
-                    else:
-                        if code is not None:
-                            self.assertEqual(code, status.HTTP_400_BAD_REQUEST)
-                        self.assertEqual(seller.status, start)
-                        self.assertEqual(self.audit_rows(seller, action), 0)
+
+        def outcome(start, action):
+            seller = self.make_seller(start)
+            code = attempt(seller, action)
+            seller.refresh_from_db()
+            went_through = seller.status != start
+            if went_through:
+                if code is not None:
+                    self.assertEqual(code, status.HTTP_200_OK)
+                self.assertEqual(seller.status, RESULT[action])
+                self.assertEqual(self.audit_rows(seller, action), 1)
+            else:
+                if code is not None:
+                    self.assertEqual(code, status.HTTP_400_BAD_REQUEST)
+                self.assertEqual(self.audit_rows(seller, action), 0)
+            return went_through
+
+        self.assert_transition_table(STATUSES, ALLOWED, outcome)
 
 
 class ModelGuardTests(TestCase):

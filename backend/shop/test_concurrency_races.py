@@ -15,7 +15,6 @@ the fix one request waits at a lock before it instead, and goes on once the
 other commits.
 """
 
-import re
 import threading
 import time
 from decimal import Decimal
@@ -24,10 +23,9 @@ from unittest import mock
 
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
-from django.db import OperationalError, connection, transaction
+from django.db import OperationalError, transaction
 from django.http import Http404
 from django.test import TestCase, TransactionTestCase
-from django.test.utils import CaptureQueriesContext
 from rest_framework import status
 from rest_framework.test import APITestCase
 
@@ -44,6 +42,7 @@ from shop.models import Category, Order, Payment, Product, ProductInventory
 from shop.payment_service import PaymentService
 from shop.services import OrderService
 from shops.models import Shop
+from utils.testing import locked_tables, meeting_point, run_together
 
 User = get_user_model()
 
@@ -51,41 +50,6 @@ ADDRESS = {
     "recipient_name": "Race Customer", "phone": "01700000000", "address_line_1": "1 Race Road",
     "city": "Dhaka", "postal_code": "1212",
 }
-
-
-def run_together(*calls, timeout=90):
-    """Runs each call on its own thread and connection; returns what they raised."""
-    errors = []
-
-    def run(call):
-        try:
-            call()
-        except Exception as exc:  # surfaced through the return value
-            errors.append(exc)
-        finally:
-            connection.close()
-
-    threads = [threading.Thread(target=run, args=(call,)) for call in calls]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join(timeout)
-    return errors
-
-
-def meeting_point(target, attribute, parties=2, wait=3):
-    """Patches target.attribute so each caller first waits for the others."""
-    barrier = threading.Barrier(parties)
-    original = getattr(target, attribute)
-
-    def waiting(*args, **kwargs):
-        try:
-            barrier.wait(wait)
-        except threading.BrokenBarrierError:
-            pass  # the other request is held at a lock before this point
-        return original(*args, **kwargs)
-
-    return mock.patch.object(target, attribute, waiting)
 
 
 def make_catalog(tag, products=1):
@@ -213,13 +177,6 @@ class LockOrderTests(TestCase):
             total_amount=Decimal("100.00"),
         )
 
-    def locked_tables(self, call):
-        with CaptureQueriesContext(connection) as queries:
-            call()
-        return [
-            re.search(r"FROM `(\w+)`", q["sql"]).group(1) for q in queries if q["sql"].rstrip().endswith("FOR UPDATE")
-        ]
-
     def make_payment(self, payment_status):
         return Payment.objects.create(
             order=self.order, user=self.customer, payment_number=f"PAY-LOCK-{payment_status}",
@@ -228,12 +185,12 @@ class LockOrderTests(TestCase):
 
     def test_verify_locks_the_order_then_the_payment(self):
         payment = self.make_payment(Payment.STATUS_PENDING)
-        tables = self.locked_tables(lambda: PaymentService.process_payment_success(payment))
+        tables = locked_tables(lambda: PaymentService.process_payment_success(payment))
         self.assertEqual(tables[:2], ["shop_order", "shop_payment"])
 
     def test_refund_locks_the_order_then_the_payment(self):
         payment = self.make_payment(Payment.STATUS_PAID)
-        tables = self.locked_tables(lambda: PaymentService.process_refund(payment, amount=Decimal("10.00")))
+        tables = locked_tables(lambda: PaymentService.process_refund(payment, amount=Decimal("10.00")))
         self.assertEqual(tables[:2], ["shop_order", "shop_payment"])
 
 

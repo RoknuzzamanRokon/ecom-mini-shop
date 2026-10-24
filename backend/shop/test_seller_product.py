@@ -1,4 +1,3 @@
-import threading
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -16,6 +15,7 @@ from rbac.services import assign_user_role
 from sellers.models import LimitedShopOwnerProductLimit, SellerProfile
 from shops.fields import Point
 from shops.models import Shop
+from utils.testing import run_together
 from .models import Category, Product
 from .services import (
     IneligibleSellerError,
@@ -840,13 +840,8 @@ class ConcurrencySafetyTests(TransactionTestCase):
             except Exception as e:
                 errors.append(e)
 
-        t1 = threading.Thread(target=worker, args=(1,))
-        t2 = threading.Thread(target=worker, args=(2,))
-
-        t1.start()
-        t2.start()
-        t1.join()
-        t2.join()
+        # Each on its own thread and connection (utils.testing, TASK-043).
+        run_together(lambda: worker(1), lambda: worker(2))
 
         # Exactly 1 product created
         self.assertEqual(len(results), 1)

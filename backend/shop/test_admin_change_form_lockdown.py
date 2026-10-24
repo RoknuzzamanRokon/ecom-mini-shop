@@ -7,6 +7,8 @@ Same approach as audit.test_admin_action_authorization's
 AdminChangeFormStatusLockdownTests (Known #22): post a complete, otherwise
 valid form with crafted values, then check the stored rows. Each post also
 changes one harmless field, so a rejected form cannot pass for a locked one.
+The forms are posted as rendered (utils.testing.ChangeFormLockdownMixin,
+TASK-043), so a field added to a form needs no change here.
 """
 
 from decimal import Decimal
@@ -25,13 +27,11 @@ from shop.models import Category, InventoryTransaction, Order, Product, ProductI
 from shop.inventory_service import InventoryService
 from shops.fields import Point
 from shops.models import Shop
+from utils.testing import ChangeFormLockdownMixin
 
 User = get_user_model()
 
-LOCATION = "POINT(90.4125000 23.8103000)"
-
-
-class LockdownTestCase(TestCase):
+class LockdownTestCase(ChangeFormLockdownMixin, TestCase):
     @classmethod
     def setUpTestData(cls):
         cls.superuser = User.objects.create_superuser(
@@ -89,35 +89,17 @@ class OrderAdminLockdownTests(LockdownTestCase):
             *AuthPermission.objects.filter(content_type__app_label="shop", codename__in=["change_order", "view_order"])
         )
 
-    def order_payload(self, **overrides):
-        data = {name: "" for name in (
-            "shipping_recipient_name", "shipping_phone", "shipping_address_line_1", "shipping_address_line_2",
-            "shipping_area", "shipping_city", "shipping_state", "shipping_postal_code",
-            "phone", "address", "city",
-        )}
-        data.update({
-            "shipping_country": "Bangladesh",
-            "customer_name": "Original Name",
-            "items-TOTAL_FORMS": "0", "items-INITIAL_FORMS": "0",
-            "items-MIN_NUM_FORMS": "0", "items-MAX_NUM_FORMS": "1000",
-            "_save": "Save",
-        })
-        data.update(overrides)
-        return data
-
     def test_crafted_status_and_address_are_ignored_and_the_edit_is_audited(self):
         self.client.force_login(self.staff)
-        response = self.client.post(
+        self.assert_change_form_keeps(
+            self.order,
             reverse("admin:shop_order_change", args=[self.order.pk]),
-            self.order_payload(status=Order.STATUS_CANCELLED, shipping_address=str(self.address.pk),
-                               customer_name="Corrected Name"),
+            crafted={"status": Order.STATUS_CANCELLED, "shipping_address": str(self.address.pk)},
+            harmless={"customer_name": "Corrected Name"},
         )
-        self.assertEqual(response.status_code, 302)
 
-        self.order.refresh_from_db()
         self.assertEqual(self.order.status, Order.STATUS_PENDING)
         self.assertIsNone(self.order.shipping_address_id)
-        self.assertEqual(self.order.customer_name, "Corrected Name")
         self.assertFalse(InventoryTransaction.objects.filter(order=self.order).exists())
 
         row = self.audit_rows("ADMIN_ORDER_EDITED", self.order).get()
@@ -152,18 +134,17 @@ class ProductAdminLockdownTests(LockdownTestCase):
         return data
 
     def test_crafted_lifecycle_stock_and_shop_are_ignored(self):
-        response = self.client.post(
+        self.assert_change_form_keeps(
+            self.product,
             reverse("admin:shop_product_change", args=[self.product.pk]),
-            self.product_payload(
-                name="Renamed Lamp", status=Product.STATUS_PUBLISHED, stock="999", shop=str(self.other_shop.pk),
-                reviewed_by=str(self.superuser.pk), rejection_reason="Crafted",
-                submitted_at_0="2026-01-01", submitted_at_1="10:00:00",
-            ),
+            crafted={
+                "status": Product.STATUS_PUBLISHED, "stock": "999", "shop": str(self.other_shop.pk),
+                "reviewed_by": str(self.superuser.pk), "rejection_reason": "Crafted",
+                "submitted_at_0": "2026-01-01", "submitted_at_1": "10:00:00",
+            },
+            harmless={"name": "Renamed Lamp"},
         )
-        self.assertEqual(response.status_code, 302)
 
-        self.product.refresh_from_db()
-        self.assertEqual(self.product.name, "Renamed Lamp")
         self.assertEqual(self.product.status, Product.STATUS_DRAFT)
         self.assertEqual(self.product.stock, 10)
         self.assertEqual(self.product.shop, self.shop)
@@ -288,33 +269,14 @@ class ProductInventoryAdminLockdownTests(LockdownTestCase):
 
 
 class ShopAndSellerAdminLockdownTests(LockdownTestCase):
-    def shop_payload(self, shop, **overrides):
-        data = {
-            "owner": str(shop.owner_id), "name": shop.name, "slug": shop.slug, "description": "",
-            "phone": "", "address": "", "location": LOCATION,
-            "rejection_reason": "", "suspension_reason": "", "_save": "Save",
-        }
-        data.update(overrides)
-        return data
-
-    def seller_payload(self, seller, **overrides):
-        data = {
-            "seller_type": seller.seller_type, "description": "", "business_name": seller.business_name,
-            "business_email": "", "business_phone": "", "tax_id": "",
-            "rejection_reason": "", "suspension_reason": "", "_save": "Save",
-        }
-        data.update(overrides)
-        return data
-
     def test_moving_a_shop_respects_the_product_cap(self):
         shop = self.make_shop(self.make_seller("lockdown6_from"), "lockdown6-busy-shop")
         for n in range(3):
             self.make_product(shop, f"lockdown6-busy-{n}")
         limited = self.make_seller("lockdown6_to", SellerProfile.TYPE_LIMITED_SHOP_OWNER)
 
-        response = self.client.post(
-            reverse("admin:shops_shop_change", args=[shop.pk]), self.shop_payload(shop, owner=str(limited.pk))
-        )
+        url = reverse("admin:shops_shop_change", args=[shop.pk])
+        response = self.client.post(url, self.change_form_data(url, owner=str(limited.pk)))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "over the Limited Shop Owner limit")
         shop.refresh_from_db()
@@ -325,9 +287,8 @@ class ShopAndSellerAdminLockdownTests(LockdownTestCase):
         shop = self.make_shop(old_owner, "lockdown6-moving-shop")
         new_owner = self.make_seller("lockdown6_new")
 
-        response = self.client.post(
-            reverse("admin:shops_shop_change", args=[shop.pk]), self.shop_payload(shop, owner=str(new_owner.pk))
-        )
+        url = reverse("admin:shops_shop_change", args=[shop.pk])
+        response = self.client.post(url, self.change_form_data(url, owner=str(new_owner.pk)))
         self.assertEqual(response.status_code, 302)
         row = self.audit_rows("ADMIN_SHOP_EDITED", shop).get()
         # Only the owner changed; the re-posted location no longer reads as an
@@ -339,14 +300,13 @@ class ShopAndSellerAdminLockdownTests(LockdownTestCase):
         seller = self.make_seller("lockdown6_profile")
         stranger = User.objects.create_user(username="lockdown6_stranger", password="Lockdown-Str-1")
 
-        response = self.client.post(
+        self.assert_change_form_keeps(
+            seller,
             reverse("admin:sellers_sellerprofile_change", args=[seller.pk]),
-            self.seller_payload(seller, user=str(stranger.pk), business_name="Renamed Business"),
+            crafted={"user": str(stranger.pk)},
+            harmless={"business_name": "Renamed Business"},
         )
-        self.assertEqual(response.status_code, 302)
-        seller.refresh_from_db()
         self.assertNotEqual(seller.user, stranger)
-        self.assertEqual(seller.business_name, "Renamed Business")
         row = self.audit_rows("ADMIN_SELLER_EDITED", seller).get()
         self.assertEqual(row.metadata["new_state"], {"business_name": "Renamed Business"})
 
@@ -356,10 +316,8 @@ class ShopAndSellerAdminLockdownTests(LockdownTestCase):
         for n in range(3):
             self.make_product(shop, f"lockdown6-big-{n}")
 
-        response = self.client.post(
-            reverse("admin:sellers_sellerprofile_change", args=[seller.pk]),
-            self.seller_payload(seller, seller_type=SellerProfile.TYPE_LIMITED_SHOP_OWNER),
-        )
+        url = reverse("admin:sellers_sellerprofile_change", args=[seller.pk])
+        response = self.client.post(url, self.change_form_data(url, seller_type=SellerProfile.TYPE_LIMITED_SHOP_OWNER))
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "may hold at most 2")
         seller.refresh_from_db()

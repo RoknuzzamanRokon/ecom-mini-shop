@@ -1,10 +1,8 @@
 import threading
-import time
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
-from django.db import connection, transaction
-from django.db.utils import OperationalError
+from django.db import transaction
 from django.test import TestCase, TransactionTestCase
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -27,6 +25,7 @@ from points.services import (
 from rbac.models import Role
 from rbac.services import assign_user_role
 from sellers.models import SellerProfile
+from utils.testing import run_together
 
 User = get_user_model()
 
@@ -642,36 +641,22 @@ class PointConcurrencyTests(TransactionTestCase):
         lock = threading.Lock()
 
         def attempt_deduction():
-            connection.close()
-            max_retries = 25
-            for attempt in range(max_retries):
-                try:
-                    PointService.debit(
-                        seller=self.seller,
-                        amount=40,
-                        transaction_type=PointTransaction.TYPE_PRODUCT_CREATION,
-                        reason="Concurrent deduction test",
-                    )
-                    with lock:
-                        success_count[0] += 1
-                    break
-                except InsufficientPointsError:
-                    with lock:
-                        failure_count[0] += 1
-                    break
-                except OperationalError as e:
-                    if "locked" in str(e).lower() and attempt < max_retries - 1:
-                        time.sleep(0.05 * (attempt + 1))
-                        continue
-                    raise
-                finally:
-                    connection.close()
+            try:
+                PointService.debit(
+                    seller=self.seller,
+                    amount=40,
+                    transaction_type=PointTransaction.TYPE_PRODUCT_CREATION,
+                    reason="Concurrent deduction test",
+                )
+            except InsufficientPointsError:
+                with lock:
+                    failure_count[0] += 1
+                return
+            with lock:
+                success_count[0] += 1
 
-        threads = [threading.Thread(target=attempt_deduction) for _ in range(5)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
+        # Each on its own thread and connection (utils.testing, TASK-043).
+        self.assertEqual(run_together(*[attempt_deduction] * 5), [])
 
         # Re-fetch wallet
         final_balance = PointService.get_balance(self.seller)

@@ -577,7 +577,8 @@ class ProductService:
         """
         return (
             Product.objects.public()
-            .select_related("category", "shop", "shop__owner")
+            # inventory: in_stock reads it for every row (TASK-043).
+            .select_related("category", "shop", "shop__owner", "inventory")
             .prefetch_related("images")
             # Hidden (moderated) reviews never count toward public ratings.
             .with_ratings()

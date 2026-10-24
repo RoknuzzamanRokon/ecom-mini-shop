@@ -10,24 +10,24 @@ shows, and checkout locks only the rows it changes.
   shops lists count shops and products without loading them.
 - BUG-023: checkout's cart lock does not also lock the product, category,
   shop and seller rows joined to the cart items (MySQL locks every joined row).
+- TASK-043: every list page here also stays within a query budget, and the
+  public catalogue, Console products, seller orders and favourites are
+  covered too.
 """
 
 import itertools
-import re
-import threading
 from decimal import Decimal
 from io import StringIO
 from unittest import mock
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import AnonymousUser
 from django.core.management import call_command
-from django.db import DatabaseError, connection, transaction
 from django.test import TransactionTestCase
-from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APITestCase
 
 from cart.models import Cart, CartItem
-from customers.models import Address, CustomerProfile
+from customers.models import Address, CustomerProfile, Favorite
 from rbac.models import Role
 from rbac.services import assign_user_role
 from sellers.models import SellerProfile
@@ -35,18 +35,35 @@ from shop.inventory_service import InventoryService
 from shop.models import Category, Order, OrderItem, Payment, Product, ProductInventory, Refund
 from shop.services import OrderService
 from shops.models import Shop
+from utils.testing import QueryCountMixin, page_rows, share_lock_states
 
 User = get_user_model()
 
 SERIAL = itertools.count(1)
 
 
-def rows(response):
-    data = response.data
-    return data["results"] if isinstance(data, dict) and "results" in data else data["items"]
+rows = page_rows
+
+#: Queries each list page may take (TASK-043), whatever its row count. Raise
+#: a budget only for a query the page really needs, never for one per row.
+QUERY_BUDGETS = {
+    "/api/staff/orders/": 4,
+    "/api/staff/payments/": 3,
+    "/api/orders/": 9,
+    "/api/cart/": 7,
+    "/api/admin/users/": 3,
+    "/api/admin/customers/": 2,
+    "/api/admin/categories/": 2,
+    "/api/admin/sellers/": 2,
+    "/api/admin/shops/": 2,
+    "/api/admin/products/": 2,
+    "/api/products/": 4,
+    "/api/seller/orders/": 3,
+    "/api/favorites/": 3,
+}
 
 
-class QueryCountTests(APITestCase):
+class QueryCountTests(QueryCountMixin, APITestCase):
     @classmethod
     def setUpTestData(cls):
         call_command("seed_rbac", stdout=StringIO())
@@ -94,26 +111,10 @@ class QueryCountTests(APITestCase):
         return order
 
     def assert_constant_queries(self, url, add_rows, user=None):
-        """Adding rows to the page does not add queries to it."""
-        self.client.force_authenticate(user=user or self.staff)
-        self.client.get(url)  # warm per-process caches out of the count
-        with CaptureQueriesContext(connection) as baseline:
-            before = self.client.get(url)
-        self.assertEqual(before.status_code, 200)
-        add_rows()
-        with self.assertNumQueries(len(baseline)):
-            after = self.client.get(url)
-        self.assertEqual(after.status_code, 200)
-        self.assertGreater(len(rows(after)), len(rows(before)))
-        return after
+        return super().assert_constant_queries(url, add_rows, user or self.staff, budget=QUERY_BUDGETS[url])
 
     def assert_rows_not_loaded(self, url, table):
-        """The page counts `table` inside its own query instead of fetching its rows."""
-        self.client.force_authenticate(user=self.staff)
-        with CaptureQueriesContext(connection) as queries:
-            self.client.get(url)
-        fetched = [q["sql"] for q in queries if re.search(rf"\bFROM `{table}`", q["sql"])]
-        self.assertEqual(fetched, [])
+        super().assert_rows_not_loaded(url, table, self.staff)
 
     # --- BUG-022 ---
 
@@ -230,6 +231,35 @@ class QueryCountTests(APITestCase):
         self.assertEqual(detail.data["products_count"], 1)
 
 
+    # --- TASK-043: the other list pages ---
+
+    def test_console_products(self):
+        self.make_product()
+        self.assert_constant_queries("/api/admin/products/", lambda: [self.make_product() for _ in range(3)])
+
+    def test_public_products(self):
+        self.make_product()
+        response = self.assert_constant_queries(
+            "/api/products/", lambda: [self.make_product() for _ in range(3)], user=AnonymousUser()
+        )
+        self.assertTrue(all(row["shop"]["slug"] == "qc-shop" for row in rows(response)))
+
+    def test_seller_orders(self):
+        self.make_order()
+        self.assert_constant_queries(
+            "/api/seller/orders/", lambda: [self.make_order() for _ in range(3)], user=self.seller.user
+        )
+
+    def test_favorites(self):
+        Favorite.objects.create(user=self.customer, product=self.make_product())
+
+        def add_favorites():
+            for _ in range(3):
+                Favorite.objects.create(user=self.customer, product=self.make_product())
+
+        self.assert_constant_queries("/api/favorites/", add_favorites, user=self.customer)
+
+
 class CheckoutLockScopeTests(TransactionTestCase):
     """BUG-023, on MySQL: checkout holds the cart rows, not the catalog rows."""
 
@@ -253,38 +283,14 @@ class CheckoutLockScopeTests(TransactionTestCase):
         )
 
     def lock_states_seen_from_another_connection(self):
-        """
-        Takes a shared lock on each row, NOWAIT, from a second connection: what
-        a concurrent checkout needs to read the catalog and insert its order
-        items. Only an exclusive lock held by the first checkout refuses it.
-        """
-        targets = {
+        """What a concurrent checkout could still share-lock: everything but the cart rows."""
+        return share_lock_states({
             "product": (Product, self.product.pk),
             "category": (Category, self.category.pk),
             "shop": (Shop, self.shop.pk),
             "seller": (SellerProfile, self.seller.pk),
             "cart item": (CartItem, self.item.pk),
-        }
-        seen = {}
-
-        def probe():
-            try:
-                with connection.cursor() as cursor:
-                    for label, (model, pk) in targets.items():
-                        table = connection.ops.quote_name(model._meta.db_table)
-                        try:
-                            with transaction.atomic():
-                                cursor.execute(f"SELECT 1 FROM {table} WHERE id = %s FOR SHARE NOWAIT", [pk])
-                            seen[label] = "free"
-                        except DatabaseError:
-                            seen[label] = "locked"
-            finally:
-                connection.close()
-
-        thread = threading.Thread(target=probe)
-        thread.start()
-        thread.join(60)
-        return seen
+        })
 
     def test_checkout_locks_the_cart_items_but_not_the_catalog(self):
         seen = {}

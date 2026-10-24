@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 
 from audit.utils import get_client_ip
 from shop.models import Product
+from shop.serializers import preload_category_fallbacks
 from .models import Address, Favorite, Review, ShopReview
 from .permissions import (
     CanCreateAddress,
@@ -192,7 +193,7 @@ class FavoriteListCreateView(APIView):
     def favorites(user):
         # Products with their visible-review rating, which the product card
         # shows; without it every favourite read 0.0 from 0 reviews (BUG-061).
-        products = Product.objects.select_related("category", "shop").with_ratings()
+        products = Product.objects.select_related("category", "shop", "inventory").with_ratings()
         return (
             Favorite.objects.filter(user=user)
             .prefetch_related(Prefetch("product", queryset=products))
@@ -200,7 +201,11 @@ class FavoriteListCreateView(APIView):
         )
 
     def get(self, request):
-        serializer = FavoriteSerializer(self.favorites(request.user), many=True, context={"request": request})
+        favorites = list(self.favorites(request.user))
+        context = {"request": request}
+        # Every favourite's category image in two queries, not one each (TASK-043).
+        preload_category_fallbacks(context, [favorite.product for favorite in favorites])
+        serializer = FavoriteSerializer(favorites, many=True, context=context)
         return Response(serializer.data)
 
     def post(self, request):
