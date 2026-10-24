@@ -1,0 +1,13 @@
+# Secret scanning for CI (TASK-044): gitleaks' default rules, minus the
+# made-up passwords the backend tests give their users. Those are all
+# capitalised words and a number joined by hyphens ("Race-Buyer-123",
+# "Kolapata-Leaf-2026"); generated keys and tokens never look like that.
+title = "MiniShop"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Word-Word-123 test passwords"
+regexTarget = "secret"
+regexes = ['''^[A-Z][a-z]+(-[A-Z][a-z]+)+-[0-9]{1,4}!?$''']

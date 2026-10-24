@@ -5,6 +5,10 @@ on:
   push:
   pull_request:
 
+# Read the code, nothing more: no job here writes to the repository.
+permissions:
+  contents: read
+
 jobs:
   backend:
     name: Backend tests (MySQL 8)
@@ -106,6 +110,16 @@ jobs:
           python manage.py check --settings=config.settings.test
           python manage.py makemigrations --check --dry-run
 
+      - name: Production deploy check
+        # config.settings.prod with the throwaway keys above and made-up
+        # hosts: any deploy warning (DEBUG, HSTS, cookies, weak keys...) fails
+        # the build instead of waiting for someone to run it by hand.
+        working-directory: backend
+        env:
+          DJANGO_ALLOWED_HOSTS: shop.example.com
+          DJANGO_CORS_ALLOWED_ORIGINS: https://shop.example.com
+        run: python manage.py check --deploy --fail-level WARNING --settings=config.settings.prod
+
       - name: Backend test suite
         working-directory: backend
         # --parallel 4, not a bare --parallel: config.settings.test defaults to
@@ -136,6 +150,15 @@ jobs:
         working-directory: frontend
         run: npm run typecheck
 
+      - name: Lint
+        # The errors that predate this check (set-state-in-effect and
+        # no-explicit-any) are recorded in eslint-suppressions.json, so only
+        # new ones fail. Fixing a recorded one fails too, until the record is
+        # trimmed with `npx eslint . --prune-suppressions`: the baseline only
+        # shrinks.
+        working-directory: frontend
+        run: npm run lint
+
       - name: Unit and component tests
         # Vitest with jsdom and Testing Library (vitest.config.mts). No backend
         # is needed: the tests stub fetch and the API modules.
@@ -145,3 +168,49 @@ jobs:
       - name: Build
         working-directory: frontend
         run: npm run build
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: No secrets in the committed files
+        # gitleaks' default rules (.gitleaks.toml allows only the backend
+        # tests' made-up Word-Word-123 passwords). It scans the files as they
+        # stand; history from before this check is not rewritten.
+        run: >-
+          docker run --rm -v "$PWD:/repo:ro" -w /repo ghcr.io/gitleaks/gitleaks:v8.28.0
+          dir . --config .gitleaks.toml --redact --no-banner
+
+  dependency-audit:
+    name: Dependency audit (report only)
+    runs-on: ubuntu-latest
+    # Known advisories in current dependencies (Next.js among them) are
+    # tracked as follow-up work; until they are cleared this job reports them
+    # without failing the build.
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: npm audit (frontend)
+        working-directory: frontend
+        run: npm audit --package-lock-only --audit-level=high
+
+      # The backend is audited even when the frontend audit finds something.
+      - uses: actions/setup-python@v5
+        if: ${{ !cancelled() }}
+        with:
+          python-version: '3.12'
+
+      - name: pip-audit (backend)
+        if: ${{ !cancelled() }}
+        run: |
+          python -m pip install --upgrade pip pip-audit
+          pip-audit -r backend/requirements.txt
