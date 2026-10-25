@@ -224,6 +224,9 @@ export default function AdminSellerDetailPage() {
   const canViewPoints = canViewSellerPoints(user);
   const canCredit = canCreditSellerPoints(user);
   const canDebit = canDebitSellerPoints(user);
+  // Staff never adjust their own seller wallet; the API refuses it with 403
+  // (TASK-048 decision 7).
+  const ownSellerAccount = Boolean(user && seller && seller.username === user.username);
 
   const [wallet, setWallet] = useState<AdminSellerWallet | null>(null);
   const [walletLoading, setWalletLoading] = useState(true);
@@ -842,7 +845,13 @@ export default function AdminSellerDetailPage() {
                 points service every credit and debit request uses.
               </p>
             </div>
-            {(canCredit || canDebit) && (
+            {(canCredit || canDebit) && ownSellerAccount && (
+              <p className="text-xs text-ink-muted max-w-xs shrink-0">
+                This is your own seller account, so another staff member has to give or take back
+                its points.
+              </p>
+            )}
+            {(canCredit || canDebit) && !ownSellerAccount && (
               <div className="flex flex-wrap gap-2 shrink-0">
                 {canCredit && (
                   <button

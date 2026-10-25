@@ -327,9 +327,10 @@ class CanViewAdminCustomers(BasePermission):
 
 class CanViewAdminAuditLogs(BasePermission):
     """
-    Allows viewing platform governance audit logs.
-    Restricted to Super Administrators or management users with platform governance permissions
-    (e.g., users.admin.view, roles.admin.view, or audit.view if seeded).
+    Allows viewing platform governance audit logs: Super Administrators, and
+    holders of audit.view or audit.admin.view. The log carries payment and
+    refund details, so managing users or roles no longer opens it
+    (TASK-048 decision 8).
     """
     message = "You do not have permission to view platform audit logs."
 
@@ -339,12 +340,7 @@ class CanViewAdminAuditLogs(BasePermission):
             return False
         if user.is_superuser or Role.ROLE_SUPER_ADMINISTRATOR in get_user_role_codes(user):
             return True
-        return (
-            has_user_permission(user, "audit.view")
-            or has_user_permission(user, "audit.admin.view")
-            or has_user_permission(user, "users.admin.view")
-            or has_user_permission(user, "roles.admin.view")
-        )
+        return has_user_permission(user, "audit.view") or has_user_permission(user, "audit.admin.view")
 
 
 

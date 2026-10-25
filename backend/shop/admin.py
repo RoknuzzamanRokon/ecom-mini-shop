@@ -259,6 +259,26 @@ class ProductAdmin(ChangeFormAuditMixin, StatusBadgeMixin, admin.ModelAdmin):
                 obj, actor=request.user, ip_address=get_client_ip(request)
             )
 
+    def get_deleted_objects(self, objs, request):
+        """
+        A product takes its own inventory row and ledger with it. Those admins
+        refuse deletes so nobody removes them on their own, which must not
+        also block deleting the product itself (it made every product delete
+        a 403).
+        """
+        deleted, model_count, perms_needed, protected = super().get_deleted_objects(objs, request)
+        own_rows = {ProductInventory._meta.verbose_name, InventoryTransaction._meta.verbose_name}
+        return deleted, model_count, perms_needed - own_rows, protected
+
+    # A staff deletion refunds the creation fee of a product that never went
+    # live, and is audited (TASK-048 decision 6).
+    def delete_model(self, request, obj):
+        ProductService.delete_by_staff(obj, actor=request.user, ip_address=get_client_ip(request))
+
+    def delete_queryset(self, request, queryset):
+        for product in queryset.select_related("shop", "shop__owner"):
+            ProductService.delete_by_staff(product, actor=request.user, ip_address=get_client_ip(request))
+
     def get_queryset(self, request):
         return super().get_queryset(request).select_related('category', 'shop', 'shop__owner')
 

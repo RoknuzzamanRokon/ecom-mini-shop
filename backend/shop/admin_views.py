@@ -74,6 +74,7 @@ from shop.admin_permissions import (
 )
 from shop.permissions import CanViewPayment
 from shop.admin_serializers import (
+    LOCKED_ROLE_CODES,
     PROTECTED_ROLE_CODES,
     AdminAuditLogSerializer,
     AdminPermissionSerializer,
@@ -498,8 +499,9 @@ class AdminRoleDetailAPIView(APIView):
         except Role.DoesNotExist:
             raise NotFound("Role not found.")
 
-        # Protected role check
-        if role.code in PROTECTED_ROLE_CODES:
+        # Protected role check; CUSTOMER too (TASK-048 decision 9). A Super
+        # Administrator changes these in the Django admin.
+        if role.code in LOCKED_ROLE_CODES:
             raise PermissionDenied(f"Protected system role '{role.code}' cannot be modified.")
 
         serializer = AdminRoleUpdateSerializer(data=request.data)
@@ -561,8 +563,8 @@ class AdminRoleDetailAPIView(APIView):
         except Role.DoesNotExist:
             raise NotFound("Role not found.")
 
-        # Check 1: Cannot delete protected roles
-        if role.code in PROTECTED_ROLE_CODES:
+        # Check 1: Cannot delete protected roles (CUSTOMER included)
+        if role.code in LOCKED_ROLE_CODES:
             raise PermissionDenied(f"Protected system role '{role.code}' cannot be deleted.")
 
         # Check 2: Cannot delete a role currently assigned to active users

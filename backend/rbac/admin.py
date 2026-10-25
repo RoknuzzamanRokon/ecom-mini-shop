@@ -10,6 +10,7 @@ from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 from .models import Permission, Role, RolePermission, UserPermission, UserRole
 from .services import (
+    LOCKED_ROLE_CODES,
     PROTECTED_ROLE_CODES,
     get_delegatable_permission_codes,
     get_user_management_denial,
@@ -198,19 +199,19 @@ class RoleAdmin(admin.ModelAdmin):
 
     def has_change_permission(self, request, obj=None):
         """Protected roles are read-only to everyone below the wildcard."""
-        if obj is not None and obj.code in PROTECTED_ROLE_CODES and not has_wildcard_delegation(request.user):
+        if obj is not None and obj.code in LOCKED_ROLE_CODES and not has_wildcard_delegation(request.user):
             return False
         return super().has_change_permission(request, obj)
 
     def has_delete_permission(self, request, obj=None):
         """Protected roles are never deleted here, matching the Console API."""
-        if obj is not None and obj.code in PROTECTED_ROLE_CODES:
+        if obj is not None and obj.code in LOCKED_ROLE_CODES:
             return False
         return super().has_delete_permission(request, obj)
 
     def delete_queryset(self, request, queryset):
         # The changelist's bulk delete checks the model permission only.
-        if queryset.filter(code__in=PROTECTED_ROLE_CODES).exists():
+        if queryset.filter(code__in=LOCKED_ROLE_CODES).exists():
             raise PermissionDenied("Protected roles cannot be deleted.")
         super().delete_queryset(request, queryset)
 
@@ -221,7 +222,7 @@ class RoleAdmin(admin.ModelAdmin):
         """
         if change and not has_wildcard_delegation(request.user):
             previous = Role.objects.filter(pk=obj.pk).values("code", "is_active").first()
-            if previous and previous["code"] in PROTECTED_ROLE_CODES:
+            if previous and previous["code"] in LOCKED_ROLE_CODES:
                 raise PermissionDenied("Only a Super Administrator can modify a protected role.")
             # Activating a role hands its permissions to every holder, so the
             # actor must hold all of them -- otherwise reactivating a role that

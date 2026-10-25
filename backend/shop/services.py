@@ -425,6 +425,73 @@ class ProductService:
             product.delete()
             logger.info("Product deleted: id=%s by seller=%s", product.id, seller.business_name)
 
+    @classmethod
+    def has_gone_live(cls, product: Product) -> bool:
+        """
+        Whether the product was ever published. Moderation can move a product
+        to any status, so a REJECTED one may have been live before; the
+        publish audit row is what tells.
+        """
+        from audit.models import AuditLog
+
+        if product.status in (Product.STATUS_PUBLISHED, Product.STATUS_UNPUBLISHED):
+            return True
+        return AuditLog.objects.filter(
+            action="ADMIN_PRODUCT_PUBLISH", target_type="Product", target_id=str(product.pk)
+        ).exists()
+
+    @classmethod
+    def refund_creation_fee(cls, product: Product, actor=None) -> Optional[PointTransaction]:
+        """
+        Gives the seller back the creation fee of a product that never went
+        live (TASK-048 decision 6), once. None when there is nothing to refund:
+        no fee was charged, it was refunded already, or the product was live.
+        """
+        if not product.shop_id or cls.has_gone_live(product):
+            return None
+        reference = {"reference_type": "PRODUCT", "reference_id": str(product.pk)}
+        fee = PointTransaction.objects.filter(
+            transaction_type=PointTransaction.TYPE_PRODUCT_CREATION, **reference
+        ).order_by("created_at").first()
+        if fee is None or PointTransaction.objects.filter(
+            transaction_type=PointTransaction.TYPE_REFUND, **reference
+        ).exists():
+            return None
+        return PointService.credit(
+            seller=product.shop.owner,
+            amount=fee.amount,
+            transaction_type=PointTransaction.TYPE_REFUND,
+            reason=f"Creation fee refunded: '{product.name}' was deleted before it went live",
+            actor=actor,
+            **reference,
+        )
+
+    @classmethod
+    def delete_by_staff(cls, product: Product, actor, ip_address: Optional[str] = None) -> None:
+        """
+        A staff deletion (the Django admin): refunds the creation fee when the
+        product never went live, writes PRODUCT_DELETED, then deletes it, in
+        one transaction. A seller deleting their own product gets no refund.
+        """
+        with transaction.atomic():
+            refund = cls.refund_creation_fee(product, actor=actor)
+            AuditService.log(
+                action="PRODUCT_DELETED",
+                target=product,
+                actor=actor,
+                shop=product.shop,
+                seller=product.shop.owner if product.shop_id else None,
+                metadata={
+                    "product_name": product.name,
+                    "product_id": product.id,
+                    "deleted_by": "staff",
+                    "fee_refunded": refund.amount if refund else 0,
+                },
+                ip_address=ip_address,
+            )
+            product.delete()
+            logger.info("Product deleted by staff: id=%s refund=%s", product.id, refund.amount if refund else 0)
+
     # Statuses a seller may send to review: their own draft, or a listing
     # staff rejected and the seller has since corrected.
     SUBMITTABLE_STATUSES = (Product.STATUS_DRAFT, Product.STATUS_REJECTED)

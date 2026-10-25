@@ -21,6 +21,7 @@ from points.services import (
     InvalidTransactionError,
     PointError,
     PointService,
+    SelfAdjustmentError,
 )
 from rbac.models import Role
 from rbac.services import assign_user_role
@@ -1622,3 +1623,56 @@ class StaffPointTransferApiTests(TestCase):
         )
         self.assertEqual(res.status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(PointService.get_staff_balance(self.root), 100)
+
+
+class SelfAdjustmentTests(TestCase):
+    """TASK-048 decision 7: staff never move points into or out of their own seller wallet."""
+
+    @classmethod
+    def setUpTestData(cls):
+        call_command("seed_rbac")
+        cls.staff_seller = User.objects.create_user(
+            username="self_adjust_staff", password="Self-Adjust-123", is_staff=True
+        )
+        assign_user_role(cls.staff_seller, Role.ROLE_FINANCE)
+        cls.own_shop = SellerProfile.objects.create(
+            user=cls.staff_seller, business_name="Own Side Shop", status=SellerProfile.STATUS_ACTIVE
+        )
+        cls.colleague = User.objects.create_user(
+            username="self_adjust_colleague", password="Self-Adjust-123", is_staff=True
+        )
+        assign_user_role(cls.colleague, Role.ROLE_FINANCE)
+
+    def setUp(self):
+        self.client = APIClient()
+        self.url = f"/api/points/sellers/{self.own_shop.pk}/adjust/"
+
+    def adjust(self, actor, action, amount=10):
+        self.client.force_authenticate(user=actor)
+        return self.client.post(self.url, {"action": action, "amount": amount, "reason": "Self test"}, format="json")
+
+    def test_crediting_your_own_seller_wallet_is_refused(self):
+        fund_staff_wallet(self.staff_seller, 50)
+
+        res = self.adjust(self.staff_seller, "CREDIT")
+
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("your own seller wallet", res.data["error"])
+        self.assertEqual(PointService.get_balance(self.own_shop), 0)
+        self.assertEqual(PointService.get_staff_balance(self.staff_seller), 50)
+
+    def test_taking_back_from_your_own_seller_wallet_is_refused(self):
+        fund_staff_wallet(self.colleague, 50)
+        self.assertEqual(self.adjust(self.colleague, "CREDIT", 20).status_code, status.HTTP_200_OK)
+
+        res = self.adjust(self.staff_seller, "DEBIT", 20)
+
+        self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(PointService.get_balance(self.own_shop), 20)
+
+    def test_the_service_refuses_it_too(self):
+        fund_staff_wallet(self.staff_seller, 50)
+        with self.assertRaises(SelfAdjustmentError):
+            PointService.adjust_points(
+                seller=self.own_shop, amount=10, action="CREDIT", reason="Direct call", actor=self.staff_seller
+            )

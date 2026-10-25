@@ -11,6 +11,13 @@ User = get_user_model()
 #: this one definition.
 PROTECTED_ROLE_CODES = frozenset({Role.ROLE_SUPER_ADMINISTRATOR, Role.ROLE_ADMINISTRATOR})
 
+#: Roles whose definition (permissions, active flag, name) only a Super
+#: Administrator may change, in the Django admin, and which are never
+#: deleted. CUSTOMER is one: switching it off or narrowing it would lock every
+#: shopper out of cart and checkout (TASK-048 decision 9). Unlike
+#: PROTECTED_ROLE_CODES, holding or assigning a role here needs nothing extra.
+LOCKED_ROLE_CODES = PROTECTED_ROLE_CODES | {Role.ROLE_CUSTOMER}
+
 
 def get_user_role_codes(user) -> Set[str]:
     """

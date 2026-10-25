@@ -119,12 +119,12 @@ export const ADMIN_PERMISSIONS = {
   rolesManage: ["roles.admin.manage"],
 
   /**
-   * GET /api/admin/audit-logs/ -> CanViewAdminAuditLogs.
-   * That class also accepts "audit.view" / "audit.admin.view", but NEITHER is
-   * present in PERMISSIONS_DATA, so the only codes any real user can actually
-   * hold are the two governance permissions below.
+   * GET /api/admin/audit-logs/ -> CanViewAdminAuditLogs. The log carries
+   * payment and refund details, so only these codes open it; managing users
+   * or roles no longer does (TASK-048 decision 8). ADMINISTRATOR holds
+   * audit.view.
    */
-  auditView: ["users.admin.view", "roles.admin.view"],
+  auditView: ["audit.view", "audit.admin.view"],
 
   /** Analytical/sales reporting permission (held by ADMIN, OPS, SALES, FINANCE, SUPPORT). */
   reportsView: ["reports.view"],

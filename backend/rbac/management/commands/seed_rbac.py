@@ -62,6 +62,8 @@ PERMISSIONS_DATA = [
     ("points.adjust", "Adjust Points", "points", "adjust", "Can adjust seller point balances"),
     # Reports
     ("reports.view", "View Reports", "reports", "view", "Can access analytical and sales reports"),
+    # Audit log (TASK-048 decision 8: the only codes that open the full log)
+    ("audit.view", "View Audit Log", "audit", "view", "Can read the platform audit log, payment and refund details included"),
     # Customer Profile & Addresses
     ("profile.view", "View Profile", "profile", "view", "Can view customer profile"),
     ("profile.update", "Update Profile", "profile", "update", "Can update customer profile"),
@@ -165,6 +167,7 @@ ROLE_PERMISSIONS_MAPPING = {
         "users.admin.manage",
         "roles.admin.view",
         "roles.admin.manage",
+        "audit.view",
         "sellers.admin.manage",
         "shops.admin.manage",
         "products.admin.manage",

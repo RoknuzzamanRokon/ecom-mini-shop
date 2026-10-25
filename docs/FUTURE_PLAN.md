@@ -657,6 +657,38 @@ are recorded here as they are made.
      on what the user holds, with a `STAFF_POINTS_EXPIRY_RESTARTED` audit
      row, instead of letting every dated lot expire at once (BUG-047).
 
+6. **Creation-fee refund** — decided 2026-10-25, implemented in TASK-048.
+   - When staff delete a product that never went live, the seller gets its
+     creation fee back as a REFUND point transaction, once. "Never went
+     live" means it is not PUBLISHED or UNPUBLISHED and no
+     `ADMIN_PRODUCT_PUBLISH` audit row exists for it.
+   - A rejection keeps the fee: the seller can correct and resubmit the same
+     product. A seller deleting their own product gets no refund.
+   - Staff delete products in the Django admin (single or bulk). Each
+     deletion writes `PRODUCT_DELETED` with the refunded amount. That delete
+     used to be refused for everyone, because the product's inventory and
+     ledger admins refuse deletes; those rows now go with the product.
+7. **Staff and their own seller wallet** — decided 2026-10-25, implemented
+   in TASK-048. A staff member who also sells cannot credit or debit their
+   own seller wallet: `PointService.adjust_points` raises
+   `SelfAdjustmentError` (the API answers 403). The Console hides the
+   buttons on one's own seller page. Another staff member has to do it.
+8. **Who reads the full audit log** — decided 2026-10-25, implemented in
+   TASK-048. Only `audit.view` or `audit.admin.view` (and Super
+   Administrators) open `/api/admin/audit-logs/`, since it carries payment
+   and refund details. `users.admin.view` and `roles.admin.view` no longer
+   do. `audit.view` is now seeded and given to ADMINISTRATOR, also by
+   migration `rbac/0003_audit_view_permission` for existing databases. A
+   custom role that held only the user or role codes loses access.
+9. **The CUSTOMER role is locked** — decided 2026-10-25, implemented in
+   TASK-048. `LOCKED_ROLE_CODES` (the protected roles plus CUSTOMER):
+   - the Console API can neither change nor delete it;
+   - in the Django admin only a Super Administrator can change it, and
+     nobody deletes it.
+
+   Holding or assigning CUSTOMER is unchanged: it is not in
+   `PROTECTED_ROLE_CODES`, so administrators still create customers.
+
 ## Not in this roadmap
 
 A short honest roadmap beats an exhaustive wish list. These are known and

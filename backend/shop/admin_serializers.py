@@ -10,7 +10,7 @@ from django.contrib.auth import get_user_model
 
 from rbac.models import Role, Permission, UserRole
 from rbac.serializers import USERNAME_TAKEN, username_field
-from rbac.services import PROTECTED_ROLE_CODES, get_user_permissions, get_user_role_codes
+from rbac.services import LOCKED_ROLE_CODES, PROTECTED_ROLE_CODES, get_user_permissions, get_user_role_codes
 from sellers.models import SellerProfile
 from shops.models import Shop
 from shop.models import Category, Product, Order
@@ -284,7 +284,8 @@ class AdminRoleSerializer(serializers.ModelSerializer):
         return obj.user_roles.filter(is_active=True).count()
 
     def get_is_protected(self, obj):
-        return obj.code in PROTECTED_ROLE_CODES
+        # The Console can neither edit nor delete these (CUSTOMER included).
+        return obj.code in LOCKED_ROLE_CODES
 
 
 class AdminRoleCreateSerializer(serializers.Serializer):

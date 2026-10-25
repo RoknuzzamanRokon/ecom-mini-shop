@@ -43,8 +43,15 @@ class AdminPhase1APITests(APITestCase):
             code="shops.admin.manage",
             defaults={"name": "Manage Shops", "resource": "shops", "action": "admin_manage"},
         )
+        # Since TASK-048 decision 8 the audit log needs audit.view, which
+        # seed_rbac gives ADMINISTRATOR; users.admin.view alone no longer opens it.
+        audit_view_perm, _ = Permission.objects.get_or_create(
+            code="audit.view",
+            defaults={"name": "View Audit Log", "resource": "audit", "action": "view"},
+        )
         RolePermission.objects.get_or_create(role=admin_role, permission=users_admin_view_perm)
         RolePermission.objects.get_or_create(role=admin_role, permission=shops_admin_manage_perm)
+        RolePermission.objects.get_or_create(role=admin_role, permission=audit_view_perm)
         UserRole.objects.create(user=cls.admin_user, role=admin_role)
 
         # 3. Operation Manager (ROLE_OPERATION_MANAGER with shops.view, shops.approve)
@@ -173,7 +180,7 @@ class AdminPhase1APITests(APITestCase):
         self.assertGreaterEqual(response.data["count"], 3)
 
     def test_audit_logs_platform_admin_allowed(self):
-        """Platform Administrator with users.admin.view is granted access."""
+        """Platform Administrator with audit.view is granted access."""
         self.client.force_authenticate(user=self.admin_user)
         response = self.client.get(self.audit_list_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)

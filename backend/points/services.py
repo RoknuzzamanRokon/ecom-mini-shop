@@ -46,6 +46,11 @@ class InsufficientStaffPointsError(PointError):
     pass
 
 
+class SelfAdjustmentError(PointError):
+    """Raised when a staff member tries to move points into or out of their own seller wallet."""
+    pass
+
+
 #: Upcoming expiries listed on a wallet payload.
 UPCOMING_EXPIRY_LIMIT = 5
 
@@ -284,6 +289,10 @@ class PointService:
             raise InvalidTransactionError(
                 "A staff adjustment needs an actor: its points move to or from the actor's own wallet."
             )
+        # Staff who also sell never move points to or from their own seller
+        # wallet; another staff member has to (TASK-048 decision 7).
+        if seller.user_id == actor.pk:
+            raise SelfAdjustmentError("You cannot give points to or take points from your own seller wallet.")
         cls._validate_movement(amount, reason)
 
         with transaction.atomic():

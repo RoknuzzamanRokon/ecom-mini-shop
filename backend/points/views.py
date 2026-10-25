@@ -32,6 +32,7 @@ from .services import (
     InsufficientStaffPointsError,
     PointError,
     PointService,
+    SelfAdjustmentError,
     staff_points_expire,
 )
 
@@ -242,6 +243,8 @@ class StaffPointAdjustmentView(APIView):
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        except SelfAdjustmentError as e:
+            return Response({"error": str(e)}, status=status.HTTP_403_FORBIDDEN)
         except PointError as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 

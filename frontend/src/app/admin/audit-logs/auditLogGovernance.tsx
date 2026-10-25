@@ -30,13 +30,11 @@ import { ADMIN_PERMISSIONS } from "@/lib/admin-navigation";
 /**
  * Page access gate, mirroring CanViewAdminAuditLogs.
  *
- * That class accepts 'audit.view', 'audit.admin.view', 'users.admin.view' or
- * 'roles.admin.view', plus the superuser / SUPER_ADMINISTRATOR bypass. Only the
- * last two are in ADMIN_PERMISSIONS.auditView, because the first two are absent
- * from seed_rbac's PERMISSIONS_DATA and so cannot be held by any real user —
- * gating on them would hide the module from everyone but superusers. Being a
- * management user is NOT sufficient: AdminGuard only establishes console
- * eligibility.
+ * That class accepts 'audit.view' or 'audit.admin.view', plus the superuser /
+ * SUPER_ADMINISTRATOR bypass. Managing users or roles no longer opens the log,
+ * which carries payment and refund details (TASK-048 decision 8); seed_rbac
+ * gives ADMINISTRATOR 'audit.view'. Being a management user is NOT
+ * sufficient: AdminGuard only establishes console eligibility.
  */
 export function canViewAdminAuditLogs(user: AuthUser | null | undefined): boolean {
   return hasAnyPermission(user, ADMIN_PERMISSIONS.auditView);
