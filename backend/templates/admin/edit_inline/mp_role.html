@@ -54,6 +54,11 @@
             {# The is_active checkbox, drawn as a status pill. Without change #}
             {# permission (writes need the RBAC wildcard) the pill shows the  #}
             {# saved state from a disabled, unnamed box and posts nothing.    #}
+            {% if original and not original.role.is_active %}
+              <span class="mp-role-off-note" title="{% translate 'This role is switched off and grants nothing until a superuser switches it back on.' %}">
+                {% translate 'Role switched off' %}
+              </span>
+            {% endif %}
             <span class="mp-role-status">
               {% if inline_admin_formset.has_change_permission %}
                 {{ inline_admin_form.form.is_active }}
@@ -112,7 +117,8 @@
               <span class="mp-role-select-label">{{ inline_admin_form.form.role.label }}</span>
             {% endif %}
             {{ inline_admin_form.form.role.errors.as_ul }}
-            {{ inline_admin_form.form.role }}
+            {# A saved row's role is fixed: swap a role by removing and adding (BUG-128). #}
+            {% if original %}{{ inline_admin_form.form.role.as_hidden }}{% else %}{{ inline_admin_form.form.role }}{% endif %}
           </div>
         </div>
 

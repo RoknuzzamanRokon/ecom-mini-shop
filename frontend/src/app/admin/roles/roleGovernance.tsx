@@ -551,7 +551,9 @@ export function RoleForm({
             id={activeId}
             type="checkbox"
             checked={values.is_active}
-            disabled={submitting}
+            // Switching the role on or off grants or removes every one of its
+            // permissions, so it is locked whenever they are (BUG-101).
+            disabled={submitting || Boolean(permissionLock)}
             onChange={(e) => onChange({ ...values, is_active: e.target.checked })}
             className="w-4 h-4 rounded border-line accent-[var(--color-primary)] cursor-pointer disabled:cursor-not-allowed"
           />
@@ -560,6 +562,7 @@ export function RoleForm({
             <span className="block text-[10px] font-medium text-ink-muted">
               An inactive role grants nothing and cannot be assigned, but keeps its
               definition and its existing assignments.
+              {permissionLock && " Locked, like its permissions: switching it changes them for every holder."}
             </span>
           </label>
         </div>

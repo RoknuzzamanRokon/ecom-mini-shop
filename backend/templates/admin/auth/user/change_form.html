@@ -64,10 +64,11 @@
         {% if original.pk %}
           <div class="mp-rolechips">
             {% for assignment in original.user_roles.all %}
-              <span class="mp-rolechip {% if not assignment.is_active %}is-off{% endif %}"
-                    title="{{ assignment.role.description|default:assignment.role.name }}">
+              {# A switched-off role grants nothing, however its assignment reads (BUG-126). #}
+              <span class="mp-rolechip {% if not assignment.is_active or not assignment.role.is_active %}is-off{% endif %}"
+                    title="{{ assignment.role.description|default:assignment.role.name }}{% if not assignment.role.is_active %} ({% translate 'role switched off' %}){% endif %}">
                 <span class="material-symbols-outlined" aria-hidden="true">workspace_premium</span>
-                {{ assignment.role.name }}
+                {{ assignment.role.name }}{% if not assignment.role.is_active %} · {% translate 'role off' %}{% endif %}
               </span>
             {% empty %}
               <span class="mp-rolechip is-none">{% translate 'No role assigned' %}</span>
@@ -79,7 +80,8 @@
 
     <div class="mp-hero-side">
       <div class="mp-gauge">
-        <span class="mp-gauge-value"><b data-mp-granted>0</b><i>/</i><span data-mp-total>0</span></span>
+        {# Server-side figures; the editable board updates them live (BUG-125). #}
+        <span class="mp-gauge-value"><b data-mp-granted>{{ mp_panel_granted|default:0 }}</b><i>/</i><span data-mp-total>{{ mp_panel_total|default:0 }}</span></span>
         <span class="mp-gauge-label">{% translate 'panel permissions' %}</span>
         <span class="mp-gauge-track"><span class="mp-gauge-fill" data-mp-gauge></span></span>
       </div>
@@ -174,7 +176,7 @@
   </section>
 
   <!-- ==================== PANE: ROLES & GROUPS ==================== -->
-  <section class="mp-pane" id="mp-pane-roles" role="tabpanel" data-mp-pane="roles" hidden>
+  <section class="mp-pane" id="mp-pane-roles" role="tabpanel" data-mp-pane="roles">
     {% for fieldset in adminform %}
       {% if 'mp-pane-roles' in fieldset.classes %}
         <div class="mp-card">
@@ -217,7 +219,7 @@
   </section>
 
   <!-- ==================== PANE: ACCOUNT ==================== -->
-  <section class="mp-pane" id="mp-pane-account" role="tabpanel" data-mp-pane="account" hidden>
+  <section class="mp-pane" id="mp-pane-account" role="tabpanel" data-mp-pane="account">
     {% block field_sets %}
       {% for fieldset in adminform %}
         {% if 'mp-pane-permissions' in fieldset.classes or 'mp-pane-roles' in fieldset.classes or 'mp-pane-status' in fieldset.classes %}

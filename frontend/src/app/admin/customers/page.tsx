@@ -20,6 +20,8 @@ import {
   customerDisplayName,
 } from "./customerDirectory";
 import { useLatestRequest } from "@/hooks/useLatestRequest";
+import { useDebouncedUrlValue } from "@/hooks/useDebouncedUrlValue";
+import { pageNumber } from "@/lib/params";
 
 /** Matches AdminPagination.page_size in shop/admin_views.py (the backend's default). */
 const PAGE_SIZE = 20;
@@ -49,18 +51,7 @@ function AdminCustomersPageContent() {
   const canView = canViewAdminCustomers(user);
 
   const urlSearch = searchParams.get("search") ?? "";
-  const urlPage = Number(searchParams.get("page") ?? "1") || 1;
-
-  // Local text state so typing feels instant; committed into the URL (and the
-  // actual filter) after a short debounce so we don't fire a request per
-  // keystroke. Resynced from the URL during render (not an effect) whenever it
-  // changes externally — e.g. browser back/forward or "Clear filters".
-  const [searchInput, setSearchInput] = useState(urlSearch);
-  const [syncedUrlSearch, setSyncedUrlSearch] = useState(urlSearch);
-  if (urlSearch !== syncedUrlSearch) {
-    setSyncedUrlSearch(urlSearch);
-    setSearchInput(urlSearch);
-  }
+  const urlPage = pageNumber(searchParams.get("page"));
 
   const updateParams = useCallback(
     (updates: Record<string, string | null>) => {
@@ -75,17 +66,12 @@ function AdminCustomersPageContent() {
     [searchParams, router, pathname]
   );
 
-  useEffect(() => {
-    const handle = setTimeout(() => {
-      if (searchInput !== urlSearch) {
-        updateParams({ search: searchInput || null, page: null });
-      }
-    }, 350);
-    return () => clearTimeout(handle);
-    // Full dependencies: the timer must commit through the current
-    // updateParams, or it rewrites the URL from an old snapshot and drops a
-    // filter changed meanwhile (BUG-074).
-  }, [searchInput, urlSearch, updateParams]);
+  // Typed text reaches the URL once typing pauses (BUG-074, BUG-117).
+  const commitSearch = useCallback(
+    (value: string) => updateParams({ search: value || null, page: null }),
+    [updateParams]
+  );
+  const [searchInput, setSearchInput] = useDebouncedUrlValue(urlSearch, commitSearch);
 
   const [customers, setCustomers] = useState<AdminCustomerListItem[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -133,7 +119,7 @@ function AdminCustomersPageContent() {
   const clearFilters = useCallback(() => {
     setSearchInput("");
     updateParams({ search: null, page: null });
-  }, [updateParams]);
+  }, [updateParams, setSearchInput]);
 
   const columns: AdminTableColumn<AdminCustomerListItem>[] = useMemo(
     () => [

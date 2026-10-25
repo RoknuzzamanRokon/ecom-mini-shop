@@ -21,6 +21,7 @@ import {
   CategoryForm,
   canManageAdminCategories,
   categoryToFormValues,
+  deactivationSummary,
   formValuesToPayload,
   type CategoryFormValues,
 } from "../categoryGovernance";
@@ -113,7 +114,11 @@ export default function AdminCategoryDetailPage() {
     setSaveError(null);
   }, []);
 
-  const submitEdit = useCallback(async () => {
+  // Unticking Active takes the category's products off the storefront, so
+  // the edit form asks first, like the list's Deactivate (BUG-106).
+  const [confirmingDeactivation, setConfirmingDeactivation] = useState(false);
+
+  const saveEdit = useCallback(async () => {
     // `saving` also drives the form's disabled state, so a second submit cannot
     // be started while the first is still in flight.
     if (saving || !editValues || !category) return;
@@ -135,6 +140,7 @@ export default function AdminCategoryDetailPage() {
       setCategory(updated);
       setEditing(false);
       setEditValues(null);
+      setConfirmingDeactivation(false);
       setNotice("Category updated.");
     } catch (err) {
       setSaveError(err instanceof AdminApiError ? err.message : "Failed to update the category.");
@@ -142,6 +148,14 @@ export default function AdminCategoryDetailPage() {
       setSaving(false);
     }
   }, [saving, editValues, category]);
+
+  const submitEdit = useCallback(() => {
+    if (category?.is_active && editValues && !editValues.is_active) {
+      setConfirmingDeactivation(true);
+      return;
+    }
+    saveEdit();
+  }, [category, editValues, saveEdit]);
 
   // --- Delete -------------------------------------------------------------
   const [deleteOpen, setDeleteOpen] = useState(false);
@@ -434,6 +448,21 @@ export default function AdminCategoryDetailPage() {
           </dl>
         </div>
       </div>
+
+      <AdminConfirmModal
+        open={confirmingDeactivation}
+        title="Deactivate category?"
+        message={
+          <>
+            {deactivationSummary(category)} You can activate it again later.
+            {saveError && <p className="mt-2 font-semibold text-red-600">{saveError}</p>}
+          </>
+        }
+        confirmLabel="Deactivate and save"
+        destructive
+        onConfirm={saveEdit}
+        onCancel={() => setConfirmingDeactivation(false)}
+      />
 
       <AdminConfirmModal
         open={deleteOpen}

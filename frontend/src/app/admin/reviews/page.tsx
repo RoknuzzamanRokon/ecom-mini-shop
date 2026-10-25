@@ -28,6 +28,8 @@ import {
   canModerateReviews,
   useReviewModeration,
 } from "./reviewGovernance";
+import { useDebouncedUrlValue } from "@/hooks/useDebouncedUrlValue";
+import { pageNumber } from "@/lib/params";
 
 /** Matches AdminPagination.page_size in shop/admin_views.py. */
 const PAGE_SIZE = 20;
@@ -68,17 +70,7 @@ function AdminReviewsPageContent() {
   const urlRating = searchParams.get("rating") ?? "";
   const rawHidden = searchParams.get("hidden");
   const urlHidden = rawHidden === "true" || rawHidden === "false" ? rawHidden : "";
-  const urlPage = Number(searchParams.get("page") ?? "1") || 1;
-
-  // Local text state so typing feels instant; committed to the URL after a
-  // short debounce, and resynced from the URL during render when it changes
-  // externally (back/forward, "Clear filters").
-  const [searchInput, setSearchInput] = useState(urlSearch);
-  const [syncedUrlSearch, setSyncedUrlSearch] = useState(urlSearch);
-  if (urlSearch !== syncedUrlSearch) {
-    setSyncedUrlSearch(urlSearch);
-    setSearchInput(urlSearch);
-  }
+  const urlPage = pageNumber(searchParams.get("page"));
 
   const updateParams = useCallback(
     (updates: Record<string, string | null>) => {
@@ -93,12 +85,12 @@ function AdminReviewsPageContent() {
     [searchParams, router, pathname]
   );
 
-  useEffect(() => {
-    const handle = setTimeout(() => {
-      if (searchInput !== urlSearch) updateParams({ search: searchInput || null, page: null });
-    }, 350);
-    return () => clearTimeout(handle);
-  }, [searchInput, urlSearch, updateParams]);
+  // Typed text reaches the URL once typing pauses (BUG-074, BUG-117).
+  const commitSearch = useCallback(
+    (value: string) => updateParams({ search: value || null, page: null }),
+    [updateParams]
+  );
+  const [searchInput, setSearchInput] = useDebouncedUrlValue(urlSearch, commitSearch);
 
   const [reloadToken, setReloadToken] = useState(0);
   const [list, setList] = useState<ListState | null>(null);
@@ -139,7 +131,7 @@ function AdminReviewsPageContent() {
   const clearFilters = useCallback(() => {
     setSearchInput("");
     updateParams({ search: null, rating: null, hidden: null, page: null });
-  }, [updateParams]);
+  }, [updateParams, setSearchInput]);
 
   // The API response is authoritative; merge it into the loaded page.
   const handleModerated = useCallback((updated: AdminReview) => {

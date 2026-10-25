@@ -24,6 +24,7 @@ import { hasAnyPermission } from "@/lib/admin-auth";
 import { formatDateTime, formatTaka } from "@/lib/admin-format";
 import { ADMIN_PERMISSIONS } from "@/lib/admin-navigation";
 import {
+  CUSTOMER_STATUS_LABELS,
   STAFF_STATUS_LABELS,
   SUPPORT_CATEGORY_LABELS,
   SUPPORT_LIMITS,
@@ -163,6 +164,9 @@ export default function AdminSupportTicketPage() {
 
   // Everyone the ticket can be assigned to; only managers get the picker.
   const [assignees, setAssignees] = useState<AdminSupportAssignee[]>([]);
+  // A failed load is shown with a retry, not as an empty list (BUG-104).
+  const [assigneesError, setAssigneesError] = useState<string | null>(null);
+  const [assigneesLoad, setAssigneesLoad] = useState(0);
   useEffect(() => {
     if (!canManage) return;
     const token = getAuthToken();
@@ -170,25 +174,33 @@ export default function AdminSupportTicketPage() {
     let cancelled = false;
     getAdminSupportAssignees(token)
       .then((rows) => {
-        if (!cancelled) setAssignees(rows);
+        if (cancelled) return;
+        setAssignees(rows);
+        setAssigneesError(null);
       })
-      .catch(() => undefined);
+      .catch((err: unknown) => {
+        if (!cancelled) setAssigneesError(messageOf(err, "The list of assignees couldn't be loaded."));
+      });
     return () => {
       cancelled = true;
     };
-  }, [canManage]);
+  }, [canManage, assigneesLoad]);
 
   /**
    * Every write answers with the whole ticket: show it, and drop any read still
    * in flight. On failure, re-read (a colleague may have changed the ticket)
    * and rethrow so the control that asked can show the backend's message.
    */
+  // Writes are numbered too: a response that comes back after a later
+  // write's response is older, and must not replace it (BUG-109).
+  const writeSequence = useRef(0);
   const runUpdate = useCallback(
     async (request: (token: string) => Promise<AdminSupportTicketDetail>, done: string) => {
+      const write = ++writeSequence.current;
       try {
         const updated = await request(requireToken());
         generation.current += 1;
-        setState({ ticketNumber, ticket: updated });
+        if (write === writeSequence.current) setState({ ticketNumber, ticket: updated });
         setAnnouncement(done);
       } catch (err) {
         setRefreshKey((k) => k + 1);
@@ -248,6 +260,16 @@ export default function AdminSupportTicketPage() {
     setState(null);
     setRefreshKey((k) => k + 1);
   };
+
+  // A status the ticket can no longer move to (a colleague changed it) is
+  // dropped with its error, so the dialog never reopens on its own when the
+  // ticket later comes back round to allowing it (BUG-102). Adjusted during
+  // render, not in an effect.
+  const allowedNow = state?.ticket?.allowed_transitions;
+  if (pendingStatus && allowedNow && !allowedNow.includes(pendingStatus)) {
+    setPendingStatus(null);
+    setStatusError(null);
+  }
 
   if (!canView) {
     return <SupportAccessNotice />;
@@ -344,6 +366,8 @@ export default function AdminSupportTicketPage() {
                 ticket={ticket}
                 canManage={canManage}
                 assignees={assignees}
+                assigneesError={assigneesError}
+                onRetryAssignees={() => setAssigneesLoad((n) => n + 1)}
                 viewerId={user?.id ?? null}
                 viewerAssignable={canReply}
                 onAssign={assign}
@@ -369,7 +393,7 @@ export default function AdminSupportTicketPage() {
                 <p>{statusCopy?.message}</p>
                 <p className="mt-2">
                   The customer sees “Status changed to{" "}
-                  {pendingStatus ? STAFF_STATUS_LABELS[pendingStatus] : ""}” in their conversation.
+                  {pendingStatus ? CUSTOMER_STATUS_LABELS[pendingStatus] : ""}” in their conversation.
                 </p>
                 {statusError && (
                   <p role="alert" className="mt-2 font-semibold text-danger">
@@ -674,6 +698,8 @@ function AssigneeCard({
   ticket,
   canManage,
   assignees,
+  assigneesError,
+  onRetryAssignees,
   viewerId,
   viewerAssignable,
   onAssign,
@@ -681,6 +707,8 @@ function AssigneeCard({
   ticket: AdminSupportTicketDetail;
   canManage: boolean;
   assignees: AdminSupportAssignee[];
+  assigneesError: string | null;
+  onRetryAssignees: () => void;
   viewerId: number | null;
   viewerAssignable: boolean;
   onAssign: (assigneeId: number | null, done: string) => Promise<void>;
@@ -701,11 +729,19 @@ function AssigneeCard({
 
   const assignTo = async (value: string) => {
     if (value === currentId) return;
-    const name = value ? options.find((option) => option.value === value)?.label.replace(/ \(you\)$/, "") : null;
+    // Announced from the value, so it is right even when the list is missing.
+    const name = options.find((option) => option.value === value)?.label.replace(/ \(you\)$/, "");
+    const done = !value
+      ? "Unassigned."
+      : value === String(viewerId)
+        ? "Assigned to you."
+        : name
+          ? `Assigned to ${name}.`
+          : "Assigned.";
     setPendingId(value);
     setError(null);
     try {
-      await onAssign(value ? Number(value) : null, name ? `Assigned to ${name}.` : "Unassigned.");
+      await onAssign(value ? Number(value) : null, done);
     } catch (err) {
       setError(messageOf(err, "The ticket couldn't be assigned."));
     } finally {
@@ -750,6 +786,18 @@ function AssigneeCard({
           </option>
         ))}
       </select>
+      {assigneesError && (
+        <p role="alert" className="mt-2 text-[11px] font-semibold text-danger">
+          {assigneesError}{" "}
+          <button
+            type="button"
+            onClick={onRetryAssignees}
+            className="underline cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary rounded-sm"
+          >
+            Try again
+          </button>
+        </p>
+      )}
       {showAssignToMe && (
         <button
           type="button"

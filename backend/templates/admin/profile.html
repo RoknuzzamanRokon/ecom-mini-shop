@@ -153,7 +153,7 @@
                 <span class="pf-stat-value">{{ kpi.value }}</span>
                 <span class="pf-stat-label">{{ kpi.label }}</span>
               </span>
-              {% if kpi.external %}<span class="visually-hidden">{% translate '(opens in a new tab)' %}</span>{% endif %}
+              {% if kpi.url and kpi.external %}<span class="visually-hidden">{% translate '(opens in a new tab)' %}</span>{% endif %}
           {% if kpi.url %}</a>{% else %}</div>{% endif %}
         </li>
       {% endfor %}

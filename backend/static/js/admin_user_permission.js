@@ -92,7 +92,12 @@
     } catch (err) {
       stored = null;
     }
-    if (stored) activate(stored, false);
+    // The panes all render visible, so the form still works without
+    // JavaScript; the script hides all but one (BUG-131).
+    if (!(stored && activate(stored, false))) {
+      var initial = root.querySelector("[data-mp-tab].is-active") || tabs[0];
+      activate(initial.getAttribute("data-mp-tab"), false);
+    }
   }
 
   /* ----------------------------------------------------------------------
@@ -133,9 +138,14 @@
      */
     function rollUp(box, children) {
       if (!box) return;
-      var on = children.filter(function (input) { return input.checked; }).length;
-      box.checked = on > 0 && on === children.length;
-      box.indeterminate = on > 0 && on < children.length;
+      // Judged on the boxes the operator can change: locked ones never move,
+      // and counting them left the box indeterminate for good, so a click
+      // could never clear a selection (BUG-123).
+      var editable = children.filter(function (input) { return !input.disabled; });
+      var basis = editable.length ? editable : children;
+      var on = basis.filter(function (input) { return input.checked; }).length;
+      box.checked = on > 0 && on === basis.length;
+      box.indeterminate = on > 0 && on < basis.length;
     }
 
     function permsIn(scope) {

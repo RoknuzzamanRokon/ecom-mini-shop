@@ -113,6 +113,7 @@
           <ul class="ms-perm-list">
             {% for permission in section.permissions %}
               <li class="ms-perm{% if permission.granted %} is-granted{% endif %}{% if permission.locked %} is-locked{% endif %}"
+                  data-pm-row
                   data-search="{{ permission.code|lower }} {{ permission.name|lower }}">
 
                 <span class="pm-cell ms-perm-check">
@@ -121,7 +122,7 @@
                          name="{{ permission.input_name }}"
                          value="{{ permission.pk }}"
                          id="{{ permission.id }}"
-                         {% if not permission.locked %}data-pm-perm{% endif %}
+                         data-pm-perm
                          {% if permission.direct or permission.locked and permission.granted %}checked{% endif %}
                          {% if permission.locked %}disabled{% endif %}>
                   <label for="{{ permission.id }}" title="{{ permission.code }}">

@@ -159,10 +159,18 @@ export function CategoryForm({
 
   const canSubmit = values.name.trim().length > 0 && values.slug.trim().length > 0 && !submitting;
 
+  // The slug follows the name until the operator edits it by hand; clearing
+  // it hands it back to the name (BUG-105).
+  const [slugEdited, setSlugEdited] = React.useState(false);
+  const followsName = autoSlug && !slugEdited;
+
   const handleNameChange = (name: string) => {
-    onChange(
-      autoSlug ? { ...values, name, slug: slugifyLikeDjango(name) } : { ...values, name }
-    );
+    onChange(followsName ? { ...values, name, slug: slugifyLikeDjango(name) } : { ...values, name });
+  };
+
+  const handleSlugChange = (slug: string) => {
+    setSlugEdited(slug !== "");
+    onChange({ ...values, slug });
   };
 
   return (
@@ -200,15 +208,19 @@ export function CategoryForm({
             required
             value={values.slug}
             disabled={submitting}
-            onChange={(e) => onChange({ ...values, slug: e.target.value })}
+            onChange={(e) => handleSlugChange(e.target.value)}
             aria-describedby={`${slugId}-help`}
             className={`${FIELD_CONTROL_CLASS} font-mono`}
             placeholder="electronics"
           />
           <p id={`${slugId}-help`} className="text-[10px] text-ink-faint mt-1">
-            {autoSlug
-              ? "Filled in from the name; edit it if you need a different URL."
-              : "Changing this changes the public category URL."}
+            {autoSlug && values.name.trim() && !values.slug.trim()
+              ? "This name has no letters a URL can use: type a slug, e.g. clothing."
+              : followsName
+                ? "Filled in from the name; edit it if you need a different URL."
+                : autoSlug
+                  ? "Your slug is kept when the name changes."
+                  : "Changing this changes the public category URL."}
           </p>
         </div>
 

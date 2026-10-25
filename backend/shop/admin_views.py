@@ -12,7 +12,7 @@ from datetime import timedelta
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
-from django.db.models import Count, Prefetch, Q, Sum
+from django.db.models import Count, Exists, OuterRef, Prefetch, Q, Sum
 from rest_framework import status
 from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError as DRFValidationError
 from rest_framework.pagination import PageNumberPagination
@@ -524,7 +524,17 @@ class AdminRoleDetailAPIView(APIView):
                 role.name = data["name"]
             if "description" in data:
                 role.description = data["description"]
-            if "is_active" in data:
+            if "is_active" in data and data["is_active"] != role.is_active:
+                # Switching a role on hands its grants to every holder, and
+                # switching it off takes them away: either way the actor must
+                # be able to delegate all of them, as in the Django admin
+                # (BUG-101).
+                beyond = get_undelegatable_permission_codes(actor, set(prev_state["permissions"]))
+                if beyond:
+                    verb = "activate" if data["is_active"] else "deactivate"
+                    raise PermissionDenied(
+                        f"Cannot {verb} a role that grants permissions you do not hold: {sorted(beyond)}"
+                    )
                 role.is_active = data["is_active"]
             role.save()
 
@@ -1394,10 +1404,13 @@ class AdminCategoryDetailAPIView(APIView):
         serializer = AdminCategorySerializer(category, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
 
+        # Everything the form can change, so a slug change (which moves the
+        # public category URL) is traceable (BUG-107).
+        audited = ("name", "slug", "icon", "description", "is_active")
         with transaction.atomic():
-            prev_state = {"name": category.name, "is_active": category.is_active}
+            prev_state = {field: getattr(category, field) for field in audited}
             category = serializer.save()
-            new_state = {"name": category.name, "is_active": category.is_active}
+            new_state = {field: getattr(category, field) for field in audited}
 
             AuditService.log(
                 action="ADMIN_CATEGORY_UPDATED",
@@ -1416,15 +1429,17 @@ class AdminCategoryDetailAPIView(APIView):
         except Category.DoesNotExist:
             raise NotFound("Category not found.")
 
-        # SAFEGUARD: Check if category is referenced by products
-        referenced_count = category.products.count()
-        if referenced_count > 0:
-            raise DRFValidationError(
-                f"Cannot delete category '{category.name}' because it is referenced by {referenced_count} product(s). "
-                "Deactivate the category (set is_active=False) instead."
-            )
-
         with transaction.atomic():
+            # Counted under the row lock, so a product added meanwhile waits
+            # and then fails instead of being deleted with the category; the
+            # PROTECT foreign key backs this up (BUG-108).
+            category = Category.objects.select_for_update().get(pk=category.pk)
+            referenced_count = category.products.count()
+            if referenced_count > 0:
+                raise DRFValidationError(
+                    f"Cannot delete category '{category.name}' because it is referenced by {referenced_count} product(s). "
+                    "Deactivate the category (set is_active=False) instead."
+                )
             AuditService.log(
                 action="ADMIN_CATEGORY_DELETED",
                 target=category,
@@ -1442,6 +1457,19 @@ class AdminCategoryDetailAPIView(APIView):
 # 7. CUSTOMER ADMINISTRATION VIEWS (STRICTLY READ-ONLY)
 # ==============================================================================
 
+def customer_profiles():
+    """
+    The profiles the customer directory shows: accounts holding an active
+    CUSTOMER role. Reading one's own profile creates a CustomerProfile, so
+    staff and superusers have rows too, and they are not customers
+    (BUG-115).
+    """
+    is_customer = UserRole.objects.filter(
+        user=OuterRef("user"), role__code=Role.ROLE_CUSTOMER, is_active=True, role__is_active=True
+    )
+    return CustomerProfile.objects.select_related("user").filter(Exists(is_customer))
+
+
 class AdminCustomerListAPIView(APIView):
     """
     GET /api/admin/customers/
@@ -1453,7 +1481,7 @@ class AdminCustomerListAPIView(APIView):
     def get(self, request):
         # Counted in the page query, not per row (BUG-067).
         qs = (
-            CustomerProfile.objects.select_related("user")
+            customer_profiles()
             .annotate(orders_count=Count("user__orders"))
             .order_by("-created_at")
         )
@@ -1464,6 +1492,8 @@ class AdminCustomerListAPIView(APIView):
                 Q(user__username__icontains=search)
                 | Q(user__email__icontains=search)
                 | Q(display_name__icontains=search)
+                | Q(user__first_name__icontains=search)
+                | Q(user__last_name__icontains=search)
                 | Q(phone__icontains=search)
             )
 
@@ -1483,7 +1513,7 @@ class AdminCustomerDetailAPIView(APIView):
 
     def get(self, request, pk):
         try:
-            customer = CustomerProfile.objects.select_related("user").get(pk=pk)
+            customer = customer_profiles().get(pk=pk)
         except CustomerProfile.DoesNotExist:
             raise NotFound("Customer profile not found.")
         serializer = AdminCustomerDetailSerializer(customer)

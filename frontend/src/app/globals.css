@@ -1,5 +1,19 @@
 @import "tailwindcss";
 
+/* The app switches themes with a .dark class on <html> (ThemeContext), so
+   `dark:` must follow that class, not the operating system's preference
+   (BUG-110). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Native controls (date pickers, scrollbars, select popups) draw in the
+   scheme the page is in (BUG-111). */
+:root {
+  color-scheme: light;
+}
+:root.dark {
+  color-scheme: dark;
+}
+
 @theme {
   --color-page: var(--c-page-bg);
   --color-surface: var(--c-surface);

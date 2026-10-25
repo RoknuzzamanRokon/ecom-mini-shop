@@ -45,6 +45,7 @@ import {
   rememberSupportListUrl,
   type SupportStatusTab,
 } from "./supportGovernance";
+import { useDebouncedUrlValue } from "@/hooks/useDebouncedUrlValue";
 
 /** Matches StaffTicketPagination.page_size in support/views.py. */
 const PAGE_SIZE = 20;
@@ -98,16 +99,6 @@ function AdminSupportPageContent() {
   const urlSearch = searchParams.get("search") ?? "";
   const urlPage = Math.max(Number.parseInt(searchParams.get("page") ?? "1", 10) || 1, 1);
 
-  // Local text state so typing feels instant; committed to the URL after a
-  // short debounce, and resynced from the URL during render when it changes
-  // externally (back/forward, a queue card, "Clear").
-  const [searchInput, setSearchInput] = useState(urlSearch);
-  const [syncedUrlSearch, setSyncedUrlSearch] = useState(urlSearch);
-  if (urlSearch !== syncedUrlSearch) {
-    setSyncedUrlSearch(urlSearch);
-    setSearchInput(urlSearch);
-  }
-
   const updateParams = useCallback(
     (updates: Record<string, string | null>) => {
       const next = new URLSearchParams(searchParams.toString());
@@ -121,12 +112,12 @@ function AdminSupportPageContent() {
     [searchParams, router, pathname]
   );
 
-  useEffect(() => {
-    const handle = setTimeout(() => {
-      if (searchInput !== urlSearch) updateParams({ search: searchInput || null, page: null });
-    }, 350);
-    return () => clearTimeout(handle);
-  }, [searchInput, urlSearch, updateParams]);
+  // Typed text reaches the URL once typing pauses (BUG-074, BUG-117).
+  const commitSearch = useCallback(
+    (value: string) => updateParams({ search: value || null, page: null }),
+    [updateParams]
+  );
+  const [searchInput, setSearchInput] = useDebouncedUrlValue(urlSearch, commitSearch);
 
   // A ticket's back link returns to exactly this view.
   useEffect(() => {
@@ -257,7 +248,7 @@ function AdminSupportPageContent() {
       ordering: null,
       page: null,
     });
-  }, [updateParams]);
+  }, [updateParams, setSearchInput]);
 
   const userId = user?.id;
   const assigneeOptions: AdminSelectOption[] = useMemo(() => {

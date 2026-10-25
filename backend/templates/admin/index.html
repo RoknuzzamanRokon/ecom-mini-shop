@@ -44,10 +44,13 @@
         {% now "l, j F Y" %}
       </span>
       <div class="hero-actions">
+        {# Create links only for staff who may create (BUG-130). #}
+        {% if perms.shop.add_product %}
         <a href="{% url 'admin:shop_product_add' %}" class="hero-btn is-primary">
           <span class="material-symbols-outlined">add_circle</span>
           New product
         </a>
+        {% endif %}
         <a href="{{ storefront_url }}" target="_blank" rel="noopener noreferrer" class="hero-btn is-ghost">
           <span class="material-symbols-outlined">open_in_new</span>
           View storefront
@@ -362,26 +365,34 @@
       <span class="material-symbols-outlined" style="font-size: 18px; color: var(--jp-kinari-gold);">bolt</span>
     </h2>
     <div class="quick-list">
+      {% if perms.shop.add_product %}
       <a href="{% url 'admin:shop_product_add' %}" class="quick-item acc-violet">
         <span class="material-symbols-outlined">shopping_bag</span>
         <span class="quick-label">{% translate "Product" %}</span>
         <span class="material-symbols-outlined quick-plus">add</span>
       </a>
+      {% endif %}
+      {% if perms.shop.add_category %}
       <a href="{% url 'admin:shop_category_add' %}" class="quick-item acc-gold">
         <span class="material-symbols-outlined">category</span>
         <span class="quick-label">{% translate "Category" %}</span>
         <span class="material-symbols-outlined quick-plus">add</span>
       </a>
+      {% endif %}
+      {% if perms.shops.add_shop %}
       <a href="{% url 'admin:shops_shop_add' %}" class="quick-item acc-teal">
         <span class="material-symbols-outlined">storefront</span>
         <span class="quick-label">{% translate "Shop" %}</span>
         <span class="material-symbols-outlined quick-plus">add</span>
       </a>
+      {% endif %}
+      {% if perms.sellers.add_sellerprofile %}
       <a href="{% url 'admin:sellers_sellerprofile_add' %}" class="quick-item acc-blue">
         <span class="material-symbols-outlined">badge</span>
         <span class="quick-label">{% translate "Seller" %}</span>
         <span class="material-symbols-outlined quick-plus">add</span>
       </a>
+      {% endif %}
     </div>
   </div>
 

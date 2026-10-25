@@ -22,8 +22,9 @@
   <p class="mp-card-hint">
     {% blocktranslate trimmed %}
       These are the permissions the MiniShop API and Management Console enforce.
-      They are granted by role only, so this board is read-only — change the
-      role assignments below to change what this account can do.
+      They come from this account's roles or, now and then, a direct grant. This
+      board is read-only: change the role assignments below, or ask a
+      superuser about a direct grant.
     {% endblocktranslate %}
   </p>
 
@@ -87,6 +88,9 @@
                     {% translate 'via' %}
                     {% for role_code in permission.roles %}<b>{{ role_code }}</b>{% if not forloop.last %}, {% endif %}{% endfor %}
                   </span>
+                {% endif %}
+                {% if permission.direct %}
+                  <span class="ms-perm-via">{% translate 'direct grant' %}</span>
                 {% endif %}
               </span>
               <span class="sr-only">

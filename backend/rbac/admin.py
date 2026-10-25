@@ -163,6 +163,9 @@ class RoleAdminForm(forms.ModelForm):
                     "permission_id", flat=True
                 )
             )
+            # Locked rows post nothing; a re-render after a validation error
+            # shows them as saved, not as unticked (BUG-124).
+            field.widget.saved_pks = self.initial[ROLE_PERMS_FIELD]
 
 
 @admin.register(Role)
@@ -606,9 +609,24 @@ class UserAdmin(BaseUserAdmin):
                         DIRECT_PERMS_FIELD if f == "minishop_permissions" else f
                         for f in fields
                     ),
+                    # The read-only board's "Read-only: granted by role" text
+                    # would contradict the editable one (BUG-127).
+                    "description": _(
+                        "Effective permissions enforced by the MiniShop API and "
+                        "Management Console. Tick a permission to grant it to this "
+                        "account directly; grants that come from a role are locked "
+                        "and changed on the role."
+                    ),
                 }
             swapped.append((name, options))
         return swapped
+
+    def render_change_form(self, request, context, add=False, change=False, form_url="", obj=None):
+        # The hero gauge's figures, also for operators who get no editable
+        # board to compute them in the browser (BUG-125).
+        context["mp_panel_total"] = AuthPermission.objects.count()
+        context["mp_panel_granted"] = obj.user_permissions.count() if obj is not None and obj.pk else 0
+        return super().render_change_form(request, context, add, change, form_url, obj)
 
     def save_model(self, request, obj, form, change):
         """

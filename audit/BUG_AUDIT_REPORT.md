@@ -1662,6 +1662,8 @@ Each P3 entry keeps every required field on one line.
 
 The files §7 listed as only grep-scanned were read line by line against the current code (after TASK-001 to TASK-045). Each finding below was checked against the source: `verified: C` by the coordinator, `A` as reported by the slice reader with the quoted code. BUG-101 is the only P2. No XSS, CSRF gap, `$` sign or 500 was found in these files, and the frontend types in `lib/types.ts` 506-964 match their serializers.
 
+**Status (2026-10-26):** fixed in TASK-049, except BUG-119, which goes with the demo-data removal before production (TASK-048 decision 4). BUG-115 follows the decision to list only CUSTOMER-role accounts.
+
 ```yaml
 - {id: BUG-101, title: "Console role API can reactivate a role whose permissions the actor does not hold", severity: P2, confidence: High, status: Confirmed, category: "Security", verified: C,
    location: ["backend/shop/admin_views.py:525-533 (AdminRoleDetailAPIView.patch sets is_active without a delegation check)", "frontend/src/app/admin/roles/roleGovernance.tsx:548-566 (Active checkbox editable under the permission lock)", "frontend/src/app/admin/roles/[id]/page.tsx:198-204 (always sends is_active)"],

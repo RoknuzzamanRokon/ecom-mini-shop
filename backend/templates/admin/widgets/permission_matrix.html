@@ -120,6 +120,7 @@
                              id="{{ cell.id }}"
                              data-pm-perm
                              data-action="{{ cell.action }}"
+                             aria-label="{{ row.label }}: {{ cell.action_label }}"
                              {% if cell.checked %}checked{% endif %}>
                       <label for="{{ cell.id }}" title="{{ cell.codename }}">
                         <span class="pm-box" aria-hidden="true"></span>

@@ -1192,6 +1192,14 @@ body.mp-userform { accent-color: var(--mp-grant); }
 }
 
 .mp-role-status { position: relative; display: inline-flex; }
+/* A switched-off role (BUG-126). */
+.mp-role-off-note {
+  display: inline-flex; align-items: center;
+  padding: 3px 9px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700;
+  color: var(--error-fg, #b42318);
+  background: color-mix(in srgb, var(--error-fg, #b42318) 12%, transparent);
+}
 
 .mp-role-status-pill {
   display: inline-flex;

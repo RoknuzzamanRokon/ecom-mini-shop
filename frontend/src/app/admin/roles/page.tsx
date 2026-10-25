@@ -20,6 +20,8 @@ import {
   canManageAdminRoles,
   canViewAdminRoles,
 } from "./roleGovernance";
+import { useDebouncedUrlValue } from "@/hooks/useDebouncedUrlValue";
+import { pageNumber } from "@/lib/params";
 
 /**
  * Client-side page size.
@@ -57,14 +59,7 @@ function AdminRolesPageContent() {
   const canManage = canManageAdminRoles(user);
 
   const urlSearch = searchParams.get("search") ?? "";
-  const urlPage = Number(searchParams.get("page") ?? "1") || 1;
-
-  const [searchInput, setSearchInput] = useState(urlSearch);
-  const [syncedUrlSearch, setSyncedUrlSearch] = useState(urlSearch);
-  if (urlSearch !== syncedUrlSearch) {
-    setSyncedUrlSearch(urlSearch);
-    setSearchInput(urlSearch);
-  }
+  const urlPage = pageNumber(searchParams.get("page"));
 
   const updateParams = useCallback(
     (updates: Record<string, string | null>) => {
@@ -79,17 +74,12 @@ function AdminRolesPageContent() {
     [searchParams, router, pathname]
   );
 
-  useEffect(() => {
-    const handle = setTimeout(() => {
-      if (searchInput !== urlSearch) {
-        updateParams({ search: searchInput || null, page: null });
-      }
-    }, 300);
-    return () => clearTimeout(handle);
-    // Full dependencies: the timer must commit through the current
-    // updateParams, or it rewrites the URL from an old snapshot and drops a
-    // filter changed meanwhile (BUG-074).
-  }, [searchInput, urlSearch, updateParams]);
+  // Typed text reaches the URL once typing pauses (BUG-074, BUG-117).
+  const commitSearch = useCallback(
+    (value: string) => updateParams({ search: value || null, page: null }),
+    [updateParams]
+  );
+  const [searchInput, setSearchInput] = useDebouncedUrlValue(urlSearch, commitSearch, 300);
 
   const [roles, setRoles] = useState<AdminRole[]>([]);
   const [loading, setLoading] = useState(true);
@@ -151,7 +141,7 @@ function AdminRolesPageContent() {
   const clearFilters = useCallback(() => {
     setSearchInput("");
     updateParams({ search: null, page: null });
-  }, [updateParams]);
+  }, [updateParams, setSearchInput]);
 
   const columns: AdminTableColumn<AdminRole>[] = useMemo(
     () => [

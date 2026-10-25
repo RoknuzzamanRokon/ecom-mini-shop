@@ -103,7 +103,9 @@ class Product(models.Model):
     slug = models.SlugField(max_length=220, unique=True)
     category = models.ForeignKey(
         Category,
-        on_delete=models.CASCADE,
+        # A category in use is deactivated, never deleted: deleting it used
+        # to take its products with it (BUG-108).
+        on_delete=models.PROTECT,
         related_name="products",
     )
     shop = models.ForeignKey(

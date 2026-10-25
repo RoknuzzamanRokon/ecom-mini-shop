@@ -25,6 +25,8 @@ import {
   useShopStatusAction,
 } from "./shopGovernance";
 import { useLatestRequest } from "@/hooks/useLatestRequest";
+import { useDebouncedUrlValue } from "@/hooks/useDebouncedUrlValue";
+import { pageNumber } from "@/lib/params";
 
 /** Matches AdminPagination.page_size in shop/admin_views.py (the backend's default). */
 const PAGE_SIZE = 20;
@@ -53,22 +55,11 @@ function AdminShopsPageContent() {
 
   const urlSearch = searchParams.get("search") ?? "";
   const urlStatus = searchParams.get("status") ?? "";
-  const urlPage = Number(searchParams.get("page") ?? "1") || 1;
+  const urlPage = pageNumber(searchParams.get("page"));
   // One seller's shops, by SellerProfile id: where "View this seller's shops"
   // on the seller page leads (BUG-081).
   const ownerParam = Number(searchParams.get("owner"));
   const urlOwner = Number.isInteger(ownerParam) && ownerParam > 0 ? ownerParam : null;
-
-  // Local text state so typing feels instant; committed into the URL (and
-  // the actual filter) after a short debounce so we don't fire a request per
-  // keystroke. Resynced from the URL during render (not an effect) whenever
-  // it changes externally — e.g. browser back/forward or "Clear filters".
-  const [searchInput, setSearchInput] = useState(urlSearch);
-  const [syncedUrlSearch, setSyncedUrlSearch] = useState(urlSearch);
-  if (urlSearch !== syncedUrlSearch) {
-    setSyncedUrlSearch(urlSearch);
-    setSearchInput(urlSearch);
-  }
 
   const updateParams = useCallback(
     (updates: Record<string, string | null>) => {
@@ -83,17 +74,12 @@ function AdminShopsPageContent() {
     [searchParams, router, pathname]
   );
 
-  useEffect(() => {
-    const handle = setTimeout(() => {
-      if (searchInput !== urlSearch) {
-        updateParams({ search: searchInput || null, page: null });
-      }
-    }, 350);
-    return () => clearTimeout(handle);
-    // Full dependencies: the timer must commit through the current
-    // updateParams, or it rewrites the URL from an old snapshot and drops a
-    // filter changed meanwhile (BUG-074).
-  }, [searchInput, urlSearch, updateParams]);
+  // Typed text reaches the URL once typing pauses (BUG-074, BUG-117).
+  const commitSearch = useCallback(
+    (value: string) => updateParams({ search: value || null, page: null }),
+    [updateParams]
+  );
+  const [searchInput, setSearchInput] = useDebouncedUrlValue(urlSearch, commitSearch);
 
   const [shops, setShops] = useState<AdminShop[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -142,7 +128,7 @@ function AdminShopsPageContent() {
   const clearFilters = useCallback(() => {
     setSearchInput("");
     updateParams({ search: null, status: null, owner: null, page: null });
-  }, [updateParams]);
+  }, [updateParams, setSearchInput]);
   // Every row is the owner's, so any row can name them.
   const ownerName = shops.find((shop) => shop.owner_id === urlOwner)?.owner_business_name;
 

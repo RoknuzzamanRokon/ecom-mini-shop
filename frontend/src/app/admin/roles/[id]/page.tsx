@@ -544,6 +544,13 @@ export default function AdminRoleDetailPage() {
           <>
             Save changes to <strong>{role.name}</strong> (
             <code className="font-mono text-[11px]">{role.code}</code>)?
+            {values.is_active !== role.is_active && (
+              <span className="block mt-2 font-semibold text-ink">
+                {values.is_active
+                  ? `Activating it grants its permissions to the ${role.user_count} account${role.user_count === 1 ? "" : "s"} holding it.`
+                  : `Deactivating it removes all its permissions from the ${role.user_count} account${role.user_count === 1 ? "" : "s"} holding it.`}
+              </span>
+            )}
             {permissionsChanged ? (
               <>
                 {permissionDiff.added.length > 0 && (

@@ -25,6 +25,8 @@ import {
   canViewAdminAuditLogs,
 } from "./auditLogGovernance";
 import { useLatestRequest } from "@/hooks/useLatestRequest";
+import { useDebouncedUrlValue } from "@/hooks/useDebouncedUrlValue";
+import { pageNumber } from "@/lib/params";
 
 /** Matches AdminPagination.page_size in shop/admin_views.py (the backend's default). */
 const PAGE_SIZE = 20;
@@ -65,24 +67,7 @@ function AdminAuditLogsPageContent() {
   const urlTargetType = searchParams.get("target_type") ?? "";
   const urlStartDate = searchParams.get("start_date") ?? "";
   const urlEndDate = searchParams.get("end_date") ?? "";
-  const urlPage = Number(searchParams.get("page") ?? "1") || 1;
-
-  // Local text state so typing feels instant; committed into the URL (and the
-  // actual filter) after a short debounce so we don't fire a request per
-  // keystroke. Resynced from the URL during render (not an effect) whenever it
-  // changes externally — e.g. browser back/forward or "Clear filters".
-  const [actorInput, setActorInput] = useState(urlActor);
-  const [actionInput, setActionInput] = useState(urlAction);
-  const [syncedUrlActor, setSyncedUrlActor] = useState(urlActor);
-  const [syncedUrlAction, setSyncedUrlAction] = useState(urlAction);
-  if (urlActor !== syncedUrlActor) {
-    setSyncedUrlActor(urlActor);
-    setActorInput(urlActor);
-  }
-  if (urlAction !== syncedUrlAction) {
-    setSyncedUrlAction(urlAction);
-    setActionInput(urlAction);
-  }
+  const urlPage = pageNumber(searchParams.get("page"));
 
   const updateParams = useCallback(
     (updates: Record<string, string | null>) => {
@@ -97,27 +82,18 @@ function AdminAuditLogsPageContent() {
     [searchParams, router, pathname]
   );
 
-  useEffect(() => {
-    const handle = setTimeout(() => {
-      if (actorInput !== urlActor) {
-        updateParams({ actor: actorInput || null, page: null });
-      }
-    }, 350);
-    return () => clearTimeout(handle);
-    // Full dependencies: the timer must commit through the current
-    // updateParams, or it rewrites the URL from an old snapshot and drops a
-    // filter changed meanwhile (BUG-074).
-  }, [actorInput, urlActor, updateParams]);
-
-  useEffect(() => {
-    const handle = setTimeout(() => {
-      if (actionInput !== urlAction) {
-        updateParams({ action: actionInput || null, page: null });
-      }
-    }, 350);
-    return () => clearTimeout(handle);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [actionInput]);
+  // Typed text reaches the URL once typing pauses (BUG-074, BUG-117). The
+  // action filter used to commit through a stale updateParams.
+  const commitActor = useCallback(
+    (value: string) => updateParams({ actor: value || null, page: null }),
+    [updateParams]
+  );
+  const commitAction = useCallback(
+    (value: string) => updateParams({ action: value || null, page: null }),
+    [updateParams]
+  );
+  const [actorInput, setActorInput] = useDebouncedUrlValue(urlActor, commitActor);
+  const [actionInput, setActionInput] = useDebouncedUrlValue(urlAction, commitAction);
 
   const [logs, setLogs] = useState<AdminAuditLog[]>([]);
   const [totalCount, setTotalCount] = useState(0);
@@ -179,7 +155,7 @@ function AdminAuditLogsPageContent() {
       end_date: null,
       page: null,
     });
-  }, [updateParams]);
+  }, [updateParams, setActorInput, setActionInput]);
 
   const columns: AdminTableColumn<AdminAuditLog>[] = useMemo(
     () => [

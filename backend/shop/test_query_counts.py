@@ -184,7 +184,9 @@ class QueryCountTests(QueryCountMixin, APITestCase):
         def add_customers():
             for _ in range(3):
                 n = next(SERIAL)
-                CustomerProfile.objects.create(user=User.objects.create_user(username=f"qc_buyer_{n}", password="Qc-Buyer-123"))
+                buyer = User.objects.create_user(username=f"qc_buyer_{n}", password="Qc-Buyer-123")
+                assign_user_role(buyer, Role.ROLE_CUSTOMER)
+                CustomerProfile.objects.create(user=buyer)
 
         response = self.assert_constant_queries("/api/admin/customers/", add_customers)
         by_name = {row["username"]: row["orders_count"] for row in rows(response)}

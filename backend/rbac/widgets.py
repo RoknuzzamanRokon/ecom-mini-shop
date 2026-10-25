@@ -425,7 +425,7 @@ class MiniShopPermissionWidget(_ProjectTemplateWidget):
         # GET, or the operator's unsaved ticks when a bound form re-renders.
         selected_pks = {str(v) for v in (value or []) if v not in (None, "")}
 
-        from .models import Permission
+        from .models import Permission, UserPermission
 
         direct_codes = set(
             Permission.objects.filter(pk__in=[p for p in selected_pks]).values_list(
@@ -437,6 +437,11 @@ class MiniShopPermissionWidget(_ProjectTemplateWidget):
         if sections is None:
             return {"widget": {"name": name, "attrs": final_attrs, "board": None}}
 
+        # Locked rows post nothing, so on a re-render after a validation
+        # error their direct grant comes from the saved rows (BUG-124).
+        saved_direct = set(
+            UserPermission.objects.filter(user=self.user, is_active=True).values_list("permission__code", flat=True)
+        )
         for section in sections:
             for permission in section["permissions"]:
                 permission["input_name"] = name
@@ -444,6 +449,11 @@ class MiniShopPermissionWidget(_ProjectTemplateWidget):
                 # Locked when the role already grants it, or when the wildcard
                 # makes an individual grant meaningless.
                 permission["locked"] = permission["inherited"] or meta["full_access"]
+                if permission["locked"]:
+                    permission["direct"] = permission["code"] in saved_direct
+                    permission["granted"] = permission["inherited"] or permission["direct"]
+            section["granted"] = sum(1 for p in section["permissions"] if p["granted"])
+        meta["granted"] = sum(section["granted"] for section in sections)
 
         return {
             "widget": {
@@ -474,7 +484,7 @@ class MiniShopPermissionWidget(_ProjectTemplateWidget):
 # the lock is an affordance and not the boundary.
 
 
-def build_role_permission_sections(selected_pks, delegatable_codes=None):
+def build_role_permission_sections(selected_pks, delegatable_codes=None, saved_pks=None):
     """
     The rbac.Permission catalogue grouped by resource, for one role.
 
@@ -487,22 +497,25 @@ def build_role_permission_sections(selected_pks, delegatable_codes=None):
     code outside it. Locked rows still carry their real checkbox so the board
     reports the role truthfully -- they are `disabled`, which submits nothing
     and which save_related turns into "leave this grant exactly as it was".
+    A locked row therefore shows `saved_pks` (the role's saved grants) rather
+    than the posted ticks, which never include it (BUG-124).
     """
     # Imported here for the same reason the boards above do it: widgets.py is
     # imported from admin.py while the app registry is still loading.
     from .models import Permission
 
     selected = {str(pk) for pk in selected_pks if pk not in (None, "")}
+    saved = None if saved_pks is None else {str(pk) for pk in saved_pks}
 
     sections = {}
     for permission in Permission.objects.all():
         bucket = sections.setdefault(
             permission.resource, {"permissions": [], "granted": 0, "locked": 0}
         )
-        granted = str(permission.pk) in selected
         locked = (
             delegatable_codes is not None and permission.code not in delegatable_codes
         )
+        granted = str(permission.pk) in (saved if locked and saved is not None else selected)
         if granted:
             bucket["granted"] += 1
         if locked:
@@ -556,9 +569,10 @@ class RolePermissionWidget(_ProjectTemplateWidget):
 
     template_name = "admin/widgets/role_permission_matrix.html"
 
-    def __init__(self, delegatable_codes=None, attrs=None):
+    def __init__(self, delegatable_codes=None, saved_pks=None, attrs=None):
         # None == "may delegate anything"; see build_role_permission_sections.
         self.delegatable_codes = delegatable_codes
+        self.saved_pks = saved_pks
         super().__init__(attrs)
 
     def get_context(self, name, value, attrs):
@@ -566,7 +580,7 @@ class RolePermissionWidget(_ProjectTemplateWidget):
         base_id = final_attrs.get("id") or "id_%s" % name
 
         sections = build_role_permission_sections(
-            value or [], delegatable_codes=self.delegatable_codes
+            value or [], delegatable_codes=self.delegatable_codes, saved_pks=self.saved_pks
         )
         for section in sections:
             for permission in section["permissions"]:

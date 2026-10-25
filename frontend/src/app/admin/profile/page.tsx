@@ -46,7 +46,11 @@ const STAT_TONES = {
 
 export default function AdminProfilePage() {
   const { user, isLoading } = useAuth();
-  const { profile } = useProfile();
+  const { profile, error: profileError, isLoading: profileLoading } = useProfile();
+  // Roles without profile.view get a 403 for their profile: say so instead
+  // of showing "Not set", and don't offer an edit page that cannot load
+  // (BUG-112).
+  const profileUnavailable = !profile && Boolean(profileError) && !profileLoading;
 
   const [wallet, setWallet] = useState<StaffWalletSummary | null>(null);
   const [walletLoading, setWalletLoading] = useState(true);
@@ -121,10 +125,14 @@ export default function AdminProfilePage() {
 
   let tileCaption: React.ReactNode = "Points you can give to sellers.";
   const nextExpiry = wallet?.points_expire ? wallet.upcoming_expiries[0] : undefined;
-  if (wallet && wallet.balance === 0) {
+  // "No points yet" only before any movement; afterwards an empty wallet
+  // has simply given everything away (BUG-114).
+  if (wallet && wallet.balance === 0 && wallet.transaction_count === 0) {
     tileCaption = wallet.can_mint
       ? "No points yet. As a superuser you create them with utils/add_points.py."
       : "No points yet. A superuser sends staff the points they give to sellers.";
+  } else if (wallet && wallet.balance === 0) {
+    tileCaption = "No points left to give. A superuser can send you more.";
   } else if (nextExpiry) {
     tileCaption = `Points you can give to sellers. ${formatCount(nextExpiry.points)} pts expire on ${formatDate(nextExpiry.expires_at)}.`;
   }
@@ -196,12 +204,14 @@ export default function AdminProfilePage() {
             </div>
 
             <div className="flex flex-wrap gap-2 sm:pl-24">
-              <Link href="/profile/settings" className={SECONDARY_BUTTON}>
-                <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
-                  edit
-                </span>
-                Edit details
-              </Link>
+              {!profileUnavailable && (
+                <Link href="/profile/settings" className={SECONDARY_BUTTON}>
+                  <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
+                    edit
+                  </span>
+                  Edit details
+                </Link>
+              )}
               {user.is_staff && (
                 <a href={DJANGO_ADMIN_PROFILE_URL} className={SECONDARY_BUTTON}>
                   <span aria-hidden="true" className="material-symbols-outlined text-[18px]">
@@ -285,7 +295,7 @@ export default function AdminProfilePage() {
           )}
         </div>
 
-        <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 mt-5">
+        <dl className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 mt-5">
           <WalletFigure label="Received" value={wallet?.received} loading={walletLoading && !wallet} />
           <WalletFigure
             label="Given to sellers"
@@ -302,6 +312,8 @@ export default function AdminProfilePage() {
             value={wallet?.taken_back}
             loading={walletLoading && !wallet}
           />
+          {/* Without it the figures do not add up to the balance (BUG-113). */}
+          <WalletFigure label="Expired" value={wallet?.expired} loading={walletLoading && !wallet} />
         </dl>
 
         <div className="mt-6">
@@ -357,9 +369,14 @@ export default function AdminProfilePage() {
             <InfoRow label="Username" value={user.username} />
             <InfoRow label="Email" value={user.email} />
             <InfoRow label="Name" value={fullName} />
-            <InfoRow label="Display name" value={profile?.display_name} />
-            <InfoRow label="Phone" value={profile?.phone} />
+            <InfoRow label="Display name" value={profileUnavailable ? "Unavailable" : profile?.display_name} />
+            <InfoRow label="Phone" value={profileUnavailable ? "Unavailable" : profile?.phone} />
           </dl>
+          {profileUnavailable && (
+            <p role="status" className="mt-2 text-[11px] text-ink-muted">
+              Your display name and phone could not be loaded: {profileError}
+            </p>
+          )}
         </section>
 
         {/* Management access */}
