@@ -6,7 +6,16 @@ import Link from "next/link";
 import { useAuth } from "@/context/AuthContext";
 import { safeNextPath } from "@/lib/auth";
 import { registerCustomer } from "@/lib/api";
+import { normalizeBangladeshiMobile } from "@/lib/phone";
 import StorefrontChrome from "@/components/layout/StorefrontChrome";
+
+/** How the account is reached: an email address or a mobile number it can also sign in with. */
+type ContactMethod = "email" | "phone";
+
+const CONTACT_METHODS: { value: ContactMethod; label: string; icon: string }[] = [
+  { value: "email", label: "Email", icon: "mail" },
+  { value: "phone", label: "Mobile number", icon: "smartphone" },
+];
 
 export default function RegisterPage() {
   return (
@@ -35,9 +44,11 @@ function RegisterPageContent() {
   const searchParams = useSearchParams();
   const { login, isAuthenticated, isLoading: authLoading } = useAuth();
 
+  const [contactMethod, setContactMethod] = useState<ContactMethod>("email");
   const [formData, setFormData] = useState({
     username: "",
     email: "",
+    phone: "",
     password: "",
     password_confirm: "",
     first_name: "",
@@ -69,18 +80,34 @@ function RegisterPageContent() {
     // Client-side validation
     const trimmedUsername = formData.username.trim();
     const trimmedEmail = formData.email.trim();
+    const phone = normalizeBangladeshiMobile(formData.phone);
 
     if (!trimmedUsername) {
       setError("Username is required.");
       return;
     }
-    if (!trimmedEmail) {
-      setError("Email is required.");
+    if (normalizeBangladeshiMobile(trimmedUsername)) {
+      setError("A username cannot be a phone number.");
       return;
     }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-      setError("Please enter a valid email address.");
-      return;
+    if (contactMethod === "email") {
+      if (!trimmedEmail) {
+        setError("Email is required.");
+        return;
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+        setError("Please enter a valid email address.");
+        return;
+      }
+    } else {
+      if (!formData.phone.trim()) {
+        setError("Mobile number is required.");
+        return;
+      }
+      if (!phone) {
+        setError("Enter a Bangladeshi mobile number, e.g. 01712345678.");
+        return;
+      }
     }
     if (!formData.password) {
       setError("Password is required.");
@@ -97,10 +124,11 @@ function RegisterPageContent() {
 
     setIsSubmitting(true);
     try {
-      // 1. Call public registration endpoint
+      // 1. Call public registration endpoint. Only the chosen contact goes:
+      // a value typed under the other tab before switching is left out.
       await registerCustomer({
         username: trimmedUsername,
-        email: trimmedEmail,
+        ...(contactMethod === "email" ? { email: trimmedEmail } : { phone: phone! }),
         password: formData.password,
         password_confirm: formData.password_confirm,
         first_name: formData.first_name.trim(),
@@ -249,32 +277,87 @@ function RegisterPageContent() {
                 </div>
               </div>
 
-              {/* Email */}
-              <div>
-                <label
-                  htmlFor="email"
-                  className="block text-sm font-medium text-ink mb-1.5"
-                >
-                  Email Address <span className="text-accent">*</span>
-                </label>
-                <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-[20px] text-ink-muted">
-                    mail
-                  </span>
-                  <input
-                    id="email"
-                    name="email"
-                    type="email"
-                    required
-                    value={formData.email}
-                    onChange={handleChange}
-                    placeholder="name@example.com"
-                    autoComplete="email"
+              {/* Email or mobile number */}
+              <div role="group" aria-label="Sign up with" className="grid grid-cols-2 gap-2">
+                {CONTACT_METHODS.map((method) => (
+                  <button
+                    key={method.value}
+                    type="button"
+                    aria-pressed={contactMethod === method.value}
+                    onClick={() => setContactMethod(method.value)}
                     disabled={isSubmitting}
-                    className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-line bg-surface text-ink placeholder-ink-muted text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary disabled:opacity-60 transition-colors"
-                  />
-                </div>
+                    className={`px-3 py-2 rounded-lg text-xs font-bold uppercase tracking-wider border transition-colors cursor-pointer inline-flex items-center justify-center gap-1.5 disabled:opacity-60 ${
+                      contactMethod === method.value
+                        ? "bg-primary text-on-primary border-primary shadow-sm"
+                        : "bg-surface text-ink border-line hover:bg-surface-alt"
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]" aria-hidden="true">
+                      {method.icon}
+                    </span>
+                    {method.label}
+                  </button>
+                ))}
               </div>
+
+              {contactMethod === "email" ? (
+                <div>
+                  <label
+                    htmlFor="email"
+                    className="block text-sm font-medium text-ink mb-1.5"
+                  >
+                    Email Address <span className="text-accent">*</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-[20px] text-ink-muted">
+                      mail
+                    </span>
+                    <input
+                      id="email"
+                      name="email"
+                      type="email"
+                      required
+                      value={formData.email}
+                      onChange={handleChange}
+                      placeholder="name@example.com"
+                      autoComplete="email"
+                      disabled={isSubmitting}
+                      className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-line bg-surface text-ink placeholder-ink-muted text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary disabled:opacity-60 transition-colors"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <label
+                    htmlFor="phone"
+                    className="block text-sm font-medium text-ink mb-1.5"
+                  >
+                    Mobile Number <span className="text-accent">*</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 material-symbols-outlined text-[20px] text-ink-muted">
+                      smartphone
+                    </span>
+                    <input
+                      id="phone"
+                      name="phone"
+                      type="tel"
+                      inputMode="tel"
+                      required
+                      value={formData.phone}
+                      onChange={handleChange}
+                      placeholder="01XXXXXXXXX"
+                      autoComplete="tel"
+                      aria-describedby="phone-hint"
+                      disabled={isSubmitting}
+                      className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-line bg-surface text-ink placeholder-ink-muted text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary disabled:opacity-60 transition-colors"
+                    />
+                  </div>
+                  <p id="phone-hint" className="text-xs text-ink-muted mt-1.5">
+                    You can sign in with this number or your username.
+                  </p>
+                </div>
+              )}
 
               {/* Password */}
               <div>

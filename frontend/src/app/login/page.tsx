@@ -80,7 +80,7 @@ function LoginPageContent() {
 
     // Client-side validation
     if (!username.trim()) {
-      showError("Username is required.");
+      showError("Username or mobile number is required.");
       return;
     }
     if (!password) {
@@ -161,14 +161,14 @@ function LoginPageContent() {
 
             <div className="login-ring__field">
               <label htmlFor="username" className="login-ring__label">
-                Username
+                Username or mobile number
               </label>
               <input
                 id="username"
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter your username"
+                placeholder="Username or 01XXXXXXXXX"
                 autoComplete="username"
                 autoFocus
                 disabled={isSubmitting || isSuccess}

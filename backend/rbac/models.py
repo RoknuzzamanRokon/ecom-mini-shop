@@ -186,3 +186,41 @@ class UserPermission(models.Model):
 
     def __str__(self):
         return f"{self.user} granted {self.permission.code}"
+
+
+class LoginPhone(models.Model):
+    """
+    A mobile number the account can sign in with in place of its username
+    (rbac.backends.PhoneBackend). One per account, and no two accounts share a
+    number. Stored in E.164 form; rbac.phone.normalize_phone() turns any
+    accepted spelling into it.
+
+    Registration does not prove yet that the number belongs to the person
+    registering: SMS verification (OTP) waits on an SMS provider. Until then
+    verified_at stays empty and phone sign-in does not require it.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="login_phone",
+    )
+    number = models.CharField(
+        max_length=16,
+        unique=True,
+        help_text="E.164 form, e.g. +8801712345678",
+    )
+    verified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the owner confirmed the number with an SMS code. Empty until OTP verification exists.",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Login Phone"
+        verbose_name_plural = "Login Phones"
+
+    def __str__(self):
+        return self.number

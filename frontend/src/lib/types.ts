@@ -15,6 +15,8 @@ export interface AuthUser {
   id: number;
   username: string;
   email: string;
+  /** The number the account signs in with (E.164), or null. */
+  phone: string | null;
   first_name: string;
   last_name: string;
   is_staff: boolean;
@@ -23,9 +25,11 @@ export interface AuthUser {
   permissions: string[];
 }
 
+/** An account needs an email or a mobile number, or both. */
 export interface RegisterPayload {
   username: string;
-  email: string;
+  email?: string;
+  phone?: string;
   password: string;
   password_confirm: string;
   first_name?: string;
@@ -36,6 +40,7 @@ export interface RegisterResponse {
   id: number;
   username: string;
   email: string;
+  phone: string | null;
   first_name: string;
   last_name: string;
   message?: string;

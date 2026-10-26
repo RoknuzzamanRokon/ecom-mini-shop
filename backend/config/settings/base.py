@@ -185,6 +185,14 @@ DATABASES = {
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators
 
+# Sign-in takes a username or a login phone number in the username field.
+# ModelBackend comes first, so a username always wins over a phone number that
+# reads the same (rbac/backends.py).
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',
+    'rbac.backends.PhoneBackend',
+]
+
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
     {

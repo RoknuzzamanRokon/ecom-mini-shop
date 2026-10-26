@@ -7,6 +7,8 @@ from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.settings import api_settings as jwt_settings
 from rest_framework_simplejwt.utils import get_md5_hash_password
 
+from .models import LoginPhone
+from .phone import INVALID_PHONE, PHONE_TAKEN, national_phone, normalize_phone
 from .services import get_user_role_codes, get_user_permissions
 
 User = get_user_model()
@@ -36,6 +38,24 @@ def create_login_account(**fields):
         raise serializers.ValidationError({"username": [USERNAME_TAKEN]})
 
 
+def create_login_phone(user, number):
+    """
+    LoginPhone.objects.create(), reporting a number taken by a concurrent
+    request after the serializer's duplicate check as a 400 on `phone`.
+    """
+    try:
+        with transaction.atomic():
+            return LoginPhone.objects.create(user=user, number=number)
+    except IntegrityError:
+        raise serializers.ValidationError({"phone": [PHONE_TAKEN]})
+
+
+def login_phone_number(user):
+    """The number the account signs in with (E.164), or None."""
+    login_phone = getattr(user, "login_phone", None)
+    return login_phone.number if login_phone else None
+
+
 class RevocationCheckingTokenRefreshSerializer(TokenRefreshSerializer):
     """SimpleJWT's refresh serializer, plus the password-change check (BUG-013).
 
@@ -60,6 +80,7 @@ class RevocationCheckingTokenRefreshSerializer(TokenRefreshSerializer):
 
 
 class CurrentUserSerializer(serializers.ModelSerializer):
+    phone = serializers.SerializerMethodField()
     roles = serializers.SerializerMethodField()
     permissions = serializers.SerializerMethodField()
 
@@ -69,6 +90,7 @@ class CurrentUserSerializer(serializers.ModelSerializer):
             "id",
             "username",
             "email",
+            "phone",
             "first_name",
             "last_name",
             "is_staff",
@@ -76,6 +98,9 @@ class CurrentUserSerializer(serializers.ModelSerializer):
             "roles",
             "permissions",
         ]
+
+    def get_phone(self, obj):
+        return login_phone_number(obj)
 
     def get_roles(self, obj):
         return sorted(list(get_user_role_codes(obj)))
@@ -89,6 +114,10 @@ class CustomerRegistrationSerializer(serializers.Serializer):
     Public customer registration serializer.
     Enforces strict anti-escalation, uniqueness, and password validation,
     and assigns the default CUSTOMER RBAC role.
+
+    The account needs an email address or a Bangladeshi mobile number (or
+    both). A number becomes the account's LoginPhone, so the customer can
+    later sign in with it in place of the username.
     """
     FORBIDDEN_FIELDS = {
         "role",
@@ -100,7 +129,8 @@ class CustomerRegistrationSerializer(serializers.Serializer):
     }
 
     username = username_field()
-    email = serializers.EmailField(max_length=254, required=True)
+    email = serializers.EmailField(max_length=254, required=False, allow_blank=True, default="")
+    phone = serializers.CharField(max_length=32, required=False, allow_blank=True, default="")
     password = serializers.CharField(
         write_only=True,
         required=True,
@@ -126,17 +156,33 @@ class CustomerRegistrationSerializer(serializers.Serializer):
         username = attrs.get("username", "").strip()
         if not username:
             raise serializers.ValidationError({"username": "Username cannot be empty."})
+        # The sign-in field takes a username or a phone number, so a username
+        # that reads as a number would make "which account?" ambiguous.
+        if normalize_phone(username):
+            raise serializers.ValidationError({"username": "A username cannot be a phone number."})
         if User.objects.filter(username__iexact=username).exists():
             raise serializers.ValidationError({"username": USERNAME_TAKEN})
         attrs["username"] = username
 
-        # 3. Email validation & uniqueness (case-insensitive)
+        # 3. An email address or a mobile number, each unused (email case-insensitive)
         email = attrs.get("email", "").strip().lower()
-        if not email:
-            raise serializers.ValidationError({"email": "Email cannot be empty."})
-        if User.objects.filter(email__iexact=email).exists():
+        raw_phone = attrs.get("phone", "").strip()
+        if not email and not raw_phone:
+            raise serializers.ValidationError("Enter an email address or a mobile number.")
+        if email and User.objects.filter(email__iexact=email).exists():
             raise serializers.ValidationError({"email": "A user with that email already exists."})
         attrs["email"] = email
+
+        phone = None
+        if raw_phone:
+            phone = normalize_phone(raw_phone)
+            if phone is None:
+                raise serializers.ValidationError({"phone": INVALID_PHONE})
+            if LoginPhone.objects.filter(number=phone).exists():
+                raise serializers.ValidationError({"phone": PHONE_TAKEN})
+            # OTP goes here once an SMS provider is set up: require the code
+            # sent to this number, and stamp LoginPhone.verified_at in create().
+        attrs["phone"] = phone
 
         # 4. Password confirmation check
         password = attrs.get("password")
@@ -168,13 +214,22 @@ class CustomerRegistrationSerializer(serializers.Serializer):
                 first_name=validated_data.get("first_name", "").strip(),
                 last_name=validated_data.get("last_name", "").strip(),
             )
+            phone = validated_data["phone"]
+            if phone:
+                create_login_phone(user, phone)
+
             # Ensure the user has the default CUSTOMER RBAC role
             assign_user_role(user, Role.ROLE_CUSTOMER)
 
             # Ensure customer profile is initialized
             try:
                 from customers.services import CustomerService
-                CustomerService.get_or_create_profile(user)
+                profile = CustomerService.get_or_create_profile(user)
+                # The sign-in number is also the contact number until the
+                # customer sets another one in their profile.
+                if phone and not profile.phone:
+                    profile.phone = national_phone(phone)
+                    profile.save(update_fields=["phone", "updated_at"])
             except Exception:
                 pass
 
@@ -182,6 +237,7 @@ class CustomerRegistrationSerializer(serializers.Serializer):
 
 
 class CustomerRegistrationResponseSerializer(serializers.ModelSerializer):
+    phone = serializers.SerializerMethodField()
     message = serializers.CharField(default="Account created successfully.")
 
     class Meta:
@@ -190,10 +246,14 @@ class CustomerRegistrationResponseSerializer(serializers.ModelSerializer):
             "id",
             "username",
             "email",
+            "phone",
             "first_name",
             "last_name",
             "message",
         ]
+
+    def get_phone(self, obj):
+        return login_phone_number(obj)
 
 
 

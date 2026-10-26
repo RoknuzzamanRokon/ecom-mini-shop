@@ -124,14 +124,16 @@ URL mounting (`config/urls.py:26-36`): `/admin/` → Django admin · `/api/auth/
 
 | Method | Endpoint | Auth |
 |---|---|---|
-| POST | `/api/auth/register/` | AllowAny — creates user, assigns `CUSTOMER` role, creates CustomerProfile (`rbac/serializers.py:119-126`) |
-| POST | `/api/auth/token/` | AllowAny — JWT obtain |
+| POST | `/api/auth/register/` | AllowAny — creates user, assigns `CUSTOMER` role, creates CustomerProfile. Needs `email` or `phone` (a Bangladeshi mobile number) or both; a phone becomes the account's `rbac.LoginPhone` |
+| POST | `/api/auth/token/` | AllowAny — JWT obtain. `username` takes a username or a login phone number in any usual spelling (`rbac.backends.PhoneBackend`, after `ModelBackend`) |
 | POST | `/api/auth/token/refresh/` | refresh token |
-| GET | `/api/auth/me/` | authenticated — returns `id, username, email, first_name, last_name, is_staff, is_superuser, roles[], permissions[]` |
+| GET | `/api/auth/me/` | authenticated — returns `id, username, email, phone, first_name, last_name, is_staff, is_superuser, roles[], permissions[]` (`phone` is the E.164 login number or null) |
 | POST | `/api/auth/change-password/` | authenticated |
 | GET | `/api/auth/test-permission/` | authenticated — RBAC probe helper |
 
 `/api/auth/me/` does **not** include seller or customer sub-profile data — the frontend fetches `/api/sellers/dashboard/` and `/api/profile/me/` separately.
+
+**Phone sign-in (2026-10-27).** A login phone is stored once per account in `rbac.LoginPhone.number` (E.164, unique), separate from `CustomerProfile.phone`, which stays a free-text contact number (registration copies the number into it once). SMS verification (OTP) is **not built yet**: registration accepts any well-formed number and leaves `LoginPhone.verified_at` empty, so someone can register a number they do not own. The hook point is marked in `CustomerRegistrationSerializer.validate()`. Usernames that read as phone numbers are refused at registration. The Django admin lists login phones read-only (delete frees a squatted number) and finds users by number.
 
 **No logout / token revocation exists.** `BLACKLIST_AFTER_ROTATION = False` and no blacklist app is installed, so an issued access token stays valid for its full 60 minutes. Frontend "logout" only clears localStorage.
 

@@ -71,9 +71,11 @@ class CustomerRegistrationTests(TestCase):
         response = self.client.post("/api/auth/register/", {}, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("username", response.data)
-        self.assertIn("email", response.data)
         self.assertIn("password", response.data)
         self.assertIn("password_confirm", response.data)
+        # Email is optional on its own: an account needs an email OR a mobile
+        # number (test_phone_login.PhoneRegistrationTests).
+        self.assertNotIn("email", response.data)
 
     def test_duplicate_username_rejected(self):
         User.objects.create_user(

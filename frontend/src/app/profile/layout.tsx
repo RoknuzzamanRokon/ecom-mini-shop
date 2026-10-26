@@ -10,6 +10,7 @@ import { useAuth } from "@/context/AuthContext";
 import { useProfile } from "@/context/ProfileContext";
 import { formatImageUrl, getSupportUnreadCount } from "@/lib/api";
 import { getAuthToken } from "@/lib/auth";
+import { formatBangladeshiMobile } from "@/lib/phone";
 import { SUPPORT_UNREAD_EVENT, canUseSupport } from "@/lib/support";
 
 const SUPPORT_HREF = "/profile/support";
@@ -129,7 +130,9 @@ export default function ProfileLayout({ children }: { children: React.ReactNode 
                 </div>
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-ink truncate">{displayName}</p>
-                  <p className="text-xs text-ink-muted truncate">{user?.email}</p>
+                  <p className="text-xs text-ink-muted truncate">
+                    {user?.email || (user?.phone && formatBangladeshiMobile(user.phone))}
+                  </p>
                 </div>
               </div>
 

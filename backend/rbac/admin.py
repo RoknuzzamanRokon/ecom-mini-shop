@@ -8,7 +8,7 @@ from django.contrib.auth.forms import UserChangeForm as BaseUserChangeForm
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
-from .models import Permission, Role, RolePermission, UserPermission, UserRole
+from .models import LoginPhone, Permission, Role, RolePermission, UserPermission, UserRole
 from .services import (
     LOCKED_ROLE_CODES,
     PROTECTED_ROLE_CODES,
@@ -404,6 +404,30 @@ class RolePermissionAdmin(WildcardOnlyWritesMixin, admin.ModelAdmin):
         return qs.select_related("role", "permission")
 
 
+@admin.register(LoginPhone)
+class LoginPhoneAdmin(admin.ModelAdmin):
+    """
+    Which account signs in with which mobile number.
+
+    Read-only: a number reaches an account through registration, and editing
+    one here would let staff hand an account to whoever holds the new number.
+    Deleting a row only switches phone sign-in off for that account (the
+    username still works); until OTP verification exists, that is how support
+    frees a number someone registered without owning it.
+    """
+
+    list_display = ("number", "user", "verified_at", "created_at")
+    search_fields = ("number", "user__username", "user__email")
+    list_select_related = ("user",)
+    readonly_fields = ("user", "number", "verified_at", "created_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
 # --- Custom User Admin ---
 
 class UserRoleInline(WildcardOnlyWritesMixin, admin.TabularInline):
@@ -492,7 +516,7 @@ class UserAdmin(BaseUserAdmin):
         "date_joined",
         "user_roles__role",
     )
-    search_fields = ("username", "email", "first_name", "last_name")
+    search_fields = ("username", "email", "first_name", "last_name", "login_phone__number")
     inlines = [UserRoleInline]
 
     # The two-pane FilteredSelectMultiple is replaced by the permission board in
