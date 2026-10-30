@@ -295,7 +295,7 @@ export default function UserPointsPanel({ target, actor }: UserPointsPanelProps)
     if (action === "CREDIT") {
       if (kind === "staff" && staffWallet && !staffWallet.can_receive_transfers) {
         return target.is_active
-          ? `${who} cannot credit sellers, so points sent to them could never be used. Give them a role with points.add or points.adjust first.`
+          ? `${who} cannot credit or onboard sellers, so points sent to them could never be used. Give them a role with points.add, points.adjust or sellers.onboard first.`
           : `${who} is inactive, so points sent to them could never be used.`;
       }
       if (myBalance === 0) {
@@ -518,7 +518,7 @@ export default function UserPointsPanel({ target, actor }: UserPointsPanelProps)
               {!target.is_active
                 ? `${who} is inactive, so they cannot receive points until the account is activated again.`
                 : actor?.is_superuser
-                ? `To send ${who} staff points, first give them a role that can credit sellers (points.add or points.adjust).`
+                ? `To send ${who} staff points, first give them a role that can credit or onboard sellers (points.add, points.adjust or sellers.onboard).`
                 : `Only a superuser can send staff points, and only to an account with a role that can credit sellers.`}
             </p>
           </div>

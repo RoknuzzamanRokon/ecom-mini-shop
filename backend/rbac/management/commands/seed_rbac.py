@@ -39,6 +39,11 @@ PERMISSIONS_DATA = [
     ("sellers.update", "Update Sellers", "sellers", "update", "Can update seller details"),
     ("sellers.approve", "Approve Sellers", "sellers", "approve", "Can verify and approve sellers"),
     ("sellers.suspend", "Suspend Sellers", "sellers", "suspend", "Can suspend seller accounts"),
+    (
+        "sellers.onboard", "Onboard Sellers", "sellers", "onboard",
+        "Can open seller accounts in the field and add their shop and products before approval, "
+        "paying each new seller's starting points from their own wallet; sees only the sellers they onboarded",
+    ),
     # Orders
     ("orders.view", "View Orders", "orders", "view", "Can view orders and fulfillment status"),
     ("orders.create", "Create Orders", "orders", "create", "Can create customer orders"),
@@ -208,7 +213,9 @@ ROLE_PERMISSIONS_MAPPING = {
         "inventory.view",
     ],
     Role.ROLE_SALES_TEAM: [
-        "sellers.view",
+        # Field onboarding only: no "sellers.view", so the Sales Team sees the
+        # sellers it onboarded, not the whole directory (rbac/0005).
+        "sellers.onboard",
         "products.view", "products.create", "products.update",
         "orders.view",
         "orders.seller.view", "orders.seller.update",

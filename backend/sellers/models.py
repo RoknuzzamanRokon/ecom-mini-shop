@@ -45,6 +45,9 @@ class SellerProfile(models.Model):
         (STATUS_SUSPENDED, "Suspended"),
         (STATUS_REJECTED, "Rejected"),
     ]
+    #: Not yet approved or rejected. Field onboarding may still add a shop and
+    #: products in these; nothing is public until the seller is approved.
+    AWAITING_APPROVAL_STATUSES = (STATUS_PENDING, STATUS_UNDER_REVIEW)
 
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
@@ -72,6 +75,15 @@ class SellerProfile(models.Model):
     rejection_reason = models.TextField(blank=True)
     suspension_reason = models.TextField(blank=True)
 
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        editable=False,
+        related_name="created_sellers",
+        help_text="The staff member who created this seller: in the Console, the Django admin or field onboarding.",
+    )
     reviewed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

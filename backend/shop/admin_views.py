@@ -762,6 +762,7 @@ class AdminSellerListAPIView(APIView):
             try:
                 seller = create_seller_profile(
                     target_user,
+                    created_by=request.user,
                     seller_type=data["seller_type"],
                     business_name=data["business_name"],
                     business_email=data.get("business_email", ""),

@@ -16,7 +16,7 @@ from .models import (
     StaffPointTransaction,
     StaffWallet,
 )
-from .permissions import can_perform_point_action
+from .permissions import can_hold_staff_points
 
 logger = logging.getLogger(__name__)
 
@@ -264,6 +264,7 @@ class PointService:
         actor=None,
         reference_type: str = "",
         reference_id: str = "",
+        wallet_owner=None,
     ) -> PointTransaction:
         """
         Dispatches staff/admin adjustments based on action type ('CREDIT' or 'DEBIT').
@@ -272,6 +273,11 @@ class PointService:
         own StaffWallet: a CREDIT comes out of the actor's wallet and is refused
         when it does not hold enough, and a DEBIT goes back into it. Superusers
         are no exception; they fill their own wallet with mint_points first.
+
+        `wallet_owner` names another staff member's wallet instead, for a
+        movement the platform makes on someone's behalf: rejecting an onboarded
+        seller returns its starting points to the onboarder, with the rejecting
+        staff member recorded as the actor.
         """
         normalized_action = str(action).upper().strip()
         if normalized_action == "CREDIT":
@@ -298,7 +304,7 @@ class PointService:
         with transaction.atomic():
             # Staff wallet first, seller wallet second, in both directions, so
             # two concurrent adjustments always lock in the same order.
-            staff_wallet = cls._lock_staff_wallet(actor)
+            staff_wallet = cls._lock_staff_wallet(wallet_owner or actor)
             extra = {}
             if from_staff:
                 cls._require_staff_balance(staff_wallet, amount)
@@ -427,16 +433,16 @@ class PointService:
         Moves `amount` points from a superuser's staff wallet to another staff
         member's. Returns the (outgoing, incoming) ledger entries.
 
-        The recipient must be able to credit sellers; points in any other
-        wallet could never be spent.
+        The recipient must be able to credit or onboard sellers; points in any
+        other wallet could never be spent.
         """
         if not (sender and sender.is_active and sender.is_superuser):
             raise PointError("Only an active superuser can hand points to staff.")
         if recipient.pk == sender.pk:
             raise PointError("Points cannot be transferred to your own wallet.")
-        if not recipient.is_active or not can_perform_point_action(recipient, "CREDIT"):
+        if not recipient.is_active or not can_hold_staff_points(recipient):
             raise PointError(
-                f"{recipient.username} cannot credit sellers, so points in their wallet could never be used."
+                f"{recipient.username} cannot credit or onboard sellers, so points in their wallet could never be used."
             )
         cls._validate_movement(amount, reason)
 

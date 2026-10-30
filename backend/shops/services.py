@@ -135,9 +135,14 @@ class ShopService:
     """
 
     @classmethod
-    def validate_seller_eligibility_for_creation(cls, seller: SellerProfile):
-        """Verifies seller operational status and seller-type capabilities for shop creation."""
-        if not seller.is_operational:
+    def validate_seller_eligibility_for_creation(cls, seller: SellerProfile, for_onboarding: bool = False):
+        """
+        Verifies seller operational status and seller-type capabilities for
+        shop creation. Field onboarding (`for_onboarding`) may also create a
+        shop for a seller still awaiting approval.
+        """
+        awaiting_approval = for_onboarding and seller.status in SellerProfile.AWAITING_APPROVAL_STATUSES
+        if not seller.is_operational and not awaiting_approval:
             raise IneligibleSellerError(
                 f"Seller must be approved and active to create a shop. Current status: '{seller.status}'."
             )
@@ -176,9 +181,10 @@ class ShopService:
         cover_image=None,
         submit_for_review: bool = False,
         additional_phones: Optional[list] = None,
+        for_onboarding: bool = False,
     ) -> Shop:
         """Creates a new Shop for an eligible seller, optionally submitting directly for staff review."""
-        cls.validate_seller_eligibility_for_creation(seller)
+        cls.validate_seller_eligibility_for_creation(seller, for_onboarding=for_onboarding)
 
         initial_status = Shop.STATUS_PENDING if submit_for_review else Shop.STATUS_DRAFT
 

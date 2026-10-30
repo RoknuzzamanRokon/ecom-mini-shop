@@ -64,10 +64,10 @@ class SellerProfileAdmin(ChangeFormAuditMixin, ReasonRequiredActionMixin, Status
         'user', 'business_name', 'seller_type', 'status_badge', 
         'shop_count', 'product_count', 'created_at'
     )
-    list_filter = ('status', 'seller_type', 'created_at')
+    list_filter = ('status', 'seller_type', ('created_by', admin.RelatedOnlyFieldListFilter), 'created_at')
     search_fields = ('user__username', 'user__email', 'business_name', 'business_email', 'tax_id')
     readonly_fields = (
-        'status', 'reviewed_by', 'reviewed_at', 'approved_at',
+        'status', 'created_by', 'reviewed_by', 'reviewed_at', 'approved_at',
         'suspended_at', 'created_at', 'updated_at'
     )
     actions = ['approve_and_activate', 'suspend_sellers', 'reject_sellers', 'reactivate_sellers']
@@ -79,6 +79,8 @@ class SellerProfileAdmin(ChangeFormAuditMixin, ReasonRequiredActionMixin, Status
         return readonly + ('user',) if obj is not None else readonly
 
     def save_model(self, request, obj, form, change):
+        if not change:
+            obj.created_by = request.user
         super().save_model(request, obj, form, change)
         # A Full Shop Owner's points never expire. Made Limited, they start to,
         # so what the seller holds gets a full expiry period from now rather
@@ -119,7 +121,7 @@ class SellerProfileAdmin(ChangeFormAuditMixin, ReasonRequiredActionMixin, Status
                 }),
                 ('Review timeline', {
                     'classes': ('mp-form',),
-                    'fields': ('created_at', 'reviewed_by', 'reviewed_at', 'approved_at',
+                    'fields': ('created_at', 'created_by', 'reviewed_by', 'reviewed_at', 'approved_at',
                                'suspended_at', 'updated_at'),
                 }),
             ]
@@ -127,7 +129,7 @@ class SellerProfileAdmin(ChangeFormAuditMixin, ReasonRequiredActionMixin, Status
 
     def get_queryset(self, request):
         qs = super().get_queryset(request)
-        qs = qs.select_related('user', 'reviewed_by')
+        qs = qs.select_related('user', 'reviewed_by', 'created_by')
         qs = qs.annotate(
             shop_count=Count('shops', distinct=True),
             product_count=Count('shops__products', distinct=True)

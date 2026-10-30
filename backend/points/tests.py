@@ -1209,7 +1209,7 @@ class StaffWalletTests(TestCase):
         with redirect_stderr(err):
             code = main(["300", "--to", "sw_support", "--username", "sw_root", "--password", self.PASSWORD])
         self.assertEqual(code, 1)
-        self.assertIn("cannot credit sellers", err.getvalue())
+        self.assertIn("cannot credit or onboard sellers", err.getvalue())
         self.assertEqual(PointService.get_staff_balance(self.root), 300)
 
 

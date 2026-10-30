@@ -689,6 +689,42 @@ are recorded here as they are made.
    Holding or assigning CUSTOMER is unchanged: it is not in
    `PROTECTED_ROLE_CODES`, so administrators still create customers.
 
+## Sales Team field onboarding (decided 2026-10-31)
+
+New feature work, outside the fixes-only roadmap above. It is the backend
+for a planned Android app for the Sales Team; the app itself comes later.
+The code is in the `onboarding` app, and the API is under `/api/onboarding/`.
+
+1. **Permission.** The Sales Team gets the new code `sellers.onboard`, not
+   `sellers.create` / `shops.create` / `shops.view`. Those three would open
+   the Console's free creation path and every seller's shops, which breaks
+   decisions 2 and 3. SALES_TEAM also loses `sellers.view` (migration
+   `rbac/0005_sellers_onboard_permission`). The Console paths are unchanged.
+2. **Points and tokens.** A superuser gives a Sales Team member points
+   through the existing staff transfer: `sellers.onboard` now counts as a
+   reason to hold points. Each seller they open moves
+   `OnboardingSettings.starting_points` (200) from their wallet to the new
+   seller's wallet. With 500 points, that is two sellers. Each seller also
+   earns them `tokens_per_seller` (51) tokens, which they can see
+   (`/api/onboarding/me/`, `/api/onboarding/tokens/`). How tokens are spent
+   is not decided yet. Product creation fees come out of the seller's
+   wallet, as for any product.
+3. **Scope.** `SellerProfile.created_by` records who created every seller
+   (Console, Django admin or onboarding). An onboarder reaches only the
+   sellers they onboarded, and sees how many those are.
+4. **Approval.** The onboarder adds the seller, its shop and its products,
+   and nothing is public until staff approve. One approval
+   (`/api/onboarding/review/<pk>/approve/`) puts the seller, its waiting
+   shops and its submitted products live together. It needs every code the
+   separate Console actions take: seller, shop and product approval, and
+   product publishing. Today only Administrators (and Super Administrators)
+   hold them all. The separate Console actions still work too.
+5. **Rejection.** Rejecting an onboarded seller, by any path, first refunds
+   its products' creation fees (none ever went live). It then returns up to
+   the starting points it was given to the onboarder, and takes back the
+   onboarder's tokens. This happens once per onboarding. Points the seller
+   got from anyone else stay with the seller.
+
 ## Not in this roadmap
 
 A short honest roadmap beats an exhaustive wish list. These are known and

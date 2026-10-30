@@ -28,6 +28,7 @@ urlpatterns = [
     path('api/auth/', include('rbac.urls')),
     path('api/sellers/', include('sellers.urls')),
     path('api/points/', include('points.urls')),
+    path('api/onboarding/', include('onboarding.urls')),
     path('api/shops/', include('shops.urls')),
     path('api/cart/', include('cart.urls')),
     path('api/support/', include('support.urls')),

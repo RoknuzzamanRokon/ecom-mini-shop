@@ -114,8 +114,15 @@ def approve_seller(seller: SellerProfile, staff_user) -> SellerProfile:
 
 @transaction.atomic
 def reject_seller(seller: SellerProfile, staff_user, reason: str) -> SellerProfile:
+    # Imported here: the onboarding app's models depend on this app.
+    from onboarding.services import OnboardingService
+
     from_status = seller.status
     seller.reject(staff_user, reason)
+    # A seller the Sales Team onboarded hands back its starting points and the
+    # onboarder's tokens; every reject path (Console, API, Django admin) comes
+    # through here.
+    OnboardingService.reverse_rewards(seller, staff_user)
     _publish_status_change(seller, from_status, staff_user, reason)
     return seller
 

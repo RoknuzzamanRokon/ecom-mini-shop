@@ -16,6 +16,7 @@ from .permissions import (
     CanViewStaffWallets,
     IsPointSuperuser,
     IsSellerWalletOwner,
+    can_hold_staff_points,
     can_perform_point_action,
 )
 from .serializers import (
@@ -273,8 +274,8 @@ class StaffUserWalletView(APIView):
     further than the user directory itself.
 
     `can_receive_transfers` says whether a superuser may send this account
-    points: transfer_to_staff refuses anyone inactive or unable to credit
-    sellers, because points in their wallet could never be spent.
+    points: transfer_to_staff refuses anyone inactive or unable to credit or
+    onboard sellers, because points in their wallet could never be spent.
     """
     permission_classes = [CanViewStaffWallets]
 
@@ -285,9 +286,7 @@ class StaffUserWalletView(APIView):
             {
                 "user_id": target.pk,
                 "username": target.username,
-                "can_receive_transfers": bool(
-                    target.is_active and can_perform_point_action(target, "CREDIT")
-                ),
+                "can_receive_transfers": bool(target.is_active and can_hold_staff_points(target)),
             }
         )
         return Response(data, status=status.HTTP_200_OK)

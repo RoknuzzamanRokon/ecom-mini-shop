@@ -165,6 +165,7 @@ class ProductService:
         is_active: bool = True,
         actor=None,
         ip_address: Optional[str] = None,
+        for_onboarding: bool = False,
     ) -> Product:
         """
         Creates a new product belonging to a seller's shop in an atomic transaction.
@@ -177,9 +178,18 @@ class ProductService:
           6. Concurrency-safe point balance verification & atomic debit
           7. Comprehensive audit log entry
         Rolls back all changes if any step fails.
+
+        Field onboarding (`for_onboarding`) may also add a product while the
+        seller and shop still await approval. Such a product starts SUBMITTED,
+        not DRAFT: it goes live when staff approve the onboarding, or through
+        the normal product review once the seller is live.
         """
+        awaiting_approval = (
+            for_onboarding and seller is not None and seller.status in SellerProfile.AWAITING_APPROVAL_STATUSES
+        )
+
         # 1. Validate seller profile & operational status
-        if not seller or not seller.is_operational:
+        if not seller or not (seller.is_operational or awaiting_approval):
             status_desc = seller.status if seller else "Unknown"
             raise IneligibleSellerError(
                 f"Seller is currently '{status_desc}'. Only active/approved sellers can create products."
@@ -192,7 +202,10 @@ class ProductService:
         if shop.owner != seller:
             raise ProductOwnershipError("You can only create products for shops that you own.")
 
-        if shop.status not in (Shop.STATUS_APPROVED, Shop.STATUS_ACTIVE):
+        open_shop_statuses = (Shop.STATUS_APPROVED, Shop.STATUS_ACTIVE)
+        if for_onboarding:
+            open_shop_statuses += (Shop.STATUS_DRAFT, Shop.STATUS_PENDING)
+        if shop.status not in open_shop_statuses:
             raise ProductOwnershipError(
                 f"Shop '{shop.name}' is currently '{shop.status}'. Products can only be created for active/approved shops."
             )
@@ -245,7 +258,8 @@ class ProductService:
                 stock=max(0, stock),
                 badge=badge.strip() if badge else "",
                 is_active=is_active,
-                status=Product.STATUS_DRAFT,
+                status=Product.STATUS_SUBMITTED if for_onboarding else Product.STATUS_DRAFT,
+                submitted_at=timezone.now() if for_onboarding else None,
             )
             if image:
                 product.image = image
@@ -281,6 +295,7 @@ class ProductService:
                     "category": category.name,
                     "shop": shop.name,
                     "points_debited": required_points,
+                    **({"created_via": "onboarding"} if for_onboarding else {}),
                 },
                 ip_address=ip_address,
             )

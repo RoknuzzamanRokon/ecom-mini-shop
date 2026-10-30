@@ -95,6 +95,7 @@ INSTALLED_APPS = [
     'rbac',
     'sellers',
     'points',
+    'onboarding',
     'shops',
     'audit',
     'customers',

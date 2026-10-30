@@ -70,6 +70,15 @@ def can_perform_point_action(user, action: str) -> bool:
     return any(has_user_permission(user, code) for code in required)
 
 
+def can_hold_staff_points(user) -> bool:
+    """
+    Whether points in `user`'s StaffWallet could ever be spent: they can
+    credit sellers, or onboard them (sellers.onboard pays each new seller's
+    starting points out of the onboarder's own wallet).
+    """
+    return can_perform_point_action(user, "CREDIT") or has_user_permission(user, "sellers.onboard")
+
+
 class CanAdjustPoints(BasePermission):
     """
     Entry gate for the point adjustment endpoint: the actor must hold at least
