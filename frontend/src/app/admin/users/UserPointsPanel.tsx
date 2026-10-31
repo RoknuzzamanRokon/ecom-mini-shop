@@ -59,16 +59,17 @@ const SELLER_MOVEMENT_ICONS: Record<string, string> = {
   REFUND: "undo",
   ADJUSTMENT: "tune",
   EXPIRY: "hourglass_bottom",
+  LISTING_RENEWAL: "autorenew",
 };
 
-/** One line on when a wallet's points expire, or that they never do. */
+/** One line on when a wallet's points expire (`rule` says how), or that they never do. */
 function expiryNote(
-  wallet: { points_expire: boolean; expiry_months: number; upcoming_expiries: AdminUpcomingPointExpiry[] },
+  wallet: { points_expire: boolean; upcoming_expiries: AdminUpcomingPointExpiry[] },
+  rule: string,
   neverText: string
 ): string {
   if (!wallet.points_expire) return neverText;
   const next = wallet.upcoming_expiries[0];
-  const rule = `Points expire ${wallet.expiry_months} months after they arrive.`;
   return next
     ? `${rule} Next: ${formatCount(next.points)} pts on ${formatDate(next.expires_at)}.`
     : rule;
@@ -198,9 +199,13 @@ export default function UserPointsPanel({ target, actor }: UserPointsPanelProps)
 
   const parsedAmount = Number(amount);
   const draftMax = draft ? maxFor(draft) : null;
+  // Giving a seller points is a sale of at least SellerPointPolicy.minimum_purchase.
+  const draftMin =
+    draft?.kind === "seller" && draft.action === "CREDIT" ? sellerWallet?.minimum_purchase ?? null : null;
   const amountIsWhole = amount.trim() !== "" && Number.isInteger(parsedAmount) && parsedAmount > 0;
   const amountOverMax = amountIsWhole && draftMax !== null && parsedAmount > draftMax;
-  const amountValid = amountIsWhole && !amountOverMax;
+  const amountUnderMin = amountIsWhole && draftMin !== null && parsedAmount < draftMin;
+  const amountValid = amountIsWhole && !amountOverMax && !amountUnderMin;
 
   const startDraft = useCallback((kind: WalletKind, action: PointAction) => {
     setDraft({ kind, action });
@@ -356,7 +361,9 @@ export default function UserPointsPanel({ target, actor }: UserPointsPanelProps)
     if (!draft || draft.kind !== kind) return null;
     const giving = draft.action === "CREDIT";
     const inputId = `user-points-${kind}-amount`;
-    const presets = AMOUNT_PRESETS.filter((preset) => draftMax === null || preset <= draftMax);
+    const presets = AMOUNT_PRESETS.filter(
+      (preset) => (draftMax === null || preset <= draftMax) && (draftMin === null || preset >= draftMin)
+    );
     return (
       <div className="mt-4 rounded-xl border border-line bg-surface p-4">
         <p className="text-[11px] font-extrabold uppercase tracking-wider text-ink mb-3">
@@ -419,6 +426,8 @@ export default function UserPointsPanel({ target, actor }: UserPointsPanelProps)
             ? `That is more than the ${formatCount(draftMax)} points ${giving ? "your wallet" : "this wallet"} holds.`
             : amount && !amountIsWhole
             ? "Enter a whole number of at least 1 point."
+            : draftMin !== null
+            ? `Sellers buy at least ${formatCount(draftMin)} points at a time. The points come out of your own wallet.`
             : giving
             ? "The points come out of your own wallet."
             : "The points go back into your own wallet."}
@@ -543,7 +552,11 @@ export default function UserPointsPanel({ target, actor }: UserPointsPanelProps)
               note={
                 sellerWallet
                   ? `Points pay for new product listings, ${formatCount(sellerWallet.product_creation_cost)} pts each. ` +
-                    expiryNote(sellerWallet, "A Full Shop Owner's points never expire.")
+                    expiryNote(
+                      sellerWallet,
+                      `Each purchase gives all of the seller's points ${sellerWallet.validity_days} more days.`,
+                      "A Full Shop Owner's points never expire."
+                    )
                   : null
               }
               rows={sellerRows}
@@ -591,6 +604,7 @@ export default function UserPointsPanel({ target, actor }: UserPointsPanelProps)
                 " " +
                 expiryNote(
                   staffWallet,
+                  `Points expire ${staffWallet.expiry_months} months after they arrive.`,
                   staffWallet.can_mint
                     ? "A superuser's points never expire."
                     : "Point expiry is off for this account."

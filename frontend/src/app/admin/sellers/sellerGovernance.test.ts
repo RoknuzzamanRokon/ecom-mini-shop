@@ -12,7 +12,9 @@ describe("POINT_TRANSACTION_TYPE_OPTIONS", () => {
       "REFUND",
       "ADJUSTMENT",
       "EXPIRY",
+      "LISTING_RENEWAL",
     ]);
     expect(POINT_TRANSACTION_TYPE_OPTIONS).toContainEqual({ value: "EXPIRY", label: "Points Expired" });
+    expect(POINT_TRANSACTION_TYPE_OPTIONS).toContainEqual({ value: "LISTING_RENEWAL", label: "Listing Renewal Fee" });
   });
 });

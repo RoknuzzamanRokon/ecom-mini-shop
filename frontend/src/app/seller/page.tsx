@@ -3,6 +3,9 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useSeller } from "@/components/seller/SellerGuard";
+import ListingOverview from "@/components/seller/ListingOverview";
+import { expiriesByDate } from "@/components/seller/listing";
+import { formatDate } from "@/lib/admin-format";
 import {
   getSellerShops,
   getSellerProducts,
@@ -42,6 +45,15 @@ export default function SellerDashboardPage() {
       setLoadingMetrics(false);
     });
   }, []);
+
+  // A renewal spends points, so the balance tile follows it.
+  const reloadWallet = () => {
+    const token = getAuthToken();
+    if (token) getSellerWallet(token).then(setWallet).catch(() => undefined);
+  };
+
+  const nextExpiry =
+    wallet?.points_expire && wallet.balance > 0 ? expiriesByDate(wallet.upcoming_expiries)[0] : undefined;
 
   return (
     <div className="space-y-6">
@@ -151,7 +163,9 @@ export default function SellerDashboardPage() {
               {loadingMetrics ? "..." : `${wallet?.balance ?? 0}`}
             </p>
             <p className="text-[11px] text-ink-muted mt-0.5">
-              Points available for products
+              {nextExpiry
+                ? `${nextExpiry.points} expire ${formatDate(nextExpiry.expires_at)}`
+                : "Points available for products"}
             </p>
           </div>
           <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
@@ -159,6 +173,9 @@ export default function SellerDashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Listing periods: live, ending soon, expired (with Renew) */}
+      {seller?.is_operational && <ListingOverview onRenewed={reloadWallet} />}
 
       {/* Quick Action Shortcuts */}
       <div>

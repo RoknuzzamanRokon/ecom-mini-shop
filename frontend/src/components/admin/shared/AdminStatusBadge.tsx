@@ -23,6 +23,7 @@ export type AdminStatusTone =
  * No status is invented here.
  *
  *   Product (shop/models.py)   DRAFT SUBMITTED APPROVED REJECTED PUBLISHED UNPUBLISHED
+ *                              EXPIRED
  *   Order   (shop/models.py)   PENDING CONFIRMED PROCESSING SHIPPED DELIVERED CANCELLED
  *   Payment (shop/models.py)   PENDING PROCESSING PAID FAILED CANCELLED REFUNDED
  *                              PARTIALLY_REFUNDED
@@ -63,6 +64,8 @@ const STATUS_TONES: Record<string, AdminStatusTone> = {
   // Inactive but not punitive
   DRAFT: "neutral",
   UNPUBLISHED: "neutral",
+  // A listing period ended; the seller renews it.
+  EXPIRED: "warning",
   CANCELLED: "neutral",
 
   // Financial reversal

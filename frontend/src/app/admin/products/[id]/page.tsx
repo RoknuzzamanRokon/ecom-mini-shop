@@ -321,6 +321,11 @@ export default function AdminProductDetailPage() {
             <InfoRow label="Created" value={formatDateTime(product.created_at)} />
             <InfoRow label="Submitted" value={formatDateTime(product.submitted_at)} />
             <InfoRow label="Reviewed" value={formatDateTime(product.reviewed_at)} />
+            <InfoRow
+              label={product.status === "EXPIRED" ? "Listing Ended" : "Live Until"}
+              value={product.live_until ? formatDateTime(product.live_until) : "No end date"}
+            />
+            <InfoRow label="Renewals" value={String(product.renewal_count ?? 0)} />
             <InfoRow label="Last Updated" value={formatDateTime(product.updated_at)} />
           </dl>
           <p className="text-[11px] text-ink-faint mt-3">

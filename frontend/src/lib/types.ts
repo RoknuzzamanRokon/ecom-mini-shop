@@ -145,6 +145,15 @@ export interface Product {
   discount_percent?: number;
   savings_amount?: string | number | null;
   in_stock: boolean;
+  /**
+   * Seller endpoints only. When the listing period ends (ISO 8601); null for
+   * no end date (a Full Shop Owner's product, or one never published).
+   */
+  live_until?: string | null;
+  /** Seller endpoints only. Times the seller renewed the listing after it expired. */
+  renewal_count?: number;
+  /** Seller endpoints only. Published with the period running: it cannot be hidden, moved or deleted. */
+  listing_locked?: boolean;
   average_rating?: number;
   review_count?: number;
   /** Detail endpoint only. */
@@ -839,8 +848,10 @@ export interface SellerWallet {
   product_creation_cost: number;
   /** False for a Full Shop Owner, whose points never expire. */
   points_expire: boolean;
-  /** How long a batch of received points lasts (PointExpiryPolicy). */
-  expiry_months: number;
+  /** Days each purchase adds to the date all unspent points expire (SellerPointPolicy). */
+  validity_days: number;
+  /** The fewest points staff sell at once (SellerPointPolicy). */
+  minimum_purchase: number;
   /** Soonest-expiring batches first (at most 5); empty when points_expire is false. */
   upcoming_expiries: UpcomingPointExpiry[];
   created_at: string;
@@ -857,7 +868,31 @@ export type PointTransactionType =
   | "PRODUCT_CREATION"
   | "REFUND"
   | "ADJUSTMENT"
-  | "EXPIRY";
+  | "EXPIRY"
+  | "LISTING_RENEWAL";
+
+/** `?listing=` on GET /api/products/mine/. */
+export type ListingFilter = "live" | "ending_soon" | "expired";
+
+/** GET /api/products/mine/listings/ (ListingService.seller_summary). */
+export interface ListingSummary {
+  total: number;
+  /** Published with the period running (or no end date). */
+  live: number;
+  /** Live, ending within ending_soon_days. */
+  ending_soon: number;
+  expired: number;
+  /** Submitted or approved, waiting for staff to publish. */
+  in_review: number;
+  /** Draft, rejected or unpublished by staff. */
+  not_live: number;
+  /** False for a Full Shop Owner, whose products have no end date. */
+  has_end_date: boolean;
+  ending_soon_days: number;
+  first_period_months: number;
+  renewal_period_months: number;
+  renewal_points: number;
+}
 
 export interface PointTransaction {
   id: number;

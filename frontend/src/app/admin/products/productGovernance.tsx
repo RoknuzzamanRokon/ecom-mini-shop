@@ -43,6 +43,7 @@ export const PRODUCT_STATUS_LABELS: Record<string, string> = {
   REJECTED: "Rejected",
   PUBLISHED: "Published",
   UNPUBLISHED: "Unpublished",
+  EXPIRED: "Expired",
 };
 
 export const PRODUCT_STATUS_OPTIONS: AdminSelectOption[] = Object.entries(
@@ -143,6 +144,10 @@ function getStatusRelevantActions(status: string): AdminProductStatusAction[] {
       return ["unpublish", "reject"];
     case "UNPUBLISHED":
       return ["publish", "reject"];
+    // The listing period ended. Only the seller puts it back (a paid
+    // renewal); the backend refuses publish, so it is not offered.
+    case "EXPIRED":
+      return ["reject"];
     default:
       return ["approve", "reject"];
   }

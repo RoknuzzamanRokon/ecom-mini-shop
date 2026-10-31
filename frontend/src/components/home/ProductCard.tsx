@@ -21,6 +21,9 @@ export default function ProductCard({ product, viewMode = "grid" }: ProductCardP
   const badgeUpper = (product.badge || "").toUpperCase();
   const averageRating = product.average_rating ?? 0;
   const reviewCount = product.review_count ?? 0;
+  // Stock can reach 0 while the listing stays live; the card says so and
+  // cannot add it to the cart.
+  const outOfStock = product.in_stock === false;
 
   const getBadgeClass = (badge: string) => {
     switch (badge) {
@@ -61,6 +64,7 @@ export default function ProductCard({ product, viewMode = "grid" }: ProductCardP
               {badgeUpper}
             </span>
           )}
+          {outOfStock && <OutOfStockLabel />}
         </Link>
 
         <div className="flex-1 flex flex-col justify-between w-full">
@@ -111,12 +115,13 @@ export default function ProductCard({ product, viewMode = "grid" }: ProductCardP
 
             <button
               onClick={() => addToCart(product, 1)}
-              className="bg-primary hover:bg-primary-hover text-on-primary px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer"
-              title="Add to Cart"
+              disabled={outOfStock}
+              className="bg-primary hover:bg-primary-hover text-on-primary px-3 py-1.5 rounded-md text-xs font-semibold flex items-center gap-1.5 transition-colors shadow-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary"
+              title={outOfStock ? "Out of stock" : "Add to Cart"}
               type="button"
             >
               <span className="material-symbols-outlined text-[16px]">add_shopping_cart</span>
-              <span>Add to Cart</span>
+              <span>{outOfStock ? "Out of stock" : "Add to Cart"}</span>
             </button>
           </div>
         </div>
@@ -148,6 +153,7 @@ export default function ProductCard({ product, viewMode = "grid" }: ProductCardP
               {badgeUpper}
             </span>
           )}
+          {outOfStock && <OutOfStockLabel />}
         </Link>
         <FavoriteButton
           productId={product.id}
@@ -198,8 +204,10 @@ export default function ProductCard({ product, viewMode = "grid" }: ProductCardP
           </div>
           <button
             onClick={() => addToCart(product, 1)}
-            className="bg-primary hover:bg-primary-hover text-on-primary p-1.5 rounded-md transition-colors shadow-xs cursor-pointer active:scale-95"
-            title="Add to Cart"
+            disabled={outOfStock}
+            aria-label={outOfStock ? "Out of stock" : "Add to Cart"}
+            className="bg-primary hover:bg-primary-hover text-on-primary p-1.5 rounded-md transition-colors shadow-xs cursor-pointer active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-primary disabled:active:scale-100"
+            title={outOfStock ? "Out of stock" : "Add to Cart"}
             type="button"
           >
             <span className="material-symbols-outlined text-[16px] block">add_shopping_cart</span>
@@ -207,5 +215,13 @@ export default function ProductCard({ product, viewMode = "grid" }: ProductCardP
         </div>
       </div>
     </div>
+  );
+}
+
+function OutOfStockLabel() {
+  return (
+    <span className="absolute bottom-0 inset-x-0 bg-ink/75 text-surface text-[10px] font-bold uppercase tracking-wider text-center py-1">
+      Out of stock
+    </span>
   );
 }

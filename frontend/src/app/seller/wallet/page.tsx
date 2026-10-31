@@ -6,6 +6,7 @@ import { getSellerWallet, getSellerPointHistory } from "@/lib/api";
 import { SellerWallet, PointTransaction } from "@/lib/types";
 import { getAuthToken } from "@/lib/auth";
 import { useLatestRequest } from "@/hooks/useLatestRequest";
+import { expiriesByDate } from "@/components/seller/listing";
 
 const TXN_TYPES = [
   "ALL",
@@ -16,6 +17,7 @@ const TXN_TYPES = [
   "REFUND",
   "ADJUSTMENT",
   "EXPIRY",
+  "LISTING_RENEWAL",
 ];
 
 export default function SellerWalletPage() {
@@ -165,12 +167,13 @@ export default function SellerWalletPage() {
             {wallet.points_expire ? (
               <>
                 <p className="text-ink-body leading-relaxed">
-                  Points expire {wallet.expiry_months} months after you receive them if they are not
-                  used. New product listings spend the points that expire soonest first.
+                  Your points expire if they are not used in time. Each purchase gives all the points
+                  you hold {wallet.validity_days} more days: with 5 days left, buying more makes it{" "}
+                  {wallet.validity_days + 5} days.
                 </p>
                 {wallet.upcoming_expiries.length > 0 ? (
                   <ul className="divide-y divide-line rounded-xl border border-line">
-                    {wallet.upcoming_expiries.map((lot) => (
+                    {expiriesByDate(wallet.upcoming_expiries).map((lot) => (
                       <li
                         key={`${lot.expires_at}-${lot.points}`}
                         className="flex items-center justify-between gap-3 px-3 py-2"
@@ -196,6 +199,10 @@ export default function SellerWalletPage() {
                 As a Full Shop Owner, your points never expire.
               </p>
             )}
+            <p className="text-ink-muted leading-relaxed">
+              To buy points, pay MiniShop staff or the Sales Team member who opened your account. They
+              add at least {wallet.minimum_purchase} points at a time.
+            </p>
           </div>
         </div>
       )}

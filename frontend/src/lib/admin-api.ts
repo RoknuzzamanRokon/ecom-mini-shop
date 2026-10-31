@@ -832,6 +832,10 @@ export interface AdminProduct {
   rejection_reason: string;
   /** Product.is_publicly_visible property — the full public-catalog predicate. */
   is_publicly_visible: boolean;
+  /** When a Limited Shop Owner's listing period ends; null for no end date. */
+  live_until: string | null;
+  /** Times the seller renewed the listing after it expired. */
+  renewal_count: number;
   submitted_at: string | null;
   reviewed_at: string | null;
   created_at: string;
@@ -1688,8 +1692,10 @@ export interface AdminSellerWallet {
   total_expired: number;
   /** False for a Full Shop Owner, whose points never expire. */
   points_expire: boolean;
-  /** How long a batch of received points lasts (PointExpiryPolicy). */
-  expiry_months: number;
+  /** Days each purchase adds to the date all the seller's points expire (SellerPointPolicy). */
+  validity_days: number;
+  /** The fewest points staff may give a seller at once (SellerPointPolicy). */
+  minimum_purchase: number;
   /** Soonest-expiring batches first (at most 5); empty when points_expire is false. */
   upcoming_expiries: AdminUpcomingPointExpiry[];
   created_at: string;
@@ -1710,7 +1716,8 @@ export type AdminPointTransactionType =
   | "PRODUCT_CREATION"
   | "REFUND"
   | "ADJUSTMENT"
-  | "EXPIRY";
+  | "EXPIRY"
+  | "LISTING_RENEWAL";
 
 /** Mirrors PointTransactionSerializer field-for-field. */
 export interface AdminPointTransaction {

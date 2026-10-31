@@ -265,6 +265,7 @@ export const POINT_TRANSACTION_TYPE_LABELS: Record<AdminPointTransactionType, st
   REFUND: "Point Refund",
   ADJUSTMENT: "Administrative Adjustment",
   EXPIRY: "Points Expired",
+  LISTING_RENEWAL: "Listing Renewal Fee",
 };
 
 export const POINT_TRANSACTION_TYPE_OPTIONS: AdminSelectOption[] = Object.entries(

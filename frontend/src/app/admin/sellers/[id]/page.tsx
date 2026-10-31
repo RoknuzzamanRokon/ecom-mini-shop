@@ -314,8 +314,12 @@ export default function AdminSellerDetailPage() {
   const [pointsSuccessMessage, setPointsSuccessMessage] = useState<string | null>(null);
 
   const parsedAdjustAmount = Number(adjustAmount);
-  const adjustAmountValid =
+  const adjustAmountWhole =
     adjustAmount.trim() !== "" && Number.isInteger(parsedAdjustAmount) && parsedAdjustAmount > 0;
+  // A credit is a sale of at least SellerPointPolicy.minimum_purchase; a debit has no minimum.
+  const adjustMinimum = adjustAction === "CREDIT" ? wallet?.minimum_purchase ?? null : null;
+  const adjustAmountValid =
+    adjustAmountWhole && (adjustMinimum === null || parsedAdjustAmount >= adjustMinimum);
 
   const startAdjustment = useCallback((action: AdminPointAdjustmentAction) => {
     setAdjustAction(action);
@@ -917,7 +921,7 @@ export default function AdminSellerDetailPage() {
                   <input
                     id="points-adjust-amount"
                     type="number"
-                    min={1}
+                    min={adjustMinimum ?? 1}
                     step={1}
                     value={adjustAmount}
                     onChange={(e) => setAdjustAmount(e.target.value)}
@@ -943,11 +947,15 @@ export default function AdminSellerDetailPage() {
                   </button>
                 </div>
               </div>
-              {adjustAmount && !adjustAmountValid && (
+              {adjustAmount && !adjustAmountWhole ? (
                 <p className="text-[11px] text-red-600 mt-1.5">
                   Enter a whole number of at least 1 point.
                 </p>
-              )}
+              ) : adjustMinimum !== null ? (
+                <p className={`text-[11px] mt-1.5 ${adjustAmount && !adjustAmountValid ? "text-danger" : "text-ink-muted"}`}>
+                  Sellers buy at least {adjustMinimum} points at a time.
+                </p>
+              ) : null}
             </div>
           )}
 

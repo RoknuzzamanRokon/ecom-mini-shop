@@ -1,4 +1,4 @@
-import { Category, HotDeal, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, SellerOrderDetail, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse, Favorite, PasswordChangePayload, SellerProfile, SellerDashboardData, SellerShop, SellerWallet, NearbyShopsResponse, PointTransaction, Review, ReviewCreatePayload, ReviewOrdering, ReviewUpdatePayload, ShopReview, ShopReviewCreatePayload, MyReviews, SupportChannel, SupportTicket, SupportTicketCreateInput, SupportTicketListStatus, SupportTicketSummary } from "./types";
+import { Category, HotDeal, ListingFilter, ListingSummary, PaginatedResponse, Product, ProductFilterParams, Order, CustomerProfile, Address, AddressInput, BackendCart, BackendCartItem, SellerOrder, SellerOrderDetail, ProductInventory, InventoryAdjustmentPayload, OrderCancelPayload, Payment, Refund, PaymentInitiatePayload, PaymentVerifyPayload, RefundCreatePayload, StaffOrderListItem, StaffOrderDetail, StaffOrderStatusUpdatePayload, StaffOrderFilterParams, Shop, AuthUser, RegisterPayload, RegisterResponse, Favorite, PasswordChangePayload, SellerProfile, SellerDashboardData, SellerShop, SellerWallet, NearbyShopsResponse, PointTransaction, Review, ReviewCreatePayload, ReviewOrdering, ReviewUpdatePayload, ShopReview, ShopReviewCreatePayload, MyReviews, SupportChannel, SupportTicket, SupportTicketCreateInput, SupportTicketListStatus, SupportTicketSummary } from "./types";
 
 import { AuthUnavailableError, isTransientStatus, refreshTokenOnce } from "./auth";
 import { pathSegment } from "./paths";
@@ -601,6 +601,8 @@ export async function getSellerProducts(
   params?: {
     shop_id?: number;
     status?: string;
+    /** The listing period lists, soonest end first (most recently ended first for expired). */
+    listing?: ListingFilter;
     category?: string;
     q?: string;
     page?: number;
@@ -610,6 +612,7 @@ export async function getSellerProducts(
   const query = new URLSearchParams();
   if (params?.shop_id) query.set("shop_id", params.shop_id.toString());
   if (params?.status) query.set("status", params.status);
+  if (params?.listing) query.set("listing", params.listing);
   if (params?.category) query.set("category", params.category);
   if (params?.q) query.set("q", params.q);
   if (params?.page) query.set("page", params.page.toString());
@@ -1677,6 +1680,39 @@ export async function submitSellerProductForReview(token: string, id: number): P
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(extractApiError(err, "Failed to submit the product for review"));
+  }
+  return await res.json();
+}
+
+/**
+ * POST /api/products/mine/<id>/renew/: puts an expired product back on the
+ * storefront for ListingSummary.renewal_period_months, for renewal_points.
+ * InsufficientPointsError when the wallet holds too few.
+ */
+export async function renewSellerProduct(token: string, id: number): Promise<Product> {
+  const res = await customerRequest(`/api/products/mine/${pathSegment(id)}/renew/`, token, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    if (res.status === 400 && err.required_points) {
+      throw new InsufficientPointsError(
+        err.error || `Renewing needs ${err.required_points} points; you have ${err.available_points}.`,
+        err.required_points,
+        err.available_points
+      );
+    }
+    throw new Error(extractApiError(err, "Failed to renew the product"));
+  }
+  return await res.json();
+}
+
+/** GET /api/products/mine/listings/: the seller dashboard's listing counts and policy. */
+export async function getSellerListingSummary(token: string): Promise<ListingSummary> {
+  const res = await customerRequest(`/api/products/mine/listings/`, token, { cache: "no-store" });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(extractApiError(err, "Failed to load your listings"));
   }
   return await res.json();
 }

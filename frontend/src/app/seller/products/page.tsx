@@ -11,8 +11,10 @@ import {
   updateSellerProduct,
   deleteSellerProduct,
   submitSellerProductForReview,
+  renewSellerProduct,
   getSellerWallet,
   getSellerDashboard,
+  getSellerListingSummary,
   InsufficientPointsError,
   StockConflictError,
   formatImageUrl,
@@ -21,6 +23,8 @@ import { Product, SellerShop, Category } from "@/lib/types";
 import { getAuthToken } from "@/lib/auth";
 import { useSeller } from "@/components/seller/SellerGuard";
 import { useLatestRequest } from "@/hooks/useLatestRequest";
+import { listingPeriodLine } from "@/components/seller/listing";
+import { formatDate } from "@/lib/admin-format";
 
 // Sent with every list request, so the page count always matches (BUG-024).
 const PRODUCTS_PAGE_SIZE = 12;
@@ -32,6 +36,7 @@ const STATUS_BADGE_STYLES: Record<string, string> = {
   PUBLISHED: "bg-success/15 text-success",
   REJECTED: "bg-accent/15 text-accent",
   UNPUBLISHED: "bg-surface-alt text-ink-muted",
+  EXPIRED: "bg-danger/10 text-danger",
 };
 
 export default function SellerProductsPage() {
@@ -62,6 +67,9 @@ export default function SellerProductsPage() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
+  const [renewingProduct, setRenewingProduct] = useState<Product | null>(null);
+  // ProductListingPolicy.renewal_points, for the Renew confirmation.
+  const [renewalPoints, setRenewalPoints] = useState<number | null>(null);
   const [submittingModal, setSubmittingModal] = useState(false);
 
   // Product image (create/edit)
@@ -168,6 +176,9 @@ export default function SellerProductsPage() {
         setProductLimit(res.capabilities.product_limit);
         setProductsCount(res.capabilities.products_count);
       })
+      .catch(() => {});
+    getSellerListingSummary(token)
+      .then((res) => setRenewalPoints(res.renewal_points))
       .catch(() => {});
   }, []);
 
@@ -377,6 +388,27 @@ export default function SellerProductsPage() {
       setActionError(err instanceof Error ? err.message : "Failed to submit the product for review.");
     } finally {
       setSubmittingId(null);
+    }
+  };
+
+  // EXPIRED -> PUBLISHED for ProductListingPolicy.renewal_points, no review.
+  const handleRenewConfirm = async () => {
+    if (!renewingProduct) return;
+    const token = getAuthToken();
+    if (!token) return;
+
+    setSubmittingModal(true);
+    try {
+      const renewed = await renewSellerProduct(token, renewingProduct.id);
+      setActionSuccess(`"${renewed.name}" is live again until ${formatDate(renewed.live_until)}.`);
+      setRenewingProduct(null);
+      await fetchProductsList();
+      refreshWalletBalance();
+    } catch (err: unknown) {
+      setActionError(err instanceof Error ? err.message : "Failed to renew the product.");
+      setRenewingProduct(null);
+    } finally {
+      setSubmittingModal(false);
     }
   };
 
@@ -663,6 +695,9 @@ export default function SellerProductsPage() {
                             {p.rejection_reason}
                           </p>
                         )}
+                        {listingPeriodLine(p) && (
+                          <p className="text-[10px] text-ink-muted mt-1 whitespace-nowrap">{listingPeriodLine(p)}</p>
+                        )}
                       </td>
 
                       <td className="py-3 px-4 text-right">
@@ -687,6 +722,17 @@ export default function SellerProductsPage() {
                                 : "Submit for review"}
                             </button>
                           )}
+                          {p.status === "EXPIRED" && (
+                            <button
+                              type="button"
+                              onClick={() => setRenewingProduct(p)}
+                              className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 text-[11px] font-bold whitespace-nowrap cursor-pointer"
+                              title="Put this product back on the storefront"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">autorenew</span>
+                              Renew
+                            </button>
+                          )}
                           <button
                             type="button"
                             onClick={() => handleOpenEdit(p)}
@@ -698,8 +744,13 @@ export default function SellerProductsPage() {
                           <button
                             type="button"
                             onClick={() => setDeletingProduct(p)}
-                            className="p-1 text-ink-muted hover:text-accent rounded"
-                            title="Delete"
+                            disabled={p.listing_locked}
+                            className="p-1 text-ink-muted hover:text-accent rounded disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-ink-muted"
+                            title={
+                              p.listing_locked
+                                ? `Live until ${formatDate(p.live_until)}; it cannot be deleted before then`
+                                : "Delete"
+                            }
                           >
                             <span className="material-symbols-outlined text-[18px]">delete</span>
                           </button>
@@ -1005,19 +1056,29 @@ export default function SellerProductsPage() {
               </div>
 
               {!isAddOpen && (
-                <div className="flex items-center gap-2 pt-1">
-                  <input
-                    type="checkbox"
-                    id="is_active"
-                    checked={formData.is_active}
-                    onChange={(e) =>
-                      setFormData({ ...formData, is_active: e.target.checked })
-                    }
-                    className="rounded text-primary focus:ring-primary h-4 w-4"
-                  />
-                  <label htmlFor="is_active" className="text-xs text-ink cursor-pointer select-none">
-                    Product is active and visible on store
-                  </label>
+                <div className="pt-1 space-y-1">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      id="is_active"
+                      checked={formData.is_active}
+                      // A live listing stays on the storefront until it ends.
+                      disabled={editingProduct?.listing_locked && formData.is_active}
+                      onChange={(e) =>
+                        setFormData({ ...formData, is_active: e.target.checked })
+                      }
+                      className="rounded text-primary focus:ring-primary h-4 w-4 disabled:opacity-50"
+                    />
+                    <label htmlFor="is_active" className="text-xs text-ink cursor-pointer select-none">
+                      Product is active and visible on store
+                    </label>
+                  </div>
+                  {editingProduct?.listing_locked && (
+                    <p className="text-[11px] text-ink-muted">
+                      Live until {formatDate(editingProduct.live_until)}. It cannot be hidden before then;
+                      set its stock to 0 to show it as out of stock.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -1048,6 +1109,43 @@ export default function SellerProductsPage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Renew Confirmation Modal */}
+      {renewingProduct && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="bg-surface rounded-2xl border border-line shadow-2xl max-w-sm w-full p-6 space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 text-primary">
+              <span className="material-symbols-outlined text-[28px]">autorenew</span>
+              <h3 className="text-base font-bold text-ink">Renew Product</h3>
+            </div>
+            <p className="text-xs text-ink-muted">
+              Put <strong className="text-ink">{renewingProduct.name}</strong> back on the storefront?{" "}
+              {renewalPoints !== null
+                ? `It costs ${renewalPoints} points from your wallet${
+                    walletBalance !== null ? ` (you have ${walletBalance})` : ""
+                  }.`
+                : "It costs points from your wallet."}
+            </p>
+            <div className="flex justify-end gap-2 pt-3 border-t border-line">
+              <button
+                type="button"
+                onClick={() => setRenewingProduct(null)}
+                className="px-4 py-2 rounded-lg text-xs font-bold uppercase tracking-wider text-ink-muted hover:text-ink transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleRenewConfirm}
+                disabled={submittingModal}
+                className="px-4 py-2 rounded-lg bg-primary hover:bg-primary-hover text-on-primary font-bold text-xs uppercase tracking-wider transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {submittingModal ? "Renewing..." : "Renew"}
+              </button>
+            </div>
           </div>
         </div>
       )}
