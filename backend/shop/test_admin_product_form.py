@@ -141,7 +141,10 @@ class ProductAdminFormTests(TestCase):
         self.assertContains(response, "3 photos")
         # Every storefront condition passes.
         self.assertContains(response, "Visible on the storefront")
-        self.assertContains(response, "5/5")
+        self.assertContains(response, "6/6")
+        # A Full Shop Owner's product has no listing end date.
+        self.assertContains(response, "Listing period is running")
+        self.assertContains(response, "No end date")
         self.assertContains(response, 'id="mp-product-data"')
 
     def test_hidden_product_names_what_keeps_it_off_the_storefront(self):
@@ -152,7 +155,7 @@ class ProductAdminFormTests(TestCase):
         self.assertContains(response, "Hidden from storefront")
         self.assertNotContains(response, "View on storefront")
         self.assertContains(response, "Hidden from the storefront")
-        self.assertContains(response, "4/5")
+        self.assertContains(response, "5/6")
         self.assertContains(response, "Low stock")
 
     def test_add_page_renders_empty_photo_state(self):
