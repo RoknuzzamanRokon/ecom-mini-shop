@@ -728,6 +728,23 @@ The code is in the `onboarding` app, and the API is under `/api/onboarding/`.
    onboarder's tokens. This happens once per onboarding. Points the seller
    got from anyone else stay with the seller.
 
+## Point validity and listing periods (decided 2026-11-01)
+
+New feature work, outside the fixes-only roadmap. The rules, edge cases and
+tasks are in `docs/LISTING_VALIDITY_PLAN.md`. In short: a seller's points
+last 30 days and each purchase adds 30 days to all of them; a product is live
+4 months, then the seller renews it for 5 points, 2 months at a time, and
+cannot take it down while it is live. Three choices the user made:
+
+1. **Buying points.** The seller pays staff outside the system and the staff
+   member gives the points (at least 100) from their own wallet. There is no
+   payment gateway and no request flow.
+2. **Who sells.** Administrators and Finance sell to any seller, as before.
+   A Sales Team member sells only to the sellers they onboarded.
+3. **Full Shop Owners are exempt from both.** Their points never expire and
+   their products have no end date. The 100-point minimum applies to
+   everyone.
+
 ## Not in this roadmap
 
 A short honest roadmap beats an exhaustive wish list. These are known and

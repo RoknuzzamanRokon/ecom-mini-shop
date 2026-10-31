@@ -107,8 +107,9 @@ expiring products, seller deletion of products (sellers still lack
 
 - C1. Seller dashboard: listing summary and table, Renew, points expiry and
   the minimum purchase.
-- C2. Seller products page: end date, the `EXPIRED` filter, hide disabled
-  while live, Renew.
+- C2. Seller products page: end date, Renew, hide and delete disabled while
+  live. (The page has no status filter; the dashboard's tabs list live,
+  ending-soon and expired products.)
 - C3. Storefront product card: "Out of stock", Add to Cart disabled.
 - C4. Console: `EXPIRED` in product filters and badges, the end date on the
   product page, the 100-point minimum in the credit forms.
