@@ -750,6 +750,8 @@ class AdminProductSerializer(serializers.ModelSerializer):
             "status",
             "rejection_reason",
             "is_publicly_visible",
+            "live_until",
+            "renewal_count",
             "submitted_at",
             "reviewed_at",
             "created_at",

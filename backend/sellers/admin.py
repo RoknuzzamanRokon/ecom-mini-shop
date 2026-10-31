@@ -93,6 +93,12 @@ class SellerProfileAdmin(ChangeFormAuditMixin, ReasonRequiredActionMixin, Status
             wallet = SellerWallet.objects.filter(seller=obj).first()
             if wallet is not None:
                 PointService.restart_expiry_clock(wallet)
+        # Only a Limited Shop Owner's products have an end date, so either
+        # change re-dates or clears them.
+        if change and "seller_type" in form.changed_data:
+            from shop.listing_service import ListingService
+
+            ListingService.seller_type_changed(obj, actor=request.user)
 
     def get_fieldsets(self, request, obj=None):
         # "mp-form" is the stacked two-column card layout in japanese_admin.css.

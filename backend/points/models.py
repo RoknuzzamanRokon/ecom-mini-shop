@@ -1,4 +1,5 @@
 import calendar
+from datetime import timedelta
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -68,6 +69,7 @@ class PointTransaction(models.Model):
     TYPE_REFUND = "REFUND"
     TYPE_ADJUSTMENT = "ADJUSTMENT"
     TYPE_EXPIRY = "EXPIRY"
+    TYPE_LISTING_RENEWAL = "LISTING_RENEWAL"
 
     TRANSACTION_TYPE_CHOICES = [
         (TYPE_BONUS, "Bonus / Promotional Credit"),
@@ -77,6 +79,7 @@ class PointTransaction(models.Model):
         (TYPE_REFUND, "Point Refund"),
         (TYPE_ADJUSTMENT, "Administrative Adjustment"),
         (TYPE_EXPIRY, "Points Expired"),
+        (TYPE_LISTING_RENEWAL, "Listing Renewal Fee"),
     ]
 
     wallet = models.ForeignKey(
@@ -332,14 +335,15 @@ class ProductCreationCost(models.Model):
 
 class PointExpiryPolicy(models.Model):
     """
-    How long received points last before they expire. Singleton (pk=1),
-    administrator-adjustable like ProductCreationCost. A change applies to
-    points received afterwards; points already held keep their date.
+    How long points received into a staff wallet last before they expire.
+    Singleton (pk=1), administrator-adjustable like ProductCreationCost. A
+    change applies to points received afterwards; points already held keep
+    their date. Seller wallets follow SellerPointPolicy instead.
     """
     expiry_months = models.PositiveSmallIntegerField(
         default=2,
         validators=[MinValueValidator(1)],
-        help_text="Months a batch of received points lasts before it expires.",
+        help_text="Months a batch of points received into a staff wallet lasts before it expires.",
     )
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -366,13 +370,56 @@ class PointExpiryPolicy(models.Model):
         return add_months(received_at, cls.get_months())
 
 
+class SellerPointPolicy(models.Model):
+    """
+    How sellers buy points and how long they last. Singleton (pk=1),
+    administrator-adjustable like PointExpiryPolicy.
+
+    A seller's unspent points share one expiry date: each purchase moves it
+    to the later of now and the current date, plus `validity_days`
+    (PointService.credit). Every staff credit to a seller is a sale of at
+    least `minimum_purchase` points (PointService.adjust_points).
+    """
+    validity_days = models.PositiveSmallIntegerField(
+        default=30,
+        validators=[MinValueValidator(1)],
+        help_text="Days a purchase adds to the expiry date of the seller's points.",
+    )
+    minimum_purchase = models.PositiveIntegerField(
+        default=100,
+        validators=[MinValueValidator(1)],
+        help_text="The fewest points staff may give a seller at once.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Seller Point Policy"
+        verbose_name_plural = "Seller Point Policy"
+
+    def __str__(self):
+        return f"Seller Point Policy: {self.validity_days} days, at least {self.minimum_purchase} points"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def current(cls) -> "SellerPointPolicy":
+        """The saved policy, or an unsaved one holding the defaults."""
+        return cls.objects.filter(pk=1).first() or cls()
+
+    def expiry_from(self, moment):
+        return moment + timedelta(days=self.validity_days)
+
+
 class PointLot(models.Model):
     """
     One receipt of points. A wallet's lots say when each of its points
     expires; the wallet's `balance` stays the authoritative total. Spending
     takes from the lot that expires first. Every lot carries a date, and
     PointService decides at expiry time whether the holder's points expire
-    at all (a Full Shop Owner's and a superuser's never do).
+    at all (a Full Shop Owner's and a superuser's never do). A seller's
+    unspent lots share one date, which each purchase moves on.
     """
     amount = models.PositiveIntegerField(
         validators=[MinValueValidator(1)],

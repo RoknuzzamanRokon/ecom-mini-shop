@@ -3,7 +3,7 @@ from django.db import transaction
 
 from notifications import events
 from notifications.publisher import publish
-from django.db.models import F, Q, Sum
+from django.db.models import F, Max, Q, Sum
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from .models import (
@@ -11,6 +11,7 @@ from .models import (
     PointTransaction,
     ProductCreationCost,
     SellerPointLot,
+    SellerPointPolicy,
     SellerWallet,
     StaffPointLot,
     StaffPointTransaction,
@@ -71,11 +72,13 @@ class PointService:
     Enforces atomic execution, concurrency safety (row locks), append-only ledger entries,
     and guarantees non-negative wallet balances.
 
-    Expiry: every point a wallet receives arrives as a lot dated
-    PointExpiryPolicy months ahead, and spending takes from the lot that
-    expires first. Due lots are expired whenever their wallet is locked or
-    read, and by the expire_points command for wallets nobody touches, so an
-    expired point can never be spent or moved.
+    Expiry: every point a wallet receives arrives as a dated lot, and
+    spending takes from the lot that expires first. A staff lot lasts
+    PointExpiryPolicy months; a seller's unspent lots share one date that
+    each purchase moves on by SellerPointPolicy.validity_days. Due lots are
+    expired whenever their wallet is locked or read, and by the
+    expire_points command for wallets nobody touches, so an expired point can
+    never be spent or moved.
     """
 
     @classmethod
@@ -153,9 +156,10 @@ class PointService:
         Atomically credits points to a seller's wallet and records an auditable ledger transaction.
         Uses select_for_update() to guarantee concurrency safety.
 
-        The seller's lot always gets a full expiry period. `origin_expires_at`,
-        when the points came from a staff wallet whose points expire, is when
-        they would have expired there; a take-back returns them with it.
+        The new points and every unspent one get the date
+        _seller_credit_expiry picks. `origin_expires_at`, when the points came
+        from a staff wallet whose points expire, is when they would have
+        expired there; a take-back returns them with it.
         """
         if not isinstance(amount, int) or amount <= 0:
             raise InvalidAmountError(f"Credit amount must be a positive integer, got: {amount}")
@@ -184,7 +188,16 @@ class PointService:
                 reference_id=str(reference_id or "").strip(),
                 actor=actor,
             )
-            cls._add_lot(SellerPointLot, wallet, amount, txn, origin_expires_at=origin_expires_at)
+            now = timezone.now()
+            cls._add_lot(
+                SellerPointLot,
+                wallet,
+                amount,
+                txn,
+                received_at=now,
+                expires_at=cls._seller_credit_expiry(wallet, transaction_type, now),
+                origin_expires_at=origin_expires_at,
+            )
 
             logger.info(
                 f"[POINTS] Credited {amount} pts to seller {seller.id} ({seller.business_name}). "
@@ -300,6 +313,11 @@ class PointService:
         if seller.user_id == actor.pk:
             raise SelfAdjustmentError("You cannot give points to or take points from your own seller wallet.")
         cls._validate_movement(amount, reason)
+        # A staff credit is a sale, and sellers buy a minimum at a time.
+        # Taking points back has no minimum.
+        minimum = SellerPointPolicy.current().minimum_purchase
+        if from_staff and amount < minimum:
+            raise InvalidAmountError(f"Sellers buy at least {minimum} points at a time; {amount} is too few.")
 
         with transaction.atomic():
             # Staff wallet first, seller wallet second, in both directions, so
@@ -597,8 +615,8 @@ class PointService:
         return wallet
 
     @staticmethod
-    def _add_lot(lot_model, wallet, amount: int, source, expires_at=None, **fields):
-        now = timezone.now()
+    def _add_lot(lot_model, wallet, amount: int, source, expires_at=None, received_at=None, **fields):
+        now = received_at or timezone.now()
         return lot_model.objects.create(
             wallet=wallet,
             amount=amount,
@@ -608,6 +626,25 @@ class PointService:
             source=source,
             **fields,
         )
+
+    @staticmethod
+    def _seller_credit_expiry(wallet, transaction_type: str, now):
+        """
+        When points a locked seller wallet receives expire. A seller's unspent
+        points share one date: a purchase moves it to the later of now and
+        the current date, plus SellerPointPolicy.validity_days, for what the
+        seller already holds too (90 points with 5 days left, plus 100 bought,
+        last 35 days). A refund gives back points the seller had already
+        paid for, so it joins the current date without moving it.
+        """
+        policy = SellerPointPolicy.current()
+        unspent = wallet.lots.filter(remaining__gt=0)
+        current = unspent.filter(expires_at__gt=now).aggregate(latest=Max("expires_at"))["latest"]
+        if transaction_type == PointTransaction.TYPE_REFUND:
+            return current or policy.expiry_from(now)
+        expires_at = policy.expiry_from(current or now)
+        unspent.update(expires_at=expires_at)
+        return expires_at
 
     @staticmethod
     def _consume_lots(lots, amount: int) -> list:
@@ -770,12 +807,17 @@ class PointService:
     def restart_expiry_clock(wallet) -> int:
         """
         Gives the wallet's unspent points at least a full expiry period from
-        now. Used when a holder whose points did not expire starts to (a Full
-        Shop Owner made Limited, a staff member's expiry turned back on), so
-        old points do not vanish the moment the rule starts to apply.
+        now: SellerPointPolicy's for a seller wallet, PointExpiryPolicy's for
+        a staff one. Used when a holder whose points did not expire starts to
+        (a Full Shop Owner made Limited, a staff member's expiry turned back
+        on), so old points do not vanish the moment the rule starts to apply.
         Returns how many lots moved.
         """
-        fresh = PointExpiryPolicy.expiry_for(timezone.now())
+        now = timezone.now()
+        if isinstance(wallet, SellerWallet):
+            fresh = SellerPointPolicy.current().expiry_from(now)
+        else:
+            fresh = PointExpiryPolicy.expiry_for(now)
         return wallet.lots.filter(remaining__gt=0, expires_at__lt=fresh).update(expires_at=fresh)
 
     @classmethod

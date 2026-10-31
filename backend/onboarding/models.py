@@ -12,6 +12,8 @@ from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
 
+from points.models import SellerPointPolicy
+
 
 class OnboardingSettings(models.Model):
     """
@@ -38,6 +40,15 @@ class OnboardingSettings(models.Model):
 
     def __str__(self):
         return f"Onboarding: {self.starting_points} points per seller, {self.tokens_per_seller} tokens earned"
+
+    def clean(self):
+        # Starting points are a staff credit, which is a sale of at least the
+        # minimum (PointService.adjust_points); fewer would fail every onboarding.
+        minimum = SellerPointPolicy.current().minimum_purchase
+        if 0 < self.starting_points < minimum:
+            raise ValidationError(
+                {"starting_points": f"Give 0 or at least {minimum} points (the Seller Point Policy minimum)."}
+            )
 
     def save(self, *args, **kwargs):
         self.pk = 1

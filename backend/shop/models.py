@@ -2,11 +2,14 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models import Avg, Count, Q
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.text import slugify
+
+from points.models import add_months
 
 
 class Category(models.Model):
@@ -47,6 +50,15 @@ class Category(models.Model):
         return reverse("shop:category", args=[self.slug])
 
 
+def listing_running_q(prefix: str = "") -> Q:
+    """
+    The product's listing period has not ended: it has no end date (a Full
+    Shop Owner's) or the date is still ahead. `prefix` reaches a product
+    through a relation, e.g. "products__".
+    """
+    return Q(**{f"{prefix}live_until__isnull": True}) | Q(**{f"{prefix}live_until__gt": timezone.now()})
+
+
 class ProductQuerySet(models.QuerySet):
     def public(self):
         """
@@ -57,8 +69,11 @@ class ProductQuerySet(models.QuerySet):
           3. Category is active (category__is_active=True).
           4. Product belongs to an approved/active shop (shop__status in [APPROVED, ACTIVE]).
           5. Shop owner (seller) is operational (shop__owner__status in [APPROVED, ACTIVE]).
+          6. Its listing period has not ended, even if expire_listings has not
+             yet moved it to EXPIRED.
         """
         return self.filter(
+            listing_running_q(),
             is_active=True,
             status="PUBLISHED",
             category__is_active=True,
@@ -87,6 +102,8 @@ class Product(models.Model):
     STATUS_REJECTED = "REJECTED"
     STATUS_PUBLISHED = "PUBLISHED"
     STATUS_UNPUBLISHED = "UNPUBLISHED"
+    # The listing period ended (ListingService); the seller renews it.
+    STATUS_EXPIRED = "EXPIRED"
 
     STATUS_CHOICES = [
         (STATUS_DRAFT, "Draft"),
@@ -95,6 +112,7 @@ class Product(models.Model):
         (STATUS_REJECTED, "Rejected"),
         (STATUS_PUBLISHED, "Published"),
         (STATUS_UNPUBLISHED, "Unpublished"),
+        (STATUS_EXPIRED, "Expired"),
     ]
 
     objects = ProductQuerySet.as_manager()
@@ -143,6 +161,19 @@ class Product(models.Model):
         null=True,
         blank=True,
         related_name="reviewed_products",
+    )
+    live_until = models.DateTimeField(
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text=(
+            "When the current listing period ends (a Limited Shop Owner's product). "
+            "Empty: no end date, for a Full Shop Owner's product or one never published."
+        ),
+    )
+    renewal_count = models.PositiveIntegerField(
+        default=0,
+        help_text="How many times the seller renewed the listing after it expired.",
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -200,6 +231,20 @@ class Product(models.Model):
             and self.shop.owner_id is not None
             and self.shop.owner
             and self.shop.owner.status in ("APPROVED", "ACTIVE")
+            and (self.live_until is None or self.live_until > timezone.now())
+        )
+
+    @property
+    def listing_locked(self) -> bool:
+        """
+        Published with a listing period still running: the seller paid for
+        it, so they cannot take it off the storefront until it ends
+        (ListingService). A product without an end date is never locked.
+        """
+        return (
+            self.status == self.STATUS_PUBLISHED
+            and self.live_until is not None
+            and self.live_until > timezone.now()
         )
 
     def get_absolute_url(self):
@@ -251,6 +296,56 @@ class ProductImage(models.Model):
 
     def __str__(self):
         return f"{self.product.name} image #{self.order}"
+
+
+class ProductListingPolicy(models.Model):
+    """
+    How long a Limited Shop Owner's product stays live, and what renewing it
+    costs (ListingService). Singleton (pk=1), administrator-adjustable like
+    points.ProductCreationCost. A change applies to periods started
+    afterwards; running periods keep their end date.
+    """
+    first_period_months = models.PositiveSmallIntegerField(
+        default=4,
+        validators=[MinValueValidator(1)],
+        help_text="Months a product stays live from its first publication.",
+    )
+    renewal_period_months = models.PositiveSmallIntegerField(
+        default=2,
+        validators=[MinValueValidator(1)],
+        help_text="Months each renewal keeps an expired product live again.",
+    )
+    renewal_points = models.PositiveIntegerField(
+        default=5,
+        validators=[MinValueValidator(1)],
+        help_text="Points the seller pays to renew an expired product.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Product Listing Policy"
+        verbose_name_plural = "Product Listing Policy"
+
+    def __str__(self):
+        return (
+            f"Product Listing Policy: {self.first_period_months} months, then "
+            f"{self.renewal_period_months} months for {self.renewal_points} points"
+        )
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def current(cls) -> "ProductListingPolicy":
+        """The saved policy, or an unsaved one holding the defaults."""
+        return cls.objects.filter(pk=1).first() or cls()
+
+    def first_period_end(self, start):
+        return add_months(start, self.first_period_months)
+
+    def renewal_period_end(self, start):
+        return add_months(start, self.renewal_period_months)
 
 
 # Available units at or below which a product counts as low on stock: the

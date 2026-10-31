@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 
 class Cart(models.Model):
@@ -117,4 +118,6 @@ class CartItem(models.Model):
             return "The shop selling this product is currently unavailable."
         if not self.product.shop.owner or self.product.shop.owner.status not in ("APPROVED", "ACTIVE"):
             return "The merchant selling this product is currently inactive."
+        if self.product.live_until is not None and self.product.live_until <= timezone.now():
+            return "This product's listing has ended."
         return "This product is currently unavailable for purchase."

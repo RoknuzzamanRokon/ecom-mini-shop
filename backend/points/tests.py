@@ -10,6 +10,7 @@ from rest_framework.test import APIClient
 from points.models import (
     PointTransaction,
     ProductCreationCost,
+    SellerPointPolicy,
     SellerWallet,
     StaffPointTransaction,
     StaffWallet,
@@ -29,6 +30,15 @@ from sellers.models import SellerProfile
 from utils.testing import run_together
 
 User = get_user_model()
+
+
+def allow_small_sales():
+    """
+    Fixture: lets staff give a seller any number of points. These suites test
+    who may move points and how; the 100-point minimum purchase has its own
+    tests (test_expiry.MinimumPurchaseTests).
+    """
+    SellerPointPolicy.objects.create(minimum_purchase=1)
 
 
 def fund_staff_wallet(user, amount):
@@ -566,7 +576,8 @@ class SellerWalletContractTests(TestCase):
                 "total_expired",
                 "product_creation_cost",
                 "points_expire",
-                "expiry_months",
+                "validity_days",
+                "minimum_purchase",
                 "upcoming_expiries",
                 "created_at",
                 "updated_at",
@@ -686,6 +697,7 @@ class PointActionAuthorizationTests(TestCase):
     @classmethod
     def setUpTestData(cls):
         call_command("seed_rbac")
+        allow_small_sales()
         from rbac.models import Permission, RolePermission
 
         cls.seller_user = User.objects.create_user(
@@ -929,6 +941,7 @@ class StaffWalletTests(TestCase):
     @classmethod
     def setUpTestData(cls):
         call_command("seed_rbac")
+        allow_small_sales()
         seller_user = User.objects.create_user(
             username="sw_seller", email="sw_seller@minishop.com", password="SellerPassword123!"
         )
@@ -1631,6 +1644,7 @@ class SelfAdjustmentTests(TestCase):
     @classmethod
     def setUpTestData(cls):
         call_command("seed_rbac")
+        allow_small_sales()
         cls.staff_seller = User.objects.create_user(
             username="self_adjust_staff", password="Self-Adjust-123", is_staff=True
         )

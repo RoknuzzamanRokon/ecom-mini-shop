@@ -166,16 +166,16 @@ class ReviewNotificationTests(WaveThreeFixtures, TestCase):
 
 class PointsNotificationTests(WaveThreeFixtures, TestCase):
     def test_a_staff_adjustment_tells_the_seller(self):
-        StaffWallet.objects.create(user=self.admin, balance=20)
-        txn = PointService.adjust_points(self.seller, 20, "credit", "Launch bonus", actor=self.admin)
+        StaffWallet.objects.create(user=self.admin, balance=100)
+        txn = PointService.adjust_points(self.seller, 100, "credit", "Launch bonus", actor=self.admin)
         event = events_of(events.POINTS_ADJUSTED).get()
         self.assertEqual(event.idempotency_key, f"points_txn:{txn.pk}")
         self.assertEqual(event.payload, {
             "transaction_id": txn.pk, "seller_id": self.seller.pk, "transaction_type": "ADMIN_CREDIT",
-            "amount": 20, "balance_after": 20, "reason": "Launch bonus",
+            "amount": 100, "balance_after": 100, "reason": "Launch bonus",
         })
         row = route_all(events.POINTS_ADJUSTED).get()
-        self.assertEqual((row.recipient, row.category, row.title), (self.seller_user, c.WALLET, "20 points added to your wallet"))
+        self.assertEqual((row.recipient, row.category, row.title), (self.seller_user, c.WALLET, "100 points added to your wallet"))
         self.assertFalse(row.deliveries.exists())
 
     def test_platform_credits_and_refused_adjustments_publish_nothing(self):

@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from points.serializers import MAX_POINTS_PER_MOVE
 from rbac.models import LoginPhone
 from rbac.phone import INVALID_PHONE, PHONE_TAKEN, normalize_phone
 from rbac.serializers import login_phone_number
@@ -74,6 +75,12 @@ class OnboardingShopSerializer(AdminShopCreateSerializer):
 
     seller_id = None
     reason = None
+
+
+class PointSaleSerializer(serializers.Serializer):
+    """POST /api/onboarding/sellers/<pk>/points/. The minimum purchase is PointService's rule."""
+
+    amount = serializers.IntegerField(min_value=1, max_value=MAX_POINTS_PER_MOVE)
 
 
 # ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@ from .models import (
     PointExpiryPolicy,
     PointTransaction,
     ProductCreationCost,
+    SellerPointPolicy,
     SellerWallet,
     StaffPointTransaction,
     StaffWallet,
@@ -160,6 +161,19 @@ class PointExpiryPolicyAdmin(admin.ModelAdmin):
     def has_add_permission(self, request):
         # Singleton (pk=1) enforced in PointExpiryPolicy.save().
         return not PointExpiryPolicy.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(SellerPointPolicy)
+class SellerPointPolicyAdmin(admin.ModelAdmin):
+    list_display = ('validity_days', 'minimum_purchase', 'updated_at')
+    readonly_fields = ('updated_at',)
+
+    def has_add_permission(self, request):
+        # Singleton (pk=1) enforced in SellerPointPolicy.save().
+        return not SellerPointPolicy.objects.exists()
 
     def has_delete_permission(self, request, obj=None):
         return False

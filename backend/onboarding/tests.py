@@ -14,7 +14,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from audit.models import AuditLog
-from points.models import PointTransaction, SellerWallet, StaffWallet
+from points.models import PointTransaction, ProductCreationCost, SellerWallet, StaffWallet
 from points.services import PointService
 from rbac.models import LoginPhone, Permission, Role, RolePermission
 from rbac.services import assign_user_role, get_user_permissions
@@ -285,7 +285,9 @@ class CatalogBeforeApprovalTests(OnboardingTestCase):
         self.assertIn("1 shop", response.data["detail"])
 
     def test_the_sellers_points_pay_for_products(self):
-        OnboardingSettings.objects.create(starting_points=PointService.get_product_creation_cost(), tokens_per_seller=51)
+        # Starting points enough for exactly one product (the 100-point minimum sale applies).
+        ProductCreationCost.objects.update_or_create(pk=1, defaults={"required_points": 100})
+        OnboardingSettings.objects.create(starting_points=100, tokens_per_seller=51)
         seller = self.onboard()
         shop = Shop.objects.get(pk=self.add_shop(seller).data["id"])
         self.assertEqual(self.add_product(shop).status_code, status.HTTP_201_CREATED)
@@ -413,11 +415,11 @@ class RejectionTests(OnboardingTestCase):
 
     def test_points_from_elsewhere_stay_with_the_seller(self):
         seller = self.build()
-        PointService.adjust_points(seller, 50, "CREDIT", "Promotion", actor=self.root)
+        PointService.adjust_points(seller, 100, "CREDIT", "Promotion", actor=self.root)
 
         self.as_user(self.admin).post(f"/api/onboarding/review/{seller.pk}/reject/", {"reason": "Fake shop"})
         self.assertEqual(self.staff_points(self.sales), 500)
-        self.assertEqual(self.seller_points(seller), 50)
+        self.assertEqual(self.seller_points(seller), 100)
 
     def test_rewards_are_reversed_once(self):
         seller = self.build()
@@ -459,3 +461,75 @@ class TokenHistoryTests(OnboardingTestCase):
     def test_no_wallet_yet_reads_as_zero(self):
         data = self.as_user(self.other_sales).get("/api/onboarding/tokens/").data
         self.assertEqual((data["balance"], data["results"]), (0, []))
+
+
+class PointSaleTests(OnboardingTestCase):
+    """An onboarder sells points to their own approved sellers (decided 2026-11-01)."""
+
+    def approved(self, tag="corner", phone="01712345678"):
+        seller = self.onboard(tag, phone=phone)
+        self.as_user(self.admin).post(f"/api/onboarding/review/{seller.pk}/approve/")
+        seller.refresh_from_db()
+        return seller
+
+    def sell(self, seller, amount, user=None):
+        return self.as_user(user or self.sales).post(
+            f"/api/onboarding/sellers/{seller.pk}/points/", {"amount": amount}, format="json"
+        )
+
+    def test_an_onboarder_sells_points_from_their_wallet(self):
+        seller = self.approved()
+        response = self.sell(seller, 100)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.assertEqual((response.data["points_balance"], response.data["your_points"]), (300, 200))
+        self.assertEqual(self.seller_points(seller), 300)
+        self.assertEqual(self.staff_points(self.sales), 200)
+        entry = AuditLog.objects.get(action="ONBOARDING_POINTS_SOLD")
+        self.assertEqual((entry.actor, entry.seller, entry.metadata["amount"]), (self.sales, seller, 100))
+        txn = PointTransaction.objects.get(seller=seller, reference_type="POINT_SALE")
+        self.assertEqual(txn.reason, "Points sold by sales")
+
+    def test_a_sale_moves_the_date_of_every_point_the_seller_holds(self):
+        seller = self.approved()
+        response = self.sell(seller, 100)
+        dates = set(seller.point_wallet.lots.filter(remaining__gt=0).values_list("expires_at", flat=True))
+        self.assertEqual(len(dates), 1)
+        self.assertEqual(dates.pop(), response.data["points_expire_at"])
+
+    def test_fewer_than_the_minimum_is_refused(self):
+        seller = self.approved()
+        response = self.sell(seller, 99)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("at least 100", response.data["detail"])
+        self.assertEqual(self.staff_points(self.sales), 300)
+
+    def test_a_seller_awaiting_approval_cannot_buy(self):
+        seller = self.onboard()
+        response = self.sell(seller, 100)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("only to approved sellers", response.data["detail"])
+        self.assertEqual(self.seller_points(seller), 200)
+
+    def test_more_than_the_wallet_holds_is_refused(self):
+        seller = self.approved()
+        response = self.sell(seller, 301)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["available_points"], 300)
+
+    def test_another_onboarders_seller_is_not_found(self):
+        seller = self.approved()
+        self.assertEqual(self.sell(seller, 100, user=self.other_sales).status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(self.sell(seller, 100, user=self.admin).status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_the_summary_names_the_minimum(self):
+        data = self.as_user(self.sales).get("/api/onboarding/me/").data
+        self.assertEqual(data["minimum_point_sale"], 100)
+
+    def test_starting_points_obey_the_minimum(self):
+        from django.core.exceptions import ValidationError
+
+        with self.assertRaises(ValidationError):
+            OnboardingSettings(starting_points=50).full_clean()
+        OnboardingSettings(starting_points=0).full_clean()
+        OnboardingSettings(starting_points=100).full_clean()

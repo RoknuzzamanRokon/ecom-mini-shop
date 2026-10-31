@@ -18,7 +18,12 @@ from rest_framework.views import APIView
 
 from audit.services import AuditService
 from audit.utils import get_client_ip
-from points.services import InsufficientPointsError, InsufficientStaffPointsError, PointService
+from points.services import (
+    InsufficientPointsError,
+    InsufficientStaffPointsError,
+    InvalidAmountError,
+    PointService,
+)
 from sellers.services import reject_seller
 from shop.models import Product
 from shop.serializers import SellerProductCreateSerializer
@@ -35,6 +40,7 @@ from .serializers import (
     OnboardedShopSerializer,
     OnboardingShopSerializer,
     OnboardSellerSerializer,
+    PointSaleSerializer,
     TokenTransactionSerializer,
 )
 from .services import OnboardingError, OnboardingService, TokenService
@@ -204,6 +210,42 @@ class OnboardedProductCreateView(APIView):
             raise django_errors(exc)
         return Response(
             OnboardedProductSerializer(product, context={"request": request}).data, status=status.HTTP_201_CREATED
+        )
+
+
+class OnboardedSellerPointsView(APIView):
+    """
+    POST /api/onboarding/sellers/<pk>/points/ {"amount": 100}
+    Sells points from the caller's wallet to one of their approved sellers,
+    who paid the caller outside the system. 400 below the minimum purchase
+    (SellerPointPolicy), for a seller not yet approved, or with
+    `available_points` when the caller's wallet holds too few.
+    """
+    permission_classes = [IsAuthenticated, CanOnboardSellers]
+
+    def post(self, request, pk):
+        seller = get_object_or_404(OnboardingService.sellers_of(request.user), pk=pk)
+        serializer = PointSaleSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            txn = OnboardingService.sell_points(
+                request.user, seller, serializer.validated_data["amount"], ip_address=get_client_ip(request)
+            )
+        except InsufficientStaffPointsError as exc:
+            return Response(
+                {"detail": str(exc), "available_points": PointService.get_staff_balance(request.user)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except (InvalidAmountError, OnboardingError) as exc:
+            raise refused(exc)
+        return Response(
+            {
+                "seller_id": seller.pk,
+                "amount": txn.amount,
+                "points_balance": txn.balance_after,
+                "points_expire_at": txn.lot.expires_at,
+                "your_points": txn.staff_counterpart.balance_after,
+            }
         )
 
 

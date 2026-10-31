@@ -22,7 +22,19 @@ from points.services import InsufficientPointsError, PointService
 from rbac.models import Role
 from rbac.services import get_user_role_codes, has_user_permission
 from .inventory_service import InventoryService
-from .models import Category, InventoryTransaction, Order, OrderItem, Product, ProductInventory, Payment, Refund
+from .listing_service import ENDING_SOON_DAYS, ListingError, ListingService
+from .models import (
+    Category,
+    InventoryTransaction,
+    Order,
+    OrderItem,
+    Payment,
+    Product,
+    ProductInventory,
+    ProductListingPolicy,
+    Refund,
+    listing_running_q,
+)
 from .payment_service import PaymentService
 from .permissions import (
     can_user_view_any_order,
@@ -506,12 +518,32 @@ class SellerProductListCreateAPIView(APIView):
 
     def get(self, request):
         seller = request.user.seller_profile
+        ListingService.expire_due(Product.objects.filter(shop__owner=seller))
         queryset = (
             Product.objects.filter(shop__owner=seller)
             .select_related("category", "shop", "shop__owner")
             .prefetch_related("images")
             .order_by("-created_at")
         )
+
+        # ?listing=live|ending_soon|expired, the seller dashboard's lists,
+        # soonest end first (most recently ended first for expired).
+        listing = request.query_params.get("listing", "").strip().lower()
+        if listing:
+            now = timezone.now()
+            published = Q(status=Product.STATUS_PUBLISHED)
+            if listing == "live":
+                queryset = queryset.filter(published & listing_running_q()).order_by(
+                    F("live_until").asc(nulls_last=True), "-created_at"
+                )
+            elif listing == "ending_soon":
+                queryset = queryset.filter(
+                    published, live_until__gt=now, live_until__lte=now + timedelta(days=ENDING_SOON_DAYS)
+                ).order_by("live_until", "-created_at")
+            elif listing == "expired":
+                queryset = queryset.filter(status=Product.STATUS_EXPIRED).order_by("-live_until", "-created_at")
+            else:
+                raise DRFValidationError({"listing": "Use live, ending_soon or expired."})
 
         # Optional filters
         shop_id = id_param(request.query_params, "shop_id", "shop")  # 400 if malformed (BUG-066)
@@ -657,6 +689,8 @@ class SellerProductDetailAPIView(APIView):
                 {"error": str(e), "current_stock": e.current_stock},
                 status=status.HTTP_409_CONFLICT,
             )
+        except ListingError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
         except DjangoValidationError as e:
             err_detail = e.message_dict if hasattr(e, "message_dict") else str(e)
             return Response({"error": err_detail}, status=status.HTTP_400_BAD_REQUEST)
@@ -683,6 +717,8 @@ class SellerProductDetailAPIView(APIView):
             )
         except (IneligibleSellerError, ProductOwnershipError, PermissionDenied) as e:
             return Response({"error": str(e)}, status=status.HTTP_403_FORBIDDEN)
+        except ListingError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response({"message": "Product successfully deleted."}, status=status.HTTP_204_NO_CONTENT)
 
@@ -716,6 +752,57 @@ class SellerProductSubmitAPIView(APIView):
             SellerProductSerializer(product, context={"request": request}).data,
             status=status.HTTP_200_OK,
         )
+
+
+class SellerProductRenewAPIView(APIView):
+    """
+    POST /api/products/mine/<pk>/renew/
+    Puts the seller's expired product back on the storefront for
+    ProductListingPolicy.renewal_period_months, for renewal_points from their
+    wallet, with no new review. 400 with `required_points` and
+    `available_points` when the wallet holds too few, or for any other
+    listing rule (not expired, a Full Shop Owner's, a closed shop).
+    """
+    permission_classes = [permissions.IsAuthenticated, IsEligibleProductSeller, IsProductOwner]
+
+    def post(self, request, pk):
+        product = get_object_or_404(Product.objects.select_related("shop", "shop__owner"), pk=pk)
+        self.check_object_permissions(request, product)
+        seller = request.user.seller_profile
+
+        try:
+            product = ListingService.renew(
+                product, seller, actor=request.user, ip_address=get_client_ip(request)
+            )
+        except InsufficientPointsError as e:
+            return Response(
+                {
+                    "error": str(e),
+                    "required_points": ProductListingPolicy.current().renewal_points,
+                    "available_points": PointService.get_balance(seller),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except ListingError as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(
+            SellerProductSerializer(product, context={"request": request}).data,
+            status=status.HTTP_200_OK,
+        )
+
+
+class SellerListingSummaryAPIView(APIView):
+    """
+    GET /api/products/mine/listings/
+    The seller dashboard's listing counts (live, ending soon, expired, in
+    review, not live), whether the seller's products have an end date at
+    all, and the ProductListingPolicy periods and renewal cost.
+    """
+    permission_classes = [permissions.IsAuthenticated, IsEligibleProductSeller]
+
+    def get(self, request):
+        return Response(ListingService.seller_summary(request.user.seller_profile))
 
 
 # ---------------------------------------------------------------------------

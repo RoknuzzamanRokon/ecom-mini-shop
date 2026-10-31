@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import PointExpiryPolicy, PointTransaction, SellerWallet, StaffPointTransaction
+from .models import PointTransaction, SellerPointPolicy, SellerWallet, StaffPointTransaction
 from .services import PointService, seller_points_expire
 
 
@@ -30,11 +30,13 @@ class SellerWalletSerializer(serializers.ModelSerializer):
     product_creation_cost = serializers.SerializerMethodField()
 
     # Expiry: whether this seller's points expire at all (a Full Shop Owner's
-    # never do), how long a batch lasts, the soonest batches to go, and what
-    # has already expired unused.
+    # never do), the days each purchase adds, the soonest batches to go, and
+    # what has already expired unused. `minimum_purchase` is the fewest
+    # points staff may sell the seller at once (SellerPointPolicy).
     total_expired = serializers.SerializerMethodField()
     points_expire = serializers.SerializerMethodField()
-    expiry_months = serializers.SerializerMethodField()
+    validity_days = serializers.SerializerMethodField()
+    minimum_purchase = serializers.SerializerMethodField()
     upcoming_expiries = serializers.SerializerMethodField()
 
     class Meta:
@@ -49,7 +51,8 @@ class SellerWalletSerializer(serializers.ModelSerializer):
             "total_expired",
             "product_creation_cost",
             "points_expire",
-            "expiry_months",
+            "validity_days",
+            "minimum_purchase",
             "upcoming_expiries",
             "created_at",
             "updated_at",
@@ -79,8 +82,16 @@ class SellerWalletSerializer(serializers.ModelSerializer):
     def get_points_expire(self, obj) -> bool:
         return seller_points_expire(obj.seller)
 
-    def get_expiry_months(self, obj) -> int:
-        return PointExpiryPolicy.get_months()
+    def _policy(self):
+        if not hasattr(self, "_cached_policy"):
+            self._cached_policy = SellerPointPolicy.current()
+        return self._cached_policy
+
+    def get_validity_days(self, obj) -> int:
+        return self._policy().validity_days
+
+    def get_minimum_purchase(self, obj) -> int:
+        return self._policy().minimum_purchase
 
     def get_upcoming_expiries(self, obj) -> list:
         if not seller_points_expire(obj.seller):

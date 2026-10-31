@@ -1,9 +1,10 @@
 """
-Point expiry: every point a wallet receives lasts PointExpiryPolicy months
-(default 2), spending takes the soonest-expiring points first, and a Full Shop
-Owner's and a superuser's points never expire. A superuser can switch expiry
-off and on for each other staff member. Also: a new product always costs at
-least 1 point.
+Point expiry: a staff wallet's points last PointExpiryPolicy months (default
+2); a seller's unspent points share one date, which each purchase moves on by
+SellerPointPolicy.validity_days (default 30). Spending takes the
+soonest-expiring points first, and a Full Shop Owner's and a superuser's
+points never expire. A superuser can switch expiry off and on for each other
+staff member. Also: a new product always costs at least 1 point.
 """
 from datetime import datetime, timedelta, timezone as dt_timezone
 from io import StringIO
@@ -25,10 +26,11 @@ from .models import (
     PointExpiryPolicy,
     PointTransaction,
     ProductCreationCost,
+    SellerPointPolicy,
     StaffPointTransaction,
     add_months,
 )
-from .services import InsufficientPointsError, PointError, PointService
+from .services import InsufficientPointsError, InvalidAmountError, PointError, PointService
 
 User = get_user_model()
 
@@ -82,19 +84,26 @@ class PointExpiryTestCase(TestCase):
 
 
 class SellerPointExpiryTests(PointExpiryTestCase):
-    def test_received_points_are_dated_two_months_ahead_by_default(self):
+    def test_received_points_last_thirty_days_by_default(self):
         txn = self.credit(self.limited, 10)
         lot = txn.lot
         self.assertEqual(lot.remaining, 10)
-        self.assertEqual(lot.expires_at, add_months(lot.received_at, 2))
+        self.assertEqual(lot.expires_at, lot.received_at + timedelta(days=30))
 
-    def test_policy_change_applies_to_points_received_afterwards(self):
-        first = self.credit(self.limited, 10).lot
+    def test_staff_expiry_policy_does_not_date_seller_points(self):
         PointExpiryPolicy.objects.create(expiry_months=6)
+        lot = self.credit(self.limited, 10).lot
+        self.assertEqual(lot.expires_at, lot.received_at + timedelta(days=30))
+
+    def test_seller_policy_change_applies_to_the_next_purchase(self):
+        first = self.credit(self.limited, 10).lot
+        SellerPointPolicy.objects.create(validity_days=10)
         second = self.credit(self.limited, 10).lot
 
-        self.assertEqual(first.expires_at, add_months(first.received_at, 2))
-        self.assertEqual(second.expires_at, add_months(second.received_at, 6))
+        # The second purchase adds 10 days to the date the first one set.
+        self.assertEqual(second.expires_at, first.expires_at + timedelta(days=10))
+        first.refresh_from_db()
+        self.assertEqual(first.expires_at, second.expires_at)
 
     def test_limited_owner_loses_expired_points_with_a_ledger_entry(self):
         self.credit(self.limited, 10)
@@ -160,7 +169,8 @@ class SellerPointExpiryTests(PointExpiryTestCase):
 
         data = client.get("/api/points/wallet/").data
         self.assertTrue(data["points_expire"])
-        self.assertEqual(data["expiry_months"], 2)
+        self.assertEqual(data["validity_days"], 30)
+        self.assertEqual(data["minimum_purchase"], 100)
         self.assertEqual([row["points"] for row in data["upcoming_expiries"]], [10])
 
         client.force_authenticate(user=self.full.user)
@@ -194,7 +204,7 @@ class StaffPointExpiryTests(PointExpiryTestCase):
 
         # Any locked use expires them first, so the admin cannot hand them on.
         with self.assertRaises(PointError):
-            PointService.adjust_points(self.limited, 10, "CREDIT", "Give", actor=self.admin)
+            PointService.adjust_points(self.limited, 100, "CREDIT", "Give", actor=self.admin)
         wallet = PointService.expire_due_staff_points(wallet)
         self.assertEqual(wallet.balance, 0)
         self.assertTrue(
@@ -220,15 +230,15 @@ class StaffPointExpiryTests(PointExpiryTestCase):
         self.assertGreater(lot.expires_at, timezone.now() + timedelta(days=55))
 
     def test_points_given_to_a_seller_start_a_fresh_clock(self):
-        self.fund_admin(50)
+        self.fund_admin(150)
         staff_lot = PointService.get_or_create_staff_wallet(self.admin).lots.get()
         staff_lot.expires_at = timezone.now() + timedelta(days=3)
         staff_lot.save()
 
-        txn = PointService.adjust_points(self.limited, 20, "CREDIT", "Give", actor=self.admin)
+        txn = PointService.adjust_points(self.limited, 100, "CREDIT", "Give", actor=self.admin)
         staff_lot.refresh_from_db()
-        self.assertEqual(staff_lot.remaining, 30)
-        self.assertEqual(txn.lot.expires_at, add_months(txn.lot.received_at, 2))
+        self.assertEqual(staff_lot.remaining, 50)
+        self.assertEqual(txn.lot.expires_at, txn.lot.received_at + timedelta(days=30))
 
     def test_superuser_wallet_cannot_be_switched(self):
         with self.assertRaises(PointError):
@@ -338,7 +348,8 @@ class SellerTypeChangeRestartsClockTests(PointExpiryTestCase):
         self.assertEqual(response.status_code, 302)
 
         self.assertEqual(PointService.get_balance(self.full), 10)
-        self.assertGreater(wallet.lots.get().expires_at, timezone.now() + timedelta(days=55))
+        # A full seller period: 30 days.
+        self.assertGreater(wallet.lots.get().expires_at, timezone.now() + timedelta(days=29))
 
 
 class TakeBackKeepsExpiryTests(PointExpiryTestCase):
@@ -351,26 +362,26 @@ class TakeBackKeepsExpiryTests(PointExpiryTestCase):
         return StaffPointTransaction.objects.get(seller_transaction=txn).lot
 
     def test_giving_and_taking_back_does_not_renew_expiry(self):
-        self.fund_admin(50)
+        self.fund_admin(150)
         staff_lot = PointService.get_or_create_staff_wallet(self.admin).lots.get()
         tomorrow = timezone.now() + timedelta(days=1)
         staff_lot.expires_at = tomorrow
         staff_lot.save()
 
-        given = PointService.adjust_points(self.limited, 10, "CREDIT", "Give", actor=self.admin)
-        self.assertGreater(given.lot.expires_at, timezone.now() + timedelta(days=55))
+        given = PointService.adjust_points(self.limited, 100, "CREDIT", "Give", actor=self.admin)
+        self.assertGreater(given.lot.expires_at, timezone.now() + timedelta(days=29))
         self.assertEqual(given.lot.origin_expires_at, tomorrow)
 
-        taken = PointService.adjust_points(self.limited, 10, "DEBIT", "Take back", actor=self.admin)
+        taken = PointService.adjust_points(self.limited, 100, "DEBIT", "Take back", actor=self.admin)
         self.assertEqual(self.returned_lot(taken).expires_at, tomorrow)
-        self.assertEqual(PointService.get_staff_balance(self.admin), 50)
+        self.assertEqual(PointService.get_staff_balance(self.admin), 150)
 
     def test_points_from_a_wallet_that_never_expires_come_back_with_a_full_period(self):
-        PointService.mint_points(self.root, 10, "Mint")
-        given = PointService.adjust_points(self.limited, 10, "CREDIT", "Give", actor=self.root)
+        PointService.mint_points(self.root, 100, "Mint")
+        given = PointService.adjust_points(self.limited, 100, "CREDIT", "Give", actor=self.root)
         self.assertIsNone(given.lot.origin_expires_at)
 
-        taken = PointService.adjust_points(self.limited, 10, "DEBIT", "Take back", actor=self.admin)
+        taken = PointService.adjust_points(self.limited, 100, "DEBIT", "Take back", actor=self.admin)
         self.assertGreater(self.returned_lot(taken).expires_at, timezone.now() + timedelta(days=55))
 
 
@@ -402,6 +413,89 @@ class SuperuserRemovalKeepsPointsTests(PointExpiryTestCase):
         self.assertTrue(
             AuditLog.objects.filter(action="STAFF_POINTS_EXPIRY_RESTARTED", actor=self.root, target_id=str(former.pk)).exists()
         )
+
+
+class SellerPurchaseStackingTests(PointExpiryTestCase):
+    """A purchase moves the date of everything the seller holds (decided 2026-11-01)."""
+
+    def lots(self, seller):
+        return PointService.get_or_create_wallet(seller).lots.filter(remaining__gt=0)
+
+    def test_a_purchase_adds_thirty_days_to_the_days_left(self):
+        # The user's example: 90 points with 5 days left, plus 100 bought.
+        self.credit(self.limited, 90)
+        five_days = timezone.now() + timedelta(days=5)
+        self.lots(self.limited).update(expires_at=five_days)
+
+        self.credit(self.limited, 100)
+
+        dates = set(self.lots(self.limited).values_list("expires_at", flat=True))
+        self.assertEqual(dates, {five_days + timedelta(days=30)})
+        self.assertEqual(PointService.get_balance(self.limited), 190)
+
+    def test_a_purchase_after_everything_expired_starts_from_now(self):
+        self.credit(self.limited, 10)
+        age_lots(PointService.get_or_create_wallet(self.limited))
+
+        lot = self.credit(self.limited, 100).lot
+        self.assertEqual(lot.expires_at, lot.received_at + timedelta(days=30))
+        self.assertEqual(PointService.get_balance(self.limited), 100)
+
+    def test_a_refund_joins_the_current_date_without_moving_it(self):
+        held = self.credit(self.limited, 100).lot
+        refund = PointService.credit(
+            seller=self.limited, amount=5, transaction_type=PointTransaction.TYPE_REFUND, reason="Fee back"
+        ).lot
+
+        held.refresh_from_db()
+        self.assertEqual(refund.expires_at, held.expires_at)
+        self.assertEqual(held.expires_at, held.received_at + timedelta(days=30))
+
+    def test_a_refund_with_nothing_held_gets_a_full_period(self):
+        refund = PointService.credit(
+            seller=self.limited, amount=5, transaction_type=PointTransaction.TYPE_REFUND, reason="Fee back"
+        ).lot
+        self.assertEqual(refund.expires_at, refund.received_at + timedelta(days=30))
+
+
+class MinimumPurchaseTests(PointExpiryTestCase):
+    def test_staff_cannot_give_fewer_than_the_minimum(self):
+        self.fund_admin(200)
+        with self.assertRaises(InvalidAmountError):
+            PointService.adjust_points(self.limited, 99, "CREDIT", "Too few", actor=self.admin)
+        self.assertEqual(PointService.get_staff_balance(self.admin), 200)
+
+        PointService.adjust_points(self.limited, 100, "CREDIT", "Enough", actor=self.admin)
+        self.assertEqual(PointService.get_balance(self.limited), 100)
+
+    def test_the_minimum_applies_to_full_owners_too(self):
+        self.fund_admin(200)
+        with self.assertRaises(InvalidAmountError):
+            PointService.adjust_points(self.full, 50, "CREDIT", "Too few", actor=self.admin)
+
+    def test_taking_back_has_no_minimum(self):
+        self.fund_admin(200)
+        PointService.adjust_points(self.limited, 100, "CREDIT", "Sale", actor=self.admin)
+        PointService.adjust_points(self.limited, 10, "DEBIT", "Over-sold", actor=self.admin)
+        self.assertEqual(PointService.get_balance(self.limited), 90)
+
+    def test_the_adjust_endpoint_answers_400(self):
+        self.fund_admin(200)
+        client = APIClient()
+        client.force_authenticate(user=self.admin)
+        res = client.post(
+            f"/api/points/sellers/{self.limited.pk}/adjust/",
+            {"action": "CREDIT", "amount": 40, "reason": "Too few"},
+            format="json",
+        )
+        self.assertEqual(res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("at least 100", res.data["error"])
+
+    def test_the_policy_minimum_is_configurable(self):
+        SellerPointPolicy.objects.create(minimum_purchase=20)
+        self.fund_admin(200)
+        PointService.adjust_points(self.limited, 20, "CREDIT", "Small sale", actor=self.admin)
+        self.assertEqual(PointService.get_balance(self.limited), 20)
 
 
 class ProductCreationCostFloorTests(TestCase):

@@ -24,7 +24,8 @@ from rbac.services import get_user_role_codes, has_user_permission
 from sellers.models import SellerProfile
 from sellers.services import count_seller_products, get_product_limit
 from shops.models import Shop
-from .models import Category, Order, OrderItem, Payment, Product
+from .listing_service import ListingError, ListingService
+from .models import Category, Order, OrderItem, Payment, Product, listing_running_q
 
 logger = logging.getLogger(__name__)
 
@@ -333,6 +334,13 @@ class ProductService:
         if not seller.is_operational:
             raise IneligibleSellerError("Suspended or unapproved sellers cannot update products.")
 
+        # A live listing was paid for: it stays on the storefront until its
+        # period ends. Stock and the other fields still change freely.
+        if product.listing_locked and (
+            data.get("is_active") is False or ("shop" in data and data["shop"] != product.shop)
+        ):
+            raise ListingError(ListingService.locked_message(product))
+
         with transaction.atomic():
             changed_fields = []
 
@@ -427,6 +435,9 @@ class ProductService:
             if not has_user_permission(actor, "products.delete"):
                 raise PermissionDenied("You do not have permission to delete products.")
 
+        if product.listing_locked:
+            raise ListingError(ListingService.locked_message(product))
+
         with transaction.atomic():
             AuditService.log(
                 action="PRODUCT_DELETED",
@@ -449,7 +460,7 @@ class ProductService:
         """
         from audit.models import AuditLog
 
-        if product.status in (Product.STATUS_PUBLISHED, Product.STATUS_UNPUBLISHED):
+        if product.status in (Product.STATUS_PUBLISHED, Product.STATUS_UNPUBLISHED, Product.STATUS_EXPIRED):
             return True
         return AuditLog.objects.filter(
             action="ADMIN_PRODUCT_PUBLISH", target_type="Product", target_id=str(product.pk)
@@ -591,9 +602,16 @@ class ProductService:
             raise ProductModerationError("Cannot publish product belonging to an unapproved or suspended shop.")
         if not shop.owner or not shop.owner.is_operational:
             raise ProductModerationError("Cannot publish product belonging to an inoperational seller.")
+        # The seller pays to put an ended listing back (ListingService.renew).
+        if ListingService.has_ended(product):
+            raise ProductModerationError(
+                f"This product's listing ended on {product.live_until:%d %b %Y}. "
+                "The seller renews it; staff cannot publish it again."
+            )
         previous_status = product.status
         product.status = Product.STATUS_PUBLISHED
         product.is_active = True
+        ListingService.start_first_period(product)
         return cls._record_moderation(product, "publish", previous_status, actor, reason, ip_address)
 
     @classmethod
@@ -687,7 +705,7 @@ class ProductService:
             .annotate(
                 products_count=Count(
                     "products",
-                    filter=Q(
+                    filter=listing_running_q("products__") & Q(
                         products__is_active=True,
                         products__status=Product.STATUS_PUBLISHED,
                         products__shop__isnull=False,

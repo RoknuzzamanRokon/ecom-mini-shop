@@ -9,6 +9,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.template.loader import render_to_string
 from django.urls import path
+from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 from django.db.models import Count
@@ -16,7 +17,7 @@ from django.core.exceptions import PermissionDenied, ValidationError
 
 from .models import (
     LOW_STOCK_THRESHOLD, Category, Order, OrderItem, Product, ProductImage,
-    ProductInventory, InventoryTransaction, Payment, Refund
+    ProductInventory, ProductListingPolicy, InventoryTransaction, Payment, Refund
 )
 from shop.inventory_service import InventoryService
 from shop.services import OrderService, ProductLimitExceededError, ProductService
@@ -170,7 +171,17 @@ def storefront_checks(product):
          "label": "Shop is approved", "detail": shop.name if shop else "None chosen"},
         {"key": "seller", "ok": bool(seller and seller.status in LIVE_PARTNER_STATUSES),
          "label": "Seller is approved", "detail": seller.business_name if seller else "No shop"},
+        {"key": "listing", "ok": product.live_until is None or product.live_until > timezone.now(),
+         "label": "Listing period is running", "detail": listing_period_detail(product)},
     ]
+
+
+def listing_period_detail(product):
+    """The storefront checklist's line on a Limited Shop Owner's listing period."""
+    if product.live_until is None:
+        return "No end date"
+    verb = "Ends" if product.live_until > timezone.now() else "Ended"
+    return f"{verb} {timezone.localtime(product.live_until):%d %b %Y}"
 
 
 @admin.register(Product)
@@ -829,3 +840,16 @@ class RefundAdmin(StatusBadgeMixin, admin.ModelAdmin):
         return f"৳ {obj.amount}"
     amount_display.short_description = "Amount"
     amount_display.admin_order_field = "amount"
+
+
+@admin.register(ProductListingPolicy)
+class ProductListingPolicyAdmin(admin.ModelAdmin):
+    list_display = ("first_period_months", "renewal_period_months", "renewal_points", "updated_at")
+    readonly_fields = ("updated_at",)
+
+    def has_add_permission(self, request):
+        # Singleton (pk=1) enforced in ProductListingPolicy.save().
+        return not ProductListingPolicy.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False

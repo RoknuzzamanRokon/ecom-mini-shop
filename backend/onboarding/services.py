@@ -16,7 +16,7 @@ from django.db.models import Count, Q
 from django.utils import timezone
 
 from audit.services import AuditService
-from points.models import StaffWallet
+from points.models import PointTransaction, SellerPointPolicy, StaffWallet
 from points.services import PointService
 from rbac.serializers import create_login_account, create_login_phone
 from sellers.models import SellerProfile
@@ -31,6 +31,8 @@ logger = logging.getLogger(__name__)
 
 #: reference_type on the point ledger rows an onboarding writes.
 POINTS_REFERENCE = "SELLER_ONBOARDING"
+#: reference_type on the ledger rows of points an onboarder sells later.
+POINT_SALE_REFERENCE = "POINT_SALE"
 
 
 class OnboardingError(Exception):
@@ -130,6 +132,7 @@ class OnboardingService:
             "starting_points": config.starting_points,
             "tokens_per_seller": config.tokens_per_seller,
             "product_creation_cost": PointService.get_product_creation_cost(),
+            "minimum_point_sale": SellerPointPolicy.current().minimum_purchase,
             "can_onboard": points >= config.starting_points,
             "sellers": counts,
         }
@@ -242,6 +245,47 @@ class OnboardingService:
             ip_address=ip_address,
             for_onboarding=True,
         )
+
+    @classmethod
+    def sell_points(cls, onboarder, seller, amount: int, ip_address=None) -> PointTransaction:
+        """
+        Moves `amount` points from the onboarder's wallet to one of their
+        sellers, who paid the onboarder outside the system. Only once staff
+        approved the seller: a rejection returns just the starting points, so
+        points sold before it would stay with a rejected seller.
+        PointService.adjust_points enforces the minimum purchase and the
+        onboarder's balance. Writes ONBOARDING_POINTS_SOLD.
+        """
+        if not seller.is_operational:
+            raise OnboardingError(
+                f"{seller.business_name} is {seller.get_status_display().lower()}; "
+                "points are sold only to approved sellers."
+            )
+        with transaction.atomic():
+            txn = PointService.adjust_points(
+                seller=seller,
+                amount=amount,
+                action="CREDIT",
+                reason=f"Points sold by {onboarder.username}",
+                actor=onboarder,
+                reference_type=POINT_SALE_REFERENCE,
+            )
+            AuditService.log(
+                action="ONBOARDING_POINTS_SOLD",
+                target=txn,
+                actor=onboarder,
+                seller=seller,
+                previous_state={"balance": txn.balance_before},
+                new_state={"balance": txn.balance_after},
+                metadata={
+                    "amount": txn.amount,
+                    "point_transaction_id": txn.pk,
+                    "expires_at": txn.lot.expires_at.isoformat(),
+                    "onboarder_wallet_balance": txn.staff_counterpart.balance_after,
+                },
+                ip_address=ip_address,
+            )
+        return txn
 
     @classmethod
     def approve(cls, seller, approver, ip_address=None) -> dict:

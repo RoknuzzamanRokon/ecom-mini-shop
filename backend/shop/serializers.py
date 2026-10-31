@@ -225,6 +225,10 @@ class SellerProductSerializer(serializers.ModelSerializer):
     savings_amount = serializers.ReadOnlyField()
     in_stock = serializers.ReadOnlyField()
     owner_business_name = serializers.SerializerMethodField()
+    # The listing period (ListingService): when it ends (empty: no end date),
+    # how often it was renewed, and whether it is running, which keeps the
+    # seller from hiding, moving or deleting the product.
+    listing_locked = serializers.ReadOnlyField()
 
     class Meta:
         model = Product
@@ -248,6 +252,9 @@ class SellerProductSerializer(serializers.ModelSerializer):
             "discount_percent",
             "savings_amount",
             "in_stock",
+            "live_until",
+            "renewal_count",
+            "listing_locked",
             "created_at",
             "updated_at",
         ]
