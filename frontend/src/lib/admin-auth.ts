@@ -132,6 +132,17 @@ export function hasAllPermissions(
   return permissions.every((perm) => hasManagementPermission(user, perm));
 }
 
+/**
+ * Checks whether current user satisfies EVERY group, each by holding ANY of
+ * its permissions: one action that runs several separately authorized steps.
+ */
+export function hasEveryPermissionGroup(
+  user: AuthUser | null | undefined,
+  groups: string[][]
+): boolean {
+  return groups.every((group) => hasAnyPermission(user, group));
+}
+
 // ==============================================================================
 // DOMAIN-SPECIFIC UI PERMISSION HELPERS
 // (Used ONLY for UI visibility/enablement; backend always enforces final auth)

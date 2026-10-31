@@ -652,6 +652,150 @@ export async function updateAdminSeller(
 }
 
 // ==============================================================================
+// FIELD ONBOARDING REVIEW (onboarding app)
+// ==============================================================================
+//
+// Sellers the Sales Team opened in the field, with the shop and products they
+// added before approval. Every call below needs CanApproveOnboarding: seller,
+// shop and product approval plus product publishing
+// (ONBOARDING_REVIEW_PERMISSION_GROUPS).
+
+/** One row of the review queue: OnboardedSellerSerializer in onboarding/serializers.py. */
+export interface AdminOnboardingSeller {
+  id: number;
+  business_name: string;
+  /** Exact SellerProfile.SELLER_TYPE_CHOICES value. */
+  seller_type: string;
+  /** Exact SellerProfile.STATUS_CHOICES value. */
+  status: string;
+  rejection_reason: string;
+  username: string;
+  /** The account's login phone in E.164 form, or null. */
+  phone: string | null;
+  /** Username of the staff member who opened it (SellerProfile.created_by). */
+  onboarded_by: string | null;
+  shop_count: number;
+  product_count: number;
+  /** Points moved from the onboarder's wallet to the seller's. */
+  starting_points: number;
+  /** Tokens the onboarder earned for this seller. */
+  tokens_awarded: number;
+  created_at: string;
+}
+
+/** OnboardedProductSerializer. */
+export interface AdminOnboardingProduct {
+  id: number;
+  name: string;
+  slug: string;
+  category: string | null;
+  price: string;
+  old_price: string | null;
+  stock: number;
+  /** Exact Product.STATUS_CHOICES value; SUBMITTED until approved. */
+  status: string;
+  rejection_reason: string;
+  image_url: string | null;
+  created_at: string;
+}
+
+/** OnboardedShopSerializer. */
+export interface AdminOnboardingShop {
+  id: number;
+  name: string;
+  slug: string;
+  /** Exact Shop.STATUS_CHOICES value; PENDING until approved. */
+  status: string;
+  rejection_reason: string;
+  phone: string;
+  additional_phones: string[];
+  address: string;
+  latitude: number | null;
+  longitude: number | null;
+  created_at: string;
+  products: AdminOnboardingProduct[];
+}
+
+/** OnboardedSellerDetailSerializer. */
+export interface AdminOnboardingSellerDetail extends AdminOnboardingSeller {
+  business_email: string;
+  business_phone: string;
+  tax_id: string;
+  description: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  /** Points the seller has left for product creation fees. */
+  points_balance: number;
+  /** Set when staff approved the onboarding in one step. */
+  approved_at: string | null;
+  /** Set when the seller was rejected and the points and tokens went back. */
+  reversed_at: string | null;
+  points_returned: number;
+  tokens_taken_back: number;
+  shops: AdminOnboardingShop[];
+}
+
+/** The approve response: the updated detail plus what went live. */
+export interface AdminOnboardingApproveResult extends AdminOnboardingSellerDetail {
+  shops_approved: number;
+  products_published: number;
+}
+
+/**
+ * GET /api/onboarding/review/
+ * Onboarded sellers awaiting approval, oldest first, DRF's default page size.
+ */
+export async function getAdminOnboardingQueue(
+  token: string,
+  params?: { page?: number }
+): Promise<PaginatedResponse<AdminOnboardingSeller>> {
+  const query = params?.page ? `?page=${params.page}` : "";
+  return adminRequest<PaginatedResponse<AdminOnboardingSeller>>(`/api/onboarding/review/${query}`, token);
+}
+
+/** GET /api/onboarding/review/<id>/: any onboarded seller, with its shops and products. */
+export async function getAdminOnboardingDetail(
+  token: string,
+  id: number | string
+): Promise<AdminOnboardingSellerDetail> {
+  return adminRequest<AdminOnboardingSellerDetail>(`/api/onboarding/review/${pathSegment(id)}/`, token);
+}
+
+/**
+ * POST /api/onboarding/review/<id>/approve/
+ * Approves the seller, its waiting shops and its submitted products in one
+ * transaction, so they go live together. 400 unless the seller awaits approval.
+ */
+export async function approveAdminOnboarding(
+  token: string,
+  id: number | string
+): Promise<AdminOnboardingApproveResult> {
+  return adminRequest<AdminOnboardingApproveResult>(
+    `/api/onboarding/review/${pathSegment(id)}/approve/`,
+    token,
+    { method: "POST" }
+  );
+}
+
+/**
+ * POST /api/onboarding/review/<id>/reject/
+ * Rejects the seller (the reason is required and shown to them). The starting
+ * points go back to the onboarder and their tokens are taken back.
+ */
+export async function rejectAdminOnboarding(
+  token: string,
+  id: number | string,
+  reason: string
+): Promise<AdminOnboardingSellerDetail> {
+  return adminRequest<AdminOnboardingSellerDetail>(
+    `/api/onboarding/review/${pathSegment(id)}/reject/`,
+    token,
+    { method: "POST", body: JSON.stringify({ reason }) }
+  );
+}
+
+// ==============================================================================
 // PRODUCT GOVERNANCE (Phase 1D)
 // ==============================================================================
 

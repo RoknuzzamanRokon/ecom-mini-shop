@@ -1,5 +1,5 @@
 import type { AuthUser } from "./types";
-import { hasAnyPermission } from "./admin-auth";
+import { hasAnyPermission, hasEveryPermissionGroup } from "./admin-auth";
 
 /**
  * ==============================================================================
@@ -180,6 +180,20 @@ export const ADMIN_PERMISSIONS = {
 export type AdminPermissionKey = keyof typeof ADMIN_PERMISSIONS;
 
 /**
+ * /api/onboarding/review/ -> CanApproveOnboarding. Approving a field
+ * onboarding approves the seller, approves its shops and products, and
+ * publishes the products, so it needs every step's own code: all four
+ * groups, each satisfied by any one of its codes. Mirrors
+ * onboarding.permissions.APPROVAL_PERMISSIONS.
+ */
+export const ONBOARDING_REVIEW_PERMISSION_GROUPS: string[][] = [
+  ADMIN_PERMISSIONS.sellersApprove,
+  ADMIN_PERMISSIONS.shopsApprove,
+  ADMIN_PERMISSIONS.productsApprove,
+  ADMIN_PERMISSIONS.productsPublish,
+];
+
+/**
  * Sidebar grouping. Order here is the render order.
  */
 export const ADMIN_NAV_SECTIONS = [
@@ -203,6 +217,11 @@ export interface AdminNavItem {
    * Omitted entirely for items every management user may open.
    */
   requiredPermissions?: string[];
+  /**
+   * AND-semantics on top of requiredPermissions: the user must satisfy every
+   * group, each by holding any of its codes.
+   */
+  requiredPermissionGroups?: string[][];
   /** Short description reused by the module placeholder and quick actions. */
   description?: string;
   badge?: string;
@@ -237,6 +256,14 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     section: "Marketplace",
     requiredPermissions: ADMIN_PERMISSIONS.sellersView,
     description: "Verify merchant accounts and KYC applications.",
+  },
+  {
+    href: "/admin/onboarding",
+    label: "Onboarding",
+    icon: "how_to_reg",
+    section: "Marketplace",
+    requiredPermissionGroups: ONBOARDING_REVIEW_PERMISSION_GROUPS,
+    description: "Approve sellers the Sales Team opened, with their shops and products.",
   },
   {
     href: "/admin/products",
@@ -322,13 +349,17 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
 
 /**
  * Menu visibility rule: an item is shown only when the user holds at least one
- * of its required permissions. Items without requiredPermissions are visible to
- * every authenticated management user (AdminGuard already gated the console).
+ * of its required permissions and satisfies every required group. Items with
+ * neither are visible to every authenticated management user (AdminGuard
+ * already gated the console).
  */
 export function canAccessNavItem(
   user: AuthUser | null | undefined,
   item: AdminNavItem
 ): boolean {
+  if (item.requiredPermissionGroups && !hasEveryPermissionGroup(user, item.requiredPermissionGroups)) {
+    return false;
+  }
   if (!item.requiredPermissions || item.requiredPermissions.length === 0) return true;
   return hasAnyPermission(user, item.requiredPermissions);
 }

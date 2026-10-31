@@ -718,7 +718,10 @@ The code is in the `onboarding` app, and the API is under `/api/onboarding/`.
    shops and its submitted products live together. It needs every code the
    separate Console actions take: seller, shop and product approval, and
    product publishing. Today only Administrators (and Super Administrators)
-   hold them all. The separate Console actions still work too.
+   hold them all. The separate Console actions still work too. In the
+   Console, the Onboarding page (`/admin/onboarding`, shown only to those
+   reviewers) lists the queue; each row and each detail page has Approve all
+   and Reject.
 5. **Rejection.** Rejecting an onboarded seller, by any path, first refunds
    its products' creation fees (none ever went live). It then returns up to
    the starting points it was given to the onboarder, and takes back the
