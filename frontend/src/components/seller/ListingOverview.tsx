@@ -166,7 +166,7 @@ export default function ListingOverview({ onRenewed }: { onRenewed?: () => void 
                 {tile.hint && <p className="text-[11px] text-ink-muted mt-0.5">{tile.hint}</p>}
               </div>
               {tile.icon && (
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${tile.tone}`}>
+                <div className={`w-10 h-10 rounded-lg hidden sm:flex items-center justify-center shrink-0 ${tile.tone}`}>
                   <span aria-hidden="true" className="material-symbols-outlined">
                     {tile.icon}
                   </span>

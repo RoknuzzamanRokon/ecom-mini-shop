@@ -163,8 +163,10 @@ export default function SellerDashboardPage() {
               {loadingMetrics ? "..." : `${wallet?.balance ?? 0}`}
             </p>
             <p className="text-[11px] text-ink-muted mt-0.5">
-              {nextExpiry
-                ? `${nextExpiry.points} expire ${formatDate(nextExpiry.expires_at)}`
+              {!loadingMetrics && nextExpiry
+                ? `${nextExpiry.points === wallet?.balance ? "All" : nextExpiry.points} expire ${formatDate(
+                    nextExpiry.expires_at
+                  )}`
                 : "Points available for products"}
             </p>
           </div>
