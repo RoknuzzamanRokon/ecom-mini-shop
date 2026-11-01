@@ -2726,3 +2726,73 @@ export async function fetchAdminSupportAttachment(token: string, url: string): P
   const res = await adminRawRequest(url, token);
   return await res.blob();
 }
+
+// ==============================================================================
+// BUSINESS RULES (backend/rules/registry.py, docs/BUSINESS_RULES_PLAN.md)
+// ==============================================================================
+
+export interface AdminRuleChange {
+  at: string;
+  by: string;
+  reason: string;
+}
+
+export interface AdminRule {
+  /** e.g. "product.creation_cost"; the key a change is sent under. */
+  key: string;
+  label: string;
+  help: string;
+  /** "points", "months", "days", "products", "units" or "tokens". */
+  unit: string;
+  value: number;
+  default: number;
+  minimum: number;
+  maximum: number;
+  applies_to: string;
+  takes_effect: string;
+  /** The latest RULE_CHANGED audit row for this rule; null until it first changes. */
+  last_change: AdminRuleChange | null;
+}
+
+export interface AdminRuleGroup {
+  key: string;
+  title: string;
+  /** Rules fixed in code, shown with the group but not editable. */
+  fixed: string[];
+  rules: AdminRule[];
+}
+
+export interface AdminRules {
+  groups: AdminRuleGroup[];
+  /** The checks between rules, e.g. starting points against the minimum sale. */
+  checks: string[];
+  /** Whether the caller holds rules.manage. */
+  can_manage: boolean;
+}
+
+export interface AdminRulesUpdateResult extends AdminRules {
+  changed: Array<{ key: string; from: number; to: number }>;
+}
+
+/** GET /api/admin/rules/ ('rules.view' or 'rules.manage'). */
+export async function getAdminRules(token: string): Promise<AdminRules> {
+  return adminRequest<AdminRules>(`/api/admin/rules/`, token);
+}
+
+/**
+ * PATCH /api/admin/rules/ ('rules.manage'). `changes` maps each rule key to
+ * the value the page showed (`from`) and the new one (`to`); the reason is
+ * required and goes in the audit log. A 400's `data.errors` maps rule keys
+ * (or "reason", "changes") to why; a 409's `data.current` holds the values
+ * someone else saved since the page loaded.
+ */
+export async function updateAdminRules(
+  token: string,
+  changes: Record<string, { from: number; to: number }>,
+  reason: string
+): Promise<AdminRulesUpdateResult> {
+  return adminRequest<AdminRulesUpdateResult>(`/api/admin/rules/`, token, {
+    method: "PATCH",
+    body: JSON.stringify({ changes, reason }),
+  });
+}

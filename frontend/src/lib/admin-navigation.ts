@@ -126,6 +126,14 @@ export const ADMIN_PERMISSIONS = {
    */
   auditView: ["audit.view", "audit.admin.view"],
 
+  /**
+   * GET /api/admin/rules/ -> rules.views.CanUseRules: either code reads.
+   * Seeded to ADMINISTRATOR, OPERATION_MANAGER and FINANCE (rbac/0006).
+   */
+  rulesView: ["rules.view", "rules.manage"],
+  /** PATCH /api/admin/rules/: ADMINISTRATOR only. */
+  rulesManage: ["rules.manage"],
+
   /** Analytical/sales reporting permission (held by ADMIN, OPS, SALES, FINANCE, SUPPORT). */
   reportsView: ["reports.view"],
 
@@ -336,6 +344,14 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     section: "Administration",
     requiredPermissions: ADMIN_PERMISSIONS.rolesView,
     description: "Inspect RBAC role definitions and permission grants.",
+  },
+  {
+    href: "/admin/rules",
+    label: "Rules",
+    icon: "tune",
+    section: "Administration",
+    requiredPermissions: ADMIN_PERMISSIONS.rulesView,
+    description: "Costs, periods and limits the platform runs on, in one place.",
   },
   {
     href: "/admin/audit-logs",
