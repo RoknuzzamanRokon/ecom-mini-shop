@@ -21,7 +21,7 @@ from django.utils import timezone
 from sellers.models import SellerProfile
 from shops.models import Shop
 
-from .models import LOW_STOCK_THRESHOLD, Order, Payment, Product, ProductInventory, Refund
+from .models import Order, Payment, Product, ProductInventory, Refund, low_stock_threshold
 
 # Statuses that count as realised revenue. "COMPLETED" is not a Payment choice
 # but is matched by the pre-existing console contract, so it is preserved here.
@@ -183,13 +183,13 @@ def payment_metrics():
     return aggregates
 
 
-def inventory_metrics():
+def inventory_metrics(threshold):
     return ProductInventory.objects.aggregate(
         low_stock=Count(
             "pk",
             filter=Q(
                 available_quantity__gt=0,
-                available_quantity__lte=LOW_STOCK_THRESHOLD,
+                available_quantity__lte=threshold,
             ),
         ),
         out_of_stock=Count("pk", filter=Q(available_quantity=0)),
@@ -202,14 +202,15 @@ def get_platform_metrics(include_payments=True):
     six without the payments block, which callers leave out for anyone
     without 'payments.view' (BUG-038).
     """
+    threshold = low_stock_threshold()
     metrics = {
         "users": user_metrics(),
         "sellers": seller_metrics(),
         "shops": shop_metrics(),
         "products": product_metrics(),
         "orders": order_metrics(),
-        "inventory": inventory_metrics(),
-        "low_stock_threshold": LOW_STOCK_THRESHOLD,
+        "inventory": inventory_metrics(threshold),
+        "low_stock_threshold": threshold,
         "new_user_window_days": NEW_USER_WINDOW_DAYS,
     }
     if include_payments:

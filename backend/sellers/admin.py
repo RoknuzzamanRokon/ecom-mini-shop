@@ -4,7 +4,7 @@ from django.db import transaction
 from django.db.models import Count
 
 from audit.admin_mixins import (
-    CONFIRM_FLAG, ChangeFormAuditMixin, ReasonRequiredActionMixin, StatusBadgeMixin,
+    CONFIRM_FLAG, ChangeFormAuditMixin, ConsoleManagedRuleMixin, ReasonRequiredActionMixin, StatusBadgeMixin,
 )
 from points.models import SellerWallet
 from points.services import PointService
@@ -245,13 +245,5 @@ class SellerProfileAdmin(ChangeFormAuditMixin, ReasonRequiredActionMixin, Status
 
 
 @admin.register(LimitedShopOwnerProductLimit)
-class LimitedShopOwnerProductLimitAdmin(admin.ModelAdmin):
+class LimitedShopOwnerProductLimitAdmin(ConsoleManagedRuleMixin, admin.ModelAdmin):
     list_display = ('max_products', 'updated_at')
-    readonly_fields = ('updated_at',)
-
-    def has_add_permission(self, request):
-        # Singleton (pk=1) enforced in LimitedShopOwnerProductLimit.save().
-        return not LimitedShopOwnerProductLimit.objects.exists()
-
-    def has_delete_permission(self, request, obj=None):
-        return False

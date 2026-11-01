@@ -69,6 +69,9 @@ PERMISSIONS_DATA = [
     ("reports.view", "View Reports", "reports", "view", "Can access analytical and sales reports"),
     # Audit log (TASK-048 decision 8: the only codes that open the full log)
     ("audit.view", "View Audit Log", "audit", "view", "Can read the platform audit log, payment and refund details included"),
+    # Business rules (rules/registry.py, the Console Rules page)
+    ("rules.view", "View Business Rules", "rules", "view", "Can see the business rules: costs, periods, limits and onboarding values"),
+    ("rules.manage", "Change Business Rules", "rules", "manage", "Can change the business rules; every change is audited with a reason"),
     # Customer Profile & Addresses
     ("profile.view", "View Profile", "profile", "view", "Can view customer profile"),
     ("profile.update", "Update Profile", "profile", "update", "Can update customer profile"),
@@ -173,6 +176,7 @@ ROLE_PERMISSIONS_MAPPING = {
         "roles.admin.view",
         "roles.admin.manage",
         "audit.view",
+        "rules.view", "rules.manage",
         "sellers.admin.manage",
         "shops.admin.manage",
         "products.admin.manage",
@@ -191,6 +195,7 @@ ROLE_PERMISSIONS_MAPPING = {
         "orders.staff.view", "orders.staff.update",
         "reports.view",
         "inventory.view", "inventory.adjust",
+        "rules.view",
         # Read-only customer directory (CanViewAdminCustomers). Operations needs
         # to look up a customer while handling their order. Deliberately NOT
         # paired with any customer mutation or admin-management permission:
@@ -227,6 +232,7 @@ ROLE_PERMISSIONS_MAPPING = {
         "orders.staff.view",
         "points.view", "points.add", "points.deduct", "points.adjust",
         "reports.view",
+        "rules.view",
     ],
     Role.ROLE_SUPPORT_TEAM: [
         "orders.view", "orders.update", "orders.cancel",

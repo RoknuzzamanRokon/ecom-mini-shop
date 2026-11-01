@@ -6,6 +6,7 @@ references other apps via string FKs ("shops.Shop", "sellers.SellerProfile")
 and `audit.services` imports nothing from sibling apps. Every other app may
 therefore import from here without creating a cycle.
 """
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.admin import helpers
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -257,3 +258,35 @@ class ReasonRequiredActionMixin:
             'media': self.media,
         }
         return TemplateResponse(request, self.reason_action_template, context)
+
+
+class ConsoleManagedRuleMixin:
+    """
+    A business-rule singleton (rules/registry.py). Its values change only on
+    the Console Rules page, which checks each change against the other rules
+    and audits it, so the Django admin shows them read-only.
+    """
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+    def _point_to_console(self, request):
+        messages.info(request, format_html(
+            'These values change on the <a href="{}">Console Rules page</a>, where every change is checked '
+            'and audited. Until the first change there, the defaults apply.',
+            f"{settings.STOREFRONT_URL.rstrip('/')}/admin/rules",
+        ))
+
+    def changelist_view(self, request, extra_context=None):
+        self._point_to_console(request)
+        return super().changelist_view(request, extra_context)
+
+    def change_view(self, request, object_id, form_url='', extra_context=None):
+        self._point_to_console(request)
+        return super().change_view(request, object_id, form_url, extra_context)

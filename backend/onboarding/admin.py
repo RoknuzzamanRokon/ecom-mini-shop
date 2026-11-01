@@ -1,19 +1,12 @@
 from django.contrib import admin
 
+from audit.admin_mixins import ConsoleManagedRuleMixin
 from .models import OnboardingSettings, SellerOnboarding, TokenTransaction, TokenWallet
 
 
 @admin.register(OnboardingSettings)
-class OnboardingSettingsAdmin(admin.ModelAdmin):
+class OnboardingSettingsAdmin(ConsoleManagedRuleMixin, admin.ModelAdmin):
     list_display = ("starting_points", "tokens_per_seller", "updated_at")
-    readonly_fields = ("updated_at",)
-
-    def has_add_permission(self, request):
-        # Singleton (pk=1) enforced in OnboardingSettings.save().
-        return not OnboardingSettings.objects.exists()
-
-    def has_delete_permission(self, request, obj=None):
-        return False
 
 
 class ReadOnlyLedgerAdmin(admin.ModelAdmin):

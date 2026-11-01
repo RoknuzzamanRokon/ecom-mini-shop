@@ -1,5 +1,7 @@
 from django.contrib import admin
 from django.utils.html import format_html
+
+from audit.admin_mixins import ConsoleManagedRuleMixin
 from .models import (
     PointExpiryPolicy,
     PointTransaction,
@@ -141,39 +143,15 @@ class StaffPointTransactionAdmin(admin.ModelAdmin):
         return False
 
 @admin.register(ProductCreationCost)
-class ProductCreationCostAdmin(admin.ModelAdmin):
+class ProductCreationCostAdmin(ConsoleManagedRuleMixin, admin.ModelAdmin):
     list_display = ('required_points', 'updated_at')
-    readonly_fields = ('updated_at',)
-
-    def has_add_permission(self, request):
-        # Singleton (pk=1) enforced in ProductCreationCost.save().
-        return not ProductCreationCost.objects.exists()
-
-    def has_delete_permission(self, request, obj=None):
-        return False
 
 
 @admin.register(PointExpiryPolicy)
-class PointExpiryPolicyAdmin(admin.ModelAdmin):
+class PointExpiryPolicyAdmin(ConsoleManagedRuleMixin, admin.ModelAdmin):
     list_display = ('expiry_months', 'updated_at')
-    readonly_fields = ('updated_at',)
-
-    def has_add_permission(self, request):
-        # Singleton (pk=1) enforced in PointExpiryPolicy.save().
-        return not PointExpiryPolicy.objects.exists()
-
-    def has_delete_permission(self, request, obj=None):
-        return False
 
 
 @admin.register(SellerPointPolicy)
-class SellerPointPolicyAdmin(admin.ModelAdmin):
+class SellerPointPolicyAdmin(ConsoleManagedRuleMixin, admin.ModelAdmin):
     list_display = ('validity_days', 'minimum_purchase', 'updated_at')
-    readonly_fields = ('updated_at',)
-
-    def has_add_permission(self, request):
-        # Singleton (pk=1) enforced in SellerPointPolicy.save().
-        return not SellerPointPolicy.objects.exists()
-
-    def has_delete_permission(self, request, obj=None):
-        return False

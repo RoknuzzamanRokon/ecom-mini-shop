@@ -9,7 +9,7 @@ from django.utils import timezone
 from audit.services import AuditService
 from notifications import events
 from notifications.publisher import publish
-from shop.models import LOW_STOCK_THRESHOLD, InventoryTransaction, Order, OrderItem, Product, ProductInventory
+from shop.models import InventoryTransaction, Order, OrderItem, Product, ProductInventory, low_stock_threshold
 
 logger = logging.getLogger(__name__)
 
@@ -80,10 +80,11 @@ class InventoryService:
     @staticmethod
     def _announce_low_stock(product: Product, before_available: int, after_available: int, actor=None):
         """
-        Tells the seller when available stock *crosses* LOW_STOCK_THRESHOLD
+        Tells the seller when available stock *crosses* the low-stock threshold
         (from above it to at or below it), at most once a day per product.
         """
-        if not before_available > LOW_STOCK_THRESHOLD >= after_available:
+        threshold = low_stock_threshold()
+        if not before_available > threshold >= after_available:
             return
         publish(
             events.INVENTORY_LOW_STOCK,
@@ -91,7 +92,7 @@ class InventoryService:
                 "product_id": product.pk,
                 "product_name": product.name,
                 "available_stock": after_available,
-                "threshold": LOW_STOCK_THRESHOLD,
+                "threshold": threshold,
             },
             aggregate=product,
             actor=actor,

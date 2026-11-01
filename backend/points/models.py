@@ -298,8 +298,8 @@ class StaffPointTransaction(models.Model):
 
 class ProductCreationCost(models.Model):
     """
-    Authoritative configuration for points required to create a new product.
-    Implements a singleton pattern (pk=1) so administrators can adjust the cost dynamically.
+    Points required to create a new product. Singleton (pk=1), changed on the
+    Console Rules page (rules/registry.py).
     """
     # At least 1: every new product costs its seller points, whatever their type.
     required_points = models.PositiveIntegerField(
@@ -322,7 +322,7 @@ class ProductCreationCost(models.Model):
 
     @classmethod
     def get_cost(cls) -> int:
-        cost = getattr(settings, "PRODUCT_CREATION_POINT_COST", 5)
+        cost = cls().required_points
         try:
             config = cls.objects.filter(pk=1).first()
             if config:
@@ -336,8 +336,8 @@ class ProductCreationCost(models.Model):
 class PointExpiryPolicy(models.Model):
     """
     How long points received into a staff wallet last before they expire.
-    Singleton (pk=1), administrator-adjustable like ProductCreationCost. A
-    change applies to points received afterwards; points already held keep
+    Singleton (pk=1), changed on the Console Rules page (rules/registry.py).
+    A change applies to points received afterwards; points already held keep
     their date. Seller wallets follow SellerPointPolicy instead.
     """
     expiry_months = models.PositiveSmallIntegerField(
@@ -360,10 +360,7 @@ class PointExpiryPolicy(models.Model):
 
     @classmethod
     def get_months(cls) -> int:
-        config = cls.objects.filter(pk=1).first()
-        if config:
-            return config.expiry_months
-        return getattr(settings, "POINT_EXPIRY_MONTHS", 2)
+        return (cls.objects.filter(pk=1).first() or cls()).expiry_months
 
     @classmethod
     def expiry_for(cls, received_at):
@@ -372,8 +369,8 @@ class PointExpiryPolicy(models.Model):
 
 class SellerPointPolicy(models.Model):
     """
-    How sellers buy points and how long they last. Singleton (pk=1),
-    administrator-adjustable like PointExpiryPolicy.
+    How sellers buy points and how long they last. Singleton (pk=1), changed
+    on the Console Rules page (rules/registry.py).
 
     A seller's unspent points share one expiry date: each purchase moves it
     to the later of now and the current date, plus `validity_days`

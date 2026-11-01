@@ -301,9 +301,9 @@ class ProductImage(models.Model):
 class ProductListingPolicy(models.Model):
     """
     How long a Limited Shop Owner's product stays live, and what renewing it
-    costs (ListingService). Singleton (pk=1), administrator-adjustable like
-    points.ProductCreationCost. A change applies to periods started
-    afterwards; running periods keep their end date.
+    costs (ListingService). Singleton (pk=1), changed on the Console Rules
+    page (rules/registry.py). A change applies to periods started afterwards;
+    running periods keep their end date.
     """
     first_period_months = models.PositiveSmallIntegerField(
         default=4,
@@ -319,6 +319,11 @@ class ProductListingPolicy(models.Model):
         default=5,
         validators=[MinValueValidator(1)],
         help_text="Points the seller pays to renew an expired product.",
+    )
+    ending_soon_days = models.PositiveSmallIntegerField(
+        default=7,
+        validators=[MinValueValidator(1)],
+        help_text="Days before its end date a live product counts as ending soon on the seller dashboard.",
     )
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -348,10 +353,41 @@ class ProductListingPolicy(models.Model):
         return add_months(start, self.renewal_period_months)
 
 
-# Available units at or below which a product counts as low on stock: the
-# admin's stock-level filter and badge, the console metrics and the seller's
-# low-stock notification all use it. Override with settings.LOW_STOCK_THRESHOLD.
-LOW_STOCK_THRESHOLD = getattr(settings, "LOW_STOCK_THRESHOLD", 10)
+class InventoryPolicy(models.Model):
+    """
+    When stock counts as low. Singleton (pk=1), changed on the Console Rules
+    page (rules/registry.py).
+    """
+    low_stock_threshold = models.PositiveIntegerField(
+        default=10,
+        validators=[MinValueValidator(1)],
+        help_text=(
+            "Available units at or below which a product counts as low on stock: the admin's stock-level "
+            "filter and badge, the console metrics and the seller's low-stock notification all use it."
+        ),
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Inventory Policy"
+        verbose_name_plural = "Inventory Policy"
+
+    def __str__(self):
+        return f"Inventory Policy: low stock at {self.low_stock_threshold} units or fewer"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def current(cls) -> "InventoryPolicy":
+        """The saved policy, or an unsaved one holding the defaults."""
+        return cls.objects.filter(pk=1).first() or cls()
+
+
+def low_stock_threshold() -> int:
+    """Available units at or below which a product counts as low on stock."""
+    return InventoryPolicy.current().low_stock_threshold
 
 
 class ProductInventory(models.Model):

@@ -103,6 +103,7 @@ INSTALLED_APPS = [
     'shop',
     'support',
     'notifications',
+    'rules',
 ]
 
 MIDDLEWARE = [
@@ -310,9 +311,6 @@ SIMPLE_JWT = {
     "TOKEN_REFRESH_SERIALIZER": "rbac.serializers.RevocationCheckingTokenRefreshSerializer",
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
-
-# Point Cost Settings
-PRODUCT_CREATION_POINT_COST = 5
 
 # Email (used by the notification email channel). Everything comes from the
 # environment or backend/.env, so no credentials live in the repository.

@@ -29,9 +29,6 @@ from .models import Product, ProductListingPolicy, listing_running_q
 
 logger = logging.getLogger(__name__)
 
-#: A live product whose period ends within this many days counts as ending soon.
-ENDING_SOON_DAYS = 7
-
 
 class ListingError(Exception):
     """A listing rule said no; the message says which, for the seller."""
@@ -211,13 +208,14 @@ class ListingService:
         products = Product.objects.filter(shop__owner=seller)
         cls.expire_due(products)
         now = timezone.now()
+        policy = ProductListingPolicy.current()
         published = Q(status=Product.STATUS_PUBLISHED)
         counts = products.aggregate(
             total=Count("pk"),
             live=Count("pk", filter=published & listing_running_q()),
             ending_soon=Count(
                 "pk",
-                filter=published & Q(live_until__gt=now, live_until__lte=now + timedelta(days=ENDING_SOON_DAYS)),
+                filter=published & Q(live_until__gt=now, live_until__lte=now + timedelta(days=policy.ending_soon_days)),
             ),
             expired=Count("pk", filter=Q(status=Product.STATUS_EXPIRED)),
             in_review=Count("pk", filter=Q(status__in=(Product.STATUS_SUBMITTED, Product.STATUS_APPROVED))),
@@ -225,11 +223,10 @@ class ListingService:
                 "pk", filter=Q(status__in=(Product.STATUS_DRAFT, Product.STATUS_REJECTED, Product.STATUS_UNPUBLISHED))
             ),
         )
-        policy = ProductListingPolicy.current()
         return {
             **counts,
             "has_end_date": cls.has_end_date(seller),
-            "ending_soon_days": ENDING_SOON_DAYS,
+            "ending_soon_days": policy.ending_soon_days,
             "first_period_months": policy.first_period_months,
             "renewal_period_months": policy.renewal_period_months,
             "renewal_points": policy.renewal_points,

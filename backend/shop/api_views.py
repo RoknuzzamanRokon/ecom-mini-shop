@@ -22,7 +22,7 @@ from points.services import InsufficientPointsError, PointService
 from rbac.models import Role
 from rbac.services import get_user_role_codes, has_user_permission
 from .inventory_service import InventoryService
-from .listing_service import ENDING_SOON_DAYS, ListingError, ListingService
+from .listing_service import ListingError, ListingService
 from .models import (
     Category,
     InventoryTransaction,
@@ -538,7 +538,9 @@ class SellerProductListCreateAPIView(APIView):
                 )
             elif listing == "ending_soon":
                 queryset = queryset.filter(
-                    published, live_until__gt=now, live_until__lte=now + timedelta(days=ENDING_SOON_DAYS)
+                    published,
+                    live_until__gt=now,
+                    live_until__lte=now + timedelta(days=ProductListingPolicy.current().ending_soon_days),
                 ).order_by("live_until", "-created_at")
             elif listing == "expired":
                 queryset = queryset.filter(status=Product.STATUS_EXPIRED).order_by("-live_until", "-created_at")

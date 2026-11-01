@@ -12,18 +12,19 @@ from django.urls import path
 from django.utils import timezone
 from django.utils.html import format_html
 from django.utils.safestring import mark_safe
-from django.db.models import Count
+from django.db.models import Count, IntegerField, Value
 from django.core.exceptions import PermissionDenied, ValidationError
 
 from .models import (
-    LOW_STOCK_THRESHOLD, Category, Order, OrderItem, Product, ProductImage,
-    ProductInventory, ProductListingPolicy, InventoryTransaction, Payment, Refund
+    Category, InventoryPolicy, Order, OrderItem, Product, ProductImage,
+    ProductInventory, ProductListingPolicy, InventoryTransaction, Payment, Refund,
+    low_stock_threshold,
 )
 from shop.inventory_service import InventoryService
 from shop.services import OrderService, ProductLimitExceededError, ProductService
 from shop.invoice import build_order_invoice_pdf, invoice_filename
 from audit.admin_mixins import (
-    CONFIRM_FLAG, REASON_FIELD, ChangeFormAuditMixin, StatusBadgeMixin,
+    CONFIRM_FLAG, REASON_FIELD, ChangeFormAuditMixin, ConsoleManagedRuleMixin, StatusBadgeMixin,
 )
 from audit.utils import get_client_ip
 from points.services import InsufficientPointsError
@@ -335,7 +336,7 @@ class ProductAdmin(ChangeFormAuditMixin, StatusBadgeMixin, admin.ModelAdmin):
         available = inventory.available_quantity if inventory else obj.stock
         if available == 0:
             stock_state = "out"
-        elif available <= LOW_STOCK_THRESHOLD:
+        elif available <= low_stock_threshold():
             stock_state = "low"
         else:
             stock_state = "ok"
@@ -600,10 +601,11 @@ class StockLevelFilter(admin.SimpleListFilter):
     parameter_name = "stock_level"
 
     def lookups(self, request, model_admin):
+        threshold = low_stock_threshold()
         return (
             ("out", "Out of stock (0)"),
-            ("low", f"Low stock (1-{LOW_STOCK_THRESHOLD})"),
-            ("ok", f"In stock (>{LOW_STOCK_THRESHOLD})"),
+            ("low", f"Low stock (1-{threshold})"),
+            ("ok", f"In stock (>{threshold})"),
         )
 
     def queryset(self, request, queryset):
@@ -612,10 +614,10 @@ class StockLevelFilter(admin.SimpleListFilter):
             return queryset.filter(available_quantity=0)
         if value == "low":
             return queryset.filter(
-                available_quantity__gt=0, available_quantity__lte=LOW_STOCK_THRESHOLD
+                available_quantity__gt=0, available_quantity__lte=low_stock_threshold()
             )
         if value == "ok":
-            return queryset.filter(available_quantity__gt=LOW_STOCK_THRESHOLD)
+            return queryset.filter(available_quantity__gt=low_stock_threshold())
         return queryset
 
 
@@ -638,7 +640,11 @@ class ProductInventoryAdmin(admin.ModelAdmin):
     actions = ["adjust_stock"]
 
     def get_queryset(self, request):
-        return super().get_queryset(request).select_related('product')
+        # The threshold rides along on each row, so the badge column reads it
+        # once per page instead of once per row.
+        return super().get_queryset(request).select_related('product').annotate(
+            low_stock_threshold=Value(low_stock_threshold(), output_field=IntegerField())
+        )
 
     def has_add_permission(self, request):
         return False
@@ -718,7 +724,7 @@ class ProductInventoryAdmin(admin.ModelAdmin):
         val = obj.available_quantity
         if val == 0:
             return format_html('<span style="color:#EF4444;font-weight:bold;">{}</span>', val)
-        elif val <= LOW_STOCK_THRESHOLD:
+        elif val <= obj.low_stock_threshold:
             return format_html('<span style="color:#F59E0B;font-weight:bold;">{}</span>', val)
         return val
     available_display.short_description = "Available Quantity"
@@ -843,13 +849,10 @@ class RefundAdmin(StatusBadgeMixin, admin.ModelAdmin):
 
 
 @admin.register(ProductListingPolicy)
-class ProductListingPolicyAdmin(admin.ModelAdmin):
-    list_display = ("first_period_months", "renewal_period_months", "renewal_points", "updated_at")
-    readonly_fields = ("updated_at",)
+class ProductListingPolicyAdmin(ConsoleManagedRuleMixin, admin.ModelAdmin):
+    list_display = ("first_period_months", "renewal_period_months", "renewal_points", "ending_soon_days", "updated_at")
 
-    def has_add_permission(self, request):
-        # Singleton (pk=1) enforced in ProductListingPolicy.save().
-        return not ProductListingPolicy.objects.exists()
 
-    def has_delete_permission(self, request, obj=None):
-        return False
+@admin.register(InventoryPolicy)
+class InventoryPolicyAdmin(ConsoleManagedRuleMixin, admin.ModelAdmin):
+    list_display = ("low_stock_threshold", "updated_at")

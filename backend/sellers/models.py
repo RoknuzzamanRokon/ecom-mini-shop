@@ -205,7 +205,7 @@ class SellerProfile(models.Model):
 class LimitedShopOwnerProductLimit(models.Model):
     """
     Maximum number of products a Limited Shop Owner may hold across their shop.
-    Singleton (pk=1), administrator-adjustable like points.ProductCreationCost.
+    Singleton (pk=1), changed on the Console Rules page (rules/registry.py).
     """
     max_products = models.PositiveIntegerField(
         default=10,
@@ -227,7 +227,4 @@ class LimitedShopOwnerProductLimit(models.Model):
 
     @classmethod
     def get_limit(cls) -> int:
-        config = cls.objects.filter(pk=1).first()
-        if config:
-            return config.max_products
-        return getattr(settings, "LIMITED_SHOP_OWNER_PRODUCT_LIMIT", 10)
+        return (cls.objects.filter(pk=1).first() or cls()).max_products

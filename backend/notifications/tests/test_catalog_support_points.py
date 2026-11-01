@@ -22,7 +22,7 @@ from rbac.models import Role
 from rbac.services import assign_user_role
 from sellers.models import SellerProfile
 from shop.inventory_service import InventoryService
-from shop.models import LOW_STOCK_THRESHOLD, Category, Product
+from shop.models import Category, Product, low_stock_threshold
 from shop.services import OrderService, ProductModerationError, ProductService
 from shops.models import Shop
 from support.models import SupportTicket
@@ -103,12 +103,12 @@ class ProductModerationNotificationTests(WaveThreeFixtures, TestCase):
 
 class LowStockNotificationTests(WaveThreeFixtures, TestCase):
     def test_crossing_the_threshold_tells_the_owner_once(self):
-        product = self.make_product(stock=LOW_STOCK_THRESHOLD + 10)
+        product = self.make_product(stock=low_stock_threshold() + 10)
         InventoryService.adjust_stock(product, -12, actor=self.seller_user, reason="Damaged")  # 20 -> 8
         event = events_of(events.INVENTORY_LOW_STOCK).get()
         self.assertEqual(event.payload, {
             "product_id": product.pk, "product_name": "Steel Kettle",
-            "available_stock": LOW_STOCK_THRESHOLD - 2, "threshold": LOW_STOCK_THRESHOLD,
+            "available_stock": low_stock_threshold() - 2, "threshold": low_stock_threshold(),
         })
         self.assertTrue(event.idempotency_key.startswith(f"low_stock:{product.pk}:"))
         row = route_all(events.INVENTORY_LOW_STOCK).get()
@@ -116,7 +116,7 @@ class LowStockNotificationTests(WaveThreeFixtures, TestCase):
         self.assertFalse(row.deliveries.exists())
 
     def test_only_a_crossing_counts(self):
-        product = self.make_product(stock=LOW_STOCK_THRESHOLD + 10)
+        product = self.make_product(stock=low_stock_threshold() + 10)
         InventoryService.adjust_stock(product, -5, reason="Above to above")  # 20 -> 15
         self.assertFalse(events_of(events.INVENTORY_LOW_STOCK).exists())
         InventoryService.adjust_stock(product, -10, reason="Crossing")  # 15 -> 5
@@ -124,19 +124,19 @@ class LowStockNotificationTests(WaveThreeFixtures, TestCase):
         self.assertEqual(events_of(events.INVENTORY_LOW_STOCK).count(), 1)
 
     def test_at_most_once_a_day_per_product(self):
-        product = self.make_product(stock=LOW_STOCK_THRESHOLD + 10)
+        product = self.make_product(stock=low_stock_threshold() + 10)
         InventoryService.adjust_stock(product, -15, reason="Down")  # 20 -> 5
         InventoryService.adjust_stock(product, 15, reason="Restocked")  # 5 -> 20
         InventoryService.adjust_stock(product, -20, reason="Down again")  # 20 -> 0
         self.assertEqual(events_of(events.INVENTORY_LOW_STOCK).count(), 1)
 
     def test_an_order_reserving_stock_can_cross_it(self):
-        product = self.make_product(stock=LOW_STOCK_THRESHOLD + 1)
+        product = self.make_product(stock=low_stock_threshold() + 1)
         Address.objects.create(user=self.customer, recipient_name="R", address_line_1="House 1", city="Dhaka",
                                country="Bangladesh", is_default=True)
         CartService.add_item(self.customer, product.pk, quantity=2)
         OrderService.create_order_from_cart(self.customer)
-        self.assertEqual(events_of(events.INVENTORY_LOW_STOCK).get().payload["available_stock"], LOW_STOCK_THRESHOLD - 1)
+        self.assertEqual(events_of(events.INVENTORY_LOW_STOCK).get().payload["available_stock"], low_stock_threshold() - 1)
 
 
 class ReviewNotificationTests(WaveThreeFixtures, TestCase):

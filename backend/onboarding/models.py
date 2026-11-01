@@ -17,8 +17,8 @@ from points.models import SellerPointPolicy
 
 class OnboardingSettings(models.Model):
     """
-    What one onboarding costs and earns. Singleton (pk=1), administrator-
-    adjustable like points.ProductCreationCost. A change applies to sellers
+    What one onboarding costs and earns. Singleton (pk=1), changed on the
+    Console Rules page (rules/registry.py). A change applies to sellers
     onboarded afterwards; SellerOnboarding keeps what each one was given.
     """
     starting_points = models.PositiveIntegerField(
