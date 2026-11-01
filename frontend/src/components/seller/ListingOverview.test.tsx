@@ -100,7 +100,7 @@ describe("ListingOverview", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /Renew · 5 pts/ }));
     expect(renewSellerProduct).not.toHaveBeenCalled();
-    expect(screen.getByText("Renew for 5 points?")).toBeInTheDocument();
+    expect(screen.getByText(/Live until .* for 5 points\?/)).toBeInTheDocument();
 
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
@@ -110,6 +110,30 @@ describe("ListingOverview", () => {
     expect(screen.getByRole("status")).toHaveTextContent('"Darjeeling" is live again until 01 Jan 2027.');
     expect(onRenewed).toHaveBeenCalled();
     expect(getSellerListingSummary).toHaveBeenCalledTimes(2);
+  });
+
+  it("renews a live product early, from its current end date", async () => {
+    vi.mocked(getSellerProducts).mockResolvedValue(page([product({ listing_locked: true })]));
+    vi.mocked(renewSellerProduct).mockResolvedValue(product({ listing_locked: true, live_until: "2027-01-04T06:00:00Z" }));
+    render(<ListingOverview />);
+    await screen.findByText("Assam Tea");
+
+    fireEvent.click(screen.getByRole("button", { name: /Renew · 5 pts/ }));
+    expect(screen.getByText("Live until 04 Jan 2027 for 5 points?")).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    });
+
+    expect(renewSellerProduct).toHaveBeenCalledWith("access", 1);
+    expect(screen.getByRole("status")).toHaveTextContent('"Assam Tea" is now live until 04 Jan 2027.');
+  });
+
+  it("offers no renewal on a product without an end date", async () => {
+    vi.mocked(getSellerProducts).mockResolvedValue(page([product({ live_until: null, listing_locked: false })]));
+    render(<ListingOverview />);
+    await screen.findByText("Assam Tea");
+
+    expect(screen.queryByRole("button", { name: /Renew/ })).not.toBeInTheDocument();
   });
 
   it("says how to get points when the wallet is short", async () => {

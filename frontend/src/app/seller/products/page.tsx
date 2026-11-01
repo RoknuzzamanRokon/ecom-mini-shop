@@ -23,7 +23,7 @@ import { Product, SellerShop, Category } from "@/lib/types";
 import { getAuthToken } from "@/lib/auth";
 import { useSeller } from "@/components/seller/SellerGuard";
 import { useLatestRequest } from "@/hooks/useLatestRequest";
-import { listingPeriodLine } from "@/components/seller/listing";
+import { canDelete, canRenew, listingPeriodLine, renewedUntil } from "@/components/seller/listing";
 import { formatDate } from "@/lib/admin-format";
 
 // Sent with every list request, so the page count always matches (BUG-024).
@@ -68,8 +68,9 @@ export default function SellerProductsPage() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
   const [renewingProduct, setRenewingProduct] = useState<Product | null>(null);
-  // ProductListingPolicy.renewal_points, for the Renew confirmation.
+  // ProductListingPolicy.renewal_points and renewal_period_months, for the Renew confirmation.
   const [renewalPoints, setRenewalPoints] = useState<number | null>(null);
+  const [renewalMonths, setRenewalMonths] = useState<number | null>(null);
   const [submittingModal, setSubmittingModal] = useState(false);
 
   // Product image (create/edit)
@@ -178,7 +179,10 @@ export default function SellerProductsPage() {
       })
       .catch(() => {});
     getSellerListingSummary(token)
-      .then((res) => setRenewalPoints(res.renewal_points))
+      .then((res) => {
+        setRenewalPoints(res.renewal_points);
+        setRenewalMonths(res.renewal_period_months);
+      })
       .catch(() => {});
   }, []);
 
@@ -391,7 +395,8 @@ export default function SellerProductsPage() {
     }
   };
 
-  // EXPIRED -> PUBLISHED for ProductListingPolicy.renewal_points, no review.
+  // ProductListingPolicy.renewal_points for renewal_period_months more, no
+  // review: after the current end date while live, from now once expired.
   const handleRenewConfirm = async () => {
     if (!renewingProduct) return;
     const token = getAuthToken();
@@ -400,7 +405,11 @@ export default function SellerProductsPage() {
     setSubmittingModal(true);
     try {
       const renewed = await renewSellerProduct(token, renewingProduct.id);
-      setActionSuccess(`"${renewed.name}" is live again until ${formatDate(renewed.live_until)}.`);
+      setActionSuccess(
+        renewingProduct.status === "EXPIRED"
+          ? `"${renewed.name}" is live again until ${formatDate(renewed.live_until)}.`
+          : `"${renewed.name}" is now live until ${formatDate(renewed.live_until)}.`
+      );
       setRenewingProduct(null);
       await fetchProductsList();
       refreshWalletBalance();
@@ -472,7 +481,7 @@ export default function SellerProductsPage() {
           </span>
           <span>
             Limited Shop Owner: {productsCount} of {productLimit} products used.
-            {atProductLimit && " Delete a product to free a slot before adding a new one."}
+            {atProductLimit && " Delete an expired product to free a slot before adding a new one."}
           </span>
         </div>
       )}
@@ -722,12 +731,16 @@ export default function SellerProductsPage() {
                                 : "Submit for review"}
                             </button>
                           )}
-                          {p.status === "EXPIRED" && (
+                          {canRenew(p) && (
                             <button
                               type="button"
                               onClick={() => setRenewingProduct(p)}
                               className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-primary/10 text-primary hover:bg-primary/20 text-[11px] font-bold whitespace-nowrap cursor-pointer"
-                              title="Put this product back on the storefront"
+                              title={
+                                p.status === "EXPIRED"
+                                  ? "Put this product back on the storefront"
+                                  : "Add more months after the current end date"
+                              }
                             >
                               <span className="material-symbols-outlined text-[16px]">autorenew</span>
                               Renew
@@ -744,12 +757,15 @@ export default function SellerProductsPage() {
                           <button
                             type="button"
                             onClick={() => setDeletingProduct(p)}
-                            disabled={p.listing_locked}
+                            disabled={!canDelete(p)}
+                            aria-label={`Delete ${p.name}`}
                             className="p-1 text-ink-muted hover:text-accent rounded disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-ink-muted"
                             title={
-                              p.listing_locked
-                                ? `Live until ${formatDate(p.live_until)}; it cannot be deleted before then`
-                                : "Delete"
+                              canDelete(p)
+                                ? "Delete"
+                                : p.listing_locked
+                                ? `Live until ${formatDate(p.live_until)}; it can be deleted once it expires`
+                                : "Only expired products can be deleted"
                             }
                           >
                             <span className="material-symbols-outlined text-[18px]">delete</span>
@@ -1122,7 +1138,23 @@ export default function SellerProductsPage() {
               <h3 className="text-base font-bold text-ink">Renew Product</h3>
             </div>
             <p className="text-xs text-ink-muted">
-              Put <strong className="text-ink">{renewingProduct.name}</strong> back on the storefront?{" "}
+              {renewingProduct.status === "EXPIRED" ? (
+                <>
+                  Put <strong className="text-ink">{renewingProduct.name}</strong> back on the storefront
+                  {renewalMonths !== null &&
+                    ` until ${formatDate(renewedUntil(renewingProduct, renewalMonths))}`}
+                  ?
+                </>
+              ) : (
+                <>
+                  Keep <strong className="text-ink">{renewingProduct.name}</strong> live
+                  {renewalMonths !== null &&
+                    ` until ${formatDate(renewedUntil(renewingProduct, renewalMonths))} instead of ${formatDate(
+                      renewingProduct.live_until
+                    )}`}
+                  ? No day you paid for is lost.
+                </>
+              )}{" "}
               {renewalPoints !== null
                 ? `It costs ${renewalPoints} points from your wallet${
                     walletBalance !== null ? ` (you have ${walletBalance})` : ""
@@ -1159,7 +1191,9 @@ export default function SellerProductsPage() {
               <h3 className="text-base font-bold text-ink">Delete Product</h3>
             </div>
             <p className="text-xs text-ink-muted">
-              Are you sure you want to delete <strong className="text-ink">{deletingProduct.name}</strong>? This action cannot be undone.
+              Delete <strong className="text-ink">{deletingProduct.name}</strong>? Its listing has ended, so
+              deleting it frees its place under your product limit. No points are refunded, and this cannot be
+              undone.
             </p>
             <div className="flex justify-end gap-2 pt-3 border-t border-line">
               <button

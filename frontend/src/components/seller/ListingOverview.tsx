@@ -12,7 +12,7 @@ import { formatDate } from "@/lib/admin-format";
 import { getAuthToken } from "@/lib/auth";
 import type { ListingFilter, ListingSummary, Product } from "@/lib/types";
 import { useLatestRequest } from "@/hooks/useLatestRequest";
-import { daysLeft, listingPeriodLine } from "./listing";
+import { canRenew, daysLeft, listingPeriodLine, renewedUntil } from "./listing";
 
 const TABS: { key: ListingFilter; label: string }[] = [
   { key: "ending_soon", label: "Ending soon" },
@@ -30,8 +30,9 @@ const EMPTY_TEXT: Record<ListingFilter, string> = {
 
 /**
  * The seller dashboard's listing section: how many products are live, ending
- * soon, expired and in review, each product's end date, and Renew on expired
- * ones. `onRenewed` lets the page refresh what a renewal spent.
+ * soon, expired and in review, each product's end date, and Renew on live and
+ * expired ones (a live one is renewed early, after its current end date).
+ * `onRenewed` lets the page refresh what a renewal spent.
  */
 export default function ListingOverview({ onRenewed }: { onRenewed?: () => void }) {
   const [summary, setSummary] = useState<ListingSummary | null>(null);
@@ -84,7 +85,11 @@ export default function ListingOverview({ onRenewed }: { onRenewed?: () => void 
     setNotice(null);
     renewSellerProduct(token, product.id)
       .then((renewed) => {
-        setNotice(`"${renewed.name}" is live again until ${formatDate(renewed.live_until)}.`);
+        setNotice(
+          product.status === "EXPIRED"
+            ? `"${renewed.name}" is live again until ${formatDate(renewed.live_until)}.`
+            : `"${renewed.name}" is now live until ${formatDate(renewed.live_until)}.`
+        );
         setConfirmingId(null);
         setLoading(true);
         setReloadKey((key) => key + 1);
@@ -132,7 +137,7 @@ export default function ListingOverview({ onRenewed }: { onRenewed?: () => void 
             {summary && !summary.has_end_date
               ? "As a Full Shop Owner, your products stay live with no end date."
               : summary
-              ? `A new product stays live ${summary.first_period_months} months. After that, renewing costs ${summary.renewal_points} points for ${summary.renewal_period_months} more months.`
+              ? `A new product stays live ${summary.first_period_months} months. Each renewal costs ${summary.renewal_points} points for ${summary.renewal_period_months} more months, and you can renew before the end date without losing a day.`
               : "How long each of your products stays live."}
           </p>
         </div>
@@ -217,12 +222,13 @@ export default function ListingOverview({ onRenewed }: { onRenewed?: () => void 
                         {product.in_stock ? `${product.stock} in stock` : "Out of stock"}
                       </p>
                     </div>
-                    {product.status === "EXPIRED" && summary && (
-                      <div className="flex items-center gap-2 shrink-0">
+                    {canRenew(product) && summary && (
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
                         {confirmingId === product.id ? (
                           <>
                             <span className="text-[11px] text-ink-muted">
-                              Renew for {summary.renewal_points} points?
+                              Live until {formatDate(renewedUntil(product, summary.renewal_period_months))} for{" "}
+                              {summary.renewal_points} points?
                             </span>
                             <button
                               type="button"

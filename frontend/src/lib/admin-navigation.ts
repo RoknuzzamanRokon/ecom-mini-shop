@@ -47,6 +47,11 @@ export const ADMIN_PERMISSIONS = {
    */
   sellersApprove: ["sellers.admin.manage", "sellers.approve"],
   sellersSuspend: ["sellers.admin.manage", "sellers.suspend"],
+  /**
+   * /api/onboarding/me/ and /api/onboarding/sellers/ -> CanOnboardSellers.
+   * Seeded to SALES_TEAM only: each holder reaches the sellers they onboarded.
+   */
+  sellersOnboard: ["sellers.onboard"],
 
   /**
    * GET /api/admin/products/ and /api/admin/products/<pk>/ -> CanViewAdminProducts.
@@ -264,6 +269,14 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     section: "Marketplace",
     requiredPermissions: ADMIN_PERMISSIONS.sellersView,
     description: "Verify merchant accounts and KYC applications.",
+  },
+  {
+    href: "/admin/my-sellers",
+    label: "My Sellers",
+    icon: "handshake",
+    section: "Marketplace",
+    requiredPermissions: ADMIN_PERMISSIONS.sellersOnboard,
+    description: "Sellers you onboarded, and selling them points.",
   },
   {
     href: "/admin/onboarding",

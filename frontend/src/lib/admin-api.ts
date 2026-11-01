@@ -796,6 +796,71 @@ export async function rejectAdminOnboarding(
 }
 
 // ==============================================================================
+// THE ONBOARDER'S OWN SELLERS (onboarding app)
+// ==============================================================================
+//
+// A Sales Team member reaches only the sellers they onboarded: another seller's
+// id answers 404. Every call below needs CanOnboardSellers ('sellers.onboard').
+
+/** GET /api/onboarding/me/: OnboardingService.summary. */
+export interface AdminOnboarderSummary {
+  /** The caller's staff-wallet balance, after expiring due points. */
+  points: number;
+  tokens: number;
+  /** What one onboarding moves from the caller's wallet to the new seller. */
+  starting_points: number;
+  tokens_per_seller: number;
+  product_creation_cost: number;
+  /** SellerPointPolicy.minimum_purchase: the fewest points one sale may give. */
+  minimum_point_sale: number;
+  can_onboard: boolean;
+  sellers: { total: number; awaiting_approval: number; live: number; rejected: number };
+}
+
+/** The POST /api/onboarding/sellers/<id>/points/ result. */
+export interface AdminPointSaleResult {
+  seller_id: number;
+  amount: number;
+  /** The seller's balance after the sale. */
+  points_balance: number;
+  /** The date all of the seller's unspent points now expire (never, for a Full Shop Owner). */
+  points_expire_at: string;
+  /** The caller's own balance after the sale. */
+  your_points: number;
+}
+
+/** GET /api/onboarding/me/ */
+export async function getMyOnboardingSummary(token: string): Promise<AdminOnboarderSummary> {
+  return adminRequest<AdminOnboarderSummary>("/api/onboarding/me/", token);
+}
+
+/** GET /api/onboarding/sellers/: the caller's onboarded sellers, newest first, DRF's default page size. */
+export async function getMyOnboardedSellers(
+  token: string,
+  params?: { page?: number }
+): Promise<PaginatedResponse<AdminOnboardingSeller>> {
+  const query = params?.page ? `?page=${params.page}` : "";
+  return adminRequest<PaginatedResponse<AdminOnboardingSeller>>(`/api/onboarding/sellers/${query}`, token);
+}
+
+/**
+ * POST /api/onboarding/sellers/<id>/points/
+ * Sells points from the caller's wallet to one of their approved sellers, who
+ * paid the caller outside MiniShop. 400 below the minimum sale, for a seller
+ * not approved, or with `available_points` when the caller's wallet is short.
+ */
+export async function sellPointsToOnboardedSeller(
+  token: string,
+  id: number | string,
+  amount: number
+): Promise<AdminPointSaleResult> {
+  return adminRequest<AdminPointSaleResult>(`/api/onboarding/sellers/${pathSegment(id)}/points/`, token, {
+    method: "POST",
+    body: JSON.stringify({ amount }),
+  });
+}
+
+// ==============================================================================
 // PRODUCT GOVERNANCE (Phase 1D)
 // ==============================================================================
 
