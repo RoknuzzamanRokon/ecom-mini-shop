@@ -745,6 +745,19 @@ cannot take it down while it is live. Three choices the user made:
    their products have no end date. The 100-point minimum applies to
    everyone.
 
+## Business rules in one place (decided 2026-11-01)
+
+New feature work, outside the fixes-only roadmap; the plan is
+`docs/BUSINESS_RULES_PLAN.md`. Every value the platform runs on (product
+cost, listing periods, point validity, the minimum sale, onboarding points
+and tokens, the product limit, the low-stock threshold) is listed in
+`backend/rules/registry.py`. It changes only on the Console Rules page
+(`/admin/rules`), with a reason, an audit row per rule and checks between
+rules. `docs/BUSINESS_RULES.md` is generated from the registry. The user
+chose a page over a config file, so a change needs no deploy. Viewing is for
+Administrators, Finance and Operation Managers; changing is for
+Administrators.
+
 ## Not in this roadmap
 
 A short honest roadmap beats an exhaustive wish list. These are known and
