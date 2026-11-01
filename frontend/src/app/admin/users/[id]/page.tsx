@@ -11,6 +11,7 @@ import {
   AdminUserDetail,
   getAdminRoles,
   getAdminUserDetail,
+  setUserPermissionTurnedOff,
   updateAdminUser,
 } from "@/lib/admin-api";
 import { formatDateTime, humanizeToken } from "@/lib/admin-format";
@@ -22,6 +23,7 @@ import {
   canViewAdminUsers,
   getAccountManagementLock,
   getDeactivationLock,
+  getPermissionBlockLock,
   getRoleEditingLock,
   getRoleToggleLock,
   getRoleToggleWarning,
@@ -86,6 +88,9 @@ export default function AdminUserDetailPage() {
   const [draftRoles, setDraftRoles] = useState<string[]>([]);
   const [pendingChange, setPendingChange] = useState<PendingChange | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  /** A permission to turn off (or back on) for this account alone. */
+  const [pendingBlock, setPendingBlock] = useState<{ code: string; turnOff: boolean } | null>(null);
+  const [blockError, setBlockError] = useState<string | null>(null);
 
   const fetchUser = useCallback(async () => {
     const token = getAuthToken();
@@ -271,6 +276,21 @@ export default function AdminUserDetailPage() {
 
   const fullName = `${target.first_name} ${target.last_name}`.trim();
   const isSuperTarget = targetIsSuperAdministrator(target);
+  const blockLock = getPermissionBlockLock(actor, target);
+
+  const confirmBlock = (reason: string) => {
+    const token = getAuthToken();
+    if (!token || !pendingBlock) return;
+    setBlockError(null);
+    return setUserPermissionTurnedOff(token, target.id, pendingBlock.code, pendingBlock.turnOff, reason)
+      .then((updated) => {
+        setTarget(updated);
+        setPendingBlock(null);
+      })
+      .catch((err: unknown) => {
+        setBlockError(err instanceof Error ? err.message : "The permission could not be changed.");
+      });
+  };
   const permissionGroups = groupPermissionCodesByResource(target.permissions);
   const showSellerCreatePrompt = !target.seller_profile && canCreateAdminSellers(actor);
 
@@ -680,8 +700,22 @@ export default function AdminUserDetailPage() {
                   </p>
                   <ul className="space-y-1">
                     {group.codes.map((code) => (
-                      <li key={code} className="font-mono text-[11px] text-ink-body break-all">
-                        {code}
+                      <li key={code} className="flex items-start justify-between gap-2">
+                        <span className="font-mono text-[11px] text-ink-body break-all">{code}</span>
+                        {!blockLock && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setBlockError(null);
+                              setPendingBlock({ code, turnOff: true });
+                            }}
+                            aria-label={`Turn off ${code} for this person`}
+                            title="Turn off for this person"
+                            className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-ink-muted hover:text-danger cursor-pointer"
+                          >
+                            Turn off
+                          </button>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -690,7 +724,73 @@ export default function AdminUserDetailPage() {
             </div>
           </>
         )}
+
+        {target.turned_off_permissions.length > 0 && (
+          <div className="mt-6 pt-4 border-t border-line">
+            <h3 className="text-[11px] font-extrabold uppercase tracking-wider text-ink mb-1">
+              Turned off for this person
+            </h3>
+            <p className="text-xs text-ink-muted mb-3 max-w-2xl">
+              Their roles grant these, but they are switched off for this account alone.
+            </p>
+            <ul className="divide-y divide-line">
+              {target.turned_off_permissions.map((block) => (
+                <li key={block.code} className="flex flex-col sm:flex-row sm:items-center gap-2 py-2.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="font-mono text-[11px] text-ink break-all">{block.code}</p>
+                    <p className="text-[11px] text-ink-muted break-words">
+                      {block.reason} · {block.blocked_by ? `@${block.blocked_by}, ` : ""}
+                      {formatDateTime(block.blocked_at)}
+                    </p>
+                  </div>
+                  {!blockLock && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBlockError(null);
+                        setPendingBlock({ code: block.code, turnOff: false });
+                      }}
+                      className="shrink-0 px-3 py-1.5 rounded-lg border border-line text-[11px] font-bold uppercase tracking-wide text-ink hover:bg-surface-alt cursor-pointer"
+                    >
+                      Turn back on
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
+
+      <AdminConfirmModal
+        open={Boolean(pendingBlock)}
+        title={pendingBlock?.turnOff ? "Turn off for this person?" : "Turn back on?"}
+        message={
+          <>
+            {pendingBlock?.turnOff ? (
+              <>
+                <code className="font-mono text-[11px]">{pendingBlock.code}</code> stops working for{" "}
+                <strong>{target.username}</strong> alone, although their roles grant it. Everyone else with the
+                same roles keeps it.
+              </>
+            ) : pendingBlock ? (
+              <>
+                <strong>{target.username}</strong> gets{" "}
+                <code className="font-mono text-[11px]">{pendingBlock.code}</code> back from their roles.
+              </>
+            ) : null}
+            {blockError && <span className="block mt-2 font-semibold text-danger">{blockError}</span>}
+          </>
+        }
+        confirmLabel={pendingBlock?.turnOff ? "Turn off" : "Turn back on"}
+        destructive={Boolean(pendingBlock?.turnOff)}
+        requireReason
+        reasonRequired
+        reasonLabel="Reason (recorded in the audit log)"
+        reasonPlaceholder="Explain why…"
+        onConfirm={confirmBlock}
+        onCancel={() => setPendingBlock(null)}
+      />
 
       <AdminConfirmModal
         open={Boolean(pendingChange)}

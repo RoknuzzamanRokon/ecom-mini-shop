@@ -675,7 +675,11 @@ export interface AdminOnboardingSeller {
   /** Username of the staff member who opened it (SellerProfile.created_by). */
   onboarded_by: string | null;
   shop_count: number;
-  product_count: number;
+  /**
+   * In the review queue, every product. For the onboarder, the products they
+   * added, and null without 'onboarding.products.view'.
+   */
+  product_count: number | null;
   /** Points moved from the onboarder's wallet to the seller's. */
   starting_points: number;
   /** Tokens the onboarder earned for this seller. */
@@ -710,6 +714,7 @@ export interface AdminOnboardingShop {
   phone: string;
   additional_phones: string[];
   address: string;
+  description: string;
   latitude: number | null;
   longitude: number | null;
   created_at: string;
@@ -806,7 +811,12 @@ export async function rejectAdminOnboarding(
 export interface AdminOnboarderSummary {
   /** The caller's staff-wallet balance, after expiring due points. */
   points: number;
+  /** Tokens in the caller's wallet; tokens held by a pending payout are not counted. */
   tokens: number;
+  /** OnboardingSettings.taka_per_token: what one token is worth in ৳. */
+  taka_per_token: number;
+  /** Tokens held by the caller's pending payout request, or 0. */
+  pending_payout_tokens: number;
   /** What one onboarding moves from the caller's wallet to the new seller. */
   starting_points: number;
   tokens_per_seller: number;
@@ -857,6 +867,227 @@ export async function sellPointsToOnboardedSeller(
   return adminRequest<AdminPointSaleResult>(`/api/onboarding/sellers/${pathSegment(id)}/points/`, token, {
     method: "POST",
     body: JSON.stringify({ amount }),
+  });
+}
+
+/** EditSessionService.describe: the onboarder's edit session for one seller. */
+export interface AdminEditSession {
+  state: "none" | "waiting" | "open" | "ended";
+  /** While waiting: when the code the seller received stops working. */
+  code_expires_at: string | null;
+  /** While open: when editing stops. */
+  expires_at: string | null;
+  /** While waiting: wrong codes still allowed. */
+  attempts_left: number | null;
+}
+
+/** GET /api/onboarding/sellers/<id>/ for the onboarder. */
+export interface AdminMyOnboardedSeller extends AdminOnboardingSellerDetail {
+  /** 'onboarding.products.view': without it, shops come back without products. */
+  can_view_products: boolean;
+  edit_session: AdminEditSession;
+}
+
+/** OnboardedProductDetailSerializer: GET and PATCH /api/onboarding/products/<id>/. */
+export interface AdminOnboardedProductDetail extends AdminOnboardingProduct {
+  category_id: number;
+  description: string;
+  badge: string;
+  is_active: boolean;
+  live_until: string | null;
+  shop_id: number;
+  shop_name: string;
+  seller_id: number;
+  seller_name: string;
+}
+
+/** What an edit session lets the onboarder change on a seller (OnboardingSellerUpdateSerializer). */
+export interface AdminOnboardedSellerChanges {
+  business_name?: string;
+  business_email?: string;
+  business_phone?: string;
+  tax_id?: string;
+  description?: string;
+}
+
+/** OnboardingShopUpdateSerializer; latitude and longitude travel together. */
+export interface AdminOnboardedShopChanges {
+  name?: string;
+  description?: string;
+  phone?: string;
+  additional_phones?: string[];
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+}
+
+/** OnboardingProductUpdateSerializer; `stock` needs the `expected_stock` it was edited from. */
+export interface AdminOnboardedProductChanges {
+  name?: string;
+  description?: string;
+  price?: string;
+  old_price?: string | null;
+  stock?: number;
+  expected_stock?: number;
+  badge?: string;
+  is_active?: boolean;
+}
+
+/** GET /api/onboarding/sellers/<id>/ */
+export async function getMyOnboardedSeller(token: string, id: number | string): Promise<AdminMyOnboardedSeller> {
+  return adminRequest<AdminMyOnboardedSeller>(`/api/onboarding/sellers/${pathSegment(id)}/`, token);
+}
+
+/**
+ * POST /api/onboarding/sellers/<id>/edit-session/
+ * Sends a new code to the seller's account. 429 with `wait_seconds` within a
+ * minute of the last one; 400 while a session is open or for a rejected seller.
+ */
+export async function requestEditCode(token: string, id: number | string): Promise<AdminEditSession> {
+  return adminRequest<AdminEditSession>(`/api/onboarding/sellers/${pathSegment(id)}/edit-session/`, token, {
+    method: "POST",
+  });
+}
+
+/** POST /api/onboarding/sellers/<id>/edit-session/verify/: 400 says how many tries are left. */
+export async function verifyEditCode(token: string, id: number | string, code: string): Promise<AdminEditSession> {
+  return adminRequest<AdminEditSession>(`/api/onboarding/sellers/${pathSegment(id)}/edit-session/verify/`, token, {
+    method: "POST",
+    body: JSON.stringify({ code }),
+  });
+}
+
+/** DELETE /api/onboarding/sellers/<id>/edit-session/: ends it early. */
+export async function closeEditSession(token: string, id: number | string): Promise<AdminEditSession> {
+  return adminRequest<AdminEditSession>(`/api/onboarding/sellers/${pathSegment(id)}/edit-session/`, token, {
+    method: "DELETE",
+  });
+}
+
+/** PATCH /api/onboarding/sellers/<id>/ in an open edit session (403 `edit_session_required` without). */
+export async function updateMyOnboardedSeller(
+  token: string,
+  id: number | string,
+  changes: AdminOnboardedSellerChanges
+): Promise<AdminMyOnboardedSeller> {
+  return adminRequest<AdminMyOnboardedSeller>(`/api/onboarding/sellers/${pathSegment(id)}/`, token, {
+    method: "PATCH",
+    body: JSON.stringify(changes),
+  });
+}
+
+/** PATCH /api/onboarding/shops/<id>/ in an open edit session. */
+export async function updateMyOnboardedShop(
+  token: string,
+  id: number | string,
+  changes: AdminOnboardedShopChanges
+): Promise<AdminOnboardingShop> {
+  return adminRequest<AdminOnboardingShop>(`/api/onboarding/shops/${pathSegment(id)}/`, token, {
+    method: "PATCH",
+    body: JSON.stringify(changes),
+  });
+}
+
+/** GET /api/onboarding/products/<id>/: a product the caller added ('onboarding.products.view'). */
+export async function getMyOnboardedProduct(token: string, id: number | string): Promise<AdminOnboardedProductDetail> {
+  return adminRequest<AdminOnboardedProductDetail>(`/api/onboarding/products/${pathSegment(id)}/`, token);
+}
+
+/**
+ * PATCH /api/onboarding/products/<id>/ in an open edit session. 409 with
+ * `current_stock` when the stock changed since it was read.
+ */
+export async function updateMyOnboardedProduct(
+  token: string,
+  id: number | string,
+  changes: AdminOnboardedProductChanges
+): Promise<AdminOnboardedProductDetail> {
+  return adminRequest<AdminOnboardedProductDetail>(`/api/onboarding/products/${pathSegment(id)}/`, token, {
+    method: "PATCH",
+    body: JSON.stringify(changes),
+  });
+}
+
+// ==============================================================================
+// TOKEN PAYOUTS (onboarding app)
+// ==============================================================================
+//
+// An onboarder hands tokens in for real payment (sellers.onboard); an admin
+// with 'onboarding.payouts.manage' accepts (the tokens move to them) or
+// rejects (they go back).
+
+/** TokenPayoutSerializer. */
+export interface AdminTokenPayout {
+  id: number;
+  /** Username of the onboarder who asked. */
+  requested_by: string;
+  tokens: number;
+  /** The token value in ৳ when it was asked. */
+  taka_per_token: number;
+  /** tokens × taka_per_token, in whole ৳. */
+  amount_taka: number;
+  note: string;
+  status: "PENDING" | "ACCEPTED" | "REJECTED" | "CANCELLED";
+  decided_by: string | null;
+  decided_at: string | null;
+  /** How it was paid, or why it was rejected. */
+  decision_note: string;
+  created_at: string;
+}
+
+/** GET /api/onboarding/payouts/: the caller's own requests, newest first. */
+export async function getMyTokenPayouts(token: string): Promise<PaginatedResponse<AdminTokenPayout>> {
+  return adminRequest<PaginatedResponse<AdminTokenPayout>>("/api/onboarding/payouts/", token);
+}
+
+/** POST /api/onboarding/payouts/: holds the tokens until an admin decides. One pending at a time. */
+export async function requestTokenPayout(token: string, tokens: number, note: string): Promise<AdminTokenPayout> {
+  return adminRequest<AdminTokenPayout>("/api/onboarding/payouts/", token, {
+    method: "POST",
+    body: JSON.stringify({ tokens, note }),
+  });
+}
+
+/** POST /api/onboarding/payouts/<id>/cancel/: the held tokens come back. */
+export async function cancelTokenPayout(token: string, id: number): Promise<AdminTokenPayout> {
+  return adminRequest<AdminTokenPayout>(`/api/onboarding/payouts/${pathSegment(id)}/cancel/`, token, {
+    method: "POST",
+  });
+}
+
+/** The review list adds the caller's own token balance (what accepted payouts gave them). */
+export interface AdminTokenPayoutQueue extends PaginatedResponse<AdminTokenPayout> {
+  your_tokens: number;
+}
+
+/**
+ * GET /api/onboarding/payouts/review/ (?status=PENDING, oldest first; no
+ * status: every request, newest first).
+ */
+export async function getTokenPayoutQueue(
+  token: string,
+  params?: { status?: string; page?: number }
+): Promise<AdminTokenPayoutQueue> {
+  const query = new URLSearchParams();
+  if (params?.status) query.set("status", params.status);
+  if (params?.page && params.page > 1) query.set("page", String(params.page));
+  const suffix = query.toString() ? `?${query}` : "";
+  return adminRequest<AdminTokenPayoutQueue>(`/api/onboarding/payouts/review/${suffix}`, token);
+}
+
+/** POST /api/onboarding/payouts/review/<id>/accept/: the tokens move to the caller. */
+export async function acceptTokenPayout(token: string, id: number, note: string): Promise<AdminTokenPayout> {
+  return adminRequest<AdminTokenPayout>(`/api/onboarding/payouts/review/${pathSegment(id)}/accept/`, token, {
+    method: "POST",
+    body: JSON.stringify({ note }),
+  });
+}
+
+/** POST /api/onboarding/payouts/review/<id>/reject/: the reason is required and shown to the onboarder. */
+export async function rejectTokenPayout(token: string, id: number, reason: string): Promise<AdminTokenPayout> {
+  return adminRequest<AdminTokenPayout>(`/api/onboarding/payouts/review/${pathSegment(id)}/reject/`, token, {
+    method: "POST",
+    body: JSON.stringify({ reason }),
   });
 }
 
@@ -1405,6 +1636,15 @@ export interface AdminUserSellerProfileSummary {
  * `test_user_and_customer_apis_exclude_passwords_and_tokens` and
  * `test_user_detail_exposes_effective_permissions_without_credentials`.
  */
+/** One entry of AdminUserDetail.turned_off_permissions. */
+export interface AdminTurnedOffPermission {
+  code: string;
+  name: string;
+  reason: string;
+  blocked_by: string | null;
+  blocked_at: string;
+}
+
 export interface AdminUserDetail {
   id: number;
   username: string;
@@ -1422,6 +1662,8 @@ export interface AdminUserDetail {
    * The "*" wildcard is stripped by the serializer and reported separately.
    */
   permissions: string[];
+  /** Codes turned off for this account alone (rbac.UserPermissionBlock), newest first. */
+  turned_off_permissions: AdminTurnedOffPermission[];
   /** True when the account resolves to "*" (superuser / SUPER_ADMINISTRATOR). */
   has_full_platform_access: boolean;
   customer_profile: AdminUserCustomerProfileSummary | null;
@@ -1516,6 +1758,27 @@ export async function updateAdminUser(
   return adminRequest<AdminUserDetail>(`/api/admin/users/${pathSegment(id)}/`, token, {
     method: "PATCH",
     body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * POST /api/admin/users/<id>/permission-blocks/ (turn off) or
+ * .../permission-blocks/remove/ (turn back on): one code for this account
+ * alone, with a required reason. Answers the updated user detail. 403 for
+ * oneself, a protected role (below the wildcard) or a superuser; 400 for a
+ * code the account does not hold, or full platform access.
+ */
+export async function setUserPermissionTurnedOff(
+  token: string,
+  id: number | string,
+  code: string,
+  turnedOff: boolean,
+  reason: string
+): Promise<AdminUserDetail> {
+  const suffix = turnedOff ? "" : "remove/";
+  return adminRequest<AdminUserDetail>(`/api/admin/users/${pathSegment(id)}/permission-blocks/${suffix}`, token, {
+    method: "POST",
+    body: JSON.stringify({ code, reason }),
   });
 }
 

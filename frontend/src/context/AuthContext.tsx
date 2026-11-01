@@ -9,6 +9,7 @@ import React, {
 } from "react";
 import { AuthUser } from "@/lib/types";
 import { loginUser, getCurrentUser, revokeRefreshToken } from "@/lib/api";
+import StartingPasswordScreen from "@/components/auth/StartingPasswordScreen";
 import {
   clearTokens,
   getAuthToken,
@@ -143,13 +144,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // -----------------------------------------------------------------------
   useEffect(() => onAuthCleared(logout), [logout]);
 
+  // -----------------------------------------------------------------------
+  // Starting password: a Sales Team member set it when opening the account,
+  // and the API answers nothing but the change until the owner replaces it
+  // (rbac.StartingPassword). The new pair is unmarked.
+  // -----------------------------------------------------------------------
+  const finishPasswordChange = useCallback((tokens: { access: string; refresh: string }) => {
+    setTokens(tokens.access, tokens.refresh);
+    return getCurrentUser(tokens.access).then((userData) => setUser(userData));
+  }, []);
+
   const isAuthenticated = user !== null;
 
   return (
     <AuthContext.Provider
       value={{ user, isAuthenticated, isLoading, sessionError, retrySession, login, logout }}
     >
-      {children}
+      {user?.must_change_password ? (
+        <StartingPasswordScreen username={user.username} onChanged={finishPasswordChange} onSignOut={logout} />
+      ) : (
+        children
+      )}
       {sessionError && !isLoading && (
         <div
           role="alert"

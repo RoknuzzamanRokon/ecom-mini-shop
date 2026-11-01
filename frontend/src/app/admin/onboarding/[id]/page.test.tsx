@@ -53,6 +53,7 @@ function onboarding(overrides: Partial<AdminOnboardingSellerDetail> = {}): Admin
         phone: "",
         additional_phones: [],
         address: "Mirpur 10",
+        description: "",
         latitude: 23.807,
         longitude: 90.368,
         created_at: "2026-10-30T10:05:00Z",

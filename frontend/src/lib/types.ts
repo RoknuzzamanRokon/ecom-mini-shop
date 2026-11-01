@@ -23,6 +23,11 @@ export interface AuthUser {
   is_superuser: boolean;
   roles: string[];
   permissions: string[];
+  /**
+   * True while the account is on a password someone else set (a Sales Team
+   * member who opened it): the API answers nothing but the password change.
+   */
+  must_change_password?: boolean;
 }
 
 /** An account needs an email or a mobile number, or both. */

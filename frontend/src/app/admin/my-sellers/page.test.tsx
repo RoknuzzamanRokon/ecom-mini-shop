@@ -3,16 +3,21 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   AdminApiError,
+  cancelTokenPayout,
   getMyOnboardedSellers,
   getMyOnboardingSummary,
+  getMyTokenPayouts,
+  requestTokenPayout,
   sellPointsToOnboardedSeller,
   type AdminOnboarderSummary,
   type AdminOnboardingSeller,
+  type AdminTokenPayout,
 } from "@/lib/admin-api";
 import { setTokens } from "@/lib/auth";
 
 import AdminMySellersPage from "./page";
 import { quickAmounts, saleAmountError } from "./pointSale";
+import { payoutTokensError } from "./TokenPayoutPanel";
 
 const auth = vi.hoisted(() => ({ user: null as { is_superuser: boolean; permissions: string[] } | null }));
 
@@ -24,11 +29,16 @@ vi.mock("@/lib/admin-api", async (importOriginal) => ({
   getMyOnboardingSummary: vi.fn(),
   getMyOnboardedSellers: vi.fn(),
   sellPointsToOnboardedSeller: vi.fn(),
+  getMyTokenPayouts: vi.fn(),
+  requestTokenPayout: vi.fn(),
+  cancelTokenPayout: vi.fn(),
 }));
 
 const SUMMARY: AdminOnboarderSummary = {
   points: 1000,
   tokens: 102,
+  taka_per_token: 1,
+  pending_payout_tokens: 0,
   starting_points: 200,
   tokens_per_seller: 51,
   product_creation_cost: 5,
@@ -74,7 +84,24 @@ beforeEach(() => {
     .mockReset()
     .mockResolvedValue({ count: 2, next: null, previous: null, results: [CORNER, WAITING] });
   vi.mocked(sellPointsToOnboardedSeller).mockReset();
+  vi.mocked(getMyTokenPayouts).mockReset().mockResolvedValue({ count: 0, next: null, previous: null, results: [] });
+  vi.mocked(requestTokenPayout).mockReset();
+  vi.mocked(cancelTokenPayout).mockReset();
 });
+
+const PENDING: AdminTokenPayout = {
+  id: 7,
+  requested_by: "sales",
+  tokens: 100,
+  taka_per_token: 1,
+  amount_taka: 100,
+  note: "bKash 01711111111",
+  status: "PENDING",
+  decided_by: null,
+  decided_at: null,
+  decision_note: "",
+  created_at: "2026-11-02T06:00:00Z",
+};
 
 describe("point sale helpers", () => {
   it("refuses blanks, fractions, amounts below the minimum and above the wallet", () => {
@@ -160,6 +187,61 @@ describe("My Sellers page", () => {
 
     expect(screen.getByRole("note")).toHaveTextContent("fewer points than the minimum sale of 100");
     expect(screen.getByRole("button", { name: "Sell points" })).toBeDisabled();
+  });
+
+  it("links each seller to its own page", async () => {
+    await openPage();
+    expect(screen.getAllByRole("link", { name: "Corner Store" })[0]).toHaveAttribute("href", "/admin/my-sellers/4");
+  });
+
+  it("hands tokens in for payment, worth ৳1 each", async () => {
+    vi.mocked(requestTokenPayout).mockResolvedValue(PENDING);
+    await openPage();
+
+    fireEvent.click(screen.getByRole("button", { name: "Request payment" }));
+    const input = dialog().getByLabelText("Tokens");
+    fireEvent.change(input, { target: { value: "103" } });
+    expect(dialog().getByText("You hold 102 tokens.")).toBeInTheDocument();
+    fireEvent.change(input, { target: { value: "100" } });
+    fireEvent.change(dialog().getByLabelText("Note for the admin"), { target: { value: "bKash 01711111111" } });
+    expect(dialog().getByText("Worth ৳100; 2 tokens stay with you.")).toBeInTheDocument();
+
+    vi.mocked(getMyTokenPayouts).mockResolvedValue({ count: 1, next: null, previous: null, results: [PENDING] });
+    await act(async () => {
+      fireEvent.click(dialog().getByRole("button", { name: "Request ৳100" }));
+    });
+
+    expect(requestTokenPayout).toHaveBeenCalledWith("access", 100, "bKash 01711111111");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Waiting for an admin: 100 tokens, ৳100");
+    expect(screen.queryByRole("button", { name: "Request payment" })).not.toBeInTheDocument();
+  });
+
+  it("cancels a waiting request", async () => {
+    vi.mocked(getMyTokenPayouts).mockResolvedValue({ count: 1, next: null, previous: null, results: [PENDING] });
+    vi.mocked(cancelTokenPayout).mockResolvedValue({ ...PENDING, status: "CANCELLED" });
+    await openPage();
+
+    vi.mocked(getMyTokenPayouts).mockResolvedValue({
+      count: 1,
+      next: null,
+      previous: null,
+      results: [{ ...PENDING, status: "CANCELLED" }],
+    });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Cancel request" }));
+    });
+
+    expect(cancelTokenPayout).toHaveBeenCalledWith("access", 7);
+    expect(screen.getByRole("button", { name: "Request payment" })).toBeInTheDocument();
+    expect(screen.getByText("Cancelled")).toBeInTheDocument();
+  });
+
+  it("checks the token amount", () => {
+    expect(payoutTokensError("", 50)).toBe("Enter a whole number of tokens.");
+    expect(payoutTokensError("0", 50)).toBe("Ask for at least 1 token.");
+    expect(payoutTokensError("51", 50)).toBe("You hold 50 tokens.");
+    expect(payoutTokensError("50", 50)).toBeNull();
   });
 
   it("shows the access notice without asking the server", async () => {

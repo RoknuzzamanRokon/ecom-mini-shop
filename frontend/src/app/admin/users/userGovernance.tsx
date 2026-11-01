@@ -86,6 +86,29 @@ export function getAccountManagementLock(
 }
 
 /**
+ * Why the operator cannot turn a permission off (or back on) for this account
+ * alone, or null. Mirrors rbac.services.get_permission_block_denial: unlike a
+ * role change it skips the subset rule, since it only takes access away or
+ * restores what the roles already grant; it still protects oneself, a
+ * superuser and a protected role, and full platform access is never limited.
+ */
+export function getPermissionBlockLock(
+  actor: AuthUser | null | undefined,
+  target: AdminUserDetail
+): string | null {
+  if (!canManageAdminUsers(actor)) {
+    return "Turning permissions off requires the users.admin.manage permission.";
+  }
+  if (actor && actor.id === target.id) return "You cannot change your own permissions.";
+  if (target.is_superuser && !actor?.is_superuser) return "Only a superuser can modify a superuser account.";
+  if (!isSuperAdministrator(actor) && target.roles.some(isProtectedRoleCode)) {
+    return "Only a Super Administrator can modify an account that holds a protected role.";
+  }
+  if (target.has_full_platform_access) return "Full platform access is not limited by turned-off permissions.";
+  return null;
+}
+
+/**
  * Why the operator cannot change this account's ROLE assignments, or null.
  *
  * Adds "Check 2": self-modification of roles is prohibited outright, for

@@ -27,6 +27,7 @@ import { useLatestRequest } from "@/hooks/useLatestRequest";
 import { pageNumber } from "@/lib/params";
 import { SELLER_STATUS_LABELS, SELLER_TYPE_LABELS } from "../sellers/sellerGovernance";
 import SellPointsDialog from "./SellPointsDialog";
+import TokenPayoutPanel from "./TokenPayoutPanel";
 import { canBuyPoints, saleSummary } from "./pointSale";
 
 /** DRF's default PAGE_SIZE (config/settings/base.py), which the seller list uses. */
@@ -49,7 +50,9 @@ export default function AdminMySellersPage() {
 /**
  * The Sales Team's own sellers (docs/FOLLOW_UPS_PLAN.md §5): the onboarder's
  * points and tokens, the sellers they opened, and Sell points on the approved
- * ones. Administrators and Finance sell from Users instead.
+ * ones. Administrators and Finance sell from Users instead. Each seller opens
+ * on its own page for corrections, and tokens are handed in for payment here
+ * (docs/SALES_TEAM_EDITS_PAYOUTS_PLAN.md).
  */
 function AdminMySellersPageContent() {
   const { user } = useAuth();
@@ -130,7 +133,12 @@ function AdminMySellersPageContent() {
         header: "Seller",
         render: (seller) => (
           <>
-            <span className="block font-bold text-ink line-clamp-1">{seller.business_name}</span>
+            <Link
+              href={`/admin/my-sellers/${seller.id}`}
+              className="block font-bold text-ink line-clamp-1 hover:text-primary hover:underline"
+            >
+              {seller.business_name}
+            </Link>
             <span className="block text-[11px] font-medium text-ink-muted line-clamp-1">
               @{seller.username}
               {seller.phone ? ` · ${seller.phone}` : ""}
@@ -148,7 +156,8 @@ function AdminMySellersPageContent() {
       {
         key: "catalog",
         header: "Shops / Products",
-        render: (seller) => `${formatCount(seller.shop_count)} / ${formatCount(seller.product_count)}`,
+        render: (seller) =>
+          `${formatCount(seller.shop_count)} / ${seller.product_count === null ? "—" : formatCount(seller.product_count)}`,
         align: "right",
         hideOnMobile: true,
       },
@@ -172,6 +181,12 @@ function AdminMySellersPageContent() {
   const actions: AdminRowAction<AdminOnboardingSeller>[] = useMemo(
     () => [
       {
+        key: "open",
+        label: "Open",
+        icon: "visibility",
+        onClick: (seller) => router.push(`/admin/my-sellers/${seller.id}`),
+      },
+      {
         key: "sell",
         label: "Sell points",
         icon: "add_card",
@@ -184,7 +199,7 @@ function AdminMySellersPageContent() {
         isDisabled: () => !summary || summary.points < summary.minimum_point_sale,
       },
     ],
-    [summary]
+    [summary, router]
   );
 
   if (!canUse) {
@@ -234,7 +249,13 @@ function AdminMySellersPageContent() {
           icon="token"
           tone="primary"
           loading={!summary && loading}
-          description={summary ? `${formatCount(summary.tokens_per_seller)} for each seller you onboard` : undefined}
+          description={
+            summary
+              ? summary.pending_payout_tokens
+                ? `${formatCount(summary.pending_payout_tokens)} more held for your payout request`
+                : `${formatCount(summary.tokens_per_seller)} for each seller you onboard`
+              : undefined
+          }
         />
         <AdminStatCard
           title="Live sellers"
@@ -245,6 +266,10 @@ function AdminMySellersPageContent() {
           description={summary ? `${formatCount(summary.sellers.awaiting_approval)} awaiting approval` : undefined}
         />
       </div>
+
+      {summary && (
+        <TokenPayoutPanel tokens={summary.tokens} takaPerToken={summary.taka_per_token} onChanged={fetchPage} />
+      )}
 
       {short && (
         <div role="note" className="rounded-xl border border-accent/30 bg-accent/10 p-3 text-xs font-medium text-accent">

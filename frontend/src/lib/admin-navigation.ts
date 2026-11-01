@@ -52,6 +52,8 @@ export const ADMIN_PERMISSIONS = {
    * Seeded to SALES_TEAM only: each holder reaches the sellers they onboarded.
    */
   sellersOnboard: ["sellers.onboard"],
+  /** /api/onboarding/payouts/review/ -> CanSettleTokenPayouts. Seeded to ADMINISTRATOR. */
+  tokenPayoutsManage: ["onboarding.payouts.manage"],
 
   /**
    * GET /api/admin/products/ and /api/admin/products/<pk>/ -> CanViewAdminProducts.
@@ -277,6 +279,14 @@ export const ADMIN_NAV_ITEMS: AdminNavItem[] = [
     section: "Marketplace",
     requiredPermissions: ADMIN_PERMISSIONS.sellersOnboard,
     description: "Sellers you onboarded, and selling them points.",
+  },
+  {
+    href: "/admin/token-payouts",
+    label: "Token Payouts",
+    icon: "toll",
+    section: "Marketplace",
+    requiredPermissions: ADMIN_PERMISSIONS.tokenPayoutsManage,
+    description: "Pay the Sales Team for the tokens they hand in.",
   },
   {
     href: "/admin/onboarding",
