@@ -57,6 +57,16 @@ urlpatterns = [
     # Admin & Platform Governance APIs (Task 17)
     path("api/admin/users/", api_views.AdminUserListAPIView.as_view(), name="admin_users_list"),
     path("api/admin/users/<int:pk>/", api_views.AdminUserDetailAPIView.as_view(), name="admin_users_detail"),
+    path(
+        "api/admin/users/<int:pk>/permission-blocks/",
+        api_views.AdminUserPermissionBlockAPIView.as_view(),
+        name="admin_user_permission_blocks",
+    ),
+    path(
+        "api/admin/users/<int:pk>/permission-blocks/remove/",
+        api_views.AdminUserPermissionBlockAPIView.as_view(remove=True),
+        name="admin_user_permission_blocks_remove",
+    ),
     path("api/admin/roles/", api_views.AdminRoleListCreateAPIView.as_view(), name="admin_roles_list_create"),
     path("api/admin/roles/<int:pk>/", api_views.AdminRoleDetailAPIView.as_view(), name="admin_roles_detail"),
     path("api/admin/permissions/", api_views.AdminPermissionCatalogAPIView.as_view(), name="admin_permissions_catalog"),

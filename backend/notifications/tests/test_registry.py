@@ -6,22 +6,23 @@ from notifications.events import EVENT_TYPES, UnknownEventTypeError, get_event_t
 from notifications.models import Audience, Channel, Priority
 
 # The v1 catalog, docs/NOTIFICATION_SYSTEM.md §5, with the listing events
-# added on 2026-11-01 (docs/FOLLOW_UPS_PLAN.md).
+# added on 2026-11-01 (docs/FOLLOW_UPS_PLAN.md) and the Sales Team's edit code
+# and token payouts (docs/SALES_TEAM_EDITS_PAYOUTS_PLAN.md).
 CATALOG = {
     "order.placed", "order.status_changed", "payment.succeeded", "payment.failed",
     "refund.processed", "support.reply_received",
     "seller.status_changed", "shop.status_changed", "product.moderated",
     "inventory.low_stock", "listing.ending_soon", "listing.expired",
-    "review.created", "points.adjusted",
+    "review.created", "points.adjusted", "onboarding.edit_code",
     "shop.submitted", "support.ticket_created", "support.ticket_assigned",
-    "support.customer_replied",
+    "support.customer_replied", "tokens.payout_requested", "tokens.payout_decided",
 }
 # §5's email column: ● or ○.
 SENDS_EMAIL = {
     "order.placed", "order.status_changed", "payment.succeeded", "payment.failed",
     "refund.processed", "support.reply_received", "seller.status_changed",
     "shop.status_changed", "product.moderated", "listing.ending_soon", "listing.expired",
-    "support.ticket_assigned",
+    "onboarding.edit_code", "support.ticket_assigned", "tokens.payout_requested",
 }
 
 

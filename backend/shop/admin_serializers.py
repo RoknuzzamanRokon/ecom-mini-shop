@@ -8,7 +8,7 @@ Provides safe representations for Users, Roles, Sellers, Shops, Products, Catego
 from rest_framework import serializers
 from django.contrib.auth import get_user_model
 
-from rbac.models import Role, Permission, UserRole
+from rbac.models import Role, Permission, UserPermissionBlock, UserRole
 from rbac.serializers import USERNAME_TAKEN, username_field
 from rbac.services import LOCKED_ROLE_CODES, PROTECTED_ROLE_CODES, get_user_permissions, get_user_role_codes
 from sellers.models import SellerProfile
@@ -65,6 +65,7 @@ class AdminUserListSerializer(serializers.ModelSerializer):
 class AdminUserDetailSerializer(serializers.ModelSerializer):
     roles = serializers.SerializerMethodField()
     permissions = serializers.SerializerMethodField()
+    turned_off_permissions = serializers.SerializerMethodField()
     has_full_platform_access = serializers.SerializerMethodField()
     customer_profile = serializers.SerializerMethodField()
     seller_profile = serializers.SerializerMethodField()
@@ -82,6 +83,7 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
             "is_superuser",
             "roles",
             "permissions",
+            "turned_off_permissions",
             "has_full_platform_access",
             "customer_profile",
             "seller_profile",
@@ -106,6 +108,20 @@ class AdminUserDetailSerializer(serializers.ModelSerializer):
         has_full_platform_access so a client cannot mistake it for a real grant.
         """
         return sorted(code for code in get_user_permissions(obj) if code != "*")
+
+    def get_turned_off_permissions(self, obj):
+        """Codes turned off for this account alone (UserPermissionBlock), newest first."""
+        blocks = UserPermissionBlock.objects.filter(user=obj, is_active=True).select_related("permission", "blocked_by")
+        return [
+            {
+                "code": block.permission.code,
+                "name": block.permission.name,
+                "reason": block.reason,
+                "blocked_by": block.blocked_by.username if block.blocked_by else None,
+                "blocked_at": block.blocked_at,
+            }
+            for block in blocks.order_by("-blocked_at")
+        ]
 
     def get_has_full_platform_access(self, obj):
         """True when this account resolves to the wildcard ("*") permission."""
@@ -236,6 +252,18 @@ class AdminUserCreateSerializer(AdminAccountFieldsSerializer):
         # Duplicate role codes would make the assignment diff ambiguous.
         attrs["roles"] = sorted(set(attrs.get("roles", [])))
         return attrs
+
+
+class AdminPermissionBlockSerializer(serializers.Serializer):
+    """POST /api/admin/users/<pk>/permission-blocks/ (and .../remove/)."""
+
+    code = serializers.CharField(max_length=100)
+    reason = serializers.CharField(max_length=500)
+
+    def validate_reason(self, value):
+        if not value.strip():
+            raise serializers.ValidationError("A reason is required.")
+        return value.strip()
 
 
 class AdminUserUpdateSerializer(serializers.Serializer):

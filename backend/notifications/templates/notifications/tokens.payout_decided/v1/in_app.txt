@@ -1,0 +1,5 @@
+{% block title %}{% if status == "ACCEPTED" %}Your payout of ৳{{ amount_taka }} was accepted{% else %}Your payout request wasn't accepted{% endif %}{% endblock %}
+{% block body %}{% if status == "ACCEPTED" %}An admin accepted your {{ tokens }} token{{ tokens|pluralize }} (৳{{ amount_taka }}).{% else %}Your {{ tokens }} token{{ tokens|pluralize }} are back in your wallet.{% endif %}{% if note %}
+
+{% if status == "ACCEPTED" %}Note{% else %}Reason{% endif %}: {{ note }}{% endif %}{% endblock %}
+{% block action_url %}/admin/my-sellers{% endblock %}

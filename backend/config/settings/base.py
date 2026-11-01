@@ -264,7 +264,7 @@ TRUSTED_PROXY_COUNT = int(os.environ.get("DJANGO_NUM_PROXIES") or 0)
 # Django REST Framework settings
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
-        "rest_framework_simplejwt.authentication.JWTAuthentication",
+        "rbac.authentication.StartingPasswordJWTAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
@@ -309,6 +309,10 @@ SIMPLE_JWT = {
     # matching refresh tokens.
     "CHECK_REVOKE_TOKEN": True,
     "TOKEN_REFRESH_SERIALIZER": "rbac.serializers.RevocationCheckingTokenRefreshSerializer",
+    # Marks the tokens of an account still on the password someone else set
+    # for it (rbac.models.StartingPassword), which only reach the password
+    # change until it is replaced.
+    "TOKEN_OBTAIN_SERIALIZER": "rbac.authentication.StartingPasswordTokenObtainPairSerializer",
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 

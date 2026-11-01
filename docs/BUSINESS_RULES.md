@@ -63,11 +63,18 @@ Fixed in code:
 |---|---|---|---|---|---|
 | `onboarding.starting_points` | **Starting points.** Points that move from the onboarder's wallet to each new seller they open. 0 gives none. | 200 points | 0–100,000 | Onboarded sellers | Sellers onboarded afterwards |
 | `onboarding.tokens_per_seller` | **Tokens per seller.** Tokens the onboarder earns for each seller they open. 0 gives none. | 51 tokens | 0–100,000 | Sales Team onboarders | Sellers onboarded afterwards |
+| `onboarding.taka_per_token` | **Token value.** What one token is worth in ৳ when an onboarder hands tokens in for payment. | 1 ৳ per token | 1–1,000 | Sales Team onboarders | Payout requests made afterwards; a pending request keeps its value |
+| `onboarding.edit_code_minutes` | **Edit code valid for.** Minutes the code sent to the seller can be used to open an edit session. | 10 minutes | 2–30 | Sales Team onboarders | The next code sent |
+| `onboarding.edit_window_minutes` | **Edit window.** Minutes the onboarder may correct the seller, its shops and their products once the code is accepted. | 30 minutes | 5–120 | Sales Team onboarders | The next session opened |
 
 Fixed in code:
 
 - A Sales Team member sells points only to the sellers they onboarded, once those are approved.
 - Rejecting an onboarded seller returns its starting points to the onboarder (up to what is left) and takes back the tokens it earned.
+- An onboarded seller chooses their own password at first sign-in, since the onboarder set the first one.
+- Edits need the seller's code: 5 wrong tries void it, and a new code can be asked for once a minute. The seller type and the login account cannot be changed this way.
+- A Sales Team member sees only the products they added, and only with 'onboarding.products.view', which an admin can turn off for the team or for one person.
+- Handing tokens in holds them until an admin decides, one request at a time; accepted tokens move to that admin, rejected or cancelled ones come back. Nobody settles their own request.
 
 ## Support
 

@@ -10,6 +10,7 @@ import logging
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
+from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db import transaction
 from django.db.models import Count, Exists, OuterRef, Prefetch, Q, Sum
@@ -33,6 +34,8 @@ from rbac.services import (
     assert_can_assign_roles,
     assert_can_manage_user,
     assign_user_role,
+    block_user_permission,
+    unblock_user_permission,
     get_delegatable_permission_codes,
     get_undelegatable_permission_codes,
     get_user_role_codes,
@@ -101,6 +104,7 @@ from shop.admin_serializers import (
     AdminUserCreateSerializer,
     AdminUserDetailSerializer,
     AdminUserListSerializer,
+    AdminPermissionBlockSerializer,
     AdminUserUpdateSerializer,
 )
 from shop.models import Category, Order, Payment, Product
@@ -403,6 +407,51 @@ class AdminUserDetailAPIView(APIView):
 
         reloaded = User.objects.get(pk=pk)
         return Response(AdminUserDetailSerializer(reloaded).data, status=status.HTTP_200_OK)
+
+
+class AdminUserPermissionBlockAPIView(APIView):
+    """
+    POST /api/admin/users/<int:pk>/permission-blocks/         {"code", "reason"}
+    POST /api/admin/users/<int:pk>/permission-blocks/remove/  {"code", "reason"}
+
+    Turns one permission off for this account alone although its roles grant
+    it (rbac.models.UserPermissionBlock), or back on. Needs
+    'users.admin.manage'; rbac.services.get_permission_block_denial decides
+    which accounts.
+    Each change writes USER_PERMISSION_BLOCKED or USER_PERMISSION_UNBLOCKED
+    and answers the updated user detail.
+    """
+    permission_classes = [IsAuthenticated, CanManageAdminUsers]
+    remove = False
+
+    def post(self, request, pk):
+        serializer = AdminPermissionBlockSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        code, reason = serializer.validated_data["code"].strip(), serializer.validated_data["reason"]
+        with transaction.atomic():
+            try:
+                target_user = User.objects.select_for_update().get(pk=pk)
+            except User.DoesNotExist:
+                raise NotFound("User not found.")
+            try:
+                if self.remove:
+                    unblock_user_permission(request.user, target_user, code)
+                else:
+                    block_user_permission(request.user, target_user, code, reason)
+            except DjangoPermissionDenied as exc:
+                raise PermissionDenied(str(exc))
+            except (ValueError, Permission.DoesNotExist) as exc:
+                message = str(exc) if isinstance(exc, ValueError) else f"No permission '{code}' exists."
+                raise DRFValidationError({"code": message})
+            AuditService.log(
+                action="USER_PERMISSION_UNBLOCKED" if self.remove else "USER_PERMISSION_BLOCKED",
+                target=target_user,
+                actor=request.user,
+                reason=reason,
+                metadata={"permission": code},
+                ip_address=get_client_ip(request),
+            )
+        return Response(AdminUserDetailSerializer(User.objects.get(pk=pk)).data, status=status.HTTP_200_OK)
 
 
 # ==============================================================================

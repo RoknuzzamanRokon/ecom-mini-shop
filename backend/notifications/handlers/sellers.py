@@ -2,17 +2,27 @@
 Who hears about seller accounts and shops (docs/NOTIFICATION_SYSTEM.md §5).
 
 - seller.status_changed: the seller's own account (ACCOUNT, always emailed).
+- onboarding.edit_code: the seller's own account (ACCOUNT, always emailed).
 - shop.status_changed: the shop's owner (SHOPS).
 - shop.submitted: the staff who can review shops, i.e. holders of
   'shops.approve' at routing time (D5), in-app only.
 """
-from ..events import SELLER_STATUS_CHANGED, SHOP_STATUS_CHANGED, SHOP_SUBMITTED
+from ..events import ONBOARDING_EDIT_CODE, SELLER_STATUS_CHANGED, SHOP_STATUS_CHANGED, SHOP_SUBMITTED
 from ..models import Audience
 from .base import Recipient, handles
 
 
 @handles(SELLER_STATUS_CHANGED)
 def tell_seller_account_status(event):
+    from sellers.models import SellerProfile
+
+    seller = SellerProfile.objects.select_related("user").filter(pk=event.payload["seller_id"]).first()
+    if seller:
+        yield Recipient(seller.user, Audience.SELLER)
+
+
+@handles(ONBOARDING_EDIT_CODE)
+def tell_seller_edit_code(event):
     from sellers.models import SellerProfile
 
     seller = SellerProfile.objects.select_related("user").filter(pk=event.payload["seller_id"]).first()

@@ -1524,6 +1524,7 @@ class StaffOrderStatusAPIView(APIView):
 from .admin_views import (
     AdminUserListAPIView,
     AdminUserDetailAPIView,
+    AdminUserPermissionBlockAPIView,
     AdminRoleListCreateAPIView,
     AdminRoleDetailAPIView,
     AdminPermissionCatalogAPIView,

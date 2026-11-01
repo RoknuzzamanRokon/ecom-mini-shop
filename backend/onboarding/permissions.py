@@ -31,6 +31,33 @@ class CanOnboardSellers(BasePermission):
         return has_user_permission(request.user, "sellers.onboard")
 
 
+#: Seeing the products an onboarder added (and so editing them).
+PRODUCTS_VIEW = "onboarding.products.view"
+
+
+def can_view_onboarded_products(user) -> bool:
+    return has_user_permission(user, PRODUCTS_VIEW)
+
+
+class CanViewOnboardedProducts(BasePermission):
+    """The products an onboarder added: 'sellers.onboard' and 'onboarding.products.view'."""
+    message = (
+        "You do not have permission to see the products you added "
+        "('onboarding.products.view' required); an admin may have turned it off."
+    )
+
+    def has_permission(self, request, view):
+        return has_user_permission(request.user, "sellers.onboard") and can_view_onboarded_products(request.user)
+
+
+class CanSettleTokenPayouts(BasePermission):
+    """Accepting or rejecting token payout requests: 'onboarding.payouts.manage'."""
+    message = "You do not have permission to settle token payouts ('onboarding.payouts.manage' required)."
+
+    def has_permission(self, request, view):
+        return has_user_permission(request.user, "onboarding.payouts.manage")
+
+
 class CanApproveOnboarding(BasePermission):
     """The onboarding review queue and its one-step approval: every code in APPROVAL_PERMISSIONS."""
     message = (

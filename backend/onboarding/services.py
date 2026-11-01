@@ -7,17 +7,29 @@ ShopService.create_shop and each product from ProductService.create_product,
 so every rule those enforce (the Limited Shop Owner caps, the product
 creation fee, the audit rows) holds here too. The only difference is that
 the shop and products may be added while the seller still awaits approval.
+
+Corrections afterwards need the seller's consent: EditSessionService sends
+them a code, and only an open session lets the onboarder edit. Tokens are
+cashed through TokenService.request_payout, which an admin accepts or rejects.
 """
 import logging
+import secrets
+from datetime import timedelta
 from typing import Optional
+from zoneinfo import ZoneInfo
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
+from django.utils.crypto import constant_time_compare, salted_hmac
 
 from audit.services import AuditService
+from notifications import events
+from notifications.publisher import publish
 from points.models import PointTransaction, SellerPointPolicy, StaffWallet
 from points.services import PointService
+from rbac.models import StartingPassword
 from rbac.serializers import create_login_account, create_login_phone
 from sellers.models import SellerProfile
 from sellers.services import approve_seller, create_seller_profile
@@ -25,7 +37,14 @@ from shop.models import Product
 from shop.services import ProductService
 from shops.models import Shop
 from shops.services import ShopService
-from .models import OnboardingSettings, SellerOnboarding, TokenTransaction, TokenWallet
+from .models import (
+    EditSession,
+    OnboardingSettings,
+    SellerOnboarding,
+    TokenPayoutRequest,
+    TokenTransaction,
+    TokenWallet,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +54,41 @@ POINTS_REFERENCE = "SELLER_ONBOARDING"
 POINT_SALE_REFERENCE = "POINT_SALE"
 
 
+#: Seller states in which the onboarder may still correct what they opened.
+EDITABLE_SELLER_STATUSES = SellerProfile.AWAITING_APPROVAL_STATUSES + (
+    SellerProfile.STATUS_APPROVED,
+    SellerProfile.STATUS_ACTIVE,
+)
+#: The least time between two codes for the same seller.
+CODE_RESEND_SECONDS = 60
+EDIT_CODE_SALT = "onboarding.EditSession.code"
+
+
 class OnboardingError(Exception):
     """An onboarding step the seller's current state does not allow."""
+
+
+class EditSessionError(OnboardingError):
+    """A code request or code entry the session's state refuses."""
+
+
+class EditCodeTooSoon(EditSessionError):
+    def __init__(self, wait_seconds: int):
+        super().__init__(f"A code was just sent. Ask for a new one in {wait_seconds} seconds.")
+        self.wait_seconds = wait_seconds
+
+
+class EditSessionRequired(OnboardingError):
+    """An edit without an open session: the seller has not given their code."""
+
+
+class PayoutError(OnboardingError):
+    """A payout request, or a decision on one, its state does not allow."""
+
+
+def clock_text(moment) -> str:
+    """A time as the onboarder reads it, in the business time zone ("14:35")."""
+    return moment.astimezone(ZoneInfo(settings.BUSINESS_TIME_ZONE)).strftime("%H:%M")
 
 
 class TokenService:
@@ -53,7 +105,8 @@ class TokenService:
         return wallet
 
     @staticmethod
-    def _move(wallet, amount: int, transaction_type: str, reason: str, seller, actor, outgoing: bool):
+    def _move(wallet, amount: int, transaction_type: str, reason: str, seller, actor, outgoing: bool,
+              payout_request=None):
         balance_before = wallet.balance
         wallet.balance = balance_before - amount if outgoing else balance_before + amount
         wallet.save(update_fields=["balance", "updated_at"])
@@ -65,6 +118,7 @@ class TokenService:
             balance_after=wallet.balance,
             reason=reason,
             seller=seller,
+            payout_request=payout_request,
             actor=actor,
         )
 
@@ -82,8 +136,8 @@ class TokenService:
     def take_back(cls, user, amount: int, seller, actor, reason: str) -> int:
         """
         Takes up to `amount` tokens out of `user`'s wallet and returns how
-        many it took: fewer only if the wallet holds fewer, which can happen
-        once tokens can be spent.
+        many it took: fewer only if the wallet holds fewer, which happens once
+        tokens are held for or paid out through a payout request.
         """
         if amount <= 0:
             return 0
@@ -93,6 +147,329 @@ class TokenService:
             if taken:
                 cls._move(wallet, taken, TokenTransaction.TYPE_TAKEN_BACK, reason, seller, actor, outgoing=True)
             return taken
+
+    # -- Payouts --------------------------------------------------------------
+
+    @staticmethod
+    def pending_payout(user) -> Optional[TokenPayoutRequest]:
+        return TokenPayoutRequest.objects.filter(requested_by=user, status=TokenPayoutRequest.STATUS_PENDING).first()
+
+    @classmethod
+    def request_payout(cls, user, tokens: int, note: str = "", ip_address=None) -> TokenPayoutRequest:
+        """
+        Holds `tokens` of `user`'s tokens on a new pending request for real
+        payment, valued at OnboardingSettings.taka_per_token. One pending
+        request at a time, checked under the wallet's lock.
+        """
+        config = OnboardingSettings.current()
+        if tokens < 1:
+            raise PayoutError("Ask for at least 1 token.")
+        with transaction.atomic():
+            wallet = cls._lock_wallet(user)
+            if cls.pending_payout(user) is not None:
+                raise PayoutError("You already have a payout request waiting. Cancel it, or wait for the decision.")
+            if tokens > wallet.balance:
+                raise PayoutError(f"You hold {wallet.balance} tokens, so ask for {wallet.balance} at most.")
+            payout = TokenPayoutRequest.objects.create(
+                requested_by=user,
+                tokens=tokens,
+                taka_per_token=config.taka_per_token,
+                amount_taka=tokens * config.taka_per_token,
+                note=note.strip(),
+            )
+            cls._move(
+                wallet, tokens, TokenTransaction.TYPE_PAYOUT_HELD, f"Held for payout request #{payout.pk}",
+                seller=None, actor=user, outgoing=True, payout_request=payout,
+            )
+            publish(
+                events.TOKEN_PAYOUT_REQUESTED,
+                payload={
+                    "payout_id": payout.pk,
+                    "requested_by": user.username,
+                    "tokens": payout.tokens,
+                    "amount_taka": payout.amount_taka,
+                },
+                aggregate=payout,
+                actor=user,
+                idempotency_key=f"token_payout_requested:{payout.pk}",
+            )
+            AuditService.log(
+                action="TOKEN_PAYOUT_REQUESTED",
+                target=payout,
+                actor=user,
+                new_state={"status": payout.status, "tokens": payout.tokens, "amount_taka": payout.amount_taka},
+                metadata={"taka_per_token": payout.taka_per_token, "wallet_balance": wallet.balance},
+                ip_address=ip_address,
+            )
+        return payout
+
+    @classmethod
+    def _lock_pending(cls, payout_id) -> TokenPayoutRequest:
+        payout = TokenPayoutRequest.objects.select_for_update().select_related("requested_by").get(pk=payout_id)
+        if payout.status != TokenPayoutRequest.STATUS_PENDING:
+            raise PayoutError(f"This payout request is already {payout.get_status_display().lower()}.")
+        return payout
+
+    @classmethod
+    def _release(cls, payout, actor, reason: str):
+        cls._move(
+            cls._lock_wallet(payout.requested_by), payout.tokens, TokenTransaction.TYPE_PAYOUT_RELEASED, reason,
+            seller=None, actor=actor, outgoing=False, payout_request=payout,
+        )
+
+    @classmethod
+    def _decide(cls, payout, decider, status_value: str, note: str, ip_address, audit_action: str):
+        previous_status = payout.status
+        payout.status = status_value
+        payout.decided_by = decider if status_value != TokenPayoutRequest.STATUS_CANCELLED else None
+        payout.decided_at = timezone.now()
+        payout.decision_note = note
+        payout.save(update_fields=["status", "decided_by", "decided_at", "decision_note"])
+        if status_value != TokenPayoutRequest.STATUS_CANCELLED:
+            publish(
+                events.TOKEN_PAYOUT_DECIDED,
+                payload={
+                    "payout_id": payout.pk,
+                    "requested_by_id": payout.requested_by_id,
+                    "status": payout.status,
+                    "tokens": payout.tokens,
+                    "amount_taka": payout.amount_taka,
+                    "note": note,
+                },
+                aggregate=payout,
+                actor=decider,
+                idempotency_key=f"token_payout_decided:{payout.pk}",
+            )
+        AuditService.log(
+            action=audit_action,
+            target=payout,
+            actor=decider,
+            reason=note,
+            previous_state={"status": previous_status},
+            new_state={"status": payout.status},
+            metadata={
+                "tokens": payout.tokens,
+                "amount_taka": payout.amount_taka,
+                "requested_by": payout.requested_by.username,
+            },
+            ip_address=ip_address,
+        )
+        return payout
+
+    @classmethod
+    def cancel_payout(cls, user, payout_id, ip_address=None) -> TokenPayoutRequest:
+        """The onboarder withdraws their pending request; the held tokens come back."""
+        with transaction.atomic():
+            payout = cls._lock_pending(payout_id)
+            if payout.requested_by_id != user.pk:
+                raise PayoutError("Only the person who asked can cancel a payout request.")
+            cls._release(payout, user, f"Payout request #{payout.pk} cancelled")
+            return cls._decide(
+                payout, user, TokenPayoutRequest.STATUS_CANCELLED, "", ip_address, "TOKEN_PAYOUT_CANCELLED"
+            )
+
+    @classmethod
+    def accept_payout(cls, admin, payout_id, note: str = "", ip_address=None) -> TokenPayoutRequest:
+        """An admin accepts a pending request: its tokens move to the admin's wallet."""
+        with transaction.atomic():
+            payout = cls._lock_pending(payout_id)
+            if payout.requested_by_id == admin.pk:
+                raise PayoutError("Someone else has to settle your own payout request.")
+            cls._move(
+                cls._lock_wallet(admin), payout.tokens, TokenTransaction.TYPE_PAYOUT_RECEIVED,
+                f"Payout request #{payout.pk} from {payout.requested_by.username}",
+                seller=None, actor=admin, outgoing=False, payout_request=payout,
+            )
+            return cls._decide(
+                payout, admin, TokenPayoutRequest.STATUS_ACCEPTED, note.strip(), ip_address, "TOKEN_PAYOUT_ACCEPTED"
+            )
+
+    @classmethod
+    def reject_payout(cls, admin, payout_id, reason: str, ip_address=None) -> TokenPayoutRequest:
+        """An admin rejects a pending request; the held tokens go back to the onboarder."""
+        reason = reason.strip()
+        if not reason:
+            raise PayoutError("A reason is required to reject a payout request.")
+        with transaction.atomic():
+            payout = cls._lock_pending(payout_id)
+            if payout.requested_by_id == admin.pk:
+                raise PayoutError("Someone else has to settle your own payout request.")
+            cls._release(payout, admin, f"Payout request #{payout.pk} rejected")
+            return cls._decide(
+                payout, admin, TokenPayoutRequest.STATUS_REJECTED, reason, ip_address, "TOKEN_PAYOUT_REJECTED"
+            )
+
+
+class EditSessionService:
+    """
+    The seller's code that lets their onboarder correct the seller, its shops
+    and the products the onboarder added (EditSession).
+    """
+
+    @staticmethod
+    def code_digest(seller_id: int, code: str) -> str:
+        return salted_hmac(EDIT_CODE_SALT, f"{seller_id}:{code}", algorithm="sha256").hexdigest()
+
+    @staticmethod
+    def latest(seller, onboarder=None):
+        sessions = EditSession.objects.filter(seller=seller)
+        if onboarder is not None:
+            sessions = sessions.filter(onboarder=onboarder)
+        return sessions.order_by("-created_at", "-pk").first()
+
+    @staticmethod
+    def describe(session, now=None) -> dict:
+        """GET .../edit-session/: the state and its times, for the onboarder's screen."""
+        now = now or timezone.now()
+        if session is None:
+            return {"state": "none", "code_expires_at": None, "expires_at": None, "attempts_left": None}
+        state = session.state(now)
+        return {
+            "state": state,
+            "code_expires_at": session.code_expires_at if state == "waiting" else None,
+            "expires_at": session.expires_at if state == "open" else None,
+            "attempts_left": EditSession.MAX_CODE_ATTEMPTS - session.failed_attempts if state == "waiting" else None,
+        }
+
+    @staticmethod
+    def _check_seller(seller):
+        if seller.status not in EDITABLE_SELLER_STATUSES:
+            raise EditSessionError(
+                f"{seller.business_name} is {seller.get_status_display().lower()}, so it can no longer be edited here."
+            )
+
+    @classmethod
+    def request_code(cls, onboarder, seller, ip_address=None) -> EditSession:
+        """
+        Sends a new code to the seller's account (onboarding.edit_code). A code
+        still waiting is replaced; an open session has to be closed first.
+        """
+        cls._check_seller(seller)
+        config = OnboardingSettings.current()
+        now = timezone.now()
+        with transaction.atomic():
+            # One request at a time per seller.
+            SellerProfile.objects.select_for_update().filter(pk=seller.pk).first()
+            latest = cls.latest(seller)
+            if latest is not None and latest.is_open(now):
+                raise EditSessionError(
+                    f"Editing is already open until {clock_text(latest.expires_at)}. Close it to ask for a new code."
+                )
+            if latest is not None:
+                waited = (now - latest.created_at).total_seconds()
+                if waited < CODE_RESEND_SECONDS:
+                    raise EditCodeTooSoon(int(CODE_RESEND_SECONDS - waited) + 1)
+                if latest.is_waiting(now):
+                    latest.closed_at = now
+                    latest.save(update_fields=["closed_at"])
+
+            code = f"{secrets.randbelow(1_000_000):06d}"
+            session = EditSession.objects.create(
+                seller=seller,
+                onboarder=onboarder,
+                code_digest=cls.code_digest(seller.pk, code),
+                code_expires_at=now + timedelta(minutes=config.edit_code_minutes),
+            )
+            publish(
+                events.ONBOARDING_EDIT_CODE,
+                payload={
+                    "seller_id": seller.pk,
+                    "business_name": seller.business_name,
+                    "code": code,
+                    "onboarder_name": onboarder.get_full_name() or onboarder.username,
+                    "valid_minutes": config.edit_code_minutes,
+                    "edit_minutes": config.edit_window_minutes,
+                },
+                aggregate=seller,
+                actor=onboarder,
+                idempotency_key=f"onboarding_edit_code:{session.pk}",
+            )
+            AuditService.log(
+                action="ONBOARDING_EDIT_CODE_SENT",
+                target=seller,
+                actor=onboarder,
+                seller=seller,
+                metadata={"edit_session_id": session.pk, "code_expires_at": session.code_expires_at.isoformat()},
+                ip_address=ip_address,
+            )
+        return session
+
+    @classmethod
+    def verify(cls, onboarder, seller, code: str, ip_address=None) -> EditSession:
+        """
+        Opens the session when `code` is the seller's code, for
+        OnboardingSettings.edit_window_minutes. A wrong code counts as a try,
+        and MAX_CODE_ATTEMPTS of them void it; the count is kept even though
+        the answer is an error.
+        """
+        cls._check_seller(seller)
+        now = timezone.now()
+        with transaction.atomic():
+            session = (
+                EditSession.objects.select_for_update()
+                .filter(seller=seller, onboarder=onboarder)
+                .order_by("-created_at", "-pk")
+                .first()
+            )
+            if session is not None and session.is_open(now):
+                return session
+            if session is None or session.closed_at is not None or session.opened_at is not None:
+                raise EditSessionError("No code is waiting for this seller. Ask for a new one.")
+            if session.failed_attempts >= EditSession.MAX_CODE_ATTEMPTS:
+                raise EditSessionError("That code was entered wrong too many times. Ask for a new one.")
+            if session.code_expires_at <= now:
+                raise EditSessionError("That code has expired. Ask for a new one.")
+
+            if constant_time_compare(session.code_digest, cls.code_digest(seller.pk, code.strip())):
+                session.opened_at = now
+                session.expires_at = now + timedelta(minutes=OnboardingSettings.current().edit_window_minutes)
+                session.save(update_fields=["opened_at", "expires_at"])
+                AuditService.log(
+                    action="ONBOARDING_EDIT_SESSION_OPENED",
+                    target=seller,
+                    actor=onboarder,
+                    seller=seller,
+                    metadata={"edit_session_id": session.pk, "expires_at": session.expires_at.isoformat()},
+                    ip_address=ip_address,
+                )
+                return session
+
+            session.failed_attempts += 1
+            if session.failed_attempts >= EditSession.MAX_CODE_ATTEMPTS:
+                session.closed_at = now
+            session.save(update_fields=["failed_attempts", "closed_at"])
+            left = EditSession.MAX_CODE_ATTEMPTS - session.failed_attempts
+        if left:
+            raise EditSessionError(f"Wrong code. {left} {'try' if left == 1 else 'tries'} left.")
+        raise EditSessionError("Wrong code too many times. Ask for a new one.")
+
+    @classmethod
+    def close(cls, onboarder, seller) -> Optional[EditSession]:
+        """Ends a waiting or open session early; None when there is none."""
+        now = timezone.now()
+        with transaction.atomic():
+            session = (
+                EditSession.objects.select_for_update()
+                .filter(seller=seller, onboarder=onboarder, closed_at__isnull=True)
+                .order_by("-created_at", "-pk")
+                .first()
+            )
+            if session is None or session.state(now) == "ended":
+                return None
+            session.closed_at = now
+            session.save(update_fields=["closed_at"])
+        return session
+
+    @classmethod
+    def require_open(cls, onboarder, seller) -> EditSession:
+        """The onboarder's open session for `seller`, or EditSessionRequired."""
+        session = cls.latest(seller, onboarder)
+        if session is None or not session.is_open(timezone.now()):
+            raise EditSessionRequired(
+                "Editing needs the seller's consent: ask for a code, and enter it when the seller tells you."
+            )
+        cls._check_seller(seller)
+        return session
 
 
 class OnboardingService:
@@ -106,6 +483,11 @@ class OnboardingService:
     def sellers_of(cls, user):
         """The sellers `user` onboarded, newest first."""
         return cls.onboarded_sellers().filter(created_by=user).order_by("-created_at", "-pk")
+
+    @classmethod
+    def products_of(cls, user):
+        """The products `user` added for the sellers they onboarded (Product.onboarded_by)."""
+        return Product.objects.filter(onboarded_by=user, shop__owner__in=cls.sellers_of(user))
 
     @classmethod
     def awaiting_approval(cls):
@@ -126,9 +508,12 @@ class OnboardingService:
             live=Count("pk", filter=Q(status__in=(SellerProfile.STATUS_APPROVED, SellerProfile.STATUS_ACTIVE))),
             rejected=Count("pk", filter=Q(status=SellerProfile.STATUS_REJECTED)),
         )
+        pending = TokenService.pending_payout(user)
         return {
             "points": points,
             "tokens": TokenService.get_balance(user),
+            "taka_per_token": config.taka_per_token,
+            "pending_payout_tokens": pending.tokens if pending else 0,
             "starting_points": config.starting_points,
             "tokens_per_seller": config.tokens_per_seller,
             "product_creation_cost": PointService.get_product_creation_cost(),
@@ -157,6 +542,8 @@ class OnboardingService:
             )
             if account.get("phone"):
                 create_login_phone(user, account["phone"])
+            # The onboarder knows this password; the seller replaces it at first sign-in.
+            StartingPassword.objects.create(user=user, set_by=onboarder)
             seller = create_seller_profile(user, created_by=onboarder, **seller_fields)
             SellerOnboarding.objects.create(
                 seller=seller,
@@ -426,3 +813,89 @@ class OnboardingService:
             },
         )
         return onboarding
+
+    # -- Corrections in an edit session ---------------------------------------
+
+    @staticmethod
+    def _apply(instance, data: dict, fields) -> tuple:
+        """Sets the changed `fields`; returns (previous_state, new_state)."""
+        previous_state, new_state = {}, {}
+        for field in fields:
+            if field in data and getattr(instance, field) != data[field]:
+                previous_state[field] = getattr(instance, field)
+                new_state[field] = data[field]
+                setattr(instance, field, data[field])
+        return previous_state, new_state
+
+    #: What an onboarder may correct on a seller: the business details, not
+    #: the seller type (it decides the shop and product limits) or the login.
+    SELLER_FIELDS = ("business_name", "business_email", "business_phone", "tax_id", "description")
+    SHOP_FIELDS = ("name", "description", "phone", "additional_phones", "address")
+
+    @classmethod
+    def edit_seller(cls, onboarder, seller, data: dict, ip_address=None) -> SellerProfile:
+        session = EditSessionService.require_open(onboarder, seller)
+        with transaction.atomic():
+            seller = SellerProfile.objects.select_for_update().get(pk=seller.pk)
+            previous_state, new_state = cls._apply(seller, data, cls.SELLER_FIELDS)
+            if new_state:
+                seller.save()
+                AuditService.log(
+                    action="ONBOARDING_SELLER_UPDATED",
+                    target=seller,
+                    actor=onboarder,
+                    seller=seller,
+                    previous_state=previous_state,
+                    new_state=new_state,
+                    metadata={"edit_session_id": session.pk},
+                    ip_address=ip_address,
+                )
+        return seller
+
+    @classmethod
+    def edit_shop(cls, onboarder, shop, data: dict, location=None, ip_address=None) -> Shop:
+        """
+        `data` holds SHOP_FIELDS, `additional_phones` already normalized
+        against the primary phone; `location` is a (latitude, longitude) pair
+        already validated, or None to leave it.
+        """
+        session = EditSessionService.require_open(onboarder, shop.owner)
+        with transaction.atomic():
+            shop = Shop.objects.select_for_update().select_related("owner").get(pk=shop.pk)
+            previous_state, new_state = cls._apply(shop, data, cls.SHOP_FIELDS)
+            if location is not None:
+                from shops.fields import Point
+
+                old_coords = (shop.latitude, shop.longitude)
+                if tuple(location) != old_coords:
+                    previous_state["latitude"], previous_state["longitude"] = old_coords
+                    new_state["latitude"], new_state["longitude"] = location
+                    shop.location = Point(longitude=location[1], latitude=location[0])
+            if new_state:
+                shop.save()
+                AuditService.log(
+                    action="ONBOARDING_SHOP_UPDATED",
+                    target=shop,
+                    actor=onboarder,
+                    shop=shop,
+                    seller=shop.owner,
+                    previous_state=previous_state,
+                    new_state=new_state,
+                    metadata={"edit_session_id": session.pk},
+                    ip_address=ip_address,
+                )
+        return shop
+
+    @classmethod
+    def edit_product(cls, onboarder, product, data: dict, ip_address=None) -> Product:
+        """ProductService.update_product, as the seller's own edit would, inside the session."""
+        session = EditSessionService.require_open(onboarder, product.shop.owner)
+        return ProductService.update_product(
+            product=product,
+            seller=product.shop.owner,
+            data=data,
+            actor=onboarder,
+            ip_address=ip_address,
+            for_onboarding=True,
+            audit_metadata={"edited_via": "onboarding", "edit_session_id": session.pk},
+        )

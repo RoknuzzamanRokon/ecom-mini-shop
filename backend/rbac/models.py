@@ -188,6 +188,93 @@ class UserPermission(models.Model):
         return f"{self.user} granted {self.permission.code}"
 
 
+class UserPermissionBlock(models.Model):
+    """
+    A permission turned off for ONE user although their roles grant it.
+
+    The opposite of UserPermission: editing the role turns a code off for
+    everyone holding it, and this turns it off for a single account, e.g. one
+    Sales Team member who should no longer see the products they added.
+    rbac.services.get_user_permissions() subtracts active blocks, so every
+    permission class honours them unchanged. Blocks never apply to the "*"
+    wildcard (superusers and Super Administrators).
+
+    Like UserPermission, turning a block back off is a flag flip, and blocking
+    the same code again reuses the row.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="permission_blocks",
+    )
+    permission = models.ForeignKey(
+        Permission,
+        on_delete=models.CASCADE,
+        related_name="user_blocks",
+    )
+    blocked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="permission_blocks_made",
+    )
+    blocked_at = models.DateTimeField()
+    is_active = models.BooleanField(default=True)
+    reason = models.CharField(max_length=500)
+
+    class Meta:
+        unique_together = ("user", "permission")
+        ordering = ["-blocked_at"]
+        verbose_name = "Permission Turned Off"
+        verbose_name_plural = "Permissions Turned Off"
+
+    def __str__(self):
+        return f"{self.permission.code} turned off for {self.user}"
+
+
+class StartingPassword(models.Model):
+    """
+    A password someone else chose for this account: the Sales Team member who
+    opened it in the field (onboarding). Until the owner replaces it, the login
+    marks the tokens (rbac.authentication.STARTING_PASSWORD_CLAIM) and the API
+    answers nothing but the password change, so the person who set it cannot
+    use the account unnoticed.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="starting_password",
+    )
+    set_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="starting_passwords_set",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    replaced_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="When the owner chose their own password.",
+    )
+
+    class Meta:
+        verbose_name = "Starting Password"
+        verbose_name_plural = "Starting Passwords"
+
+    def __str__(self):
+        state = "replaced" if self.replaced_at else "not replaced yet"
+        return f"Starting password of {self.user} ({state})"
+
+    @classmethod
+    def is_pending(cls, user) -> bool:
+        return cls.objects.filter(user=user, replaced_at__isnull=True).exists()
+
+
 class LoginPhone(models.Model):
     """
     A mobile number the account can sign in with in place of its username

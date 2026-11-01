@@ -44,6 +44,14 @@ PERMISSIONS_DATA = [
         "Can open seller accounts in the field and add their shop and products before approval, "
         "paying each new seller's starting points from their own wallet; sees only the sellers they onboarded",
     ),
+    (
+        "onboarding.products.view", "View Own Onboarded Products", "onboarding", "products.view",
+        "Can see the products they added for the sellers they onboarded, and edit them in an edit session",
+    ),
+    (
+        "onboarding.payouts.manage", "Settle Token Payouts", "onboarding", "payouts.manage",
+        "Can accept or reject the Sales Team's token payout requests; accepted tokens move to them",
+    ),
     # Orders
     ("orders.view", "View Orders", "orders", "view", "Can view orders and fulfillment status"),
     ("orders.create", "Create Orders", "orders", "create", "Can create customer orders"),
@@ -177,6 +185,7 @@ ROLE_PERMISSIONS_MAPPING = {
         "roles.admin.manage",
         "audit.view",
         "rules.view", "rules.manage",
+        "onboarding.payouts.manage",
         "sellers.admin.manage",
         "shops.admin.manage",
         "products.admin.manage",
@@ -219,12 +228,13 @@ ROLE_PERMISSIONS_MAPPING = {
     ],
     Role.ROLE_SALES_TEAM: [
         # Field onboarding only: no "sellers.view", so the Sales Team sees the
-        # sellers it onboarded, not the whole directory (rbac/0005).
+        # sellers it onboarded, not the whole directory (rbac/0005), and no
+        # "products.view" or "inventory.*", so it sees only the products it
+        # added (rbac/0008).
         "sellers.onboard",
-        "products.view", "products.create", "products.update",
+        "onboarding.products.view",
         "orders.view",
         "orders.seller.view", "orders.seller.update",
-        "inventory.view", "inventory.adjust",
     ],
     Role.ROLE_FINANCE: [
         "payments.view", "payments.create", "payments.process", "payments.verify", "payments.refund",

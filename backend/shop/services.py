@@ -272,6 +272,7 @@ class ProductService:
                 is_active=is_active,
                 status=Product.STATUS_SUBMITTED if for_onboarding else Product.STATUS_DRAFT,
                 submitted_at=timezone.now() if for_onboarding else None,
+                onboarded_by=actor if for_onboarding else None,
             )
             if image:
                 product.image = image
@@ -330,6 +331,8 @@ class ProductService:
         data: Dict[str, Any],
         actor=None,
         ip_address: Optional[str] = None,
+        for_onboarding: bool = False,
+        audit_metadata: Optional[Dict[str, Any]] = None,
     ) -> Product:
         """
         Updates an existing product with strict ownership verification.
@@ -338,11 +341,16 @@ class ProductService:
         An absolute ``stock`` is applied only if ``expected_stock`` (the figure
         the seller edited) still matches; otherwise StockConflictError, and
         nothing is saved.
+
+        Field onboarding (`for_onboarding`, an onboarder's edit session) may
+        also edit while the seller still awaits approval. `audit_metadata`
+        joins the PRODUCT_UPDATED row.
         """
         if not product.shop or product.shop.owner != seller:
             raise ProductOwnershipError("You do not own the shop associated with this product.")
 
-        if not seller.is_operational:
+        awaiting_approval = for_onboarding and seller.status in SellerProfile.AWAITING_APPROVAL_STATUSES
+        if not (seller.is_operational or awaiting_approval):
             raise IneligibleSellerError("Suspended or unapproved sellers cannot update products.")
 
         # A live listing was paid for: it stays on the storefront until its
@@ -418,7 +426,7 @@ class ProductService:
                 actor=actor,
                 shop=product.shop,
                 seller=seller,
-                metadata={"changed_fields": changed_fields},
+                metadata={"changed_fields": changed_fields, **(audit_metadata or {})},
                 ip_address=ip_address,
             )
 

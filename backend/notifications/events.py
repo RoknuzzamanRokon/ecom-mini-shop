@@ -54,11 +54,14 @@ LISTING_ENDING_SOON = "listing.ending_soon"
 LISTING_EXPIRED = "listing.expired"
 REVIEW_CREATED = "review.created"
 POINTS_ADJUSTED = "points.adjusted"
+ONBOARDING_EDIT_CODE = "onboarding.edit_code"
 # Staff-facing
 SHOP_SUBMITTED = "shop.submitted"
 SUPPORT_TICKET_CREATED = "support.ticket_created"
 SUPPORT_TICKET_ASSIGNED = "support.ticket_assigned"
 SUPPORT_CUSTOMER_REPLIED = "support.customer_replied"
+TOKEN_PAYOUT_REQUESTED = "tokens.payout_requested"
+TOKEN_PAYOUT_DECIDED = "tokens.payout_decided"
 
 
 def _keys(*names):
@@ -164,6 +167,16 @@ EVENT_TYPES = {
             IN_APP,
         ),
         EventType(
+            ONBOARDING_EDIT_CODE, 1,
+            # The seller's consent code for their onboarder's edit session
+            # (onboarding.EditSession), in the ACCOUNT category so neither
+            # channel can be switched off.
+            {Audience.SELLER: c.ACCOUNT},
+            _keys("seller_id", "business_name", "code", "onboarder_name", "valid_minutes", "edit_minutes"),
+            IN_APP_AND_EMAIL,
+            Priority.HIGH,
+        ),
+        EventType(
             SHOP_SUBMITTED, 1,
             {Audience.STAFF: c.STAFF_QUEUE},
             _keys("shop_id", "shop_name"),
@@ -185,6 +198,20 @@ EVENT_TYPES = {
             SUPPORT_CUSTOMER_REPLIED, 1,
             {Audience.STAFF: c.STAFF_QUEUE},
             _keys("ticket_id", "ticket_number", "message_id"),
+            IN_APP,
+        ),
+        EventType(
+            TOKEN_PAYOUT_REQUESTED, 1,
+            # amount_taka: what the tokens are worth in ৳, a whole number.
+            {Audience.STAFF: c.STAFF_QUEUE},
+            _keys("payout_id", "requested_by", "tokens", "amount_taka"),
+            IN_APP_AND_EMAIL,
+        ),
+        EventType(
+            TOKEN_PAYOUT_DECIDED, 1,
+            # status: "ACCEPTED" or "REJECTED"; note: the admin's note or reason.
+            {Audience.STAFF: c.WALLET},
+            _keys("payout_id", "requested_by_id", "status", "tokens", "amount_taka", "note"),
             IN_APP,
         ),
     )

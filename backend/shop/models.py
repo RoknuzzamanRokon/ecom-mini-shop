@@ -175,6 +175,17 @@ class Product(models.Model):
         default=0,
         help_text="How many times the seller renewed the listing after it expired.",
     )
+    onboarded_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="onboarded_products",
+        help_text=(
+            "The Sales Team member who added it for the seller through field onboarding. "
+            "Empty when the seller or staff added it."
+        ),
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

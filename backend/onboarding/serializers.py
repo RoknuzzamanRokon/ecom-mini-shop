@@ -7,11 +7,14 @@ from rbac.serializers import login_phone_number
 from shop.admin_serializers import (
     AdminAccountFieldsSerializer,
     AdminSellerCreateSerializer,
+    AdminSellerUpdateSerializer,
     AdminShopCreateSerializer,
+    AdminShopUpdateSerializer,
 )
 from shop.models import Product
+from shop.serializers import SellerProductUpdateSerializer
 from shops.models import Shop
-from .models import TokenTransaction
+from .models import TokenPayoutRequest, TokenTransaction
 
 
 # ---------------------------------------------------------------------------
@@ -83,6 +86,57 @@ class PointSaleSerializer(serializers.Serializer):
     amount = serializers.IntegerField(min_value=1, max_value=MAX_POINTS_PER_MOVE)
 
 
+class OnboardingSellerUpdateSerializer(AdminSellerUpdateSerializer):
+    """PATCH /api/onboarding/sellers/<pk>/ in an edit session: the business details, no `reason`."""
+
+    reason = None
+
+
+class OnboardingShopUpdateSerializer(AdminShopUpdateSerializer):
+    """PATCH /api/onboarding/shops/<pk>/ in an edit session: profile and location, no `reason`."""
+
+    reason = None
+
+
+class OnboardingProductUpdateSerializer(SellerProductUpdateSerializer):
+    """
+    PATCH /api/onboarding/products/<pk>/ in an edit session: the seller's own
+    product edit (stock with `expected_stock`), without moving it to another shop.
+    """
+
+    shop_id = None
+
+
+class EditCodeSerializer(serializers.Serializer):
+    """POST /api/onboarding/sellers/<pk>/edit-session/verify/: the 6-digit code the seller received."""
+
+    code = serializers.RegexField(r"^\s*\d{6}\s*$", error_messages={"invalid": "Enter the 6-digit code."})
+
+
+class PayoutRequestSerializer(serializers.Serializer):
+    """POST /api/onboarding/payouts/."""
+
+    tokens = serializers.IntegerField(min_value=1, max_value=1_000_000)
+    note = serializers.CharField(max_length=500, required=False, allow_blank=True, default="")
+
+
+class PayoutAcceptSerializer(serializers.Serializer):
+    """POST /api/onboarding/payouts/review/<pk>/accept/: how it was paid, optional."""
+
+    note = serializers.CharField(max_length=500, required=False, allow_blank=True, default="")
+
+
+class PayoutRejectSerializer(serializers.Serializer):
+    """POST /api/onboarding/payouts/review/<pk>/reject/."""
+
+    reason = serializers.CharField(max_length=500)
+
+    def validate_reason(self, value):
+        if not value.strip():
+            raise serializers.ValidationError("A reason is required to reject a payout request.")
+        return value.strip()
+
+
 # ---------------------------------------------------------------------------
 # Output
 # ---------------------------------------------------------------------------
@@ -114,6 +168,29 @@ class OnboardedProductSerializer(serializers.ModelSerializer):
         return request.build_absolute_uri(obj.image.url) if request else obj.image.url
 
 
+class OnboardedProductDetailSerializer(OnboardedProductSerializer):
+    """GET and PATCH /api/onboarding/products/<pk>/: everything the edit form needs."""
+
+    category_id = serializers.IntegerField(read_only=True)
+    shop_id = serializers.IntegerField(read_only=True)
+    shop_name = serializers.CharField(source="shop.name", read_only=True)
+    seller_id = serializers.IntegerField(source="shop.owner_id", read_only=True)
+    seller_name = serializers.CharField(source="shop.owner.business_name", read_only=True)
+
+    class Meta(OnboardedProductSerializer.Meta):
+        fields = OnboardedProductSerializer.Meta.fields + [
+            "category_id",
+            "description",
+            "badge",
+            "is_active",
+            "live_until",
+            "shop_id",
+            "shop_name",
+            "seller_id",
+            "seller_name",
+        ]
+
+
 class OnboardedShopSerializer(serializers.ModelSerializer):
     latitude = serializers.FloatField(read_only=True)
     longitude = serializers.FloatField(read_only=True)
@@ -130,6 +207,7 @@ class OnboardedShopSerializer(serializers.ModelSerializer):
             "phone",
             "additional_phones",
             "address",
+            "description",
             "latitude",
             "longitude",
             "created_at",
@@ -149,7 +227,13 @@ class OnboardedSellerSerializer(serializers.Serializer):
     phone = serializers.SerializerMethodField()
     onboarded_by = serializers.CharField(source="created_by.username", default=None)
     shop_count = serializers.IntegerField()
-    product_count = serializers.IntegerField()
+    product_count = serializers.IntegerField(
+        allow_null=True,
+        help_text=(
+            "For an onboarder, the products they added; null without 'onboarding.products.view'. "
+            "In the review queue, every product."
+        ),
+    )
     starting_points = serializers.IntegerField(source="onboarding.starting_points")
     tokens_awarded = serializers.IntegerField(source="onboarding.tokens_awarded")
     created_at = serializers.DateTimeField()
@@ -192,5 +276,27 @@ class TokenTransactionSerializer(serializers.ModelSerializer):
             "reason",
             "seller",
             "seller_name",
+            "payout_request",
+            "created_at",
+        ]
+
+
+class TokenPayoutSerializer(serializers.ModelSerializer):
+    requested_by = serializers.CharField(source="requested_by.username")
+    decided_by = serializers.CharField(source="decided_by.username", default=None)
+
+    class Meta:
+        model = TokenPayoutRequest
+        fields = [
+            "id",
+            "requested_by",
+            "tokens",
+            "taka_per_token",
+            "amount_taka",
+            "note",
+            "status",
+            "decided_by",
+            "decided_at",
+            "decision_note",
             "created_at",
         ]

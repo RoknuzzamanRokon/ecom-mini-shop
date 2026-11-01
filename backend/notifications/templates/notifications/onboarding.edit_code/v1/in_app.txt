@@ -1,0 +1,7 @@
+{% block title %}Your edit code: {{ code }}{% endblock %}
+{% block body %}{{ onboarder_name }} from the MiniShop Sales Team wants to correct the details of {{ business_name }}: the business, its shop or the products they added for you.
+
+Share this code with them only if you agree. It works for {{ valid_minutes }} minute{{ valid_minutes|pluralize }}. Once they enter it, they can make changes for {{ edit_minutes }} minute{{ edit_minutes|pluralize }}.
+
+If you did not expect this, do not share the code.{% endblock %}
+{% block action_url %}/seller{% endblock %}

@@ -8,7 +8,16 @@ from django.contrib.auth.forms import UserChangeForm as BaseUserChangeForm
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
-from .models import LoginPhone, Permission, Role, RolePermission, UserPermission, UserRole
+from .models import (
+    LoginPhone,
+    Permission,
+    Role,
+    RolePermission,
+    StartingPassword,
+    UserPermission,
+    UserPermissionBlock,
+    UserRole,
+)
 from .services import (
     LOCKED_ROLE_CODES,
     PROTECTED_ROLE_CODES,
@@ -425,6 +434,53 @@ class LoginPhoneAdmin(admin.ModelAdmin):
         return False
 
     def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(UserPermissionBlock)
+class UserPermissionBlockAdmin(admin.ModelAdmin):
+    """
+    Permissions turned off for one account. Read-only: they are turned off and
+    back on in the Console (Users -> the user), which checks who may manage
+    that account and audits each change with its reason.
+    """
+
+    list_display = ("user", "permission", "is_active", "blocked_by", "blocked_at")
+    list_filter = ("is_active",)
+    search_fields = ("user__username", "permission__code")
+    list_select_related = ("user", "permission", "blocked_by")
+    readonly_fields = ("user", "permission", "blocked_by", "blocked_at", "is_active", "reason")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(StartingPassword)
+class StartingPasswordAdmin(admin.ModelAdmin):
+    """
+    Accounts opened with a password someone else chose. Read-only: the row is
+    written when the account is opened and closed when its owner changes the
+    password.
+    """
+
+    list_display = ("user", "set_by", "created_at", "replaced_at")
+    search_fields = ("user__username", "set_by__username")
+    list_select_related = ("user", "set_by")
+    readonly_fields = ("user", "set_by", "created_at", "replaced_at")
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def has_delete_permission(self, request, obj=None):
         return False
 
 

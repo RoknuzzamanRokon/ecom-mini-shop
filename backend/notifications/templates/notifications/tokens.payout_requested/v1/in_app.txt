@@ -1,0 +1,3 @@
+{% block title %}{{ requested_by }} asks to be paid for {{ tokens }} token{{ tokens|pluralize }}{% endblock %}
+{% block body %}{{ requested_by }} handed in {{ tokens }} token{{ tokens|pluralize }}, worth ৳{{ amount_taka }}, and asks to be paid. Accept it once you have paid them, or reject it with a reason.{% endblock %}
+{% block action_url %}/admin/token-payouts{% endblock %}

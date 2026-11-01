@@ -286,6 +286,7 @@ switched off (D8); **○** is on by default and can be switched off; **—** mea
 | `listing.expired` | `ListingService.expire_due`, when a product's listing period ends (added 2026-11-01) | shop owner | CATALOG | ○ | `listing_expired:{product_id}:{live_until}` (one per period) |
 | `review.created` | `ReviewService.create_review` (`customers/services.py:341`), `ShopReviewService.create_review` (`:449`) | shop owner | REVIEWS | — | `review:{kind}:{id}` |
 | `points.adjusted` | `PointService.adjust_points` (`points/services.py:204`) | the seller's user | WALLET | — | `points_txn:{id}` |
+| `onboarding.edit_code` | `EditSessionService.request_code` (`onboarding/services.py`): the code the seller tells their onboarder to open an edit session (added 2026-11-02, `docs/SALES_TEAM_EDITS_PAYOUTS_PLAN.md`) | the seller's user | ACCOUNT | ● | `onboarding_edit_code:{session_id}` |
 
 ### Staff-facing
 
@@ -295,6 +296,8 @@ switched off (D8); **○** is on by default and can be switched off; **—** mea
 | `support.ticket_created` | `SupportTicketService.create_ticket` (`support/services.py:209`) | holders of `support.staff.manage`, the people who assign (STAFF) | STAFF_QUEUE | — | `support_ticket:{ticket_number}:created` |
 | `support.ticket_assigned` | `SupportTicketService.assign` (`:519`) | the assignee | STAFF_QUEUE | ○ | UUID |
 | `support.customer_replied` | `SupportTicketService.add_customer_reply` (`:301`) | the assignee, if there is one | STAFF_QUEUE | — | `support_message:{id}` |
+| `tokens.payout_requested` | `TokenService.request_payout` (`onboarding/services.py`), an onboarder hands tokens in for payment (added 2026-11-02) | holders of `onboarding.payouts.manage` except the requester (STAFF) | STAFF_QUEUE | ○ | `token_payout_requested:{id}` |
+| `tokens.payout_decided` | `TokenService.accept_payout` / `reject_payout` (added 2026-11-02) | the onboarder who asked (STAFF) | WALLET | — | `token_payout_decided:{id}` |
 
 ### Deliberately not in v1
 
@@ -767,6 +770,9 @@ the same rules the view had:
 | `listing.expired` | `product_id`, `product_name`, `ended_on`, `renewal_points`, `renewal_period_months` (added 2026-11-01) |
 | `review.created` | `kind` (product · shop), `review_id`, `rating`, `subject_name` |
 | `points.adjusted` | `transaction_id`, `seller_id`, `transaction_type`, `amount`, `balance_after` (optional `reason`, from Task 10) |
+| `onboarding.edit_code` | `seller_id`, `business_name`, `code`, `onboarder_name`, `valid_minutes`, `edit_minutes` (added 2026-11-02) |
+| `tokens.payout_requested` | `payout_id`, `requested_by` (username), `tokens`, `amount_taka` (whole ৳) (added 2026-11-02) |
+| `tokens.payout_decided` | `payout_id`, `requested_by_id`, `status` (ACCEPTED · REJECTED), `tokens`, `amount_taka`, `note` (added 2026-11-02) |
 | `shop.submitted` | `shop_id`, `shop_name` (optional `seller_name`, from Task 9) |
 | `support.ticket_created` | `ticket_id`, `ticket_number`, `subject`, `channel` |
 | `support.ticket_assigned` | `ticket_id`, `ticket_number`, `assignee_id` (optional `subject`, from Task 10) |

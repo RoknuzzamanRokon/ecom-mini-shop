@@ -199,7 +199,7 @@ class RBACAuthorizationTest(TestCase):
         # Now has union of SALES_TEAM + FINANCE permissions
         self.assertTrue(has_user_permission(self.sales_user, "orders.refund"))
         self.assertTrue(has_user_permission(self.sales_user, "points.add"))
-        self.assertTrue(has_user_permission(self.sales_user, "products.create"))
+        self.assertTrue(has_user_permission(self.sales_user, "sellers.onboard"))
 
     def test_super_administrator_has_full_permissions(self):
         self.assertTrue(has_user_permission(self.superadmin_user, "anything.custom"))

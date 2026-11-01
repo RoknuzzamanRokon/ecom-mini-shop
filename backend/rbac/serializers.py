@@ -1,13 +1,14 @@
 from django.contrib.auth import get_user_model
 from django.contrib.auth.validators import UnicodeUsernameValidator
 from django.db import IntegrityError, transaction
+from django.utils import timezone
 from rest_framework import serializers
 from rest_framework_simplejwt.exceptions import InvalidToken
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.settings import api_settings as jwt_settings
 from rest_framework_simplejwt.utils import get_md5_hash_password
 
-from .models import LoginPhone
+from .models import LoginPhone, StartingPassword
 from .phone import INVALID_PHONE, PHONE_TAKEN, national_phone, normalize_phone
 from .services import get_user_role_codes, get_user_permissions
 
@@ -83,6 +84,7 @@ class CurrentUserSerializer(serializers.ModelSerializer):
     phone = serializers.SerializerMethodField()
     roles = serializers.SerializerMethodField()
     permissions = serializers.SerializerMethodField()
+    must_change_password = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -97,10 +99,15 @@ class CurrentUserSerializer(serializers.ModelSerializer):
             "is_superuser",
             "roles",
             "permissions",
+            "must_change_password",
         ]
 
     def get_phone(self, obj):
         return login_phone_number(obj)
+
+    def get_must_change_password(self, obj):
+        """True while the account is on a password someone else set (StartingPassword)."""
+        return StartingPassword.is_pending(obj)
 
     def get_roles(self, obj):
         return sorted(list(get_user_role_codes(obj)))
@@ -276,6 +283,12 @@ class PasswordChangeSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {"new_password_confirm": "Passwords do not match."}
             )
+        # A starting password (StartingPassword) is known to whoever set it,
+        # so "changing" it to itself would keep it.
+        if attrs["new_password"] == attrs["current_password"]:
+            raise serializers.ValidationError(
+                {"new_password": "Choose a password different from your current one."}
+            )
 
         from django.contrib.auth.password_validation import validate_password
         from django.core.exceptions import ValidationError as DjangoValidationError
@@ -289,6 +302,8 @@ class PasswordChangeSerializer(serializers.Serializer):
 
     def save(self, **kwargs):
         user = self.context["request"].user
-        user.set_password(self.validated_data["new_password"])
-        user.save(update_fields=["password"])
+        with transaction.atomic():
+            user.set_password(self.validated_data["new_password"])
+            user.save(update_fields=["password"])
+            StartingPassword.objects.filter(user=user, replaced_at__isnull=True).update(replaced_at=timezone.now())
         return user
