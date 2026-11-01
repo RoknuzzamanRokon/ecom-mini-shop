@@ -4,23 +4,31 @@ Listing periods (docs/LISTING_VALIDITY_PLAN.md).
 A Limited Shop Owner's product stays live for
 ProductListingPolicy.first_period_months from its first publication. When the
 period ends the product becomes EXPIRED and leaves the storefront; the seller
-renews it for renewal_points, and each renewal lasts renewal_period_months.
-While a period runs, the seller cannot take the product off the storefront.
-A Full Shop Owner's products have no end date (`live_until` stays empty).
+renews it for renewal_points, and each renewal adds renewal_period_months,
+also before the end date (docs/FOLLOW_UPS_PLAN.md). While a period runs, the
+seller cannot take the product off the storefront; once it has expired they
+can delete it. A Full Shop Owner's products have no end date (`live_until`
+stays empty).
 
 Like point expiry, an ended period is enforced lazily (the public catalog
 checks `live_until`, and seller reads expire their own products) and by the
-daily expire_listings command, which moves what nobody touched.
+daily expire_listings command, which moves what nobody touched and tells
+sellers whose products enter the ending-soon window.
 """
 import logging
+import math
 from datetime import timedelta
 from typing import Optional
+from zoneinfo import ZoneInfo
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Q
 from django.utils import timezone
 
 from audit.services import AuditService
+from notifications import events
+from notifications.publisher import publish
 from points.models import PointTransaction
 from points.services import PointService
 from sellers.models import SellerProfile
@@ -32,6 +40,16 @@ logger = logging.getLogger(__name__)
 
 class ListingError(Exception):
     """A listing rule said no; the message says which, for the seller."""
+
+
+def end_date_text(moment) -> str:
+    """An end date as sellers read it: the day in BUSINESS_TIME_ZONE."""
+    return f"{timezone.localtime(moment, ZoneInfo(settings.BUSINESS_TIME_ZONE)):%d %b %Y}"
+
+
+def _period_key(product: Product) -> str:
+    # One notice per product per period: a renewal moves the end date.
+    return f"{product.pk}:{product.live_until:%Y%m%d%H%M%S}"
 
 
 class ListingService:
@@ -75,10 +93,12 @@ class ListingService:
     def expire_due(cls, products=None) -> int:
         """
         Moves each due product (see due()) to EXPIRED with one
-        PRODUCT_LISTING_EXPIRED audit row. Each product commits on its own,
-        so one failure loses no other's work. Returns how many moved.
+        PRODUCT_LISTING_EXPIRED audit row and a listing.expired notice to the
+        seller. Each product commits on its own, so one failure loses no
+        other's work. Returns how many moved.
         """
         moved = 0
+        policy = None
         for pk in list(cls.due(products).values_list("pk", flat=True)):
             with transaction.atomic():
                 product = (
@@ -100,10 +120,64 @@ class ListingService:
                     previous_state={"status": Product.STATUS_PUBLISHED},
                     new_state={"status": Product.STATUS_EXPIRED, "live_until": product.live_until.isoformat()},
                 )
+                policy = policy or ProductListingPolicy.current()
+                publish(
+                    events.LISTING_EXPIRED,
+                    payload={
+                        "product_id": product.pk,
+                        "product_name": product.name,
+                        "ended_on": end_date_text(product.live_until),
+                        "renewal_points": policy.renewal_points,
+                        "renewal_period_months": policy.renewal_period_months,
+                    },
+                    aggregate=product,
+                    idempotency_key=f"listing_expired:{_period_key(product)}",
+                )
                 moved += 1
         if moved:
             logger.info("[LISTINGS] Expired %s product listing(s).", moved)
         return moved
+
+    @staticmethod
+    def ending_soon(policy: ProductListingPolicy, products=None):
+        """Published products, of `products` or of all, whose period ends within policy.ending_soon_days."""
+        products = Product.objects.all() if products is None else products
+        now = timezone.now()
+        return products.filter(
+            status=Product.STATUS_PUBLISHED,
+            live_until__gt=now,
+            live_until__lte=now + timedelta(days=policy.ending_soon_days),
+        )
+
+    @classmethod
+    def announce_ending_soon(cls, products=None) -> int:
+        """
+        Sends listing.ending_soon to the seller of each product, of
+        `products` or of all, in the ending-soon window. The notice is keyed
+        on the product and its end date, so a product hears once per period
+        however often this runs, and a renewal starts a period with a notice
+        of its own. Returns how many products are in the window.
+        """
+        policy = ProductListingPolicy.current()
+        count = 0
+        for product in cls.ending_soon(policy, products).order_by("pk").iterator():
+            days_left = max(1, math.ceil((product.live_until - timezone.now()) / timedelta(days=1)))
+            with transaction.atomic():
+                publish(
+                    events.LISTING_ENDING_SOON,
+                    payload={
+                        "product_id": product.pk,
+                        "product_name": product.name,
+                        "ends_on": end_date_text(product.live_until),
+                        "days_left": days_left,
+                        "renewal_points": policy.renewal_points,
+                        "renewal_period_months": policy.renewal_period_months,
+                    },
+                    aggregate=product,
+                    idempotency_key=f"listing_ending:{_period_key(product)}",
+                )
+            count += 1
+        return count
 
     # ------------------------------------------------------------------
     # Renewal
@@ -112,10 +186,12 @@ class ListingService:
     @classmethod
     def renew(cls, product: Product, seller: SellerProfile, actor=None, ip_address: Optional[str] = None) -> Product:
         """
-        Puts an expired product back on the storefront for
-        renewal_period_months, debiting renewal_points from the seller's
-        wallet (PointService raises InsufficientPointsError). No new review:
-        staff approved the product before. Writes PRODUCT_LISTING_RENEWED.
+        Adds renewal_period_months to a product's listing, debiting
+        renewal_points from the seller's wallet (PointService raises
+        InsufficientPointsError). A live product is renewed early: the months
+        go on after its current end date, so no paid day is lost. An expired
+        one goes back on the storefront from now. No new review: staff
+        approved the product before. Writes PRODUCT_LISTING_RENEWED.
         """
         if not product.shop or product.shop.owner_id != seller.pk:
             raise ListingError("You do not own the shop this product belongs to.")
@@ -128,11 +204,13 @@ class ListingService:
         with transaction.atomic():
             product = Product.objects.select_for_update().select_related("shop", "shop__owner").get(pk=product.pk)
             # A period that ended moments ago may not have been swept yet.
-            if not (product.status == Product.STATUS_EXPIRED or (
+            early = product.listing_locked
+            if not (early or product.status == Product.STATUS_EXPIRED or (
                 product.status == Product.STATUS_PUBLISHED and cls.has_ended(product)
             )):
                 raise ListingError(
-                    f"Only an expired product can be renewed; this one is {product.get_status_display().lower()}."
+                    "Only a live or expired product can be renewed; "
+                    f"this one is {product.get_status_display().lower()}."
                 )
             if product.shop.status not in (Shop.STATUS_APPROVED, Shop.STATUS_ACTIVE):
                 raise ListingError(
@@ -152,7 +230,7 @@ class ListingService:
             previous = {"status": product.status, "live_until": product.live_until.isoformat()}
             product.status = Product.STATUS_PUBLISHED
             product.is_active = True
-            product.live_until = policy.renewal_period_end(timezone.now())
+            product.live_until = policy.renewal_period_end(product.live_until if early else timezone.now())
             product.renewal_count += 1
             product.save(update_fields=["status", "is_active", "live_until", "renewal_count", "updated_at"])
             AuditService.log(
@@ -163,7 +241,11 @@ class ListingService:
                 seller=seller,
                 previous_state=previous,
                 new_state={"status": product.status, "live_until": product.live_until.isoformat()},
-                metadata={"points_debited": policy.renewal_points, "renewal_count": product.renewal_count},
+                metadata={
+                    "points_debited": policy.renewal_points,
+                    "renewal_count": product.renewal_count,
+                    "early": early,
+                },
                 ip_address=ip_address,
             )
         logger.info("[LISTINGS] Renewed product %s until %s.", product.pk, product.live_until)

@@ -37,7 +37,7 @@ from shop.models import Order
 from shop.services import OrderService
 
 from .exceptions import SupportTicketError
-from .models import SupportTicket, TicketAttachment, TicketMessage
+from .models import SupportPolicy, SupportTicket, TicketAttachment, TicketMessage
 from .validators import validate_attachments
 
 User = get_user_model()
@@ -51,9 +51,9 @@ SUBJECT_MAX_LENGTH = 150
 DESCRIPTION_MIN_LENGTH = 10
 MESSAGE_MAX_LENGTH = 5000
 REASON_MAX_LENGTH = 500
-MAX_UNRESOLVED_TICKETS = 5
-# D17: close_resolved_tickets closes a resolved ticket left quiet this long.
-AUTO_CLOSE_AFTER_DAYS = 7
+# How many tickets one person may keep open, and how long a resolved ticket
+# may stay quiet before close_resolved_tickets closes it (D17), are
+# SupportPolicy, changed on the Console Rules page.
 
 STATUS_LABELS = dict(SupportTicket.STATUS_CHOICES)
 # Status names as the requester reads them; staff see STATUS_LABELS. Public
@@ -283,9 +283,10 @@ class SupportTicketService:
             unresolved = SupportTicket.objects.filter(
                 customer=customer, channel=channel, status__in=SupportTicket.UNRESOLVED_STATUSES
             ).count()
-            if unresolved >= MAX_UNRESOLVED_TICKETS:
+            limit = SupportPolicy.current().max_unresolved_tickets
+            if unresolved >= limit:
                 raise SupportTicketError(
-                    f"You already have {MAX_UNRESOLVED_TICKETS} open tickets. Please add to one "
+                    f"You already have {limit} open tickets. Please add to one "
                     "of them, or wait until one is resolved."
                 )
 
@@ -630,12 +631,15 @@ class SupportTicketService:
     # -------------------------------------------------------------- automation
 
     @staticmethod
-    def stale_resolved_tickets(days=AUTO_CLOSE_AFTER_DAYS):
+    def stale_resolved_tickets(days=None):
         """
-        RESOLVED tickets that have sat untouched for `days`: resolved at least
-        that long ago, no public activity since (a staff follow-up restarts the
-        clock), and no customer message after the resolution.
+        RESOLVED tickets that have sat untouched for `days` (default
+        SupportPolicy.auto_close_after_days): resolved at least that long ago,
+        no public activity since (a staff follow-up restarts the clock), and
+        no customer message after the resolution.
         """
+        if days is None:
+            days = SupportPolicy.current().auto_close_after_days
         cutoff = timezone.now() - timedelta(days=days)
         return SupportTicket.objects.filter(
             status=_RESOLVED,
@@ -647,13 +651,15 @@ class SupportTicketService:
         )
 
     @classmethod
-    def auto_close_resolved(cls, ticket_number, days=AUTO_CLOSE_AFTER_DAYS) -> bool:
+    def auto_close_resolved(cls, ticket_number, days=None) -> bool:
         """
         Closes one stale resolved ticket on the system's behalf (no actor): the
         usual public status line and audit entry. The conditions are checked
         again under the row lock, so a ticket the customer answered or staff
         reopened since it was listed is left alone. Returns whether it closed.
         """
+        if days is None:
+            days = SupportPolicy.current().auto_close_after_days
         with transaction.atomic():
             ticket = (
                 cls.stale_resolved_tickets(days)

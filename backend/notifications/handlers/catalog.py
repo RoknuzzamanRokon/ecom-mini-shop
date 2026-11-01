@@ -3,12 +3,21 @@ Who hears about products, stock, reviews and points (docs/NOTIFICATION_SYSTEM.md
 §5): always the seller responsible.
 
 - product.moderated: the product's shop owner (CATALOG); email for rejections only.
+- listing.ending_soon and listing.expired: the product's shop owner
+  (CATALOG), in-app and email.
 - inventory.low_stock: the product's shop owner (INVENTORY), in-app only.
 - review.created: the owner of the reviewed product's shop, or of the reviewed
   shop (REVIEWS), in-app only.
 - points.adjusted: the seller whose wallet changed (WALLET), in-app only.
 """
-from ..events import INVENTORY_LOW_STOCK, POINTS_ADJUSTED, PRODUCT_MODERATED, REVIEW_CREATED
+from ..events import (
+    INVENTORY_LOW_STOCK,
+    LISTING_ENDING_SOON,
+    LISTING_EXPIRED,
+    POINTS_ADJUSTED,
+    PRODUCT_MODERATED,
+    REVIEW_CREATED,
+)
 from ..models import Audience
 from .base import Recipient, handles
 
@@ -30,6 +39,20 @@ def tell_owner_product_moderated(event):
     if owner:
         email = event.payload["action"] == "reject"
         yield Recipient(owner, Audience.SELLER, channels=None if email else IN_APP_ONLY)
+
+
+@handles(LISTING_ENDING_SOON)
+def tell_owner_listing_ending(event):
+    owner = _product_owner(event.payload["product_id"])
+    if owner:
+        yield Recipient(owner, Audience.SELLER)
+
+
+@handles(LISTING_EXPIRED)
+def tell_owner_listing_expired(event):
+    owner = _product_owner(event.payload["product_id"])
+    if owner:
+        yield Recipient(owner, Audience.SELLER)
 
 
 @handles(INVENTORY_LOW_STOCK)

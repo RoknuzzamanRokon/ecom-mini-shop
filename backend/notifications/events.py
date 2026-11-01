@@ -50,6 +50,8 @@ SELLER_STATUS_CHANGED = "seller.status_changed"
 SHOP_STATUS_CHANGED = "shop.status_changed"
 PRODUCT_MODERATED = "product.moderated"
 INVENTORY_LOW_STOCK = "inventory.low_stock"
+LISTING_ENDING_SOON = "listing.ending_soon"
+LISTING_EXPIRED = "listing.expired"
 REVIEW_CREATED = "review.created"
 POINTS_ADJUSTED = "points.adjusted"
 # Staff-facing
@@ -134,6 +136,19 @@ EVENT_TYPES = {
             {Audience.SELLER: c.INVENTORY},
             _keys("product_id", "product_name", "available_stock", "threshold"),
             IN_APP,
+        ),
+        EventType(
+            LISTING_ENDING_SOON, 1,
+            {Audience.SELLER: c.CATALOG},
+            # ends_on: the end date as the seller reads it ("08 Nov 2026").
+            _keys("product_id", "product_name", "ends_on", "days_left", "renewal_points", "renewal_period_months"),
+            IN_APP_AND_EMAIL,
+        ),
+        EventType(
+            LISTING_EXPIRED, 1,
+            {Audience.SELLER: c.CATALOG},
+            _keys("product_id", "product_name", "ended_on", "renewal_points", "renewal_period_months"),
+            IN_APP_AND_EMAIL,
         ),
         EventType(
             REVIEW_CREATED, 1,

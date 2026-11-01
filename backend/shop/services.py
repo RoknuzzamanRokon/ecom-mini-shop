@@ -65,6 +65,17 @@ class StockConflictError(ProductServiceError):
         self.current_stock = current_stock
 
 
+class ReservedStockError(ProductServiceError):
+    """Raised when a product to delete still has units held for open orders."""
+
+
+# The message a seller sees when deleting a product they may not delete.
+DELETE_PERMISSION_MESSAGE = (
+    "You do not have permission to delete products ('products.delete' required). "
+    "Sellers can delete their own expired products."
+)
+
+
 # Past tense of each moderation action, for the default audit reason.
 MODERATION_ACTION_VERBS = {
     "approve": "approved",
@@ -424,6 +435,12 @@ class ProductService:
     ):
         """
         Deletes a product with strict ownership verification.
+
+        The owner deletes an expired product (one whose listing period ended)
+        with no RBAC code, which frees its place under the product limit; any
+        other status needs 'products.delete', which sellers do not hold. A
+        live listing cannot be deleted, and neither can a product with units
+        held for open orders (ReservedStockError). Nothing is refunded.
         """
         if not product.shop or product.shop.owner != seller:
             raise ProductOwnershipError("You do not own the shop associated with this product.")
@@ -431,21 +448,39 @@ class ProductService:
         if not seller.is_operational:
             raise IneligibleSellerError("Suspended or unapproved sellers cannot delete products.")
 
-        if actor and getattr(actor, "is_authenticated", False):
-            if not has_user_permission(actor, "products.delete"):
-                raise PermissionDenied("You do not have permission to delete products.")
+        # A period that ended moments ago may not have been swept yet.
+        if ListingService.due(Product.objects.filter(pk=product.pk)).exists():
+            ListingService.expire_due(Product.objects.filter(pk=product.pk))
+            product.refresh_from_db()
 
         if product.listing_locked:
             raise ListingError(ListingService.locked_message(product))
 
+        if product.status != Product.STATUS_EXPIRED and actor and getattr(actor, "is_authenticated", False):
+            if not has_user_permission(actor, "products.delete"):
+                raise PermissionDenied(DELETE_PERMISSION_MESSAGE)
+
         with transaction.atomic():
+            from shop.models import ProductInventory
+
+            reserved = (
+                ProductInventory.objects.select_for_update()
+                .filter(product=product)
+                .values_list("reserved_quantity", flat=True)
+                .first()
+            )
+            if reserved:
+                raise ReservedStockError(
+                    f"{reserved} unit(s) of '{product.name}' are held for open orders. "
+                    "Ship or cancel those orders before deleting it."
+                )
             AuditService.log(
                 action="PRODUCT_DELETED",
                 target=product,
                 actor=actor,
                 shop=product.shop,
                 seller=seller,
-                metadata={"product_name": product.name, "product_id": product.id},
+                metadata={"product_name": product.name, "product_id": product.id, "status": product.status},
                 ip_address=ip_address,
             )
             product.delete()

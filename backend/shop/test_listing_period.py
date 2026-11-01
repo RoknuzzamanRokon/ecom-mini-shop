@@ -23,11 +23,17 @@ from audit.models import AuditLog
 from cart.models import Cart, CartItem
 from points.models import PointTransaction, add_months
 from points.services import PointService
+from notifications import events
+from notifications.categories import CATALOG
+from notifications.models import Notification, NotificationEvent
+from notifications.routing import route_event
 from rbac.models import Role
 from rbac.services import assign_user_role
 from sellers.models import SellerProfile
-from shop.listing_service import ListingError, ListingService
-from shop.models import Category, Product, ProductListingPolicy
+from sellers.services import count_seller_products
+from shop.inventory_service import InventoryService
+from shop.listing_service import ListingError, ListingService, end_date_text
+from shop.models import Category, Product, ProductInventory, ProductListingPolicy
 from shop.services import ProductModerationError, ProductService
 from shops.fields import Point
 from shops.models import Shop
@@ -216,12 +222,26 @@ class RenewalTests(ListingTestCase):
         product.refresh_from_db()
         self.assertEqual(product.status, Product.STATUS_EXPIRED)
 
-    def test_only_an_expired_product_is_renewed(self):
+    def test_a_live_product_is_renewed_early_from_its_end_date(self):
         product = self.product()
+        ends = product.live_until
+        self.give_points(self.limited, 5)
+
+        response = self.renew(product)
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        product.refresh_from_db()
+        self.assertEqual(product.live_until, add_months(ends, 2))
+        self.assertEqual((product.status, product.renewal_count), (Product.STATUS_PUBLISHED, 1))
+        self.assertEqual(PointService.get_balance(self.limited), 0)
+        entry = AuditLog.objects.get(action="PRODUCT_LISTING_RENEWED")
+        self.assertIs(entry.metadata["early"], True)
+
+    def test_only_a_live_or_expired_product_is_renewed(self):
+        product = self.product(publish=False)
         self.give_points(self.limited, 5)
         response = self.renew(product)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("Only an expired product", response.data["error"])
+        self.assertIn("Only a live or expired product", response.data["error"])
         self.assertEqual(PointService.get_balance(self.limited), 5)
 
     def test_a_closed_shop_cannot_renew(self):
@@ -393,3 +413,123 @@ class BackfillMigrationTests(ListingTestCase):
         full.refresh_from_db()
         self.assertTrue(near(limited.live_until, add_months(timezone.now(), 4)))
         self.assertIsNone(full.live_until)
+
+
+class ExpiredDeleteTests(ListingTestCase):
+    """docs/FOLLOW_UPS_PLAN.md §1: the owner deletes an expired product with no RBAC code."""
+
+    def delete(self, product, seller=None):
+        return self.as_seller(seller or self.limited).delete(f"/api/products/mine/{product.pk}/")
+
+    def test_the_owner_deletes_an_expired_product(self):
+        product = self.product()
+        self.end_period(product, Product.STATUS_EXPIRED)
+        self.assertEqual(count_seller_products(self.limited), 1)
+
+        self.assertEqual(self.delete(product).status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Product.objects.filter(pk=product.pk).exists())
+        # Its place under the product limit is free again.
+        self.assertEqual(count_seller_products(self.limited), 0)
+        entry = AuditLog.objects.get(action="PRODUCT_DELETED")
+        self.assertEqual((entry.metadata["status"], entry.actor), (Product.STATUS_EXPIRED, self.limited.user))
+
+    def test_a_period_that_just_ended_can_be_deleted_before_the_sweep(self):
+        product = self.product()
+        self.end_period(product)
+        self.assertEqual(self.delete(product).status_code, status.HTTP_204_NO_CONTENT)
+        self.assertTrue(AuditLog.objects.filter(action="PRODUCT_LISTING_EXPIRED").exists())
+
+    def test_a_live_product_still_cannot_be_deleted(self):
+        product = self.product()
+        response = self.delete(product)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("cannot be hidden, moved or deleted", response.data["error"])
+
+    def test_other_statuses_still_need_products_delete(self):
+        product = self.product(publish=False)
+        response = self.delete(product)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("own expired products", response.data["error"])
+        self.assertTrue(Product.objects.filter(pk=product.pk).exists())
+
+    def test_units_held_for_open_orders_block_the_delete(self):
+        product = self.product()
+        InventoryService.get_or_create_inventory(product)
+        ProductInventory.objects.filter(product=product).update(reserved_quantity=2)
+        self.end_period(product, Product.STATUS_EXPIRED)
+
+        response = self.delete(product)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("held for open orders", response.data["error"])
+        self.assertTrue(Product.objects.filter(pk=product.pk).exists())
+
+    def test_another_sellers_expired_product_is_refused(self):
+        product = self.product()
+        self.end_period(product, Product.STATUS_EXPIRED)
+        self.assertEqual(self.delete(product, seller=self.full).status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(Product.objects.filter(pk=product.pk).exists())
+
+
+class ListingNoticeTests(ListingTestCase):
+    """docs/FOLLOW_UPS_PLAN.md §2: a notice before the end date, and one at expiry."""
+
+    def ends_in(self, product, days):
+        Product.objects.filter(pk=product.pk).update(live_until=timezone.now() + timedelta(days=days, minutes=-5))
+        product.refresh_from_db()
+
+    def notices(self, event_type):
+        return NotificationEvent.objects.filter(event_type=event_type)
+
+    def test_a_product_entering_the_window_hears_once_per_period(self):
+        product = self.product()
+        self.product(name="Far Off")  # four months left
+        self.product(shop=self.full_shop, name="No End")
+        self.ends_in(product, 3)
+
+        call_command("expire_listings", stdout=StringIO())
+        call_command("expire_listings", stdout=StringIO())
+        notice = self.notices(events.LISTING_ENDING_SOON).get()
+        self.assertEqual(notice.payload["product_id"], product.pk)
+        self.assertEqual(notice.payload["days_left"], 3)
+        self.assertEqual((notice.payload["renewal_points"], notice.payload["renewal_period_months"]), (5, 2))
+        self.assertEqual(notice.payload["ends_on"], end_date_text(product.live_until))
+
+        # A renewal starts a new period, which gets a notice of its own.
+        self.give_points(self.limited, 5)
+        ListingService.renew(product, self.limited)
+        self.ends_in(product, 1)
+        call_command("expire_listings", stdout=StringIO())
+        self.assertEqual(self.notices(events.LISTING_ENDING_SOON).count(), 2)
+
+    def test_the_window_follows_the_rules_page(self):
+        ProductListingPolicy.objects.create(ending_soon_days=2)
+        product = self.product()
+        self.ends_in(product, 3)
+        out = StringIO()
+        call_command("expire_listings", "--dry-run", stdout=out)
+        self.assertIn("0 product listing(s) end soon.", out.getvalue())
+        call_command("expire_listings", stdout=StringIO())
+        self.assertFalse(self.notices(events.LISTING_ENDING_SOON).exists())
+
+    def test_expiry_sends_one_notice_to_the_owner(self):
+        product = self.product()
+        self.end_period(product)
+        call_command("expire_listings", stdout=StringIO())
+        ListingService.expire_due()
+
+        notice = self.notices(events.LISTING_EXPIRED).get()
+        self.assertEqual(notice.payload["ended_on"], end_date_text(product.live_until))
+        route_event(notice.pk)
+        inbox = Notification.objects.get(event_type=events.LISTING_EXPIRED)
+        self.assertEqual((inbox.recipient, inbox.category), (self.limited.user, CATALOG))
+        self.assertIn("has expired", inbox.title)
+
+    def test_the_ending_notice_reaches_the_owner(self):
+        product = self.product()
+        self.ends_in(product, 3)
+        ListingService.announce_ending_soon()
+        route_event(self.notices(events.LISTING_ENDING_SOON).get().pk)
+        inbox = Notification.objects.get(event_type=events.LISTING_ENDING_SOON)
+        self.assertEqual(inbox.recipient, self.limited.user)
+        self.assertEqual(inbox.title, "Assam Tea ends in 3 days")
+

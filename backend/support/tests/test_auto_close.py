@@ -13,7 +13,7 @@ from django.utils import timezone
 
 from audit.models import AuditLog
 from rbac.models import Role
-from support.models import SupportTicket, TicketMessage
+from support.models import SupportPolicy, SupportTicket, TicketMessage
 from support.services import SupportTicketService as Service
 
 from .helpers import make_user
@@ -80,6 +80,18 @@ class WhichTicketsCloseTests(AutoCloseTestCase):
         self.assertIsNotNone(ticket.closed_at)
         self.assertIn(f"closed {ticket.ticket_number}", out)
         self.assertIn("Closed 1 resolved ticket(s) quiet for 7+ day(s).", out)
+
+    def test_the_default_wait_follows_the_support_policy(self):
+        SupportPolicy.objects.create(auto_close_after_days=3)
+        ticket = self.ticket(resolved=4, customer=5)
+
+        out = self.run_command()
+
+        self.assertStatus(ticket, CLOSED)
+        self.assertIn("Closed 1 resolved ticket(s) quiet for 3+ day(s).", out)
+        self.assertTrue(
+            TicketMessage.objects.filter(ticket=ticket, body__contains="after 3 days").exists()
+        )
 
     def test_leaves_a_recently_resolved_ticket(self):
         ticket = self.ticket(resolved=3, customer=4)

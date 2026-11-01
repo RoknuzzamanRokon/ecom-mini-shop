@@ -45,7 +45,7 @@ CATEGORIES = {
         Category(SUPPORT, "Support replies", IN_APP_AND_EMAIL, IN_APP_ONLY),
         Category(ACCOUNT, "Seller account decisions", IN_APP_AND_EMAIL, IN_APP_AND_EMAIL),
         Category(SHOPS, "Shop reviews and status", IN_APP_AND_EMAIL, IN_APP_ONLY),
-        Category(CATALOG, "Product moderation", IN_APP_AND_EMAIL, IN_APP_ONLY),
+        Category(CATALOG, "Product moderation and listings", IN_APP_AND_EMAIL, IN_APP_ONLY),
         Category(INVENTORY, "Low stock", IN_APP_ONLY, IN_APP_ONLY),
         Category(REVIEWS, "New reviews", IN_APP_ONLY, IN_APP_ONLY),
         Category(WALLET, "Points and wallet", IN_APP_ONLY, IN_APP_ONLY),

@@ -17,6 +17,7 @@ from onboarding.models import OnboardingSettings
 from points.models import PointExpiryPolicy, ProductCreationCost, SellerPointPolicy
 from sellers.models import LimitedShopOwnerProductLimit
 from shop.models import InventoryPolicy, ProductListingPolicy
+from support.models import SupportPolicy
 
 
 @dataclass(frozen=True)
@@ -89,7 +90,7 @@ GROUPS = (
                 model=ProductListingPolicy,
                 field="renewal_period_months",
                 label="Renewal period",
-                help="Months each renewal keeps an expired product live again.",
+                help="Months each renewal adds: after the current end date while live, from the renewal once expired.",
                 unit="months",
                 minimum=1,
                 maximum=24,
@@ -101,7 +102,7 @@ GROUPS = (
                 model=ProductListingPolicy,
                 field="renewal_points",
                 label="Renewal cost",
-                help="Points the seller pays to renew an expired product.",
+                help="Points the seller pays for each renewal.",
                 unit="points",
                 minimum=1,
                 maximum=1_000,
@@ -113,19 +114,25 @@ GROUPS = (
                 model=ProductListingPolicy,
                 field="ending_soon_days",
                 label="Ending soon window",
-                help="Days before its end date a live product shows as ending soon on the seller dashboard.",
+                help=(
+                    "Days before its end date a live product shows as ending soon on the seller dashboard, "
+                    "and its seller is notified."
+                ),
                 unit="days",
                 minimum=1,
                 maximum=30,
                 applies_to=LIMITED,
-                takes_effect="At once",
+                takes_effect="At once; notices go out with the next daily expire_listings run",
             ),
             Rule(
                 key="product.limited_max_products",
                 model=LimitedShopOwnerProductLimit,
                 field="max_products",
                 label="Limited Shop Owner product limit",
-                help="Products a Limited Shop Owner may hold. Products they already hold above it stay.",
+                help=(
+                    "Products a Limited Shop Owner may hold, expired ones included until deleted. Products they "
+                    "already hold above it stay."
+                ),
                 unit="products",
                 minimum=0,
                 maximum=1_000,
@@ -136,8 +143,13 @@ GROUPS = (
         fixed=(
             "A Full Shop Owner's products have no end date.",
             "While a product is live, its seller cannot hide it, delete it or move it to another shop.",
-            "An expired product leaves the storefront. Its seller renews it; staff cannot publish it again.",
-            "A renewal needs no new review.",
+            (
+                "An expired product leaves the storefront. Its seller renews it or deletes it; staff cannot "
+                "publish it again. Nothing is refunded on delete."
+            ),
+            "A product with units held for open orders cannot be deleted.",
+            "A renewal needs no new review, and a seller may renew a live product early.",
+            "The seller is notified when a product enters the ending-soon window and when it expires.",
         ),
     ),
     Group(
@@ -252,6 +264,44 @@ GROUPS = (
                 "Rejecting an onboarded seller returns its starting points to the onboarder (up to what is "
                 "left) and takes back the tokens it earned."
             ),
+        ),
+    ),
+    Group(
+        key="support",
+        title="Support",
+        rules=(
+            Rule(
+                key="support.max_unresolved_tickets",
+                model=SupportPolicy,
+                field="max_unresolved_tickets",
+                label="Open tickets per person",
+                help=(
+                    "Unresolved tickets one person may have at once, counted separately as a customer and as "
+                    "a seller."
+                ),
+                unit="tickets",
+                minimum=1,
+                maximum=50,
+                applies_to="Customers and sellers",
+                takes_effect="The next ticket opened; tickets already open stay",
+            ),
+            Rule(
+                key="support.auto_close_after_days",
+                model=SupportPolicy,
+                field="auto_close_after_days",
+                label="Auto-close after",
+                help="Days a resolved ticket may go without a customer reply before it closes on its own.",
+                unit="days",
+                minimum=1,
+                maximum=90,
+                applies_to="Resolved tickets",
+                takes_effect="The next daily close_resolved_tickets run",
+            ),
+        ),
+        fixed=(
+            "A customer reply reopens a resolved ticket, so it does not close on its own.",
+            "Subjects are 5 to 150 characters and messages up to 5,000.",
+            "Each message takes up to 5 attachments of 5 MB each: JPG, PNG, WebP or PDF.",
         ),
     ),
 )

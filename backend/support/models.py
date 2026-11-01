@@ -12,6 +12,7 @@ never changed by saving the model from a view, and never from Django admin,
 where tickets are read-only.
 """
 from django.conf import settings
+from django.core.validators import MinValueValidator
 from django.db import models
 from django.db.models import F, Q
 from django.utils import timezone
@@ -318,3 +319,45 @@ class TicketAttachment(models.Model):
 
     def __str__(self):
         return self.original_name
+
+
+class SupportPolicy(models.Model):
+    """
+    How many tickets one person may keep open, and when a quiet resolved
+    ticket closes. Singleton (pk=1), changed on the Console Rules page
+    (rules/registry.py).
+    """
+    max_unresolved_tickets = models.PositiveSmallIntegerField(
+        default=5,
+        validators=[MinValueValidator(1)],
+        help_text=(
+            "Unresolved tickets one person may have open at once, counted separately for the customer "
+            "and seller channels."
+        ),
+    )
+    auto_close_after_days = models.PositiveSmallIntegerField(
+        default=7,
+        validators=[MinValueValidator(1)],
+        help_text="Days without a customer reply after which close_resolved_tickets closes a resolved ticket.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Support Policy"
+        verbose_name_plural = "Support Policy"
+
+    def __str__(self):
+        return (
+            f"Support Policy: {self.max_unresolved_tickets} open tickets, "
+            f"auto-close after {self.auto_close_after_days} days"
+        )
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def current(cls) -> "SupportPolicy":
+        """The saved policy, or an unsaved one holding the defaults."""
+        return cls.objects.filter(pk=1).first() or cls()
+

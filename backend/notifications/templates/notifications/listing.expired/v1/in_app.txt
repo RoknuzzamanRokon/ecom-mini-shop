@@ -1,0 +1,3 @@
+{% block title %}{{ product_name }} has expired{% endblock %}
+{% block body %}The listing for {{ product_name }} ended on {{ ended_on }}, so customers can't see it any more. Renew it for {{ renewal_points }} points to put it back for {{ renewal_period_months }} month{{ renewal_period_months|pluralize }}, or delete it to free its place.{% endblock %}
+{% block action_url %}/seller/products{% endblock %}

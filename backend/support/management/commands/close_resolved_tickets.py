@@ -2,28 +2,31 @@
 Closes support tickets that were resolved and then left quiet (D17).
 
 A RESOLVED ticket is closed once it has had no public activity for --days
-(default 7) and the customer hasn't written since it was resolved. Each close
+(default SupportPolicy.auto_close_after_days, 7 unless changed on the Console
+Rules page) and the customer hasn't written since it was resolved. Each close
 goes through SupportTicketService like any other status change: a public
 "Closed automatically…" line in the thread and an audit entry, with no actor.
 
-The project has no scheduler; run this once a day from cron or Windows Task
-Scheduler (see docs/SUPPORT_SYSTEM.md, Task 11).
+The project has no scheduler; run this once a day from cron
+(deploy/cron/minishop.crontab) or Windows Task Scheduler (see
+docs/SUPPORT_SYSTEM.md, Task 11).
 """
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
-from support.services import AUTO_CLOSE_AFTER_DAYS, SupportTicketService
+from support.models import SupportPolicy
+from support.services import SupportTicketService
 
 
 class Command(BaseCommand):
-    help = "Close RESOLVED support tickets that have had no customer reply for N days (default 7)."
+    help = "Close RESOLVED support tickets that have had no customer reply for N days (default: the Support Policy)."
 
     def add_arguments(self, parser):
         parser.add_argument(
             "--days",
             type=int,
-            default=AUTO_CLOSE_AFTER_DAYS,
-            help=f"How many quiet days after resolution before closing (default {AUTO_CLOSE_AFTER_DAYS}).",
+            default=None,
+            help="How many quiet days after resolution before closing (default: SupportPolicy.auto_close_after_days).",
         )
         parser.add_argument(
             "--dry-run",
@@ -33,6 +36,8 @@ class Command(BaseCommand):
 
     def handle(self, *args, **options):
         days = options["days"]
+        if days is None:
+            days = SupportPolicy.current().auto_close_after_days
         if days < 1:
             raise CommandError("--days must be at least 1.")
 

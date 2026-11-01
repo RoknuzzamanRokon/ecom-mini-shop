@@ -23,6 +23,7 @@ from rbac.services import assign_user_role, get_user_permissions
 from sellers.models import LimitedShopOwnerProductLimit, SellerProfile
 from shop.listing_service import ListingService
 from shop.models import InventoryPolicy, ProductListingPolicy, low_stock_threshold
+from support.models import SupportPolicy
 from .registry import CHECKS, GROUPS, RULES
 from .services import AUDIT_ACTION, RuleError, RuleService, StaleRuleError
 
@@ -30,7 +31,7 @@ User = get_user_model()
 URL = "/api/admin/rules/"
 RULE_MODELS = (
     ProductCreationCost, PointExpiryPolicy, SellerPointPolicy, ProductListingPolicy,
-    InventoryPolicy, OnboardingSettings, LimitedShopOwnerProductLimit,
+    InventoryPolicy, OnboardingSettings, LimitedShopOwnerProductLimit, SupportPolicy,
 )
 
 
@@ -111,6 +112,7 @@ class RuleServiceTests(TestCase):
             **change("points.staff_expiry_months", 3),
             **change("stock.low_stock_threshold", 25),
             **change("product.ending_soon_days", 14),
+            **change("support.auto_close_after_days", 10),
         })
 
         self.assertEqual(ProductCreationCost.get_cost(), 9)
@@ -123,6 +125,7 @@ class RuleServiceTests(TestCase):
             status=SellerProfile.STATUS_ACTIVE,
         )
         self.assertEqual(ListingService.seller_summary(seller)["ending_soon_days"], 14)
+        self.assertEqual(SupportPolicy.current().auto_close_after_days, 10)
 
     def test_out_of_range_and_malformed_values_are_refused_and_nothing_is_saved(self):
         cases = {

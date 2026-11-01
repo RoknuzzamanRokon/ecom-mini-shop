@@ -12,7 +12,7 @@ from audit.models import AuditLog
 from rbac.models import Permission, Role, UserPermission, UserRole
 from shop.models import Order
 from support.exceptions import AttachmentError, SupportTicketError
-from support.models import SupportTicket, TicketAttachment, TicketMessage
+from support.models import SupportPolicy, SupportTicket, TicketAttachment, TicketMessage
 from support.services import SupportTicketService as Service
 
 from .helpers import PrivateMediaMixin, make_user, pdf, png, upload
@@ -131,6 +131,13 @@ class TicketCreationTests(SupportServiceTestCase):
         self.open_ticket()
         self.open_ticket()
         with self.assertRaises(SupportTicketError):
+            self.open_ticket()
+
+    def test_the_cap_follows_the_support_policy(self):
+        SupportPolicy.objects.create(max_unresolved_tickets=2)
+        self.open_ticket()
+        self.open_ticket()
+        with self.assertRaisesMessage(SupportTicketError, "already have 2 open tickets"):
             self.open_ticket()
 
         # The cap is per customer.

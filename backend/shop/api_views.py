@@ -87,6 +87,7 @@ from .services import (
     ProductModerationError,
     ProductOwnershipError,
     ProductService,
+    ReservedStockError,
     StockConflictError,
 )
 
@@ -651,7 +652,9 @@ class SellerProductDetailAPIView(APIView):
       GET: Retrieve product details.
       PATCH/PUT: Update product attributes (an operational owner needs no RBAC code).
                  A `stock` must come with `expected_stock`; 409 if stock has moved since.
-      DELETE: Delete product (requires products.delete, which sellers do not hold).
+      DELETE: Delete product: the owner deletes an expired one; anything else needs
+              products.delete, which sellers do not hold. 400 while live or
+              while units are held for open orders.
     Strictly verifies ownership: product must belong to a shop owned by the authenticated seller.
     """
     permission_classes = [permissions.IsAuthenticated, IsEligibleProductSeller, IsProductOwner]
@@ -704,12 +707,6 @@ class SellerProductDetailAPIView(APIView):
 
     def delete(self, request, pk):
         product = self.get_object(pk)
-        if not has_user_permission(request.user, "products.delete"):
-            return Response(
-                {"error": "You do not have permission to delete products ('products.delete' required)."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
-
         try:
             ProductService.delete_product(
                 product=product,
@@ -719,7 +716,7 @@ class SellerProductDetailAPIView(APIView):
             )
         except (IneligibleSellerError, ProductOwnershipError, PermissionDenied) as e:
             return Response({"error": str(e)}, status=status.HTTP_403_FORBIDDEN)
-        except ListingError as e:
+        except (ListingError, ReservedStockError) as e:
             return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response({"message": "Product successfully deleted."}, status=status.HTTP_204_NO_CONTENT)
@@ -759,11 +756,12 @@ class SellerProductSubmitAPIView(APIView):
 class SellerProductRenewAPIView(APIView):
     """
     POST /api/products/mine/<pk>/renew/
-    Puts the seller's expired product back on the storefront for
-    ProductListingPolicy.renewal_period_months, for renewal_points from their
-    wallet, with no new review. 400 with `required_points` and
-    `available_points` when the wallet holds too few, or for any other
-    listing rule (not expired, a Full Shop Owner's, a closed shop).
+    Adds ProductListingPolicy.renewal_period_months to the seller's product,
+    for renewal_points from their wallet, with no new review: after the
+    current end date for a live product, from now for an expired one. 400
+    with `required_points` and `available_points` when the wallet holds too
+    few, or for any other listing rule (neither live nor expired, a Full Shop
+    Owner's, a closed shop).
     """
     permission_classes = [permissions.IsAuthenticated, IsEligibleProductSeller, IsProductOwner]
 

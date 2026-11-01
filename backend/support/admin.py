@@ -1,7 +1,8 @@
 from django.contrib import admin
 from django.template.defaultfilters import filesizeformat
 
-from .models import SupportTicket, TicketMessage
+from audit.admin_mixins import ConsoleManagedRuleMixin
+from .models import SupportPolicy, SupportTicket, TicketMessage
 
 
 class TicketMessageInline(admin.TabularInline):
@@ -63,3 +64,9 @@ class SupportTicketAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False
+
+
+@admin.register(SupportPolicy)
+class SupportPolicyAdmin(ConsoleManagedRuleMixin, admin.ModelAdmin):
+    list_display = ("max_unresolved_tickets", "auto_close_after_days", "updated_at")
+

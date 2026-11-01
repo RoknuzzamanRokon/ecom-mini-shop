@@ -282,6 +282,8 @@ switched off (D8); **○** is on by default and can be switched off; **—** mea
 | `shop.status_changed` | `ShopService.approve_shop` / `reject_shop` / `suspend_shop` / `reactivate_shop` (`shops/services.py:382–436`); after Task 1, the Console route too | shop owner | SHOPS | ○ | UUID |
 | `product.moderated` | After Task 2: `ProductService` approve / reject / publish / unpublish (today inline at `shop/admin_views.py:1212`) | shop owner | CATALOG | ○ for rejections only | UUID |
 | `inventory.low_stock` | `InventoryService.adjust_stock` (`shop/inventory_service.py:60`) and `reserve_stock_for_cart` (`:153`), when available stock *crosses* the threshold | shop owner | INVENTORY | — | `low_stock:{product_id}:{yyyy-mm-dd}` (at most one a day per product) |
+| `listing.ending_soon` | `ListingService.announce_ending_soon` (`shop/listing_service.py`), from the daily `expire_listings`, for a live product within the Rules page's ending-soon days of its end (added 2026-11-01, `docs/FOLLOW_UPS_PLAN.md`) | shop owner | CATALOG | ○ | `listing_ending:{product_id}:{live_until}` (one per period) |
+| `listing.expired` | `ListingService.expire_due`, when a product's listing period ends (added 2026-11-01) | shop owner | CATALOG | ○ | `listing_expired:{product_id}:{live_until}` (one per period) |
 | `review.created` | `ReviewService.create_review` (`customers/services.py:341`), `ShopReviewService.create_review` (`:449`) | shop owner | REVIEWS | — | `review:{kind}:{id}` |
 | `points.adjusted` | `PointService.adjust_points` (`points/services.py:204`) | the seller's user | WALLET | — | `points_txn:{id}` |
 
@@ -761,6 +763,8 @@ the same rules the view had:
 | `shop.status_changed` | `shop_id`, `shop_name`, `from_status`, `to_status` (optional `reason`, from Task 9) |
 | `product.moderated` | `product_id`, `product_name`, `action`, `from_status`, `to_status` (optional `reason`, from Task 10) |
 | `inventory.low_stock` | `product_id`, `product_name`, `available_stock`, `threshold` |
+| `listing.ending_soon` | `product_id`, `product_name`, `ends_on` (the date as sellers read it), `days_left`, `renewal_points`, `renewal_period_months` (added 2026-11-01) |
+| `listing.expired` | `product_id`, `product_name`, `ended_on`, `renewal_points`, `renewal_period_months` (added 2026-11-01) |
 | `review.created` | `kind` (product · shop), `review_id`, `rating`, `subject_name` |
 | `points.adjusted` | `transaction_id`, `seller_id`, `transaction_type`, `amount`, `balance_after` (optional `reason`, from Task 10) |
 | `shop.submitted` | `shop_id`, `shop_name` (optional `seller_name`, from Task 9) |

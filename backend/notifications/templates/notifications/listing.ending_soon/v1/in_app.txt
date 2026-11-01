@@ -1,0 +1,3 @@
+{% block title %}{{ product_name }} ends in {{ days_left }} day{{ days_left|pluralize }}{% endblock %}
+{% block body %}{{ product_name }} is live until {{ ends_on }}. Renew it now for {{ renewal_points }} points to add {{ renewal_period_months }} month{{ renewal_period_months|pluralize }} after that date, so it stays on the storefront.{% endblock %}
+{% block action_url %}/seller/products{% endblock %}
