@@ -778,6 +778,27 @@ points:
 5. **Sales Team point sales.** The Console page `/admin/my-sellers` lists an
    onboarder's sellers and sells them points.
 
+## Sales Team edits, token payouts and product visibility (decided 2026-11-01)
+
+The plan is `docs/SALES_TEAM_EDITS_PAYOUTS_PLAN.md`, done before the Android
+app so the app can be built on this API. The user decided:
+
+1. **Edits with the seller's code.** An onboarder corrects the seller, its
+   shops and the products they added only inside an edit session. A 6-digit
+   code goes to the seller's account; once the onboarder enters it, they can
+   edit for 30 minutes (Rules page: code 10 minutes, window 30). The seller
+   type and the login account stay with the seller.
+2. **Token payouts.** An onboarder hands tokens to an admin with a request for
+   real payment. Accepting moves the tokens to that admin; rejecting or
+   cancelling gives them back. 1 token = ৳1 (Rules page "Token value").
+3. **Products.** The Sales Team sees only the products it added, through the
+   new `onboarding.products.view`, which an admin can turn off for the whole
+   team (Roles) or for one person (Users → Turn off). It lost `products.view`
+   and `inventory.*`.
+4. **Starting password.** An onboarded seller chooses their own password at
+   first sign-in, since the onboarder set the first one; later changes go
+   through Settings.
+
 ## Not in this roadmap
 
 A short honest roadmap beats an exhaustive wish list. These are known and

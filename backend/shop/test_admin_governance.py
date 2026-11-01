@@ -437,7 +437,7 @@ class AdminGovernanceTests(APITestCase):
     #   - holding one narrow permission does NOT grant the others,
     #   - 'products.admin.manage' remains required for 'unpublish' (which has
     #     no narrower permission of its own),
-    #   - SALES_TEAM (view/create/update only) can view but not transition.
+    #   - SALES_TEAM (no products.* since rbac/0008) can neither view nor transition.
     # ==========================================================================
 
     def test_operation_manager_can_view_product_list(self):
@@ -505,19 +505,20 @@ class AdminGovernanceTests(APITestCase):
         self.assertEqual(res.status_code, status.HTTP_403_FORBIDDEN)
         self.assertIn("Broader product management permission", str(res.data))
 
-    def test_sales_team_can_view_but_not_transition_product_status(self):
+    def test_sales_team_neither_views_nor_transitions_products(self):
         """
-        Sales Team holds 'products.view' (list/detail allowed) but none of
-        'products.approve' / 'products.reject' / 'products.publish' /
-        'products.admin.manage', so every status transition is 403.
+        Sales Team no longer holds 'products.view' (rbac/0008): it sees only
+        the products it added, through /api/onboarding/products/. It holds
+        none of 'products.approve' / 'products.reject' / 'products.publish' /
+        'products.admin.manage' either, so every status transition is 403.
         """
         self.client.force_authenticate(user=self.sales_team_user)
 
         res_list = self.client.get("/api/admin/products/")
-        self.assertEqual(res_list.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_list.status_code, status.HTTP_403_FORBIDDEN)
 
         res_detail = self.client.get(f"/api/admin/products/{self.product.id}/")
-        self.assertEqual(res_detail.status_code, status.HTTP_200_OK)
+        self.assertEqual(res_detail.status_code, status.HTTP_403_FORBIDDEN)
 
         for action in ("approve", "reject", "publish", "unpublish"):
             res = self.client.post(
