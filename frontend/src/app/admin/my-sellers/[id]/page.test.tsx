@@ -208,6 +208,34 @@ describe("My Sellers detail page", () => {
     expect(screen.getByText("৳450.00 · 12 in stock")).toBeInTheDocument();
   });
 
+  it("replaces the product photo, and refuses a format the server would", async () => {
+    // jsdom has no object URLs.
+    URL.createObjectURL = vi.fn(() => "blob:shelf");
+    URL.revokeObjectURL = vi.fn();
+    vi.mocked(getMyOnboardedSeller).mockResolvedValue(seller({ edit_session: OPEN }));
+    vi.mocked(updateMyOnboardedProduct).mockResolvedValue({ ...PRODUCT, image_url: "/media/products/shelf.png" });
+    await openPage();
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Edit Rice 5kg" }));
+    });
+    const input = dialog().getByLabelText("Photo");
+    fireEvent.change(input, { target: { files: [new File(["gif"], "shelf.gif", { type: "image/gif" })] } });
+    expect(dialog().getByRole("alert")).toHaveTextContent("Choose a JPEG, PNG or WebP image.");
+
+    const photo = new File(["png"], "shelf.png", { type: "image/png" });
+    fireEvent.change(input, { target: { files: [photo] } });
+    expect(dialog().getByRole("img", { name: "The new photo" })).toHaveAttribute("src", "blob:shelf");
+    expect(dialog().getByText("shelf.png")).toBeInTheDocument();
+    await act(async () => {
+      fireEvent.click(dialog().getByRole("button", { name: "Save changes" }));
+    });
+
+    expect(updateMyOnboardedProduct).toHaveBeenCalledWith("access", 21, { image: photo });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:shelf");
+  });
+
   it("closes editing when the server says the session is over", async () => {
     vi.mocked(getMyOnboardedSeller).mockResolvedValue(seller({ edit_session: OPEN }));
     vi.mocked(updateMyOnboardedSeller).mockRejectedValue(

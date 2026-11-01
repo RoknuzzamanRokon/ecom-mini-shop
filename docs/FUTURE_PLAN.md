@@ -799,6 +799,11 @@ app so the app can be built on this API. The user decided:
    first sign-in, since the onboarder set the first one; later changes go
    through Settings.
 
+Follow-ups the user asked for on 2026-11-02: Administrators hold the Sales
+Team's codes (`rbac/0009`), so they can change a Sales Team member's roles or
+deactivate them in the Console (and can onboard sellers themselves); and the
+Console product edit can replace the photo.
+
 ## Not in this roadmap
 
 A short honest roadmap beats an exhaustive wish list. These are known and

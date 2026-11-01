@@ -12,7 +12,7 @@ export interface EditForm {
   toChanges: (draft: EditValues) => EditResult;
 }
 
-const text = (value: string | boolean | undefined) => String(value ?? "").trim();
+const text = (value: EditValues[string] | undefined) => (value instanceof File ? "" : String(value ?? "").trim());
 
 /** OnboardingSellerUpdateSerializer: the business details. The type and the login stay as they are. */
 export function sellerForm(seller: AdminOnboardingSellerDetail): EditForm {
@@ -98,7 +98,8 @@ const MONEY = /^\d+(\.\d{1,2})?$/;
 
 /**
  * OnboardingProductUpdateSerializer. A new stock is sent with the figure it
- * was edited from, so units sold meanwhile are not put back on sale.
+ * was edited from, so units sold meanwhile are not put back on sale; a new
+ * photo makes the request multipart.
  */
 export function productForm(product: AdminOnboardedProductDetail): EditForm {
   const initial = {
@@ -109,9 +110,17 @@ export function productForm(product: AdminOnboardedProductDetail): EditForm {
     badge: product.badge,
     description: product.description,
     is_active: product.is_active,
+    image: "",
   };
   return {
     fields: [
+      {
+        name: "image",
+        label: "Photo",
+        kind: "image",
+        currentUrl: product.image_url,
+        hint: "JPEG, PNG or WebP, up to 5 MB.",
+      },
       { name: "name", label: "Product name" },
       { name: "price", label: "Price (৳)", inputMode: "decimal" },
       { name: "old_price", label: "Old price (৳)", inputMode: "decimal", hint: "Leave empty for no crossed-out price." },
@@ -146,6 +155,7 @@ export function productForm(product: AdminOnboardedProductDetail): EditForm {
         changes.stock = Number(stock);
         changes.expected_stock = product.stock;
       }
+      if (draft.image instanceof File) changes.image = draft.image;
       return { changes };
     },
   };

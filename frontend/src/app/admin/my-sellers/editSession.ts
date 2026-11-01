@@ -53,3 +53,13 @@ export function phoneList(text: string): string[] {
 export function isSessionRequired(data: unknown): boolean {
   return typeof data === "object" && data !== null && (data as { code?: unknown }).code === "edit_session_required";
 }
+
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+
+/** Why the server would refuse `file` as a product photo (validate_catalog_image), or null. */
+export function imageFileError(file: File): string | null {
+  if (!IMAGE_TYPES.includes(file.type)) return "Choose a JPEG, PNG or WebP image.";
+  if (file.size > MAX_IMAGE_BYTES) return "That image is larger than 5 MB.";
+  return null;
+}

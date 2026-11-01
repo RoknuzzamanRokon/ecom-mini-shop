@@ -129,9 +129,14 @@ the code. Section 4 closes that.
   right to adjust it, from the inventory views. Without `is_staff`, the codes
   give nothing to an account that is not a seller.
 - It also loses `products.create` and `products.update`, which no view checks.
-- The removals happen in migration `rbac/0007` and in `seed_rbac`.
+- The removals happen in migration `rbac/0008` and in `seed_rbac`.
 - New code `onboarding.products.view`: "See the products they added for the
   sellers they onboarded". SALES_TEAM gets it.
+- Follow-up (2026-11-02, `rbac/0009`): ADMINISTRATOR gets `sellers.onboard`
+  and `onboarding.products.view` too. Managing an account below the wildcard
+  (its roles, deactivating it) needs every permission it holds, so until then
+  only a Super Administrator could manage a Sales Team member. Administrators
+  can now also onboard sellers and see My Sellers.
 
 **Which products**
 
@@ -191,6 +196,8 @@ the code. Section 4 closes that.
     accepted, it shows a countdown ("Editing open until 14:35") and Edit
     buttons on the seller, each shop and each product, plus Close.
   - When the time runs out, the buttons go away.
+  - The product form can also replace the photo (JPEG, PNG or WebP, up to
+    5 MB); the request is then multipart. Added 2026-11-02.
 - **My Sellers**:
   - a link from each row to the seller;
   - "Request payment" on the tokens card, which asks for the amount and a note;

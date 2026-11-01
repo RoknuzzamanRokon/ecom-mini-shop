@@ -931,6 +931,8 @@ export interface AdminOnboardedProductChanges {
   expected_stock?: number;
   badge?: string;
   is_active?: boolean;
+  /** A new photo: JPEG, PNG or WebP, at most 5 MB. Sent as multipart. */
+  image?: File;
 }
 
 /** GET /api/onboarding/sellers/<id>/ */
@@ -995,17 +997,28 @@ export async function getMyOnboardedProduct(token: string, id: number | string):
 
 /**
  * PATCH /api/onboarding/products/<id>/ in an open edit session. 409 with
- * `current_stock` when the stock changed since it was read.
+ * `current_stock` when the stock changed since it was read. Multipart when a
+ * new `image` goes with it.
  */
 export async function updateMyOnboardedProduct(
   token: string,
   id: number | string,
   changes: AdminOnboardedProductChanges
 ): Promise<AdminOnboardedProductDetail> {
-  return adminRequest<AdminOnboardedProductDetail>(`/api/onboarding/products/${pathSegment(id)}/`, token, {
-    method: "PATCH",
-    body: JSON.stringify(changes),
-  });
+  const endpoint = `/api/onboarding/products/${pathSegment(id)}/`;
+  if (!changes.image) {
+    return adminRequest<AdminOnboardedProductDetail>(endpoint, token, {
+      method: "PATCH",
+      body: JSON.stringify(changes),
+    });
+  }
+  const form = new FormData();
+  for (const [key, value] of Object.entries(changes)) {
+    if (value === undefined) continue;
+    // FormData cannot carry null; the server reads an empty value as null.
+    form.append(key, value instanceof File ? value : value === null ? "" : String(value));
+  }
+  return adminMultipartRequest<AdminOnboardedProductDetail>(endpoint, token, form, "PATCH");
 }
 
 // ==============================================================================

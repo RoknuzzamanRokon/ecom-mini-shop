@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { changedFields, cleanCode, isSessionRequired, liveState, phoneList, timeLeft } from "./editSession";
+import {
+  changedFields,
+  cleanCode,
+  imageFileError,
+  isSessionRequired,
+  liveState,
+  phoneList,
+  timeLeft,
+} from "./editSession";
 
 const NOW = Date.parse("2026-11-02T08:00:00Z");
 const later = (seconds: number) => new Date(NOW + seconds * 1000).toISOString();
@@ -60,5 +68,14 @@ describe("isSessionRequired", () => {
     expect(isSessionRequired({ code: "edit_session_required" })).toBe(true);
     expect(isSessionRequired({ detail: "x" })).toBe(false);
     expect(isSessionRequired(undefined)).toBe(false);
+  });
+});
+
+describe("imageFileError", () => {
+  it("takes the formats and size the server takes", () => {
+    expect(imageFileError(new File(["x"], "shelf.webp", { type: "image/webp" }))).toBeNull();
+    expect(imageFileError(new File(["x"], "shelf.gif", { type: "image/gif" }))).toMatch(/JPEG, PNG or WebP/);
+    const big = new File([new Uint8Array(5 * 1024 * 1024 + 1)], "shelf.png", { type: "image/png" });
+    expect(imageFileError(big)).toMatch(/larger than 5 MB/);
   });
 });

@@ -1,18 +1,23 @@
 "use client";
 
-import React, { useId, useState } from "react";
+import React, { useEffect, useId, useRef, useState } from "react";
+import Image from "next/image";
 import Dialog from "@/components/feedback/Dialog";
 import { AdminApiError } from "@/lib/admin-api";
-import { isSessionRequired } from "./editSession";
+import { formatImageUrl } from "@/lib/api";
+import { imageFileError, isSessionRequired } from "./editSession";
 
-export type EditValues = Record<string, string | boolean>;
+/** An image field holds the chosen File, or "" while the saved photo stays. */
+export type EditValues = Record<string, string | boolean | File>;
 
 export interface EditField {
   name: string;
   label: string;
-  kind?: "text" | "textarea" | "checkbox";
+  kind?: "text" | "textarea" | "checkbox" | "image";
   inputMode?: "text" | "numeric" | "decimal" | "tel" | "email";
   hint?: string;
+  /** For an image field: the saved photo, shown until another is chosen. */
+  currentUrl?: string | null;
 }
 
 /** What a form turns its draft into: the changes to send, or why it cannot be sent. */
@@ -55,7 +60,7 @@ export default function EditDialog({
   const descriptionId = useId();
   const fieldId = useId();
 
-  const set = (name: string, value: string | boolean) => {
+  const set = (name: string, value: string | boolean | File) => {
     setDraft((current) => ({ ...current, [name]: value }));
     setError(null);
   };
@@ -107,6 +112,19 @@ export default function EditDialog({
         {fields.map((field) => {
           const id = `${fieldId}-${field.name}`;
           const value = draft[field.name];
+          if (field.kind === "image") {
+            return (
+              <ImageInput
+                key={field.name}
+                id={id}
+                field={field}
+                chosen={value instanceof File ? value : null}
+                disabled={saving}
+                onChange={(file) => set(field.name, file ?? "")}
+                onRefused={setError}
+              />
+            );
+          }
           if (field.kind === "checkbox") {
             return (
               <label key={field.name} htmlFor={id} className="flex items-center gap-2 text-xs font-semibold text-ink">
@@ -177,5 +195,94 @@ export default function EditDialog({
         </div>
       </form>
     </Dialog>
+  );
+}
+
+interface ImageInputProps {
+  id: string;
+  field: EditField;
+  chosen: File | null;
+  disabled: boolean;
+  onChange: (file: File | null) => void;
+  onRefused: (message: string) => void;
+}
+
+/** The saved photo, or the one chosen to replace it, with a way back. */
+function ImageInput({ id, field, chosen, disabled, onChange, onRefused }: ImageInputProps) {
+  const [preview, setPreview] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(
+    () => () => {
+      if (preview) URL.revokeObjectURL(preview);
+    },
+    [preview]
+  );
+
+  const pick = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    // Cleared so choosing the same file again still counts as a change.
+    event.target.value = "";
+    if (!file) return;
+    const refused = imageFileError(file);
+    if (refused) {
+      onRefused(refused);
+      return;
+    }
+    setPreview(URL.createObjectURL(file));
+    onChange(file);
+  };
+
+  const keep = () => {
+    setPreview(null);
+    onChange(null);
+  };
+
+  return (
+    <div>
+      <label htmlFor={id} className="block text-[11px] font-bold uppercase tracking-wider text-ink-muted mb-1.5">
+        {field.label}
+      </label>
+      <div className="flex items-center gap-3">
+        <Image
+          src={(chosen && preview) || formatImageUrl(field.currentUrl)}
+          alt={chosen ? "The new photo" : "The current photo"}
+          width={64}
+          height={64}
+          className="w-16 h-16 shrink-0 rounded-lg object-cover border border-line bg-surface-alt"
+        />
+        <div className="min-w-0 flex flex-wrap items-center gap-2">
+          <input
+            ref={inputRef}
+            id={id}
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            onChange={pick}
+            disabled={disabled}
+            className="sr-only"
+          />
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            disabled={disabled}
+            className="px-3 py-1.5 rounded-lg border border-line hover:bg-surface-alt text-ink font-semibold text-[11px] transition-colors cursor-pointer disabled:opacity-50"
+          >
+            {chosen ? "Choose another" : "Choose a new photo"}
+          </button>
+          {chosen && (
+            <button
+              type="button"
+              onClick={keep}
+              disabled={disabled}
+              className="px-3 py-1.5 rounded-lg text-[11px] font-semibold text-ink-muted hover:text-ink transition-colors cursor-pointer disabled:opacity-50"
+            >
+              Keep the current one
+            </button>
+          )}
+        </div>
+      </div>
+      {chosen && <p className="text-[11px] text-ink-muted mt-1 break-all">{chosen.name}</p>}
+      {field.hint && <p className="text-[11px] text-ink-muted mt-1">{field.hint}</p>}
+    </div>
   );
 }
