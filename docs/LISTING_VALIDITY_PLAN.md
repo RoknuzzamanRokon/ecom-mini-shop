@@ -72,6 +72,9 @@ points" request flow, renewing before the period ends, notifications about
 expiring products, seller deletion of products (sellers still lack
 `products.delete`), and the Sales Team Android app.
 
+Early renewal, the expiry notices and deleting expired products came later,
+in `docs/FOLLOW_UPS_PLAN.md`.
+
 ## Tasks
 
 ### Phase A: seller points (backend)

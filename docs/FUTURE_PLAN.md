@@ -758,6 +758,26 @@ chose a page over a config file, so a change needs no deploy. Viewing is for
 Administrators, Finance and Operation Managers; changing is for
 Administrators.
 
+## Follow-ups to listing validity and the Rules page (decided 2026-11-01)
+
+The plan is `docs/FOLLOW_UPS_PLAN.md`. The user answered the five open
+points:
+
+1. **Deleting.** A seller deletes their own expired product with no RBAC
+   code, which frees its place under the product limit. Nothing is refunded,
+   and units held for open orders block the delete.
+2. **Renewing early, and notices.** A live product can be renewed at any time;
+   the months go on after its current end date. The seller gets a
+   `listing.ending_soon` notice when a product enters the ending-soon window
+   and a `listing.expired` notice when it expires, in-app and email, once per
+   product per period.
+3. **Cron.** `deploy/cron/` holds the crontab, a wrapper script and a README,
+   to install on the server later.
+4. **Support limits** (open tickets per person, auto-close days) moved to
+   `support.SupportPolicy` and the Rules page.
+5. **Sales Team point sales.** The Console page `/admin/my-sellers` lists an
+   onboarder's sellers and sells them points.
+
 ## Not in this roadmap
 
 A short honest roadmap beats an exhaustive wish list. These are known and
