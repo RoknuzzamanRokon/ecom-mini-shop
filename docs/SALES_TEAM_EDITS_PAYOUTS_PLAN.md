@@ -14,6 +14,13 @@ three questions left open there:
    only the products they added, and only while they hold the permission for
    it. An admin can turn that permission off.
 
+On review the user added two more decisions:
+
+4. **Starting password.** An onboarded seller must replace the password the
+   onboarder set, at first sign-in. Later changes go through Settings as
+   today.
+5. **Token value.** 1 token = ৳1.
+
 Branch: `feature/sales-team-edits-payouts`. The API serves the Android app
 later. The Console gets the same screens now, for the browser.
 
@@ -67,10 +74,9 @@ later. The Console gets the same screens now, for the browser.
   - "Edit code valid for": 10 minutes, range 2–30;
   - "Edit window": 30 minutes, range 5–120.
 
-**Weak point to know about.** The onboarder sets the seller's first password
-when opening the account. If the seller never changes it, the onboarder could
-sign in as the seller and read the code. Forcing a password change at first
-sign-in would close that gap. It is listed below but not built here.
+**Starting password.** The onboarder sets the seller's first password, so
+until the seller replaces it the onboarder could sign in as the seller and read
+the code. Section 4 closes that.
 
 ## 2. Token payouts
 
@@ -107,8 +113,10 @@ sign-in would close that gap. It is listed below but not built here.
 - Audit rows `TOKEN_PAYOUT_REQUESTED`, `_CANCELLED`, `_ACCEPTED` and
   `_REJECTED`.
 
-The money itself is paid outside the system. The request records tokens only,
-and the admin's note says what was paid. A ৳-per-token rate is open (see below).
+- **Value.** A new Rules page setting, "Token value", is ৳ per token: default 1,
+  whole taka, range 1–1,000. A request keeps the rate and the ৳ amount from
+  when it was made, so a later change does not alter it. The money itself is
+  paid outside the system, and the admin's note records how.
 
 ## 3. Product visibility for the Sales Team
 
@@ -156,7 +164,25 @@ and the admin's note says what was paid. A ৳-per-token rate is open (see below
     change writes `USER_PERMISSION_BLOCKED` or `USER_PERMISSION_UNBLOCKED`.
   - The block works for any code, not only this one.
 
-## 4. Console (the browser)
+## 4. Starting password
+
+- New `rbac.StartingPassword` row (account, who set the password, when it was
+  replaced). Onboarding writes one for each new seller account. A migration
+  writes one for every seller account onboarded so far.
+- The login (`/api/auth/token/`) puts a `starting_password` claim on the
+  tokens while the row is unreplaced. The JWT authentication refuses such a
+  token with 403 `password_change_required`, except on `/api/auth/me/`,
+  `/api/auth/change-password/` and `/api/auth/logout/`. Changing the password
+  marks the row replaced and, as today, revokes the old tokens; the new pair
+  has no claim. No extra query per request.
+- `/api/auth/me/` returns `must_change_password`.
+- Storefront: while it is true, the whole site shows one screen: "Choose your
+  own password. {onboarder} set your first one when opening your account."
+  It has the change form and Sign out. Afterwards the site opens as usual, and
+  Settings → Password works as before.
+- Accounts made by staff in the Console are left as they are.
+
+## 5. Console (the browser)
 
 - **`/admin/my-sellers/<id>`**: one seller.
   - It shows the business details, shops and, with the code, the products the
@@ -181,10 +207,10 @@ and the admin's note says what was paid. A ৳-per-token rate is open (see below
 - The Android app itself (`mobile/`, React Native + Expo). It comes next, on
   this API.
 - Sending the code by SMS: it waits for the SMS provider, as phone sign-in does.
-- Forcing a password change at the seller's first sign-in.
+- A starting password for accounts made by staff in the Console.
 - Telling the seller afterwards what was changed during a session (the audit
   rows already record it).
-- A ৳ rate per token, or a minimum payout.
+- A minimum payout, or rates below ৳1 per token.
 - Changing the seller type or the login account from the Sales Team side.
 
 ## Tasks
@@ -207,6 +233,8 @@ and the admin's note says what was paid. A ৳-per-token rate is open (see below
   - the `onboarding.payouts.manage` code;
   - the onboarder and admin endpoints, the two events and the audit rows;
   - tests.
+- C2. Starting password: the model and backfill, the token claim and
+  authentication, `must_change_password`, and the storefront screen.
 - D. Console:
   - the seller detail page with the edit panel and forms;
   - payouts on My Sellers, and the Token Payouts page and nav item;
