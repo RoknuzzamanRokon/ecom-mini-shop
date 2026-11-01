@@ -1,0 +1,34 @@
+# MiniShop's scheduled jobs. See deploy/cron/README.md for how to install them.
+#
+# Times are the server clock's. The times below assume it runs on Asia/Dhaka
+# (check with `timedatectl`). On cronie (RHEL, Fedora, Arch) you can uncomment
+# CRON_TZ instead of changing the server's time zone.
+
+MINISHOP_ROOT=/srv/minishop
+SHELL=/bin/sh
+PATH=/usr/local/bin:/usr/bin:/bin
+# Where cron mails a failing job's error line. Leave empty for no mail.
+MAILTO=""
+# CRON_TZ=Asia/Dhaka
+
+# Every minute: route notifications and send their email. Harmless next to the
+# systemd worker in docs/NOTIFICATION_SYSTEM.md §17.4; remove it if that runs.
+* * * * *   $MINISHOP_ROOT/deploy/cron/run-manage.sh run_notification_worker --once
+
+# Every 5 minutes: the notification health check. Prints only when something
+# is wrong, so with MAILTO set, mail arrives only then.
+*/5 * * * * cd $MINISHOP_ROOT/backend && DJANGO_SETTINGS_MODULE=config.settings.prod venv/bin/python manage.py notification_health > /dev/null
+
+# 00:05 Expire seller and staff points that reached their date.
+5 0 * * *   $MINISHOP_ROOT/deploy/cron/run-manage.sh expire_points
+
+# 02:00 Close resolved support tickets left without a reply (Rules page: Support).
+0 2 * * *   $MINISHOP_ROOT/deploy/cron/run-manage.sh close_resolved_tickets
+
+# 03:30 Delete notification rows past their retention.
+30 3 * * *  $MINISHOP_ROOT/deploy/cron/run-manage.sh purge_notifications
+
+# 09:00 Expire ended product listings, and tell sellers whose listings end
+# within the ending-soon window (Rules page: Products). In the morning, so the
+# notices arrive during the day.
+0 9 * * *   $MINISHOP_ROOT/deploy/cron/run-manage.sh expire_listings

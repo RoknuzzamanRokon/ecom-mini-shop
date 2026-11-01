@@ -1,0 +1,2 @@
+# Cron job logs (deploy/cron/run-manage.sh) when run from a checkout.
+/logs/
