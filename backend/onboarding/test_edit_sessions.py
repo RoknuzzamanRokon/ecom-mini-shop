@@ -6,6 +6,7 @@ from datetime import timedelta
 from importlib import import_module
 
 from django.apps import apps
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.utils import timezone
 from rest_framework import status
@@ -23,7 +24,7 @@ from shop.models import Product
 from shop.services import ProductService
 from shops.models import Shop
 from .models import EditSession, OnboardingSettings
-from .tests import MEDIA_ROOT, OnboardingTestCase
+from .tests import MEDIA_ROOT, OnboardingTestCase, png
 
 
 @override_settings(MEDIA_ROOT=MEDIA_ROOT)
@@ -208,6 +209,28 @@ class EditTests(EditSessionTestCase):
         self.assertEqual((response.data["price"], response.data["stock"]), ("480.00", 12))
         row = AuditLog.objects.filter(action="PRODUCT_UPDATED", target_id=str(self.product.pk)).latest("pk")
         self.assertEqual((row.actor, row.metadata["edited_via"]), (self.sales, "onboarding"))
+
+    def test_an_open_session_replaces_the_product_photo(self):
+        self.open_session()
+        response = self.as_user(self.sales).patch(
+            f"/api/onboarding/products/{self.product.pk}/",
+            {"image": png("shelf.png"), "old_price": "", "is_active": "true"},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        self.product.refresh_from_db()
+        self.assertTrue(self.product.image.name.startswith("products/shelf"))
+        self.assertTrue(response.data["image_url"].endswith(self.product.image.url))
+        row = AuditLog.objects.filter(action="PRODUCT_UPDATED", target_id=str(self.product.pk)).latest("pk")
+        self.assertIn("image", row.metadata["changed_fields"])
+
+        response = self.as_user(self.sales).patch(
+            f"/api/onboarding/products/{self.product.pk}/",
+            {"image": SimpleUploadedFile("notes.png", b"not a picture", content_type="image/png")},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("image", response.data)
 
     def test_a_stale_stock_figure_is_a_conflict(self):
         self.open_session()

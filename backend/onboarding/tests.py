@@ -143,11 +143,45 @@ class SalesTeamPermissionTests(OnboardingTestCase):
         self.assertEqual(self.staff_points(self.sales), 500)
 
     def test_onboarding_needs_the_permission(self):
+        # Administrators hold 'sellers.onboard' too (rbac/0009).
         for url in ("/api/onboarding/me/", "/api/onboarding/sellers/", "/api/onboarding/tokens/"):
             with self.subTest(url=url):
-                self.assertEqual(self.as_user(self.sales).get(url).status_code, status.HTTP_200_OK)
-                for user in (self.admin, self.sales_manager):
-                    self.assertEqual(self.as_user(user).get(url).status_code, status.HTTP_403_FORBIDDEN)
+                for user in (self.sales, self.admin):
+                    self.assertEqual(self.as_user(user).get(url).status_code, status.HTTP_200_OK)
+                self.assertEqual(self.as_user(self.sales_manager).get(url).status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_an_administrator_manages_sales_team_accounts(self):
+        self.assertLessEqual(get_user_permissions(self.sales), get_user_permissions(self.admin))
+        client = self.as_user(self.admin)
+
+        response = client.patch(
+            f"/api/admin/users/{self.other_sales.pk}/", {"is_active": False, "reason": "Left the team"}, format="json"
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        response = client.patch(
+            f"/api/admin/users/{self.sales.pk}/",
+            {"roles": [Role.ROLE_SALES_TEAM, Role.ROLE_SUPPORT_TEAM], "reason": "Covers support"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK, response.data)
+        response = client.post(
+            "/api/admin/users/",
+            {"username": "new_sales", "email": "new_sales@example.com", "password": "Staff-Pass-123",
+             "password_confirm": "Staff-Pass-123", "roles": [Role.ROLE_SALES_TEAM], "reason": "New hire"},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+        self.other_sales.refresh_from_db()
+        self.assertFalse(self.other_sales.is_active)
+
+    def test_the_migration_gives_administrators_the_sales_team_codes(self):
+        codes = ("sellers.onboard", "onboarding.products.view")
+        RolePermission.objects.filter(role__code=Role.ROLE_ADMINISTRATOR, permission__code__in=codes).delete()
+        self.assertFalse(set(codes) & get_user_permissions(self.admin))
+
+        import_module("rbac.migrations.0009_administrator_holds_sales_team_permissions").grant(apps, None)
+
+        self.assertLessEqual(set(codes), get_user_permissions(self.admin))
 
 
 class OnboardSellerTests(OnboardingTestCase):
@@ -519,8 +553,10 @@ class PointSaleTests(OnboardingTestCase):
 
     def test_another_onboarders_seller_is_not_found(self):
         seller = self.approved()
-        self.assertEqual(self.sell(seller, 100, user=self.other_sales).status_code, status.HTTP_404_NOT_FOUND)
-        self.assertEqual(self.sell(seller, 100, user=self.admin).status_code, status.HTTP_403_FORBIDDEN)
+        # Administrators onboard too (rbac/0009), so they see only their own sellers.
+        for user in (self.other_sales, self.admin):
+            self.assertEqual(self.sell(seller, 100, user=user).status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(self.sell(seller, 100, user=self.sales_manager).status_code, status.HTTP_403_FORBIDDEN)
 
     def test_the_summary_names_the_minimum(self):
         data = self.as_user(self.sales).get("/api/onboarding/me/").data

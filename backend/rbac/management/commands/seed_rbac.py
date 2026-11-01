@@ -168,6 +168,10 @@ ROLE_PERMISSIONS_MAPPING = {
         "products.view", "products.create", "products.update", "products.delete", "products.approve", "products.reject", "products.publish",
         "shops.view", "shops.create", "shops.update", "shops.delete", "shops.approve",
         "sellers.view", "sellers.create", "sellers.update", "sellers.approve", "sellers.suspend",
+        # Everything the Sales Team holds, so an Administrator may manage its
+        # accounts under the subset rule (rbac/0009). An Administrator can
+        # onboard sellers too.
+        "sellers.onboard", "onboarding.products.view",
         "orders.view", "orders.create", "orders.update", "orders.cancel", "orders.refund",
         "orders.seller.view", "orders.seller.update",
         "orders.staff.view", "orders.staff.update",
